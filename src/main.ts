@@ -2,7 +2,7 @@ import './vendor/dockview.css';
 import './style.css';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, LUMA, detectDisplay, type DisplaySpace } from './color';
 import { SCOPE_LABELS, isWaveform, plotRect, type ScopeType, type Unit } from './graticule';
-import { DEFAULT_SKIN, defaultPanel as panel, drawPanel, panelSignature, type DrawOptions, type PanelState, type Tint } from './panel';
+import { DEFAULT_SKIN, ROI_CLOSE, defaultPanel as panel, drawPanel, panelSignature, roiCloseBox, type DrawOptions, type PanelState, type Tint } from './panel';
 import type { OutputHost } from './outputView';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
 import { PRESETS, createDock } from './dock';
@@ -349,7 +349,7 @@ function panelElement(idx: number): HTMLElement {
     body.addEventListener('dblclick', () => toggleSolo(idx));
     attachPointer(p(), body);
     attachSkinDrag(p(), body);
-    body.addEventListener('contextmenu', (e) => { e.preventDefault(); const s = panelSource(p()); if (s) { s.probe = null; s.roi = null; } });
+    body.addEventListener('contextmenu', (e) => { e.preventDefault(); const s = panelSource(p()); if (s) { s.probe = null; s.roi = null; s.faceTrack = false; refreshHeads(); } });
     v = { idx, el, head, body, blit, overlay };
     views.set(idx, v);
     fillHead(v);
@@ -366,6 +366,7 @@ function fillHead(v: PanelView) {
     sources.length > 1 ? select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), 'Quelle – alle nicht angehefteten Panels folgen') : '',
     sources.length > 1 ? h('button', { class: `icon pin ${p.pin ? 'on' : ''}`, title: p.pin ? 'Angeheftet: behält seine Quelle' : 'Anheften: Panel behält seine Quelle, wenn andere umschalten', onclick: () => { p.pin = !p.pin; save(); fillHead(v); } }, '📌') : '',
     h('div', { class: 'opts' },
+      roiChip(p),
       h('details', { class: 'menu psettings' },
         h('summary', { title: `Einstellungen ${SCOPE_LABELS[p.scope]}` }, '⚙'),
         h('div', { class: 'menu-body right' }, h('div', { class: 'mtitle' }, SCOPE_LABELS[p.scope]), ...panelSettings(p)))),
@@ -442,6 +443,23 @@ function panelSettings(p: PanelState): Node[] {
 
 function refreshHeads() { views.forEach(fillHead); }
 
+/** Header chip while a ROI is active: shows it and switches it off with one click. */
+function roiChip(p: PanelState): Node | string {
+  const s = panelSource(p);
+  if (!s) return '';
+  const off = h('button', { class: 'mini roichip', title: 'Messrahmen ausschalten (auch: ✕ am Rahmen, Rechtsklick, Esc)', onclick: () => { s.roi = null; s.faceTrack = false; refreshHeads(); } }, s.faceTrack ? '☺ Gesicht ✕' : '▭ Rahmen ✕');
+  const face = h('button', { class: 'mini', title: 'Gesicht automatisch verfolgen: der Messrahmen folgt dem größten Gesicht', onclick: () => { s.faceTrack = true; refreshHeads(); } }, '☺');
+  const tools = p.scope === 'picture' || p.scope === 'wf-skin';
+  if (s.faceTrack || s.roi) return off;
+  return tools ? face : '';
+}
+
+// face tracking (MediaPipe is only loaded once someone switches it on)
+setInterval(() => {
+  if (!sources.some((s) => s.faceTrack)) return;
+  import('./face').then((m) => m.trackFaces(sources, refreshHeads));
+}, 100);
+
 function toggleSolo(idx: number) {
   dock.toggleMaximize(idx);
 }
@@ -467,6 +485,15 @@ function skinFromRoi(p: PanelState) {
 function alertHud(msg: string) {
   const el = $('#fps');
   el.textContent = msg;
+}
+
+function hitRoiClose(e: PointerEvent, s: Source, body: HTMLElement) {
+  const b = body.getBoundingClientRect();
+  const r = plotRect('picture', b.width, b.height, s.width / s.height);
+  const [x0, y0, x1] = s.roi!;
+  const [bx, by] = roiCloseBox(r.x + (x0 / s.width) * r.w, r.y + (y0 / s.height) * r.h, ((x1 - x0) / s.width) * r.w);
+  const px = e.clientX - b.left, py = e.clientY - b.top;
+  return px >= bx - 4 && px <= bx + ROI_CLOSE + 4 && py >= by - 4 && py <= by + ROI_CLOSE + 4;
 }
 
 /** Skin-tone waveform: drag the lo/hi lines, mouse wheel = hue tolerance. */
@@ -513,6 +540,7 @@ function attachPointer(p: PanelState, body: HTMLElement) {
   body.addEventListener('pointerdown', (e) => {
     const s = panelSource(p);
     if (p.scope !== 'picture' || !s?.width || e.button !== 0) return;
+    if (s.roi && hitRoiClose(e, s, body)) { s.roi = null; s.faceTrack = false; refreshHeads(); return; }
     const pt = toSrc(e, s, false);
     if (!pt) return;
     start = { ...pt, cx: e.clientX, cy: e.clientY };
@@ -528,6 +556,7 @@ function attachPointer(p: PanelState, body: HTMLElement) {
   body.addEventListener('pointerup', (e) => {
     const s = panelSource(p);
     if (start && s && Math.hypot(e.clientX - start.cx, e.clientY - start.cy) < 5) s.probe = { x: start.x, y: start.y };
+    else if (start && s?.roi) { s.faceTrack = false; refreshHeads(); }
     start = null;
   });
 }
@@ -790,7 +819,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'f' || e.key === 'F') $('#full').click();
   else if (e.key === 's' || e.key === 'S') snapshot();
   else if (e.key === 'b' || e.key === 'B') $('#toggle-side').click();
-  else if (e.key === 'Escape') { if (dock.api.hasMaximizedGroup()) dock.exitMaximized(); else sources.forEach((s) => { s.probe = null; s.roi = null; }); }
+  else if (e.key === 'Escape') { if (dock.api.hasMaximizedGroup()) dock.exitMaximized(); else { sources.forEach((s) => { s.probe = null; s.roi = null; s.faceTrack = false; }); refreshHeads(); } }
 });
 
 for (const saved of state.sources) {

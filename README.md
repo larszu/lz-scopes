@@ -54,9 +54,13 @@ Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einste
 
 **Ausgaben** (*⧉ Ausgabe*): Gesamtansicht, einzelnes Panel, sauberes Quellbild oder Bild mit Scope-Overlay (auch auf Schwarz für den Luma-Key) auf einem Bildschirm dieses Rechners, optional als MJPEG-Stream (`/out/<name>.mjpeg`) oder per ffmpeg an RTMP/SRT/RTSP/UDP.
 
+**Overlay-Szenen:** Das Overlay zeigt eine Szene aus beliebig vielen Scopes (Waveforms, Paraden, Vectorscope, CIE, Histogramm), jeder mit eigener Position, Größe, Deckkraft, Abdunklung des Bildes dahinter und wahlweise eigener Quelle. Im Ausgabefenster schaltet `E` den Bearbeiten-Modus ein: Scopes ziehen, an den Griffen skalieren, über die Leiste hinzufügen, umstellen oder entfernen (`Entf`), Pfeiltasten verschieben fein. Außerhalb des Bearbeitens gibt es weder Mauszeiger noch Griffe, und der Stream enthält die Bearbeitungsebene nie. Szenen werden im Ausgabe-Menü angelegt, kopiert, gewählt und gelöscht, bleiben gespeichert und sind Teil der Layout-Konfigurationen. Die Stream-Ausgabe eines Fensters zeigt dieselbe Szene.
+
 Einfrieren, PNG-Export, Vollbild.
 
-**Tasten:** `1`–`6` Layout-Vorlage · `Leertaste` Play/Pause (Videodatei) bzw. Einfrieren · `←`/`→` Frame · `J`/`K`/`L` Shuttle · `F` Vollbild · `S` PNG · `B` Seitenleiste · `Esc` Vergrößerung beenden bzw. Messpunkt/Rahmen löschen
+**Fernsteuerung** (Bitfocus Companion, curl): `POST /api/control` bzw. WebSocket `/control` an der Bridge; das Hauptfenster führt aus und meldet Quelle, Freeze, Clipping, Y′ min/max, Layout, Szene und Ausgaben zurück. Standardmäßig nur von 127.0.0.1, mit `LZS_CONTROL_TOKEN` auch aus dem Netz. Befehle und Beispiele: [docs/control-api.md](docs/control-api.md). Das Companion-Modul liegt in [`companion/`](companion).
+
+**Tasten:** `1`–`6` Layout-Vorlage · `Leertaste` Play/Pause (Videodatei) bzw. Einfrieren · `←`/`→` Frame · `J`/`K`/`L` Shuttle · `F` Vollbild · `S` PNG · `B` Seitenleiste · `Esc` Vergrößerung beenden bzw. Messpunkt/Rahmen löschen · im Overlay-Ausgabefenster `E` Bearbeiten
 
 ## Testbilder
 
@@ -99,7 +103,7 @@ view.setSource(src);
 - Der **Renderer** (`src/renderer.ts`) ist ein einziger WebGL2-Kontext hinter allen Panels. Jeder abgetastete Pixel wird als Punkt additiv in ein Float-Target gestreut (bis 4 Mio. Punkte pro Scope und Frame) und danach per `1 − e^(−k·x)` dargestellt. 16-bit-Frames liegen als `RGBA16UI`-Textur vor.
 - Die Bridge lauscht standardmäßig nur auf `127.0.0.1` und akzeptiert ausschließlich Netzwerk-URLs und die Testbilder: keine lokalen Dateien, keine ffmpeg-Optionen, keine Shell. Für Zugriff aus dem Netz gibt es `--host 0.0.0.0`.
 
-Konfiguration: `--port`/`PORT` (4190), `--host`/`HOST`, `FFMPEG`, `FFPROBE`.
+Konfiguration: `--port`/`PORT` (4190), `--host`/`HOST`, `--control-token`/`LZS_CONTROL_TOKEN`, `FFMPEG`, `FFPROBE`. Die Desktop-App nimmt Port 4192, wenn er frei ist (feste Adresse für Companion), sonst einen freien; `LZS_PORT`, `LZS_HOST` und `LZS_CONTROL_TOKEN` überschreiben das.
 
 ## Desktop-App
 
@@ -118,8 +122,9 @@ Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in
 ## Tests
 
 ```bash
-npm test        # Farbmathematik (PQ, HLG, Matrizen, XYZ), Statistik, Bridge-Eingabeprüfung
+npm test        # Farbmathematik (PQ, HLG, Matrizen, XYZ), Statistik, Bridge-Eingabeprüfung, Steuerbefehle, Overlay-Szenen
 npm run typecheck
+npm --prefix companion ci && npm run companion:test && npm run companion:build   # Companion-Modul
 ```
 
 Zum Ausprobieren mit echtem RTSP: `brew install mediamtx`, dann `mediamtx` starten und z. B. `ffmpeg -re -f lavfi -i testsrc2=size=1920x1080:rate=25 -c:v libx264 -f rtsp rtsp://127.0.0.1:8554/test` veröffentlichen.

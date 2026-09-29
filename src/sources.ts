@@ -21,6 +21,8 @@ export interface StreamInfo {
 export interface Stats {
   hist: Float32Array[]; // R, G, B, Y — 256 bins each
   yMin: number; yMax: number; yAvg: number;
+  /** mean R'G'B' (signal) of the analysed area */
+  rgbAvg: [number, number, number];
   clipLow: number[]; clipHigh: number[]; // fraction per R, G, B
   samples: number;
 }
@@ -405,7 +407,7 @@ export function computeStats(px: ArrayLike<number>, w: number, h: number, step: 
   const kg = 1 - kr - kb;
   const lo = 0.5 / 255, hi = 254.5 / 255;
   const clipLow = [0, 0, 0], clipHigh = [0, 0, 0];
-  let yMin = 1, yMax = 0, ySum = 0, n = 0;
+  let yMin = 1, yMax = 0, ySum = 0, n = 0, rS = 0, gS = 0, bS = 0;
   for (let y = Math.max(0, y0); y < Math.min(h, y1); y += step) {
     for (let x = Math.max(0, x0); x < Math.min(w, x1); x += step) {
       const i = (y * w + x) * 4;
@@ -420,11 +422,11 @@ export function computeStats(px: ArrayLike<number>, w: number, h: number, step: 
       if (b <= lo) clipLow[2]++; else if (b >= hi) clipHigh[2]++;
       if (Y < yMin) yMin = Y;
       if (Y > yMax) yMax = Y;
-      ySum += Y; n++;
+      ySum += Y; n++; rS += r; gS += g; bS += b;
     }
   }
   return {
-    hist, yMin, yMax, yAvg: n ? ySum / n : 0, samples: n,
+    hist, yMin, yMax, yAvg: n ? ySum / n : 0, samples: n, rgbAvg: n ? [rS / n, gS / n, bS / n] : [0, 0, 0],
     clipLow: clipLow.map((c) => c / Math.max(1, n)), clipHigh: clipHigh.map((c) => c / Math.max(1, n)),
   };
 }

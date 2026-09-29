@@ -1,7 +1,7 @@
 // 2D overlays per panel: graticules, labels, histogram, statistics, probe read-outs.
 
 import {
-  GAMUTS, SKIN_LINE_DEG, SPECTRAL_LOCUS, barTargets, codeValue, nitsToSignal, signalToNits, ycbcr,
+  GAMUTS, SKIN_LINE_DEG, gamutConvert, hlgFromNits, pqEncode, SPECTRAL_LOCUS, barTargets, codeValue, nitsToSignal, signalToNits, ycbcr,
   type Colorspace, type Transfer,
 } from './color';
 import { CIE_VIEW, WAVE_MAX, WAVE_MIN, type Rect } from './renderer';
@@ -158,18 +158,92 @@ export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: 
   const box = Math.max(5, R * 0.05);
   t75.forEach((t, i) => {
     const [x, y] = vectorPoint(r, t.cb, t.cr, zoom);
-    ctx.strokeStyle = GRID;
-    ctx.strokeRect(x - box, y - box, box * 2, box * 2);
-    const [x1, y1] = vectorPoint(r, t100[i].cb, t100[i].cr, zoom);
-    ctx.beginPath(); ctx.arc(x1, y1, box * 0.6, 0, Math.PI * 2); ctx.stroke();
-    // label on the inner side of the 75 % box so it never leaves the plot
     const ang = Math.atan2(t.cr, t.cb);
-    ctx.fillStyle = LABEL;
-    ctx.fillText(t.label, x - Math.cos(ang) * box * 2.6, y + Math.sin(ang) * box * 2.6);
+    if (!edgeMarker(ctx, r, x, y, `${t.label} 75`, GRID)) {
+      ctx.strokeStyle = GRID;
+      ctx.strokeRect(x - box, y - box, box * 2, box * 2);
+      // label on the inner side of the 75 % box so it never leaves the plot
+      ctx.fillStyle = LABEL; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(t.label, x - Math.cos(ang) * box * 2.6, y + Math.sin(ang) * box * 2.6);
+    }
+    const [x1, y1] = vectorPoint(r, t100[i].cb, t100[i].cr, zoom);
+    if (zoom === 1) { ctx.strokeStyle = GRID; ctx.beginPath(); ctx.arc(x1, y1, box * 0.6, 0, Math.PI * 2); ctx.stroke(); }
   });
   ctx.restore();
   ctx.fillStyle = LABEL; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  ctx.fillText(`Rec.${cs}${zoom !== 1 ? `  ×${zoom}` : ''}`, r.x + 2, r.y + 2);
+  ctx.fillText(`Rec.${cs}`, r.x + 2, r.y + 2);
+  if (zoom !== 1) {
+    // unmistakable zoom badge: targets outside the view sit as arrows on the rim
+    const label = `×${zoom} ZOOM`;
+    ctx.font = '600 11px ui-monospace, Menlo, monospace';
+    const w = ctx.measureText(label).width + 10;
+    ctx.fillStyle = 'rgba(255, 184, 64, 0.9)'; ctx.fillRect(r.x + r.w - w - 2, r.y + 2, w, 16);
+    ctx.fillStyle = '#111'; ctx.textAlign = 'right'; ctx.fillText(label, r.x + r.w - 7, r.y + 4);
+    ctx.font = FONT;
+  }
+}
+
+/** Target outside the (zoomed) circle: triangle on the rim pointing to it, with label. Returns true if drawn. */
+function edgeMarker(ctx: CanvasRenderingContext2D, r: Rect, x: number, y: number, label: string, color: string) {
+  const R = r.w / 2, cx = r.x + R, cy = r.y + R;
+  const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
+  if (d <= R * 0.93) return false;
+  const ux = dx / d, uy = dy / d, px = cx + ux * R * 0.9, py = cy + uy * R * 0.9, s = 6;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(px + ux * s, py + uy * s);
+  ctx.lineTo(px - uy * s * 0.7, py + ux * s * 0.7);
+  ctx.lineTo(px + uy * s * 0.7, py - ux * s * 0.7);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = LABEL; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, px - ux * 16, py - uy * 12);
+  return true;
+}
+
+export interface VectorTarget { name: string; rgb: [number, number, number] }
+
+/**
+ * Gamut boundaries (hexagon through 100 % primaries/secondaries of each gamut, expressed
+ * in the source's encoding) and user colour-match targets.
+ */
+export function drawVectorExtras(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, gamuts: ('709' | 'p3' | '2020')[], targets: VectorTarget[], transfer: Transfer) {
+  const src = GAMUTS[cs === '2020' ? '2020' : cs === '601' ? '601' : '709'];
+  const enc = (v: number) => {
+    const a = Math.abs(v), sgn = Math.sign(v);
+    return sgn * (transfer === 'pq' ? pqEncode(a * 203) : transfer === 'hlg' ? hlgFromNits(a * 203) : Math.pow(a, 1 / 2.4));
+  };
+  const colors: Record<string, string> = { '709': 'rgba(255,255,255,0.8)', p3: 'rgba(255,200,60,0.85)', '2020': 'rgba(60,220,255,0.85)' };
+  ctx.save();
+  ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
+  ctx.font = FONT;
+  gamuts.forEach((g, gi) => {
+    const m = gamutConvert(GAMUTS[g], src);
+    const corners: [number, number, number][] = [[1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 1, 1], [0, 0, 1], [1, 0, 1]];
+    ctx.strokeStyle = colors[g]; ctx.setLineDash(g === '709' ? [] : [5, 3]); ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    corners.forEach((c, i) => {
+      const lin = [0, 1, 2].map((k) => m[k * 3] * c[0] + m[k * 3 + 1] * c[1] + m[k * 3 + 2] * c[2]);
+      const [R_, G_, B_] = lin.map(enc);
+      const { cb, cr } = ycbcr(R_, G_, B_, cs);
+      const [x, y] = vectorPoint(r, cb, cr, zoom);
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    });
+    ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = colors[g]; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+    ctx.fillText(GAMUTS[g].name, r.x + r.w - 4, r.y + r.h - 4 - gi * 13);
+  });
+  ctx.restore();
+  for (const t of targets) {
+    const { cb, cr } = ycbcr(t.rgb[0], t.rgb[1], t.rgb[2], cs);
+    const [x, y] = vectorPoint(r, cb, cr, zoom);
+    const css = `rgb(${t.rgb.map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255)).join(',')})`;
+    if (edgeMarker(ctx, r, x, y, t.name, css)) continue;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = css; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(t.name, x + 10, y);
+  }
 }
 
 export function cieToPlot(r: Rect, x: number, y: number) {

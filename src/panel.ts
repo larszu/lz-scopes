@@ -3,7 +3,7 @@
 
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, gamutConvert, ycbcr, type DisplaySpace } from './color';
 import {
-  drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
+  drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
   isWaveform, plotRect, probeLines, statsLines, vectorPoint, type ScopeType, type Unit,
 } from './graticule';
 import type { DisplayParams, PictureMode, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
@@ -14,6 +14,8 @@ export interface PanelState {
   picture: PictureMode; hist: 'rgb' | 'luma' | 'split'; log: boolean;
   /** parades / RGB overlay: 'mono' | 'channel' | 'source' colours */
   paradeColor?: 'mono' | 'channel' | 'source';
+  /** vectorscope: gamut boundaries to show */
+  gamuts?: ('709' | 'p3' | '2020')[];
   /** Pinned panels keep their source when another panel switches. */
   pin?: boolean;
 }
@@ -25,6 +27,8 @@ export interface DrawOptions {
   unit: Unit; tint: Tint; maxSamples: number; falsePreset: string;
   zebra: number; zebraLow: number; frozen: boolean; displayFps: number;
   skin: SkinRange; display: DisplaySpace;
+  /** user colour-match targets (vectorscope) */
+  targets?: VectorTarget[];
   emptyText?: string;
 }
 
@@ -90,6 +94,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     if (probeRgb) drawWaveProbe(ctx, p.scope, r, src, probeRgb);
   } else if (p.scope === 'vector') {
     drawVectorGraticule(ctx, r, src.colorspace, p.zoom, o.skin.tol);
+    drawVectorExtras(ctx, r, src.colorspace, p.zoom, p.gamuts ?? [], o.targets ?? [], src.transfer);
     if (probeRgb) {
       const { cb, cr } = ycbcr(probeRgb[0], probeRgb[1], probeRgb[2], src.colorspace);
       const [x, y] = vectorPoint(r, cb, cr, p.zoom);

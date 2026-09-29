@@ -42,6 +42,8 @@ export function runOutputWindow() {
     else return;
     draw(); showHud();
   });
+  // LED wall settings changed in the main window (src/led/wall.ts): redraw
+  window.addEventListener('storage', (e) => { if (e.key === 'lz-scopes.led') draw(); });
   canvas.addEventListener('dblclick', () => document.documentElement.requestFullscreen());
   document.addEventListener('mousemove', showHud);
   draw(); showHud(); loop();

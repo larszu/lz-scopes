@@ -1,5 +1,5 @@
 {
-  "name": "lz-scope",
+  "name": "lz-scopes",
   "version": "0.1.0",
   "private": true,
   "description": "Software waveform monitor, vectorscope, histogram and CIE scope in the browser, with RTSP/network inputs via an ffmpeg bridge",

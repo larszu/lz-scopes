@@ -1,4 +1,4 @@
-// lz-scope bridge: decodes network streams (RTSP, RTMP, UDP, RTP, HTTP/HLS …) with
+// lz-scopes bridge: decodes network streams (RTSP, RTMP, UDP, RTP, HTTP/HLS …) with
 // ffmpeg and pushes raw RGBA frames to the browser over a WebSocket.
 //
 //   node server/index.mjs [--port 4190] [--host 127.0.0.1] [--dev]
@@ -177,7 +177,7 @@ const server = createServer((req, res) => {
   const path = new URL(req.url ?? '/', 'http://x').pathname;
   if (path === '/api/health') {
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
-    return res.end(JSON.stringify({ ok: true, name: 'lz-scope-bridge', patterns: Object.keys(TEST_PATTERNS) }));
+    return res.end(JSON.stringify({ ok: true, name: 'lz-scopes-bridge', patterns: Object.keys(TEST_PATTERNS) }));
   }
   if (DEV) { res.writeHead(404); return res.end('bridge only (dev mode) – UI via vite'); }
   let file = normalize(join(DIST, decodeURIComponent(path)));
@@ -194,5 +194,5 @@ wss.on('connection', (ws, req) => {
 });
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  server.listen(PORT, HOST, () => console.log(`lz-scope bridge on http://${HOST}:${PORT}${DEV ? ' (dev)' : ''}`));
+  server.listen(PORT, HOST, () => console.log(`lz-scopes bridge on http://${HOST}:${PORT}${DEV ? ' (dev)' : ''}`));
 }

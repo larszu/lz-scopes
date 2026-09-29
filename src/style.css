@@ -101,3 +101,4 @@ kbd { border: 1px solid var(--line-2); border-radius: 3px; padding: 0 3px; }
 @media (max-width: 800px) {
   .side { position: absolute; z-index: 5; height: calc(100% - 42px); width: min(300px, 90vw); }
 }
+.src select.pattern { flex: 1; min-width: 0; }

@@ -1,6 +1,7 @@
 import { detectColorspace, detectTransfer, type Colorspace, type Transfer } from './color';
+import { patternById, renderPattern } from './patterns';
 
-export type SourceKind = 'stream' | 'webcam' | 'screen' | 'file';
+export type SourceKind = 'stream' | 'webcam' | 'screen' | 'file' | 'pattern';
 
 export interface SourceSettings {
   transfer: 'auto' | Transfer;
@@ -43,7 +44,9 @@ export class Source {
   /** Latest raw frame (bridge streams). */
   data: Uint8Array | Uint16Array | null = null;
   /** Browser-decoded media (webcam, screen, files). */
-  element: HTMLVideoElement | HTMLImageElement | null = null;
+  element: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement | null = null;
+  /** Test pattern state (kind 'pattern'). */
+  pattern = { id: 'smpte75', width: 1920, height: 1080, label: '' };
   frameSeq = 0;
   fps = 0;
   dropped = 0;
@@ -53,6 +56,7 @@ export class Source {
   onChange: () => void = () => {};
 
   private ws: WebSocket | null = null;
+  private patternTimer: ReturnType<typeof setInterval> | null = null;
   private media: MediaStream | null = null;
   private objectUrl: string | null = null;
   private frameTimes: number[] = [];
@@ -62,12 +66,13 @@ export class Source {
   constructor(kind: SourceKind, name?: string, settings?: Partial<SourceSettings>) {
     this.id = `s${nextId++}`;
     this.kind = kind;
-    this.name = name ?? { stream: 'Stream', webcam: 'Kamera', screen: 'Bildschirm', file: 'Datei' }[kind];
+    this.name = name ?? { stream: 'Stream', webcam: 'Kamera', screen: 'Bildschirm', file: 'Datei', pattern: 'Testbild' }[kind];
     this.settings = { ...DEFAULT_SETTINGS, ...settings };
   }
 
   get transfer(): Transfer {
     if (this.settings.transfer !== 'auto') return this.settings.transfer;
+    if (this.kind === 'pattern') return patternById(this.pattern.id).transfer ?? 'sdr';
     return detectTransfer(this.info?.transfer);
   }
   get colorspace(): Colorspace {
@@ -95,7 +100,16 @@ export class Source {
     this.set('connecting', 'Verbinde …');
     const { width, fps, depth, transport } = this.settings;
     const q = new URLSearchParams({ url, width: String(width), fps: String(fps), depth: String(depth), transport });
-    const ws = new WebSocket(`${bridge}/stream?${q}`);
+    this.connectFrames(`${bridge}/stream?${q}`, false);
+  }
+
+  /**
+   * Connect to any endpoint speaking the LZ Scopes frame protocol (docs/frame-protocol.md),
+   * e.g. a host bridge that keeps the camera address to itself: `ws://host/scope/3`.
+   */
+  connectFrames(wsUrl: string, reset = true) {
+    if (reset) { this.stop(); this.url = wsUrl; this.set('connecting', 'Verbinde …'); }
+    const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
     ws.onmessage = (ev) => {
@@ -162,6 +176,37 @@ export class Source {
     }
   }
 
+  /** Generate a test pattern into a canvas; animated patterns redraw at 25 fps. */
+  async startPattern() {
+    this.stop();
+    const { id, width, height, label } = this.pattern;
+    const def = patternById(id);
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+    const t0 = performance.now();
+    try {
+      await renderPattern(ctx, def, width, height, 0, label);
+    } catch (e) {
+      this.set('error', (e as Error).message);
+      return;
+    }
+    this.element = canvas; this.width = width; this.height = height; this.depth = 8;
+    this.tick();
+    this.set('live', `${def.name} · ${width}×${height}`);
+    if (def.animated) {
+      let busy = false;
+      const timer = setInterval(async () => {
+        if (busy || this.frozen || this.element !== canvas) return;
+        busy = true;
+        await renderPattern(ctx, def, width, height, (performance.now() - t0) / 1000, label);
+        busy = false;
+        this.tick();
+      }, 40);
+      this.patternTimer = timer;
+    }
+  }
+
   private attachVideo(v: HTMLVideoElement) {
     this.element = v; this.width = v.videoWidth; this.height = v.videoHeight; this.depth = 8;
     const onFrame = () => {
@@ -179,6 +224,7 @@ export class Source {
   }
 
   stop() {
+    if (this.patternTimer) { clearInterval(this.patternTimer); this.patternTimer = null; }
     if (this.ws) { const ws = this.ws; this.ws = null; ws.onclose = null; ws.close(); }
     this.media?.getTracks().forEach((t) => t.stop());
     this.media = null;

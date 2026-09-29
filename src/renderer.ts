@@ -2,16 +2,17 @@
 // GPU by scattering every sampled pixel as a point into a float accumulation buffer
 // (additive blending), then tone-mapped into the panel's plot rectangle.
 
-import { GAMUTS, LUMA, hexToRgb, rgbToXyzMatrix, type Colorspace, type FalseColorBand, type Transfer } from './color';
+import { GAMUTS, LUMA, hexToRgb, hlgGamma, hlgInverseOetf, isLog, rgbToXyzMatrix, type Colorspace, type FalseColorBand, type Transfer } from './color';
+import { LOG_GLSL, logUniforms } from './camera';
 import type { Source } from './sources';
 
 export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'skin';
 const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7 };
 const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1 };
-const TRANSFER_ID: Record<Transfer, number> = { sdr: 0, pq: 1, hlg: 2 };
+const transferId = (t: Transfer) => (t === 'pq' ? 1 : t === 'hlg' ? 2 : isLog(t) ? 3 : 0);
 
-export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin';
-const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5 };
+export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'gamut';
+const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5, gamut: 6 };
 
 /** Region of interest in source pixels [x0, y0, x1, y1) and skin-tone detection window. */
 export type Roi = [number, number, number, number] | null;
@@ -38,11 +39,44 @@ bool isSkin(float cb, float cr, float tol) {
 
 export interface Rect { x: number; y: number; w: number; h: number }
 
-/** Vertical waveform range: signal level at the bottom and top edge of the plot. */
-export const WAVE_MIN = -0.05;
-export const WAVE_MAX = 1.05;
-/** CIE xy plot window (square). */
+/**
+ * Vertical waveform range: signal level at the bottom and top edge of the plot. Wide enough
+ * for the R 103 limits −5/105 % to show as lines and for BT.2111 −7 %/109 % (ebu-video.md, Abw. 13).
+ */
+export const WAVE_MIN = -0.07;
+export const WAVE_MAX = 1.1;
+/** CIE 1931 xy plot window (square). */
 export const CIE_VIEW = { x0: -0.05, x1: 0.85, y0: -0.03, y1: 0.87 };
+/** CIE 1976 u′v′ plot window (square). */
+export const CIE_VIEW_UV = { x0: -0.05, x1: 0.65, y0: -0.05, y1: 0.65 };
+
+/**
+ * Signal → linear light with 1.0 = reference white, shared by the CIE scatter and the
+ * picture view. SDR: BT.1886 γ 2.4. PQ: cd/m² / 203. HLG: BT.2100 OOTF on luminance
+ * (Y_S from the source primaries, γ from Lw), normalised to the 75 % HLG level.
+ * Log: scene-linear from the camera curve (0.18 = grey card).
+ */
+const LINEAR_GLSL = `
+uniform int uTransfer; uniform float uHlgK, uHlgGamma; uniform vec3 uYs;
+${LOG_GLSL}
+float pqLin(float v) {
+  float p = pow(max(v, 0.0), 1.0 / 78.84375);
+  return 10000.0 / 203.0 * pow(max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125);
+}
+float hlgInv(float v) {
+  v = max(v, 0.0);
+  return v <= 0.5 ? v * v / 3.0 : (exp((v - 0.55991073) / 0.17883277) + 0.28466892) / 12.0;
+}
+vec3 toLinear(vec3 rgb) {
+  if (uTransfer == 1) return vec3(pqLin(rgb.r), pqLin(rgb.g), pqLin(rgb.b));
+  if (uTransfer == 2) {
+    vec3 e = vec3(hlgInv(rgb.r), hlgInv(rgb.g), hlgInv(rgb.b));
+    float ys = dot(e, uYs);
+    return ys > 0.0 ? e * uHlgK * pow(ys, uHlgGamma - 1.0) : vec3(0.0);
+  }
+  if (uTransfer == 3) return vec3(logDecode(rgb.r), logDecode(rgb.g), logDecode(rgb.b));
+  return pow(max(rgb, 0.0), vec3(2.4));
+}`;
 
 const FETCH = (u16: boolean) => u16
   ? `uniform highp usampler2D uSrc;
@@ -54,7 +88,7 @@ const SCATTER_VS = (u16: boolean) => `#version 300 es
 precision highp float; precision highp int;
 ${FETCH(u16)}
 uniform ivec2 uSize;
-uniform int uStep, uCols, uMode, uTransfer, uColorize;
+uniform int uStep, uCols, uMode, uColorize, uCieUv;
 uniform vec2 uK;
 uniform float uZoom, uIntensity, uWMin, uWMax, uPointSize;
 uniform mat3 uToXYZ;
@@ -64,18 +98,7 @@ uniform vec3 uSkin, uTint;
 out vec3 vColor;
 out float vW;
 ${SKIN_GLSL}
-
-float eotf(float v) {
-  v = max(v, 0.0);
-  if (uTransfer == 1) { // PQ → relative linear
-    float p = pow(v, 1.0 / 78.84375);
-    return pow(max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125);
-  }
-  if (uTransfer == 2) { // HLG inverse OETF
-    return v <= 0.5 ? v * v / 3.0 : (exp((v - 0.55991073) / 0.17883277) + 0.28466892) / 12.0;
-  }
-  return pow(v, 2.4);
-}
+${LINEAR_GLSL}
 
 float waveY(float v) { return (v - uWMin) / (uWMax - uWMin) * 2.0 - 1.0; }
 
@@ -127,11 +150,11 @@ void main() {
     pos = vec2(cb, cr) * 2.0 * 0.9 * uZoom;
     if (uColorize == 1) col = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
   } else {
-    vec3 lin = vec3(eotf(rgb.r), eotf(rgb.g), eotf(rgb.b));
-    vec3 XYZ = uToXYZ * lin;
-    float s = XYZ.x + XYZ.y + XYZ.z;
+    vec3 XYZ = uToXYZ * toLinear(rgb);
+    float s = uCieUv == 1 ? XYZ.x + 15.0 * XYZ.y + 3.0 * XYZ.z : XYZ.x + XYZ.y + XYZ.z;
     if (s < 1e-6) { gl_Position = vec4(9.0); return; }
-    vec2 xy = XYZ.xy / s;
+    // CIE 1931 xy or CIE 1976 u'v' = (4X, 9Y)/(X + 15Y + 3Z)
+    vec2 xy = uCieUv == 1 ? vec2(4.0 * XYZ.x, 9.0 * XYZ.y) / s : XYZ.xy / s;
     pos = vec2((xy.x - uCie.x) / (uCie.y - uCie.x), (xy.y - uCie.z) / (uCie.w - uCie.z)) * 2.0 - 1.0;
     col = uColorize == 1 ? clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0) : mono;
   }
@@ -182,30 +205,19 @@ ${FETCH(u16)}
 uniform ivec2 uSize; uniform int uMode; uniform vec2 uK;
 uniform vec4 uBand[8]; uniform int uBands;
 uniform float uZebra, uZebraLow;
-uniform int uInTransfer, uDisp;
-uniform mat3 uGamut;
+uniform int uDisp;
+uniform mat3 uGamut, uWarn;
 uniform vec3 uSkin;
 ${ROI_GLSL}
 in vec2 vUv; out vec4 o;
 ${SKIN_GLSL}
-float lin(float v) {
-  v = max(v, 0.0);
-  if (uInTransfer == 1) { // PQ → relative to 203 cd/m² reference white
-    float p = pow(v, 1.0 / 78.84375);
-    return 10000.0 / 203.0 * pow(max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125);
-  }
-  if (uInTransfer == 2) { // HLG on a 1000 cd/m² display, relative to 203
-    float e = v <= 0.5 ? v * v / 3.0 : (exp((v - 0.55991073) / 0.17883277) + 0.28466892) / 12.0;
-    return 1000.0 / 203.0 * pow(e, 1.2);
-  }
-  return pow(v, 2.4); // BT.1886
-}
+${LINEAR_GLSL}
 float srgbOetf(float l) { return l <= 0.0031308 ? 12.92 * l : 1.055 * pow(l, 1.0 / 2.4) - 0.055; }
 /** Signal → what the chosen display should show (uDisp 0 sRGB/P3 curve, 1 BT.1886, 2 raw). */
 vec3 toDisplay(vec3 rgb) {
   if (uDisp == 2) return rgb;
-  vec3 l = uGamut * vec3(lin(rgb.r), lin(rgb.g), lin(rgb.b));
-  if (uInTransfer != 0) { // simple highlight roll-off for HDR on SDR
+  vec3 l = uGamut * toLinear(rgb);
+  if (uTransfer != 0) { // simple highlight roll-off for HDR/log on SDR (approximation, not BT.2390/BT.2408)
     float m = max(l.r, max(l.g, l.b)), w = 4.0;
     if (m > 0.0) l *= (1.0 + m / (w * w)) / (1.0 + m);
   }
@@ -246,6 +258,15 @@ void main() {
     if (l) c = vec3(0.15, 0.3, 1.0);
   } else if (uMode == 4) {
     c = vec3(Y);
+  } else if (uMode == 6) {
+    // gamut warning: distance d = (max - c)/max in the target gamut; d > 1 = a channel is negative
+    vec3 t = uWarn * toLinear(rgb);
+    float ach = max(t.r, max(t.g, t.b));
+    float d = ach > 0.0 ? max((ach - t.r) / ach, max((ach - t.g) / ach, (ach - t.b) / ach)) : 0.0;
+    c = vec3(dot(c, vec3(0.2126, 0.7152, 0.0722)) * 0.7);
+    if (d > 1.2) c = vec3(1.0, 0.1, 0.75);
+    else if (d > 1.05) c = vec3(1.0, 0.45, 0.05);
+    else if (d > 1.0) c = vec3(1.0, 0.9, 0.1);
   }
   if (uRoiCount > 0 && !inRoi(p)) c *= 0.55;
   o = vec4(c, 1.0);
@@ -258,10 +279,18 @@ export interface ScatterParams {
   /** colorize: false/0 mono, true/1 channel colours (or source colours for luma/vector), 2 source colours in parades */
   mode: ScatterMode; gain: number; colorize: boolean | 0 | 1 | 2; zoom: number; tint: [number, number, number]; maxSamples: number;
   roi: Rois; skin: SkinRange;
+  /** CIE scope in CIE 1976 u′v′ instead of 1931 xy */
+  cieUv?: boolean;
 }
 /** How the picture view maps the signal to the screen. */
 export interface DisplayParams { curve: 0 | 1 | 2; gamut: number[] /* row-major 3×3 input→display, linear */ }
-export interface PictureParams { mode: PictureMode; bands: FalseColorBand[]; zebra: number; zebraLow: number; roi: Rois; skin: SkinRange; display: DisplayParams }
+export interface PictureParams {
+  mode: PictureMode; bands: FalseColorBand[]; zebra: number; zebraLow: number; roi: Rois; skin: SkinRange; display: DisplayParams;
+  /** gamut warning: row-major 3×3 source linear → target gamut linear */
+  warn?: number[];
+}
+
+const colMajor = (m: number[]) => [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
 
 export class Renderer {
   readonly gl: WebGL2RenderingContext;
@@ -409,6 +438,23 @@ export class Renderer {
     return { x, y, w, h };
   }
 
+  /** Uniforms of LINEAR_GLSL for a source (transfer, HLG OOTF, log curve). */
+  private linearUniforms(prog: WebGLProgram, src: Source) {
+    const gl = this.gl, t = src.transfer;
+    gl.uniform1i(this.u(prog, 'uTransfer'), transferId(t));
+    const lw = src.hlgLw, g = hlgGamma(lw);
+    // normalise to the HLG reference white (75 % signal, BT.2408) on this display
+    const refWhite = lw * Math.pow(hlgInverseOetf(0.75), g);
+    gl.uniform1f(this.u(prog, 'uHlgK'), lw / refWhite);
+    gl.uniform1f(this.u(prog, 'uHlgGamma'), g);
+    const m = rgbToXyzMatrix(GAMUTS[src.gamut]);
+    gl.uniform3f(this.u(prog, 'uYs'), m[3], m[4], m[5]);
+    const lu = isLog(t) ? logUniforms(t) : { kind: 0, a: [10, 1, 0, 1], b: [0, 0, 1, 0] };
+    gl.uniform1i(this.u(prog, 'uLogKind'), lu.kind);
+    gl.uniform4fv(this.u(prog, 'uLogA'), lu.a);
+    gl.uniform4fv(this.u(prog, 'uLogB'), lu.b);
+  }
+
   /**
    * @param overlay add the traces on top of what is already there (scope over picture)
    * @param opacity trace strength when overlaid (0…1)
@@ -433,7 +479,7 @@ export class Renderer {
     const intensity = ((p.mode === 'vector' || p.mode === 'cie' ? 0.6 : 0.9) * area) / n / (dot * dot);
 
     // Only re-scatter when the frame or a parameter changed; otherwise reuse the accumulation.
-    const sig = `${src.id}:${src.frameSeq}:${t.w}x${t.h}:${acc.w}x${acc.h}:${src.colorspace}:${src.transfer}:${JSON.stringify(p)}`;
+    const sig = `${src.id}:${src.frameSeq}:${t.w}x${t.h}:${acc.w}x${acc.h}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${JSON.stringify(p)}`;
     const fresh = this.sigs.get(key) !== sig;
     this.sigs.set(key, sig);
     if (fresh) {
@@ -452,7 +498,8 @@ export class Renderer {
     gl.uniform1i(this.u(prog, 'uStep'), step);
     gl.uniform1i(this.u(prog, 'uCols'), cols);
     gl.uniform1i(this.u(prog, 'uMode'), mode);
-    gl.uniform1i(this.u(prog, 'uTransfer'), TRANSFER_ID[src.transfer]);
+    this.linearUniforms(prog, src);
+    gl.uniform1i(this.u(prog, 'uCieUv'), p.cieUv ? 1 : 0);
     gl.uniform1i(this.u(prog, 'uColorize'), Number(p.colorize));
     gl.uniform2f(this.u(prog, 'uK'), kr, kb);
     gl.uniform1f(this.u(prog, 'uZoom'), p.zoom);
@@ -460,10 +507,10 @@ export class Renderer {
     gl.uniform1f(this.u(prog, 'uPointSize'), dot);
     gl.uniform1f(this.u(prog, 'uWMin'), WAVE_MIN);
     gl.uniform1f(this.u(prog, 'uWMax'), WAVE_MAX);
-    const m = rgbToXyzMatrix(GAMUTS[cs === '2020' ? '2020' : cs === '601' ? '601' : '709']);
     // GLSL mat3 is column-major
-    gl.uniformMatrix3fv(this.u(prog, 'uToXYZ'), false, [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]]);
-    gl.uniform4f(this.u(prog, 'uCie'), CIE_VIEW.x0, CIE_VIEW.x1, CIE_VIEW.y0, CIE_VIEW.y1);
+    gl.uniformMatrix3fv(this.u(prog, 'uToXYZ'), false, colMajor(rgbToXyzMatrix(GAMUTS[src.gamut])));
+    const cv = p.cieUv ? CIE_VIEW_UV : CIE_VIEW;
+    gl.uniform4f(this.u(prog, 'uCie'), cv.x0, cv.x1, cv.y0, cv.y1);
     this.setRois(prog, p.roi);
     gl.uniform3f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol);
     gl.uniform3fv(this.u(prog, 'uTint'), p.tint);
@@ -522,10 +569,10 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
     gl.uniform2f(this.u(prog, 'uK'), kr, kb);
     gl.uniform1f(this.u(prog, 'uZebra'), p.zebra);
     gl.uniform1f(this.u(prog, 'uZebraLow'), p.zebraLow);
-    gl.uniform1i(this.u(prog, 'uInTransfer'), TRANSFER_ID[src.transfer]);
+    this.linearUniforms(prog, src);
     gl.uniform1i(this.u(prog, 'uDisp'), p.display.curve);
-    const g = p.display.gamut;
-    gl.uniformMatrix3fv(this.u(prog, 'uGamut'), false, [g[0], g[3], g[6], g[1], g[4], g[7], g[2], g[5], g[8]]);
+    gl.uniformMatrix3fv(this.u(prog, 'uGamut'), false, colMajor(p.display.gamut));
+    gl.uniformMatrix3fv(this.u(prog, 'uWarn'), false, colMajor(p.warn ?? [1, 0, 0, 0, 1, 0, 0, 0, 1]));
     gl.uniform3f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol);
     this.setRois(prog, p.roi);
     const bands = new Float32Array(32);

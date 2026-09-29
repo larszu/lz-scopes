@@ -14,6 +14,15 @@ Die Komponenten unten behalten ihre eigenen Lizenzen.
 | [ffmpeg-static](https://github.com/eugeneware/ffmpeg-static) | 5.3.0 | GPL-3.0-or-later (wrapper) | desktop app only | see below |
 | [Electron](https://www.electronjs.org/) | 44.4.5 | MIT | desktop app | Chromium and Node.js inside it carry their own notices (`LICENSES.chromium.html` in the app bundle) |
 
+## Ported formulas and constants
+
+| Source | Licence | Where | What |
+|---|---|---|---|
+| [alwan](https://github.com/soufianekhiat/alwan) (Copyright (c) 2025 Soufiane KHIAT) | MIT, text in [licenses/alwan-LICENSE.txt](licenses/alwan-LICENSE.txt) | `src/camera.ts`, `src/color.ts` | camera log curves and camera primaries, CIE 1976 u′v′, CIEDE2000, ΔE ITP; file and line references in the code |
+| [aces-core](https://github.com/aces-aswf/aces-core) (Copyright Contributors to the ACES Project) | Apache-2.0, text in [licenses/aces-core-LICENSE.txt](licenses/aces-core-LICENSE.txt) | `src/color.ts` (`bradford`) | Bradford cone response matrix and von-Kries adaptation from `lib/Lib.Academy.ColorSpaces.ctl`; changed: column-vector convention, ported to TypeScript |
+
+The `licenses/` folder ships with the desktop app. The gamut distance `(max − c)/max` follows the idea of jedypod/gamut-compress (no licence file); the formula is written anew.
+
 ## ffmpeg (desktop app)
 
 The desktop installers bundle a static **ffmpeg binary** (via `ffmpeg-static`) and start it as a separate process to decode network streams. That binary is built with GPL components and is licensed under the **GPL** (the ffmpeg code base is mainly LGPL, optional components are GPL; see `ffmpeg.LICENSE` in `node_modules/ffmpeg-static/`). LZ Scopes talks to it only through the command line and a pipe; it is not linked into the app.

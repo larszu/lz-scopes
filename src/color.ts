@@ -5,13 +5,33 @@ import { CAMERA_GAMUTS, LOG_CURVES, isLogCurve, logSceneToSignal, logSignalToSce
 
 /** Y'CbCr matrix and default primaries. '601' = 525 lines (SMPTE-C), '601-625' = 625 lines (EBU). */
 export type Colorspace = '709' | '2020' | '601' | '601-625';
+/**
+ * SDR display curves: 'sdr' = BT.1886 (γ 2.4), pure power laws 2.2/2.6/2.8 (BT.470 names γ 2.2 for
+ * 525 and 2.8 for 625 lines), sRGB (IEC 61966-2-1) and linear.
+ */
+export type GammaTransfer = 'sdr' | 'g22' | 'g26' | 'g28' | 'srgb' | 'linear';
 /** Display transfers plus scene-referred camera log curves (src/camera.ts). */
-export type Transfer = 'sdr' | 'pq' | 'hlg' | LogCurve;
+export type Transfer = GammaTransfer | 'pq' | 'hlg' | LogCurve;
 export type { LogCurve } from './camera';
 export const isLog = (t: Transfer): t is LogCurve => isLogCurve(t);
+export const GAMMA_EXP: Partial<Record<Transfer, number>> = { sdr: 2.4, g22: 2.2, g26: 2.6, g28: 2.8 };
+export const isGamma = (t: Transfer): t is GammaTransfer => t in GAMMA_EXP || t === 'srgb' || t === 'linear';
 
+const GAMMA_LABELS: Record<GammaTransfer, string> = { sdr: 'SDR BT.1886 (γ 2,4)', g22: 'Gamma 2,2', g26: 'Gamma 2,6', g28: 'Gamma 2,8', srgb: 'sRGB', linear: 'Linear' };
 export function transferLabel(t: Transfer) {
-  return isLog(t) ? LOG_CURVES[t].name : t === 'sdr' ? 'SDR' : t.toUpperCase();
+  return isLog(t) ? LOG_CURVES[t].name : isGamma(t) ? GAMMA_LABELS[t] : t.toUpperCase();
+}
+
+/** Relative display light (0…1 = black…white) of an SDR-curve signal, and back. */
+export function gammaEotf(t: GammaTransfer, v: number) {
+  if (t === 'linear') return v;
+  if (t === 'srgb') { const a = Math.abs(v); return Math.sign(v) * (a <= 0.04045 ? a / 12.92 : Math.pow((a + 0.055) / 1.055, 2.4)); }
+  return Math.pow(Math.max(0, v), GAMMA_EXP[t]!);
+}
+export function gammaInverse(t: GammaTransfer, l: number) {
+  if (t === 'linear') return l;
+  if (t === 'srgb') { const a = Math.abs(l); return Math.sign(l) * (a <= 0.0031308 ? 12.92 * a : 1.055 * Math.pow(a, 1 / 2.4) - 0.055); }
+  return Math.pow(Math.max(0, l), 1 / GAMMA_EXP[t]!);
 }
 
 /** Luma coefficients Kr, Kb (ITU-R BT.601 / BT.709 / BT.2020). */
@@ -159,10 +179,10 @@ export function sdrFromNits(n: number) { return Math.pow(Math.max(0, n) / 100, 1
 
 /** Display luminance of a signal level. Log curves are scene-referred: see signalToScene. */
 export function signalToNits(v: number, t: Transfer, lw = 1000) {
-  return t === 'pq' ? pqDecode(v) : t === 'hlg' ? hlgNits(v, lw) : isLog(t) ? 100 * logSignalToScene(t, v) : sdrNits(v);
+  return t === 'pq' ? pqDecode(v) : t === 'hlg' ? hlgNits(v, lw) : isLog(t) ? 100 * logSignalToScene(t, v) : 100 * gammaEotf(t, v);
 }
 export function nitsToSignal(n: number, t: Transfer, lw = 1000) {
-  return t === 'pq' ? pqEncode(n) : t === 'hlg' ? hlgFromNits(n, lw) : isLog(t) ? logSceneToSignal(t, n / 100) : sdrFromNits(n);
+  return t === 'pq' ? pqEncode(n) : t === 'hlg' ? hlgFromNits(n, lw) : isLog(t) ? logSceneToSignal(t, n / 100) : gammaInverse(t, Math.max(0, n) / 100);
 }
 /** Scene-linear reflectance (0.18 = grey card) of a log signal level. */
 export function signalToScene(v: number, t: LogCurve) { return logSignalToScene(t, v); }
@@ -177,12 +197,17 @@ export function levelText(v: number, t: Transfer, lw = 1000) {
   return `${Math.round(signalToNits(v, t, lw))} cd/m² (${transferLabel(t)}${t === 'hlg' && lw !== 1000 ? ` ${lw}` : ''})`;
 }
 
-/** Map ffprobe colour metadata to our settings. */
+/** ffprobe color_transfer names and what they mean here. Unlisted/unknown = not signalled. */
+const FF_TRANSFER: Record<string, Transfer> = {
+  smpte2084: 'pq', 'arib-std-b67': 'hlg', bt709: 'sdr', smpte170m: 'sdr', 'bt2020-10': 'sdr', 'bt2020-12': 'sdr', bt1361e: 'sdr',
+  smpte240m: 'sdr', gamma22: 'g22', gamma28: 'g28', 'iec61966-2-1': 'srgb', 'iec61966-2-4': 'sdr', linear: 'linear',
+};
+/** Map ffprobe colour metadata to our settings (BT.1886 when nothing is signalled). */
 export function detectTransfer(ffTransfer?: string): Transfer {
-  if (ffTransfer === 'smpte2084') return 'pq';
-  if (ffTransfer === 'arib-std-b67') return 'hlg';
-  return 'sdr';
+  return (ffTransfer && FF_TRANSFER[ffTransfer]) || 'sdr';
 }
+/** Is the transfer actually signalled in the stream (vs. assumed)? */
+export const transferSignalled = (ffTransfer?: string) => !!(ffTransfer && FF_TRANSFER[ffTransfer]);
 /** 525/625 split: bt470bg = 625 lines (EBU primaries), smpte170m = 525 lines (SMPTE-C). */
 export function detectColorspace(matrix?: string, primaries?: string, height = 1080): Colorspace {
   if (matrix?.startsWith('bt2020') || primaries === 'bt2020') return '2020';
@@ -345,4 +370,56 @@ export function gamutDistance(rgb: number[]): number {
   const ach = Math.max(rgb[0], rgb[1], rgb[2]);
   if (ach <= 0) return 0;
   return Math.max(...rgb.map((c) => (ach - c) / Math.abs(ach)));
+}
+
+// ---------------------------------------------------------------- linear light (CST, shared with the shaders)
+
+/** HLG reference white (75 % signal, BT.2408) in cd/m² on a display of peak Lw. */
+export const hlgRefWhite = (lw = 1000) => lw * Math.pow(hlgInverseOetf(0.75), hlgGamma(lw));
+
+/**
+ * Signal R'G'B' → linear light with 1.0 = reference white (mirror of toLinear in renderer.ts):
+ * SDR BT.1886 γ 2.4 · PQ cd/m²/203 · HLG OOTF on luminance (ys = Y row of the gamut) · log scene-linear.
+ */
+export function signalToLinear(rgb: number[], t: Transfer, lw = 1000, ys: number[] = [0.2627, 0.678, 0.0593]): number[] {
+  if (t === 'pq') return rgb.map((v) => pqDecode(v) / 203);
+  if (t === 'hlg') {
+    const e = rgb.map(hlgInverseOetf);
+    const y = e[0] * ys[0] + e[1] * ys[1] + e[2] * ys[2];
+    const k = y > 0 ? (lw / hlgRefWhite(lw)) * Math.pow(y, hlgGamma(lw) - 1) : 0;
+    return e.map((v) => v * k);
+  }
+  if (isLog(t)) return rgb.map((v) => logSignalToScene(t, v));
+  return rgb.map((v) => gammaEotf(t as GammaTransfer, v));
+}
+
+/** Inverse of signalToLinear (HLG: inverse OOTF, then OETF). SDR is not clipped above 1. */
+export function linearToSignal(l: number[], t: Transfer, lw = 1000, ys: number[] = [0.2627, 0.678, 0.0593]): number[] {
+  if (t === 'pq') return l.map((v) => pqEncode(v * 203));
+  if (t === 'hlg') {
+    const f = l.map((v) => (Math.max(0, v) * hlgRefWhite(lw)) / lw); // display light / Lw
+    const yd = f[0] * ys[0] + f[1] * ys[1] + f[2] * ys[2];
+    if (yd <= 0) return [0, 0, 0];
+    const g = hlgGamma(lw), y = Math.pow(yd, 1 / g), k = Math.pow(y, g - 1);
+    return f.map((v) => hlgOetf(v / k));
+  }
+  if (isLog(t)) return l.map((v) => logSceneToSignal(t, v));
+  return l.map((v) => gammaInverse(t as GammaTransfer, v));
+}
+
+/**
+ * BT.2390 EETF (ITU-R BT.2390, section 5.4): Hermite roll-off in the PQ domain from a source
+ * peak to a target peak, identity below the knee KS = 1.5·maxLum − 0.5. Ported from alwan
+ * core/alwan_hdr_core.inc l. 235–265 (MIT); black level terms left out (LB = 0).
+ * @param e PQ signal · @param srcPeak, tgtPeak PQ signal of the peaks
+ */
+export function bt2390Eetf(e: number, srcPeak: number, tgtPeak: number): number {
+  const range = Math.max(1e-10, srcPeak);
+  const en = Math.min(1, Math.max(0, e / range));
+  const maxLum = Math.min(1, tgtPeak / range);
+  const ks = Math.min(1, Math.max(0, 1.5 * maxLum - 0.5));
+  if (en <= ks) return en * range;
+  const t = Math.min(1, (en - ks) / (1 - ks + 1e-10)), t2 = t * t, t3 = t2 * t;
+  const p = (2 * t3 - 3 * t2 + 1) * ks + (t3 - 2 * t2 + t) * (1 - ks) + (-2 * t3 + 3 * t2) * maxLum;
+  return p * range;
 }

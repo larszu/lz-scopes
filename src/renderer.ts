@@ -2,14 +2,14 @@
 // GPU by scattering every sampled pixel as a point into a float accumulation buffer
 // (additive blending), then tone-mapped into the panel's plot rectangle.
 
-import { GAMUTS, LUMA, hexToRgb, hlgGamma, hlgInverseOetf, isLog, rgbToXyzMatrix, type Colorspace, type FalseColorBand, type Transfer } from './color';
-import { LOG_GLSL, logUniforms } from './camera';
+import { GAMUTS, LUMA, hexToRgb, rgbToXyzMatrix, type Colorspace, type FalseColorBand } from './color';
+import { CHAIN_GLSL, baseOf, chainOf, linearGlsl, setChainUniforms, setLinearUniforms, type LutTex } from './chain';
+import type { Lut } from './lut';
 import type { Source } from './sources';
 
 export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'skin';
 const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7 };
 const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1 };
-const transferId = (t: Transfer) => (t === 'pq' ? 1 : t === 'hlg' ? 2 : isLog(t) ? 3 : 0);
 
 export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'gamut';
 const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5, gamut: 6 };
@@ -56,39 +56,21 @@ export const CIE_VIEW_UV = { x0: -0.05, x1: 0.65, y0: -0.05, y1: 0.65 };
  * (Y_S from the source primaries, γ from Lw), normalised to the 75 % HLG level.
  * Log: scene-linear from the camera curve (0.18 = grey card).
  */
-const LINEAR_GLSL = `
-uniform int uTransfer; uniform float uHlgK, uHlgGamma; uniform vec3 uYs;
-${LOG_GLSL}
-float pqLin(float v) {
-  float p = pow(max(v, 0.0), 1.0 / 78.84375);
-  return 10000.0 / 203.0 * pow(max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125);
-}
-float hlgInv(float v) {
-  v = max(v, 0.0);
-  return v <= 0.5 ? v * v / 3.0 : (exp((v - 0.55991073) / 0.17883277) + 0.28466892) / 12.0;
-}
-vec3 toLinear(vec3 rgb) {
-  if (uTransfer == 1) return vec3(pqLin(rgb.r), pqLin(rgb.g), pqLin(rgb.b));
-  if (uTransfer == 2) {
-    vec3 e = vec3(hlgInv(rgb.r), hlgInv(rgb.g), hlgInv(rgb.b));
-    float ys = dot(e, uYs);
-    return ys > 0.0 ? e * uHlgK * pow(ys, uHlgGamma - 1.0) : vec3(0.0);
-  }
-  if (uTransfer == 3) return vec3(logDecode(rgb.r), logDecode(rgb.g), logDecode(rgb.b));
-  return pow(max(rgb, 0.0), vec3(2.4));
-}`;
+const LINEAR_GLSL = linearGlsl();
 
-const FETCH = (u16: boolean) => u16
+/** Raw source texel plus the processing chain (CST/LUT, see chain.ts) → fetchRGB. */
+const FETCH = (u16: boolean) => (u16
   ? `uniform highp usampler2D uSrc;
-     vec3 fetchRGB(ivec2 p) { return vec3(texelFetch(uSrc, p, 0).rgb) / 65535.0; }`
+     vec3 fetchRaw(ivec2 p) { return vec3(texelFetch(uSrc, p, 0).rgb) / 65535.0; }`
   : `uniform highp sampler2D uSrc;
-     vec3 fetchRGB(ivec2 p) { return texelFetch(uSrc, p, 0).rgb; }`;
+     vec3 fetchRaw(ivec2 p) { return texelFetch(uSrc, p, 0).rgb; }`) + CHAIN_GLSL;
 
 const SCATTER_VS = (u16: boolean) => `#version 300 es
 precision highp float; precision highp int;
 ${FETCH(u16)}
 uniform ivec2 uSize;
-uniform int uStep, uCols, uMode, uColorize, uCieUv;
+uniform int uStep, uCols, uMode, uColorize, uCieUv, uSecN;
+uniform ivec4 uSec; // section per trace instance (-1 = hidden channel)
 uniform vec2 uK;
 uniform float uZoom, uIntensity, uWMin, uWMax, uPointSize;
 uniform mat3 uToXYZ;
@@ -129,16 +111,18 @@ void main() {
     pos = vec2(x * 2.0 - 1.0, waveY(Y));
     if (uColorize == 1) col = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
   } else if (uMode == 1 || uMode == 2) {
+    if (uSec[ch] < 0) { gl_Position = vec4(9.0); return; }
     float v = ch == 0 ? rgb.r : ch == 1 ? rgb.g : rgb.b;
-    float px = uMode == 2 ? (float(ch) + x) / 3.0 : x;
+    float px = uMode == 2 ? (float(uSec[ch]) + x) / float(uSecN) : x;
     pos = vec2(px * 2.0 - 1.0, waveY(v));
     // source colours: in each channel's section only the pixels dominated by that channel are coloured
     float cv = ch == 0 ? rgb.r : ch == 1 ? rgb.g : rgb.b;
     bool dom = cv >= max(rgb.r, max(rgb.g, rgb.b)) - 0.02 && cv - min(rgb.r, min(rgb.g, rgb.b)) > 0.04;
     col = uColorize == 2 ? (dom ? srcCol : vec3(0.3)) : uColorize == 1 || uMode == 1 ? unit[ch] : mono;
   } else if (uMode == 3) {
+    if (uSec[ch] < 0) { gl_Position = vec4(9.0); return; }
     float v = ch == 0 ? Y : ch == 1 ? rgb.r : ch == 2 ? rgb.g : rgb.b;
-    pos = vec2((float(ch) + x) / 4.0 * 2.0 - 1.0, waveY(v));
+    pos = vec2((float(uSec[ch]) + x) / float(uSecN) * 2.0 - 1.0, waveY(v));
     float cv3 = ch == 1 ? rgb.r : ch == 2 ? rgb.g : rgb.b;
     bool dom3 = ch > 0 && cv3 >= max(rgb.r, max(rgb.g, rgb.b)) - 0.02 && cv3 - min(rgb.r, min(rgb.g, rgb.b)) > 0.04;
     col = uColorize == 2 ? (ch == 0 ? srcCol : dom3 ? srcCol : vec3(0.3)) : ch == 0 || uColorize == 0 ? mono : unit[ch - 1];
@@ -217,7 +201,7 @@ float srgbOetf(float l) { return l <= 0.0031308 ? 12.92 * l : 1.055 * pow(l, 1.0
 vec3 toDisplay(vec3 rgb) {
   if (uDisp == 2) return rgb;
   vec3 l = uGamut * toLinear(rgb);
-  if (uTransfer != 0) { // simple highlight roll-off for HDR/log on SDR (approximation, not BT.2390/BT.2408)
+  if (uTransfer >= 1 && uTransfer <= 3) { // simple highlight roll-off for HDR/log on SDR (approximation, not BT.2390/BT.2408)
     float m = max(l.r, max(l.g, l.b)), w = 4.0;
     if (m > 0.0) l *= (1.0 + m / (w * w)) / (1.0 + m);
   }
@@ -281,6 +265,9 @@ export interface ScatterParams {
   roi: Rois; skin: SkinRange;
   /** CIE scope in CIE 1976 u′v′ instead of 1931 xy */
   cieUv?: boolean;
+  /** waveforms: vertical range (zoom) and trace sections (graticule.channelLayout) */
+  range?: [number, number];
+  sec?: number[]; secN?: number;
 }
 /** How the picture view maps the signal to the screen. */
 export interface DisplayParams { curve: 0 | 1 | 2; gamut: number[] /* row-major 3×3 input→display, linear */ }
@@ -300,6 +287,7 @@ export class Renderer {
   private textures = new Map<string, SrcTex>();
   private accums = new Map<string, Accum>();
   private sigs = new Map<string, string>();
+  private lutTex = new Map<string, LutTex & { version: number }>();
   dpr = 1;
 
   constructor(readonly canvas: HTMLCanvasElement) {
@@ -438,21 +426,38 @@ export class Renderer {
     return { x, y, w, h };
   }
 
-  /** Uniforms of LINEAR_GLSL for a source (transfer, HLG OOTF, log curve). */
+  /** Uniforms of LINEAR_GLSL (what the scopes see) and CHAIN_GLSL (CST/LUT) for a source or stage view. */
   private linearUniforms(prog: WebGLProgram, src: Source) {
-    const gl = this.gl, t = src.transfer;
-    gl.uniform1i(this.u(prog, 'uTransfer'), transferId(t));
-    const lw = src.hlgLw, g = hlgGamma(lw);
-    // normalise to the HLG reference white (75 % signal, BT.2408) on this display
-    const refWhite = lw * Math.pow(hlgInverseOetf(0.75), g);
-    gl.uniform1f(this.u(prog, 'uHlgK'), lw / refWhite);
-    gl.uniform1f(this.u(prog, 'uHlgGamma'), g);
-    const m = rgbToXyzMatrix(GAMUTS[src.gamut]);
-    gl.uniform3f(this.u(prog, 'uYs'), m[3], m[4], m[5]);
-    const lu = isLog(t) ? logUniforms(t) : { kind: 0, a: [10, 1, 0, 1], b: [0, 0, 1, 0] };
-    gl.uniform1i(this.u(prog, 'uLogKind'), lu.kind);
-    gl.uniform4fv(this.u(prog, 'uLogA'), lu.a);
-    gl.uniform4fv(this.u(prog, 'uLogB'), lu.b);
+    const u = (n: string) => this.u(prog, n);
+    setLinearUniforms(this.gl, u, '', { transfer: src.transfer, gamut: src.gamut, lw: src.hlgLw });
+    setChainUniforms(this.gl, u, chainOf(src), (l) => this.lutTextures(l));
+  }
+
+  /** 3D LUT as RGB32F 3D texture (red = width), 1D part as N×1 texture; read with texelFetch. */
+  private lutTextures(l: Lut & { version: number }): LutTex {
+    const gl = this.gl;
+    const have = this.lutTex.get(l.name);
+    if (have && have.version === l.version) return have;
+    if (have) { if (have.t3) gl.deleteTexture(have.t3); if (have.t1) gl.deleteTexture(have.t1); }
+    const t: LutTex & { version: number } = { version: l.version };
+    const params = (target: number) => {
+      gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    };
+    gl.activeTexture(gl.TEXTURE5);
+    if (l.cube) {
+      t.t3 = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_3D, t.t3); params(gl.TEXTURE_3D);
+      gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGB32F, l.cube.size, l.cube.size, l.cube.size, 0, gl.RGB, gl.FLOAT, l.cube.data);
+    }
+    if (l.pre) {
+      t.t1 = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, t.t1); params(gl.TEXTURE_2D);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB32F, l.pre.size, 1, 0, gl.RGB, gl.FLOAT, l.pre.data);
+    }
+    gl.activeTexture(gl.TEXTURE0);
+    this.lutTex.set(l.name, t);
+    return t;
   }
 
   /**
@@ -460,7 +465,7 @@ export class Renderer {
    * @param opacity trace strength when overlaid (0…1)
    */
   drawScatter(key: string, src: Source, rect: Rect, p: ScatterParams, overlay = false, opacity = 1) {
-    const t = this.sourceTexture(src);
+    const t = this.sourceTexture(baseOf(src));
     if (!t) return;
     const gl = this.gl;
     const vp = this.viewport(rect);
@@ -473,13 +478,13 @@ export class Renderer {
     const mode = MODE_ID[p.mode];
     const n = cols * rows;
     // Normalise so that the display brightness does not depend on source or panel size.
-    const sections = p.mode === 'parade' || p.mode === 'ycbcr' ? 3 : p.mode === 'yrgb' ? 4 : 1;
+    const sections = p.mode === 'parade' || p.mode === 'yrgb' ? p.secN ?? (p.mode === 'yrgb' ? 4 : 3) : p.mode === 'ycbcr' ? 3 : 1;
     const area = (vp.w / sections) * vp.h;
     const dot = p.mode === 'vector' || p.mode === 'cie' ? Math.max(1, Math.round(this.dpr)) : 1;
     const intensity = ((p.mode === 'vector' || p.mode === 'cie' ? 0.6 : 0.9) * area) / n / (dot * dot);
 
     // Only re-scatter when the frame or a parameter changed; otherwise reuse the accumulation.
-    const sig = `${src.id}:${src.frameSeq}:${t.w}x${t.h}:${acc.w}x${acc.h}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${JSON.stringify(p)}`;
+    const sig = `${src.id}:${src.frameSeq}:${t.w}x${t.h}:${acc.w}x${acc.h}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${chainOf(src)?.sig ?? ''}:${JSON.stringify(p)}`;
     const fresh = this.sigs.get(key) !== sig;
     this.sigs.set(key, sig);
     if (fresh) {
@@ -505,8 +510,11 @@ export class Renderer {
     gl.uniform1f(this.u(prog, 'uZoom'), p.zoom);
     gl.uniform1f(this.u(prog, 'uIntensity'), intensity);
     gl.uniform1f(this.u(prog, 'uPointSize'), dot);
-    gl.uniform1f(this.u(prog, 'uWMin'), WAVE_MIN);
-    gl.uniform1f(this.u(prog, 'uWMax'), WAVE_MAX);
+    gl.uniform1f(this.u(prog, 'uWMin'), p.range?.[0] ?? WAVE_MIN);
+    gl.uniform1f(this.u(prog, 'uWMax'), p.range?.[1] ?? WAVE_MAX);
+    const sec = p.sec ?? [0, 1, 2, 3];
+    gl.uniform4i(this.u(prog, 'uSec'), sec[0], sec[1], sec[2], sec[3] ?? 3);
+    gl.uniform1i(this.u(prog, 'uSecN'), p.secN ?? (p.mode === 'yrgb' ? 4 : 3));
     // GLSL mat3 is column-major
     gl.uniformMatrix3fv(this.u(prog, 'uToXYZ'), false, colMajor(rgbToXyzMatrix(GAMUTS[src.gamut])));
     const cv = p.cieUv ? CIE_VIEW_UV : CIE_VIEW;
@@ -552,7 +560,7 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
   }
 
   drawPicture(src: Source, rect: Rect, p: PictureParams) {
-    const t = this.sourceTexture(src);
+    const t = this.sourceTexture(baseOf(src));
     if (!t) return;
     const gl = this.gl;
     const vp = this.viewport(rect);

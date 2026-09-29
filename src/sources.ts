@@ -1,7 +1,7 @@
 import { detectColorspace, detectTransfer, type Colorspace, type Transfer } from './color';
 import { patternById, renderPattern } from './patterns';
 
-export type SourceKind = 'stream' | 'webcam' | 'screen' | 'file' | 'pattern';
+export type SourceKind = 'stream' | 'webcam' | 'screen' | 'file' | 'pattern' | 'folder';
 
 export interface SourceSettings {
   transfer: 'auto' | Transfer;
@@ -115,7 +115,7 @@ export class Source {
   constructor(kind: SourceKind, name?: string, settings?: Partial<SourceSettings>) {
     this.id = `s${nextId++}`;
     this.kind = kind;
-    this.name = name ?? { stream: 'Stream', webcam: 'Kamera', screen: 'Bildschirm', file: 'Datei', pattern: 'Testbild' }[kind];
+    this.name = name ?? { stream: 'Stream', webcam: 'Kamera', screen: 'Bildschirm/Fenster', file: 'Datei', pattern: 'Testbild', folder: 'Ordner' }[kind];
     this.settings = { ...DEFAULT_SETTINGS, ...settings };
   }
 
@@ -169,6 +169,7 @@ export class Source {
           this.set('live', `${msg.sourceWidth}×${msg.sourceHeight} ${msg.codec ?? ''}`.trim());
         } else if (msg.type === 'stats') {
           this.dropped = msg.dropped;
+          if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', msg.message);
         } else if (msg.type === 'error' || msg.type === 'end') {
           this.set(msg.type === 'end' ? 'ended' : 'error', msg.message);
         }
@@ -196,18 +197,91 @@ export class Source {
     this.tick();
   }
 
-  async startCapture(kind: 'webcam' | 'screen', deviceId?: string) {
+  /** Crop of captured/video pictures in element pixels [x0, y0, x1, y1] – e.g. Resolve's viewer in a window capture. */
+  crop: [number, number, number, number] | null = null;
+  private cropCanvas: HTMLCanvasElement | null = null;
+  private videoEl: HTMLVideoElement | null = null;
+  private folderTimer: ReturnType<typeof setInterval> | null = null;
+  /** Camera / capture device in use (webcam kind). */
+  deviceId = '';
+
+  /** Copy the cropped region of the video into a canvas that acts as the element. */
+  private applyCrop(v: HTMLVideoElement) {
+    if (!this.crop) { this.element = v; this.width = v.videoWidth; this.height = v.videoHeight; return; }
+    const [x0, y0, x1, y1] = this.crop, w = Math.max(2, x1 - x0), h = Math.max(2, y1 - y0);
+    this.cropCanvas ??= document.createElement('canvas');
+    const c = this.cropCanvas;
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    c.getContext('2d')!.drawImage(v, x0, y0, w, h, 0, 0, w, h);
+    this.element = c; this.width = w; this.height = h;
+  }
+
+  /** Set the crop from the current ROI (in the currently shown picture's pixels). */
+  cropToRoi() {
+    if (!this.roi) return false;
+    const [ox, oy] = this.crop ?? [0, 0];
+    const [x0, y0, x1, y1] = this.roi;
+    this.crop = [ox + x0, oy + y0, ox + x1, oy + y1];
+    this.roi = null;
+    if (this.videoEl) this.applyCrop(this.videoEl);
+    this.tick();
+    return true;
+  }
+  clearCrop() { this.crop = null; if (this.videoEl) this.applyCrop(this.videoEl); this.tick(); }
+
+  /**
+   * Watch a folder (File System Access API): the newest image becomes the picture –
+   * exports/stills from Resolve, Lightroom, Capture One.
+   */
+  async startFolder() {
+    this.stop();
+    const picker = (window as unknown as { showDirectoryPicker?: (o?: object) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
+    if (!picker) { this.set('error', 'Ordner-Überwachung braucht Chrome, Edge oder die Desktop-App'); return; }
+    let dir: FileSystemDirectoryHandle;
+    try { dir = await picker({ id: 'lz-scopes-watch', mode: 'read' }); } catch { this.set('idle'); return; }
+    this.name = dir.name;
+    let last = '';
+    const poll = async () => {
+      let newest: File | null = null;
+      for await (const entry of (dir as unknown as { values(): AsyncIterable<FileSystemHandle> }).values()) {
+        if (entry.kind !== 'file' || !/\.(jpe?g|png|webp|avif|gif|bmp)$/i.test(entry.name)) continue;
+        const f = await (entry as FileSystemFileHandle).getFile();
+        if (!newest || f.lastModified > newest.lastModified) newest = f;
+      }
+      if (!newest) { this.set('live', `${dir.name}: noch kein Bild (JPG/PNG/WebP/AVIF)`); return; }
+      const key = `${newest.name}:${newest.lastModified}:${newest.size}`;
+      if (key === last) return;
+      last = key;
+      const img = new Image();
+      const url = URL.createObjectURL(newest);
+      img.src = url;
+      try { await img.decode(); } catch { URL.revokeObjectURL(url); return; }
+      if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+      this.objectUrl = url;
+      this.element = img; this.width = img.naturalWidth; this.height = img.naturalHeight; this.depth = 8;
+      this.tick();
+      this.set('live', `${dir.name}/${newest.name} · ${this.width}×${this.height}`);
+    };
+    await poll();
+    this.folderTimer = setInterval(() => { poll().catch(() => {}); }, 1000);
+  }
+
+  async startCapture(kind: 'webcam' | 'screen', deviceId?: string, desktopId?: string) {
     this.stop();
     this.set('connecting', 'Warte auf Freigabe …');
     try {
       this.media = kind === 'webcam'
-        ? await navigator.mediaDevices.getUserMedia({ video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 1920 } } : { width: { ideal: 1920 } }, audio: false })
-        : await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
+        ? await navigator.mediaDevices.getUserMedia({ video: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } }, audio: false })
+        : desktopId
+          // desktop app: a specific window/screen chosen in our own picker (Electron desktopCapturer id)
+          ? await navigator.mediaDevices.getUserMedia({ audio: false, video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: desktopId, maxWidth: 3840, maxHeight: 2160, maxFrameRate: 30 } } } as unknown as MediaStreamConstraints)
+          : await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
       const v = document.createElement('video');
       v.muted = true; v.playsInline = true; v.srcObject = this.media;
       await v.play();
       this.attachVideo(v);
       const track = this.media.getVideoTracks()[0];
+      this.deviceId = track.getSettings().deviceId ?? deviceId ?? '';
       track.addEventListener('ended', () => this.set('ended', 'Aufnahme beendet'));
       this.set('live', `${v.videoWidth}×${v.videoHeight} ${track.label}`);
     } catch (e) {
@@ -271,10 +345,11 @@ export class Source {
   }
 
   private attachVideo(v: HTMLVideoElement) {
-    this.element = v; this.width = v.videoWidth; this.height = v.videoHeight; this.depth = 8;
+    this.videoEl = v; this.depth = 8;
+    this.applyCrop(v);
     const onFrame = () => {
-      if (this.element !== v) return;
-      this.width = v.videoWidth; this.height = v.videoHeight;
+      if (this.videoEl !== v) return;
+      this.applyCrop(v);
       this.tick();
       if ('requestVideoFrameCallback' in v) v.requestVideoFrameCallback(onFrameMeta);
       else setTimeout(onFrame, 1000 / 30);
@@ -287,23 +362,24 @@ export class Source {
       onFrame();
     };
     // a paused seek (frame step, scrubbing) must refresh the scopes as well
-    v.addEventListener('seeked', () => { if (this.element === v) { this.tick(); this.onChange(); } });
+    v.addEventListener('seeked', () => { if (this.videoEl === v) { this.applyCrop(v); this.tick(); this.onChange(); } });
     v.addEventListener('play', () => this.onChange());
     v.addEventListener('pause', () => this.onChange());
     onFrame();
   }
 
   get video(): HTMLVideoElement | null {
-    return this.element instanceof HTMLVideoElement ? this.element : null;
+    return this.videoEl;
   }
 
   stop() {
+    if (this.folderTimer) { clearInterval(this.folderTimer); this.folderTimer = null; }
     if (this.reverseTimer) { clearInterval(this.reverseTimer); this.reverseTimer = null; }
     if (this.patternTimer) { clearInterval(this.patternTimer); this.patternTimer = null; }
     if (this.ws) { const ws = this.ws; this.ws = null; ws.onclose = null; ws.close(); }
     this.media?.getTracks().forEach((t) => t.stop());
     this.media = null;
-    if (this.video) { this.video.pause(); this.video.srcObject = null; }
+    if (this.videoEl) { this.videoEl.pause(); this.videoEl.srcObject = null; this.videoEl = null; }
     if (this.objectUrl) { URL.revokeObjectURL(this.objectUrl); this.objectUrl = null; }
     this.element = null; this.data = null; this.info = null; this.width = 0; this.height = 0; this.stats = null;
     this.fps = 0; this.dropped = 0;

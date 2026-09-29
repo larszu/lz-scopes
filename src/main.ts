@@ -251,9 +251,15 @@ function renderSources() {
       card.append(...patternControls(s));
     } else {
       if (s.isVideoFile) card.append(...transportControls(s));
+      if (s.kind === 'webcam') card.append(deviceRow(s));
+      if ((s.kind === 'screen' || s.kind === 'webcam' || s.isVideoFile) && running) {
+        card.append(h('div', { class: 'row' },
+          h('button', { class: 'mini', title: 'Den Messrahmen im Bild als Zuschnitt übernehmen (z. B. nur den Viewer eines Programmfensters)', onclick: () => { if (!s.cropToRoi()) alertHud('Erst im Bild einen Rahmen ziehen'); renderSources(); } }, '✂ Zuschnitt = Rahmen'),
+          s.crop ? h('button', { class: 'mini', onclick: () => { s.clearCrop(); renderSources(); } }, 'Zuschnitt aus') : ''));
+      }
       card.append(h('div', { class: 'row' },
         running ? h('button', { onclick: () => s.stop() }, '■ Stopp')
-          : h('button', { class: 'primary', onclick: () => startLocal(s) }, s.kind === 'file' ? 'Datei wählen …' : '▶ Start')));
+          : h('button', { class: 'primary', onclick: () => startLocal(s) }, s.kind === 'file' ? 'Datei wählen …' : s.kind === 'folder' ? 'Ordner wählen …' : '▶ Start')));
     }
     card.append(h('div', { class: 'row' },
       select(set.transfer, [['auto', `Transfer auto (${s.transfer.toUpperCase()})`], ['sdr', 'SDR BT.1886'], ['pq', 'PQ ST 2084'], ['hlg', 'HLG']], (v) => upd({ transfer: v as SourceSettings['transfer'] }), 'Transferfunktion'),
@@ -308,19 +314,55 @@ function openOutput(pt: PatternState) {
 
 async function startLocal(s: Source) {
   if (s.kind === 'pattern') return s.startPattern();
-  if (s.kind === 'webcam' || s.kind === 'screen') return s.startCapture(s.kind);
+  if (s.kind === 'folder') return s.startFolder();
+  if (s.kind === 'screen' && desktop?.captureSources) return pickWindow(s);
+  if (s.kind === 'webcam' || s.kind === 'screen') return s.startCapture(s.kind).then(() => refreshDevices().then(renderSources));
   const input = h('input', { type: 'file', accept: 'video/*,image/*' }) as HTMLInputElement;
   input.onchange = () => { const f = input.files?.[0]; if (f) s.openFile(f).then(renderPanels); };
   input.click();
+}
+
+/** Camera / USB capture device selection (labels are only known after the first permission). */
+let videoDevices: MediaDeviceInfo[] = [];
+async function refreshDevices() {
+  try { videoDevices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput'); } catch { videoDevices = []; }
+}
+navigator.mediaDevices?.addEventListener?.('devicechange', () => refreshDevices().then(renderSources));
+function deviceRow(s: Source): Node {
+  if (!videoDevices.length) refreshDevices().then(() => { if (videoDevices.length) renderSources(); });
+  const opts: [string, string][] = videoDevices.map((d, i) => [d.deviceId, d.label || `Gerät ${i + 1}`]);
+  return h('div', { class: 'row' }, select(s.deviceId, opts.length ? opts : [['', 'Standardgerät']], (id) => {
+    s.name = videoDevices.find((d) => d.deviceId === id)?.label.replace(/\s*\([0-9a-f:]+\)$/i, '').slice(0, 40) || s.name;
+    s.startCapture('webcam', id).then(() => { refreshDevices().then(renderSources); });
+  }, 'Kamera oder USB-Capture-Gerät'));
+}
+
+/** Desktop app: choose a window or screen (thumbnails), e.g. DaVinci Resolve's viewer. */
+async function pickWindow(s: Source) {
+  const list = await desktop!.captureSources!();
+  const close = () => dlg.remove();
+  const dlg = h('div', { class: 'modal', onclick: (e: Event) => { if (e.target === dlg) close(); } },
+    h('div', { class: 'modal-body' },
+      h('div', { class: 'mtitle' }, 'Fenster oder Bildschirm wählen'),
+      h('p', { class: 'hint' }, 'Resolve: am besten „Video Clean Feed“ auf einen zweiten Bildschirm legen und diesen wählen – oder das Resolve-Fenster wählen und dann um den Viewer einen Rahmen ziehen → „Zuschnitt = Rahmen“. Lightroom/Capture One genauso, oder den Export-Ordner als Quelle „Ordner“ nehmen.'),
+      h('div', { class: 'thumbs' }, ...list.map((c) => h('button', { class: 'thumb', title: c.name, onclick: () => { close(); s.name = c.name.slice(0, 40); s.startCapture('screen', undefined, c.id); } },
+        h('img', { src: c.thumb, alt: '' }), h('span', {}, c.name)))),
+      h('button', { onclick: close }, 'Abbrechen')));
+  document.body.append(dlg);
 }
 
 $('#add').replaceChildren(
   h('span', {}, '+ Quelle'),
   h('button', { onclick: () => startLocal(addSource('pattern', `Testbild ${sources.length + 1}`)) }, 'Testbild'),
   h('button', { onclick: () => addSource('stream', `Stream ${sources.length + 1}`) }, 'RTSP / Netz'),
-  h('button', { onclick: () => startLocal(addSource('webcam')) }, 'Kamera'),
-  h('button', { onclick: () => startLocal(addSource('screen')) }, 'Bildschirm'),
+  h('button', { title: 'Aktuelles Frame aus DaVinci Resolve (Viewer, gegradet) in 16 bit über die Scripting-API – Resolve Studio, Externes Scripting: Lokal', onclick: () => {
+    const s = addSource('stream', 'DaVinci Resolve', 'resolve:', { depth: 16, fps: 10, width: 1920 });
+    s.connectStream('resolve:', bridgeUrl());
+  } }, 'DaVinci Resolve'),
+  h('button', { title: 'Kamera oder USB-Capture-Gerät (HDMI/SDI → USB)', onclick: () => startLocal(addSource('webcam')) }, 'Kamera/Capture'),
+  h('button', { title: 'Bildschirm oder Fenster (z. B. Resolve-Viewer)', onclick: () => startLocal(addSource('screen')) }, 'Bildschirm/Fenster'),
   h('button', { onclick: () => startLocal(addSource('file')) }, 'Datei'),
+  h('button', { title: 'Neuestes Bild eines Ordners (Exporte aus Resolve, Lightroom, Capture One)', onclick: () => startLocal(addSource('folder')) }, 'Ordner'),
 );
 
 // ---------------------------------------------------------------- panels
@@ -805,7 +847,10 @@ function renderLayoutMenu() {
   bridgeUrl,
 };
 
-interface DesktopApi { displays: () => Promise<{ id: number; label: string; bounds: { width: number; height: number }; primary: boolean }[]> }
+interface DesktopApi {
+  displays: () => Promise<{ id: number; label: string; bounds: { width: number; height: number }; primary: boolean }[]>;
+  captureSources?: () => Promise<{ id: string; name: string; thumb: string }[]>;
+}
 const desktop = (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop;
 
 async function renderOutputMenu() {

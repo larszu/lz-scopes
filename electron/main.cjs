@@ -31,6 +31,10 @@ async function createWindow() {
   ipcMain.handle('lzs:displays', () => screen.getAllDisplays().map((d) => ({
     id: d.id, label: d.label, bounds: d.bounds, primary: d.id === screen.getPrimaryDisplay().id,
   })));
+  ipcMain.handle('lzs:capture-sources', async () => {
+    const list = await desktopCapturer.getSources({ types: ['window', 'screen'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: false });
+    return list.map((s) => ({ id: s.id, name: s.name, thumb: s.thumbnail.toDataURL() }));
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith(origin) && url.includes('view=')) {
       // Scope/picture output on a chosen screen, fullscreen if asked.

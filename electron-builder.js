@@ -13,7 +13,8 @@ export default {
   // `.mjs` files (server/) stay ESM by extension, electron/main.cjs is CommonJS.
   extraMetadata: { type: 'commonjs', main: 'electron/main.cjs' },
   // ffmpeg can only be executed from outside the asar archive.
-  asarUnpack: ['**/node_modules/ffmpeg-static/**'],
+  // ffmpeg and the Resolve helper (run by Python) must live outside the asar archive.
+  asarUnpack: ['**/node_modules/ffmpeg-static/**', 'server/resolve_helper.py'],
   directories: { buildResources: 'build', output: 'release' },
   mac: {
     category: 'public.app-category.video',

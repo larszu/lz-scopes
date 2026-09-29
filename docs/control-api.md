@@ -9,7 +9,7 @@ Die Bridge (`server/index.mjs`, in der Desktop-App eingebaut) nimmt Befehle an u
 | Befehlsliste | `GET /api/control/commands` |
 | WebSocket | `ws://host:port/control` – Befehle senden, Antworten und Zustand empfangen |
 
-**Port:** Die Desktop-App nimmt 4192, wenn er frei ist, sonst einen freien Port (steht im Log: `bridge http://127.0.0.1:<port>`). `npm start` und die Bridge von `npm run dev` lauschen auf 4190 (im Dev-Betrieb reicht die UI auf 4191 `/control` weiter). Achtung: 4190 steht auf der „bad ports“-Liste des Fetch-Standards – Chrome und `fetch()` in Node verweigern ihn, curl und WebSocket-Clients (auch Companion) nicht.
+**Port:** Die Desktop-App nimmt 4192, wenn er frei ist, sonst einen freien Port (steht im Log: `bridge http://127.0.0.1:<port>`). `npm start` und die Bridge von `npm run dev` lauschen ebenfalls auf 4192 (im Dev-Betrieb reicht die UI auf 4191 `/control` weiter). 4190 wird bewusst nicht benutzt: Er steht auf der „bad ports“-Liste des Fetch-Standards, Chrome verweigert ihn.
 
 ## Zugriff
 
@@ -67,7 +67,7 @@ Antwort: `{ ok, result?, error?, state }`. Status `400` = ungültiger Befehl, `4
 ## Beispiele
 
 ```bash
-B=http://127.0.0.1:4192/api/control   # Desktop-App; npm start: 4190
+B=http://127.0.0.1:4192/api/control   # Desktop-App und npm start
 J='content-type: application/json'
 curl -s $B | jq .state.frozen                                              # Zustand
 curl -s -H "$J" -d '{"cmd":"freeze","mode":"toggle"}' $B                   # Einfrieren

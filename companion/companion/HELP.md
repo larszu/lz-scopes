@@ -4,7 +4,7 @@ Steuert LZ Scopes über die Steuer-API der Bridge (WebSocket `/control`).
 
 ### Einrichtung
 
-- **Host / Port**: Rechner mit LZ Scopes. Die Desktop-App nimmt Port 4192, wenn er frei ist (sonst steht der Port im Log); `npm start` lauscht auf 4190.
+- **Host / Port**: Rechner mit LZ Scopes. Die Desktop-App nimmt Port 4192, wenn er frei ist (sonst steht der Port im Log); `npm start` lauscht ebenfalls auf 4192.
 - **Token**: nur nötig, wenn Companion auf einem anderen Rechner läuft. Dann LZ Scopes mit `LZS_HOST=0.0.0.0 LZS_CONTROL_TOKEN=<geheim>` starten (bzw. `node server/index.mjs --host 0.0.0.0 --control-token <geheim>`) und hier dasselbe Token eintragen. Ohne Token nimmt die Bridge nur Verbindungen von 127.0.0.1 an.
 - Das Hauptfenster von LZ Scopes muss offen sein; es führt die Befehle aus. Der Verbindungsstatus zeigt „Bridge erreichbar, Fenster nicht verbunden“, solange es fehlt.
 

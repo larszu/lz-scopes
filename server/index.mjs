@@ -1,7 +1,7 @@
 // lz-scopes bridge: decodes network streams (RTSP, RTMP, UDP, RTP, HTTP/HLS …) with
 // ffmpeg and pushes raw RGBA frames to the browser over a WebSocket.
 //
-//   node server/index.mjs [--port 4190] [--host 127.0.0.1] [--dev]
+//   node server/index.mjs [--port 4192] [--host 127.0.0.1] [--dev]
 //
 // WebSocket: ws://host:port/stream?url=<input>&width=960&fps=25&depth=8|16&transport=tcp|udp
 //   text  {type:"info", width, height, depth, fps, codec, transfer, primaries, matrix, range}
@@ -583,7 +583,7 @@ server.on('upgrade', (req, socket, head) => {
  * Start the bridge. Used by the CLI below and by the desktop app (electron/main.cjs),
  * which passes port 0 for a free port and its own dist folder.
  */
-export function startBridge({ port = 4190, host = '127.0.0.1', dist, dev = false, controlToken } = {}) {
+export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false, controlToken } = {}) {
   if (dist) DIST = resolve(dist);
   if (controlToken !== undefined) CONTROL_TOKEN = controlToken;
   DEV = dev;
@@ -594,7 +594,7 @@ export function startBridge({ port = 4190, host = '127.0.0.1', dist, dev = false
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const port = Number(arg('port', process.env.PORT ?? 4190)), host = arg('host', process.env.HOST ?? '127.0.0.1');
+  const port = Number(arg('port', process.env.PORT ?? 4192)), host = arg('host', process.env.HOST ?? '127.0.0.1');
   startBridge({ port, host, dev: DEV }).then(({ port: p }) => {
     console.log(`lz-scopes bridge on http://${host}:${p}${DEV ? ' (dev)' : ''} · ffmpeg: ${ffmpegCandidates()[0] ?? 'nicht gefunden'}`);
   });

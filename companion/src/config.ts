@@ -16,7 +16,7 @@ export function getConfigFields(): SomeCompanionConfigField[] {
       width: 12,
       label: 'LZ Scopes',
       value:
-        'Verbindet sich mit der Bridge von LZ Scopes (Desktop-App: Port 4192, npm start: 4190, sonst der Port aus dem Log). Ohne Token nimmt die Bridge nur Verbindungen von 127.0.0.1 an; für Companion auf einem anderen Rechner die App mit LZS_HOST=0.0.0.0 und LZS_CONTROL_TOKEN starten.',
+        'Verbindet sich mit der Bridge von LZ Scopes (Desktop-App: Port 4192, npm start: 4192, sonst der Port aus dem Log). Ohne Token nimmt die Bridge nur Verbindungen von 127.0.0.1 an; für Companion auf einem anderen Rechner die App mit LZS_HOST=0.0.0.0 und LZS_CONTROL_TOKEN starten.',
     },
     { type: 'textinput', id: 'host', label: 'Host', width: 6, default: DEFAULT_CONFIG.host, regex: Regex.SOMETHING },
     { type: 'number', id: 'port', label: 'Port', width: 3, default: DEFAULT_CONFIG.port, min: 1, max: 65535 },

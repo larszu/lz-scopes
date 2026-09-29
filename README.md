@@ -102,6 +102,14 @@ npm run dist:mac             # or dist:win: desktop app with bridge and ffmpeg
 
 Release: push a tag `v*`; `release.yml` builds Windows and macOS and attaches the installers to the release.
 
+## Audio
+
+Tone generator and loudness/level analyser, measured with an own DSP core (`src/audio/dsp`, plain TypeScript, tested in vitest against the synthesisable EBU Tech 3341 and Tech 3342 minimum-requirement signals at 44.1 and 48 kHz). Standards and sources: [docs/research/audio.md](docs/research/audio.md).
+
+- **Sources with sound**: network streams through the bridge (protocol 2, same ffmpeg process as the picture, no resampling), the sound of video files, audio devices (echo cancellation, noise suppression and AGC off), audio files (also measured faster than real time), and the generator as loop-back.
+- **Audio scopes** in the panel menu, docking layout and saved layouts: level & loudness (sample peak, true peak after ITU-R BS.1770-5 Annex 2, M/S/I on the EBU +9 / +18 scale in LUFS or LU, LRA after Tech 3342, Max M/S/TP, PLR, targets EBU R 128, R 128 s1, s2), loudness history, spectrum (log frequency axis, slope 0/3/4.5 dB/oct, third-octave bands) and goniometer with correlation meter.
+- **Tone generator**: sine, square, triangle, saw, white and pink noise (also 500–2000 Hz for Tech 3343), log and stepped sweep, EBU stereo ident, GLITS, L/R ident, polarity test and an A/V-sync beep that matches the flashing test pattern “A/V-Sync”. Level in dBFS with −18 dBFS (EBU R 68) preset, per-channel routing and polarity, output device selectable, self-test of the measuring core.
+
 ## Architecture
 
 - **Bridge** (`server/index.mjs`): ffprobe for resolution and colour metadata, then ffmpeg scales to the analysis width and writes raw `rgba` / `rgba64le` frames over a WebSocket. Slow browsers get frames dropped, no queue builds up. The Y'CbCr matrix is passed to ffmpeg explicitly, the transfer function is left untouched. It listens on `127.0.0.1` only and accepts network URLs and test patterns, never local files, ffmpeg options or a shell.
@@ -124,7 +132,7 @@ view.setSource(src);
 ## Limits
 
 - Values are full-range R'G'B' after conversion. Sub-black and super-white outside 16-235 are clipped; there is no legal / illegal check at Y'CbCr level yet.
-- No audio, NDI or SDI (DeckLink / AJA) input.
+- No NDI or SDI (DeckLink / AJA) input. Audio from the browser is limited to 2 channels (more only through the bridge); bridge audio cannot be monitored yet.
 - Browser sources (camera, file) are always 8 bit and pass through the browser's colour management.
 
 ## Author

@@ -143,6 +143,33 @@ Optional lässt sich eine Kennung einblenden. *⧉ Ausgeben* öffnet das Muster 
 
 Grenze: Canvas arbeitet in Full-Range-RGB, deshalb gibt es keine Pegel unter 0 %. Die PLUGE-Stufen −2 % liegen dadurch auf 0 %.
 
+## Audio
+
+Messkern in `src/audio/dsp` (reines TypeScript, ohne DOM, in vitest gegen die Normtests geprüft). Normwerte und Quellen: [docs/research/audio.md](docs/research/audio.md).
+
+**Quellen mit Ton**
+- *RTSP / Netz*: Die Bridge liefert den Ton des Streams mit (Auswahl „Ton“ an der Quelle, [Protokoll 2](docs/frame-protocol.md)). Bild und Ton kommen aus demselben ffmpeg-Prozess, ohne Umrechnung von Abtastrate und Kanälen. Die Testbilder `test:*` bringen einen 1-kHz-Ton mit −18 dBFS mit.
+- *Datei* (Video): Der Ton der Datei wird mitgemessen und ist nur mit 🎧 hörbar.
+- *Audio*: Audiogerät (Echounterdrückung, Rauschunterdrückung und automatische Pegelregelung des Browsers aus, Gerät wählbar), Audiodatei (mit „Ganze Datei messen“, schneller als Echtzeit) oder der Generator als Rückweg.
+
+Jede Quelle mit Ton zeigt eine ♪-Zeile: Abtastrate, Kanäle, I/LRA anhalten und zurücksetzen (gemeinsam mit Max M, Max S und Max TP, wie Tech 3341 verlangt), Mithören.
+
+**Audio-Scopes** (im Panel-Menü, im Dock und in Layout-Konfigurationen wie alle anderen, Einstellungen über ⚙)
+- *Audio Pegel & Lautheit*: Sample-Peak je Kanal (Balken über 100 ms), True Peak (weiße Marke, 4-fach überabgetastet mit dem FIR aus BS.1770-5 Annex 2), Peak-Hold 3 s, Übersteuerungszähler, Marken bei −18 dBFS (R 68) und −1 dBTP (R 128). Dazu M, S und I auf der Skala EBU +9 oder EBU +18, absolut in LUFS oder relativ in LU, und die Kennwerte I, LRA (in den ersten 60 s als „unstabil“ markiert), Max M, Max S, Max TP, PLR. Zielwerte R 128, R 128 s1 (Max S ≤ −18 LUFS) und R 128 s2.
+- *Audio Lautheitsverlauf*: M und S der letzten 1 bis 60 min mit Zielband ±1 LU.
+- *Audio Spektrum*: FFT 1024 bis 32768, logarithmische Frequenzachse, Neigung 0/3/4,5 dB/Okt., Linie oder Terzbänder, L/R, Mitte oder einzeln.
+- *Audio Goniometer*: M/S-Darstellung (Mono senkrecht, L links oben, R rechts oben), Korrelationsgradmesser mit wählbarem Fenster, Polaritätsanzeige beim Polaritätstest.
+
+Lautheit nach ITU-R BS.1770-5 und EBU Tech 3341: K-Filter für jede Abtastrate, M (0,4 s) und S (3 s) in 10-ms-Schritten, I mit absolutem (−70 LUFS) und relativem Gate (−10 LU), LRA nach Tech 3342. Kanalgewichte nach BS.1770-5 Tabelle 3 (LFE wird nicht gemessen).
+
+**Tongenerator** (Seitenleiste): Sinus, Rechteck, Dreieck, Sägezahn (bandbegrenzt), weißes und rosa Rauschen (auch 500–2000 Hz für Tech 3343), Log-Sweep, Stufen-Sweep auf Terzmitten, EBU-Stereo-Ident, GLITS, Kanal-Ident L/R, Polaritätstest und A/V-Sync-Piep. Pegel als Spitzenpegel in dBFS mit Schnellwahl −18 (R 68), −20, −23, −9, 0; über −6 dBFS nur nach Rückfrage. Je Kanal an/aus, Polarität und Pegel, Schnellwahl L, R, L+R, L−R. Ein- und Ausblenden in 10 ms. Ausgabegerät per `AudioContext.setSinkId`. Beim Sinus zeigt er an, was ein Messgerät anzeigen muss (dBTP und LUFS). „→ als Messquelle“ schleift den Generator ohne Soundkarte in den Analyser.
+
+**A/V-Sync**: Das Testbild „A/V-Sync“ blitzt zu jeder vollen Sekunde 80 ms weiß, der Generator piept mit „A/V-Sync-Piep“ zu denselben Zeitpunkten (gemeinsame Uhr aller Fenster, die Ausgabelatenz der Soundkarte ist über `getOutputTimestamp` verrechnet, die Verzögerung der Bildausgabe nicht).
+
+**Selbsttest** (im Generator): schickt die erzeugbaren Testsignale aus EBU Tech 3341 (#1–#6, #9–#23) und Tech 3342 (#1–#4) durch den Messkern und zeigt Soll und Ist.
+
+Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Zyklus 3 s), Polaritätstest (positiver Halbsinus-Puls, 1 ms alle 20 ms), Rauschen mit dem Effektivwert eines Sinus gleichen Spitzenpegels, Korrelationsfenster Standard 600 ms. GLITS-Zeitplan nur nach Sekundärquelle.
+
 ## Einbetten
 
 `src/index.ts` exportiert `ScopeView`: ein WebGL-Canvas mit wählbaren Scopes, ohne Framework.
@@ -179,13 +206,15 @@ Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in
 ## Grenzen
 
 - Die Werte sind Full-Range-R'G'B' nach der Wandlung. Sub-Black und Super-White außerhalb 16–235 werden abgeschnitten, eine Legal/Illegal-Prüfung auf Y'CbCr-Ebene gibt es noch nicht.
-- Kein Audio, kein NDI, kein SDI (DeckLink/AJA): Die Homebrew-Version von ffmpeg bringt dafür keine Unterstützung mit.
+- Kein NDI, kein SDI (DeckLink/AJA): Die Homebrew-Version von ffmpeg bringt dafür keine Unterstützung mit.
+- Audio: Browser liefern über `getUserMedia` höchstens 2 Kanäle; Mehrkanal kommt nur über die Bridge. Bridge-Ton lässt sich noch nicht abhören, und der A/V-Versatz wird noch nicht gemessen (siehe Issues).
 - Browser-Quellen (Kamera, Datei) liefern immer 8 bit und durchlaufen das Farbmanagement des Browsers.
 
 ## Tests
 
 ```bash
 npm test        # Farbmathematik (PQ, HLG, Matrizen, XYZ), Statistik, Bridge-Eingabeprüfung, Steuerbefehle, Overlay-Szenen
+                # Audio: K-Filter, Tech 3341/3342 bei 44,1 und 48 kHz, Generator, Bridge-Protokoll 2
 npm run typecheck
 npm --prefix companion ci && npm run companion:test && npm run companion:build   # Companion-Modul
 ```

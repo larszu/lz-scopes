@@ -45,6 +45,8 @@ export const DEFAULT_GEN: GenConfig = {
 export const STEP_FREQS = Array.from({ length: 31 }, (_, i) => 1000 * 10 ** ((i - 17) / 10)).filter((f) => f >= 19.9 && f <= 20001);
 
 const FADE_S = 0.01;
+/** JSON copy: structuredClone does not exist in AudioWorkletGlobalScope. */
+const clone = (c: GenConfig): GenConfig => JSON.parse(JSON.stringify(c));
 const AV_BEEP_S = 0.08;
 
 class Rng {
@@ -135,7 +137,7 @@ export class ToneGenerator {
 
   constructor(fs: number, channels = 2, cfg: GenConfig = DEFAULT_GEN) {
     this.fs = fs; this.channels = channels;
-    this.cfg = structuredClone(cfg);
+    this.cfg = clone(cfg);
     this.gain = Array(channels).fill(0);
     this.avPeriod = fs;
     // DC of the polarity pulse train: mean of a 1 ms half-sine per 20 ms = (2/π)·(1/20)
@@ -145,13 +147,13 @@ export class ToneGenerator {
   /** New settings; a different signal fades out first (10 ms) and restarts at t = 0. */
   set(cfg: GenConfig) {
     if (cfg.signal !== this.cfg.signal || cfg.sweepFrom !== this.cfg.sweepFrom || cfg.sweepTo !== this.cfg.sweepTo) {
-      if (this.gain.every((g) => g === 0)) this.apply(cfg); else this.pending = structuredClone(cfg);
+      if (this.gain.every((g) => g === 0)) this.apply(cfg); else this.pending = clone(cfg);
     } else {
-      this.cfg = structuredClone(cfg);
+      this.cfg = clone(cfg);
     }
   }
   private apply(cfg: GenConfig) {
-    this.cfg = structuredClone(cfg); this.pending = null; this.phase = 0; this.k = 0;
+    this.cfg = clone(cfg); this.pending = null; this.phase = 0; this.k = 0;
   }
 
   private target(ch: number) {

@@ -2,16 +2,18 @@ import './vendor/dockview.css';
 import './style.css';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, HLG_PEAKS, LUMA, detectDisplay, transferLabel, type DisplaySpace, type GamutId } from './color';
 import { CAMERA_GAMUTS, LOG_CURVES } from './camera';
-import { SCOPE_LABELS, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget } from './graticule';
+import { SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget } from './graticule';
 import { DEFAULT_SKIN, ROI_CLOSE, defaultPanel as panel, drawPanel, panelSignature, roiCloseBox, type DrawOptions, type PanelState, type Tint } from './panel';
 import type { OutputHost, OutputWindowApi } from './outputView';
 import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } from './scene';
 import { connectRemote } from './remote';
 import type { Command } from '../server/control.mjs';
+import type { GenConfig } from './audio/dsp/signals';
+import { audioPanelSettings, audioRow, audioSourceControls, mountGenerator } from './audio/ui';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { Renderer, WAVE_MAX, WAVE_MIN, type PictureMode, type SkinRange } from './renderer';
-import { Source, type SourceKind, type SourceSettings } from './sources';
+import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 
 // ---------------------------------------------------------------- state
 
@@ -27,7 +29,10 @@ interface Persisted {
   scenes: OverlayScene[]; activeScene: string;
   /** name of the last loaded layout configuration ('' after a preset) */
   layoutName: string;
-  sources: { kind: SourceKind; name: string; url: string; settings: SourceSettings; pattern?: PatternState }[];
+  sources: { kind: SourceKind; name: string; url: string; settings: SourceSettings; pattern?: PatternState; audioIn?: AudioInput }[];
+  /** tone generator settings (never saved as running) and output device */
+  gen?: Partial<GenConfig>;
+  genSink?: string;
 }
 
 const DEFAULT_SCOPES: ScopeType[] = ['picture', 'wf-luma', 'vector', 'parade', 'hist', 'cie', 'stats', 'yrgb', 'ycbcr'];
@@ -55,8 +60,8 @@ let fpsFrames = 0, displayFps = 0, fpsT = performance.now();
 function save() {
   const p: Persisted = {
     ...state,
-    sources: sources.filter((s) => s.kind === 'stream' || s.kind === 'pattern')
-      .map((s) => ({ kind: s.kind, name: s.name, url: s.url, settings: s.settings, pattern: s.pattern })),
+    sources: sources.filter((s) => s.kind === 'stream' || s.kind === 'pattern' || s.kind === 'audio')
+      .map((s) => ({ kind: s.kind, name: s.name, url: s.url, settings: s.settings, pattern: s.pattern, ...(s.kind === 'audio' ? { audioIn: s.audioIn } : {}) })),
   };
   try { localStorage.setItem(STORE_KEY, JSON.stringify(p)); } catch { /* ignore */ }
 }
@@ -112,6 +117,7 @@ app.innerHTML = `
       <h2>Quellen</h2>
       <div id="source-list"></div>
       <div class="add" id="add"></div>
+      <details class="gen" id="gen-wrap"><summary>Tongenerator</summary><div id="gen"></div></details>
       <details class="bridge"><summary>Bridge</summary>
         <label>Adresse <input id="bridge" placeholder="leer = dieser Server"></label>
         <p class="hint">RTSP, SRT, HLS und andere Netzwerkquellen dekodiert die Bridge mit ffmpeg: Desktop-App oder <code>npm start</code>. Im Browser allein gehen Testbilder, Kamera, Bildschirm und Dateien.</p>
@@ -256,7 +262,8 @@ function renderSources() {
           select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', 'nativ']], (v) => upd({ width: Number(v) }, true), 'Analyseauflösung'),
           select(String(set.fps), [['0', 'alle fps'], ['10', '10 fps'], ['25', '25 fps'], ['30', '30 fps']], (v) => upd({ fps: Number(v) }, true), 'Bildrate begrenzen'),
           select(String(set.depth), [['8', '8 bit'], ['16', '16 bit']], (v) => upd({ depth: Number(v) as 8 | 16 }, true), 'Bittiefe (16 bit für 10-bit/HDR-Quellen)'),
-          select(set.transport, [['tcp', 'TCP'], ['udp', 'UDP']], (v) => upd({ transport: v as 'tcp' | 'udp' }, true), 'RTSP-Transport')),
+          select(set.transport, [['tcp', 'TCP'], ['udp', 'UDP']], (v) => upd({ transport: v as 'tcp' | 'udp' }, true), 'RTSP-Transport'),
+          select(set.audio === false ? '0' : '1', [['1', 'Ton'], ['0', 'ohne Ton']], (v) => upd({ audio: v === '1' }, true), 'Ton des Streams mitmessen (Bridge-Protokoll 2)')),
         h('div', { class: 'row' },
           running ? h('button', { onclick: () => s.stop() }, '■ Trennen') : h('button', { class: 'primary', onclick: connect }, '▶ Verbinden'),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
@@ -272,6 +279,8 @@ function renderSources() {
       );
     } else if (s.kind === 'pattern') {
       card.append(...patternControls(s));
+    } else if (s.kind === 'audio') {
+      card.append(...audioSourceControls(s, save, renderSources));
     } else {
       if (s.isVideoFile) card.append(...transportControls(s));
       if (s.kind === 'webcam') card.append(deviceRow(s));
@@ -284,7 +293,9 @@ function renderSources() {
         running ? h('button', { onclick: () => s.stop() }, '■ Stopp')
           : h('button', { class: 'primary', onclick: () => startLocal(s) }, s.kind === 'file' ? 'Datei wählen …' : s.kind === 'folder' ? 'Ordner wählen …' : '▶ Start')));
     }
-    card.append(h('div', { class: 'row' },
+    const ar = audioRow(s, renderSources);
+    if (ar) card.append(ar);
+    if (s.kind !== 'audio') card.append(h('div', { class: 'row' },
       groupedSelect(set.transfer, [
         ['', [['auto', `Transfer auto (${transferLabel(s.transfer)})`], ['sdr', 'SDR BT.1886'], ['pq', 'PQ ST 2084'], ['hlg', 'HLG']]],
         ['Kamera-Log (Szene)', Object.entries(LOG_CURVES).map(([k, c]) => [k, c.name])],
@@ -396,7 +407,23 @@ $('#add').replaceChildren(
   h('button', { title: 'Bildschirm oder Fenster (z. B. Resolve-Viewer)', onclick: () => startLocal(addSource('screen')) }, 'Bildschirm/Fenster'),
   h('button', { onclick: () => startLocal(addSource('file')) }, 'Datei'),
   h('button', { title: 'Neuestes Bild eines Ordners (Exporte aus Resolve, Lightroom, Capture One)', onclick: () => startLocal(addSource('folder')) }, 'Ordner'),
+  h('button', { title: 'Audiogerät, Audiodatei oder Generator messen', onclick: () => addAudioSource('device') }, 'Audio'),
 );
+
+/** Add an audio source and, if no audio panel is open, a pinned level/loudness panel for it. */
+function addAudioSource(mode: AudioInput['mode']) {
+  const s = addSource('audio', mode === 'generator' ? 'Generator' : `Audio ${sources.length + 1}`);
+  s.audioIn.mode = mode;
+  save();
+  if (!openViews().some((v) => isAudio(state.panels[v.idx].scope))) {
+    const idx = state.panels.length;
+    state.panels.push({ ...panel('audio-meter'), sourceId: s.id, pin: true });
+    save();
+    dock.addPanel(idx);
+  }
+  s.startAudio().then(renderSources);
+  renderSources();
+}
 
 // ---------------------------------------------------------------- panels
 
@@ -465,6 +492,7 @@ function addScopePanel() {
 
 /** Settings of one measuring tool, shown in its ⚙ menu. */
 function panelSettings(p: PanelState): Node[] {
+  if (isAudio(p.scope)) return audioPanelSettings(p, save);
   const rows: Node[] = [];
   const row = (label: string, ...kids: (Node | string)[]) => rows.push(h('label', { class: 'mrow' }, h('span', {}, label), ...kids));
   const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv', label: string, dflt = false) => {
@@ -1197,8 +1225,11 @@ document.addEventListener('keydown', (e) => {
 for (const saved of state.sources) {
   const s = addSource(saved.kind, saved.name, saved.url, saved.settings);
   if (saved.pattern) Object.assign(s.pattern, saved.pattern);
+  if (saved.audioIn) Object.assign(s.audioIn, saved.audioIn);
   if (s.kind === 'pattern') s.startPattern();
+  if (s.kind === 'audio' && s.audioIn.mode === 'generator') s.startAudio();
 }
+mountGenerator($('#gen'), state.gen, state.genSink ?? '', (cfg, sink) => { state.gen = cfg; state.genSink = sink; save(); }, () => addAudioSource('generator'));
 applySidebar();
 renderHeader();
 const dock = createDock($('#dock'), {

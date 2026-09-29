@@ -1,17 +1,19 @@
 // Draws one scope panel (WebGL trace + 2D overlay). Shared by the full app and the
 // embeddable ScopeView (src/embed.ts).
 
-import { FALSE_COLOR_PRESETS, ycbcr } from './color';
+import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, gamutConvert, ycbcr, type DisplaySpace } from './color';
 import {
-  drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
+  drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
   isWaveform, plotRect, probeLines, statsLines, vectorPoint, type ScopeType, type Unit,
 } from './graticule';
-import type { PictureMode, Rect, Renderer, ScatterMode } from './renderer';
+import type { DisplayParams, PictureMode, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
 import type { Source } from './sources';
 
 export interface PanelState {
   scope: ScopeType; sourceId: string; gain: number; colorize: boolean; zoom: number;
   picture: PictureMode; hist: 'rgb' | 'luma' | 'split'; log: boolean;
+  /** Pinned panels keep their source when another panel switches. */
+  pin?: boolean;
 }
 
 export const TINTS = { white: [1, 1, 1], green: [0.55, 1, 0.62], amber: [1, 0.82, 0.45] } as const;
@@ -20,7 +22,26 @@ export type Tint = keyof typeof TINTS;
 export interface DrawOptions {
   unit: Unit; tint: Tint; maxSamples: number; falsePreset: string;
   zebra: number; zebraLow: number; frozen: boolean; displayFps: number;
+  skin: SkinRange; display: DisplaySpace;
   emptyText?: string;
+}
+
+export const DEFAULT_SKIN: SkinRange = { lo: 0.3, hi: 0.8, tol: 14 };
+
+/** Input gamut → display gamut and output curve for the picture view. */
+export function displayParams(src: Source, display: DisplaySpace): DisplayParams {
+  const from = GAMUTS[src.colorspace === '2020' ? '2020' : src.colorspace === '601' ? '601' : '709'];
+  if (display === 'raw') return { curve: 2, gamut: [1, 0, 0, 0, 1, 0, 0, 0, 1] };
+  const to = display === 'p3' ? GAMUTS.p3 : GAMUTS['709'];
+  return { curve: display === 'rec709' ? 1 : 0, gamut: gamutConvert(from, to) };
+}
+export { DISPLAY_LABELS };
+
+/** Everything a panel's pixels depend on; unchanged → the panel is not redrawn. */
+export function panelSignature(p: PanelState, src: Source | null, body: Rect, o: DrawOptions) {
+  const s = src ? `${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}` : '-';
+  const { displayFps, ...rest } = o;
+  return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}`;
 }
 
 export const defaultPanel = (scope: ScopeType): PanelState => ({
@@ -28,7 +49,7 @@ export const defaultPanel = (scope: ScopeType): PanelState => ({
 });
 
 const SCATTER: Partial<Record<ScopeType, ScatterMode>> = {
-  'wf-luma': 'luma', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie',
+  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie',
 };
 
 /**
@@ -51,11 +72,13 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   const mode = SCATTER[p.scope];
   if (mode) {
     renderer.drawScatter(key, src, abs, {
-      mode, gain: p.gain, colorize: p.colorize, zoom: p.zoom, tint: [...TINTS[o.tint]] as [number, number, number], maxSamples: o.maxSamples,
+      mode, gain: p.gain, colorize: p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: [...TINTS[o.tint]] as [number, number, number],
+      maxSamples: o.maxSamples, roi: src.roi, skin: o.skin,
     });
   }
   if (isWaveform(p.scope)) {
     drawWaveGraticule(ctx, p.scope, r, o.unit, src.transfer);
+    if (p.scope === 'wf-skin') drawSkinRange(ctx, r, o.skin);
     if (probeRgb) drawWaveProbe(ctx, p.scope, r, src, probeRgb);
   } else if (p.scope === 'vector') {
     drawVectorGraticule(ctx, r, src.colorspace, p.zoom);
@@ -70,7 +93,16 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   } else if (p.scope === 'hist') {
     drawHistogram(ctx, r, src, p.hist, p.log);
   } else if (p.scope === 'picture') {
-    renderer.drawPicture(src, abs, { mode: p.picture, bands: FALSE_COLOR_PRESETS[o.falsePreset] ?? [], zebra: o.zebra, zebraLow: o.zebraLow });
+    renderer.drawPicture(src, abs, {
+      mode: p.picture, bands: FALSE_COLOR_PRESETS[o.falsePreset] ?? [], zebra: o.zebra, zebraLow: o.zebraLow,
+      roi: src.roi, skin: o.skin, display: displayParams(src, o.display),
+    });
+    if (src.roi) {
+      const [x0, y0, x1, y1] = src.roi;
+      ctx.strokeStyle = '#ffb840'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
+      ctx.strokeRect(r.x + (x0 / src.width) * r.w, r.y + (y0 / src.height) * r.h, ((x1 - x0) / src.width) * r.w, ((y1 - y0) / src.height) * r.h);
+      ctx.setLineDash([]);
+    }
     if (p.picture === 'false') {
       const bands = FALSE_COLOR_PRESETS[o.falsePreset] ?? [];
       ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';

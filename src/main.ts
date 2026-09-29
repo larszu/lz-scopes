@@ -1,9 +1,9 @@
 import './style.css';
-import { FALSE_COLOR_PRESETS, LUMA } from './color';
+import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, LUMA, detectDisplay, type DisplaySpace } from './color';
 import { SCOPE_LABELS, isWaveform, plotRect, type ScopeType, type Unit } from './graticule';
-import { defaultPanel as panel, drawPanel, type PanelState, type Tint } from './panel';
+import { DEFAULT_SKIN, defaultPanel as panel, drawPanel, panelSignature, type PanelState, type Tint } from './panel';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
-import { Renderer, type PictureMode } from './renderer';
+import { Renderer, type PictureMode, type SkinRange } from './renderer';
 import { Source, type SourceKind, type SourceSettings } from './sources';
 
 // ---------------------------------------------------------------- state
@@ -12,6 +12,7 @@ type PatternState = Source['pattern'];
 interface Persisted {
   layout: string; panels: PanelState[]; unit: Unit; tint: Tint; falsePreset: string;
   zebra: number; zebraLow: number; maxSamples: number; bridge: string; sidebar: boolean;
+  skin: SkinRange; display: 'auto' | DisplaySpace;
   sources: { kind: SourceKind; name: string; url: string; settings: SourceSettings; pattern?: PatternState }[];
 }
 
@@ -30,7 +31,7 @@ const STORE_KEY = 'lz-scopes.v1';
 function load(): Persisted {
   const base: Persisted = {
     layout: 'lc', panels: DEFAULT_SCOPES.map(panel), unit: 'percent', tint: 'green', falsePreset: 'ARRI', zebra: 0.95, zebraLow: 0,
-    maxSamples: 1_000_000, bridge: '', sidebar: true,
+    maxSamples: 1_000_000, bridge: '', sidebar: true, skin: { ...DEFAULT_SKIN }, display: 'auto',
     sources: [{ kind: 'pattern', name: 'Testbild', url: '', settings: { transfer: 'auto', colorspace: 'auto', width: 960, fps: 0, depth: 8, transport: 'tcp' }, pattern: { id: 'smpte75', width: 1920, height: 1080, label: '' } }],
   };
   try {
@@ -41,6 +42,7 @@ function load(): Persisted {
 }
 
 const state = load();
+const detected = detectDisplay();
 const sources: Source[] = [];
 let solo: number | null = null;
 let frozen = false;
@@ -125,14 +127,33 @@ function renderHeader() {
   const lay = $('#layouts');
   lay.replaceChildren(...Object.entries(LAYOUTS).map(([k, l], i) =>
     h('button', { class: k === state.layout ? 'on' : '', title: `Layout ${l.label} (${i + 1})`, onclick: () => setLayout(k) }, l.label)));
+  const disp = state.display === 'auto' ? detected.space : state.display;
   $('#globals').replaceChildren(
     select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m²']], (v) => { state.unit = v as Unit; save(); }, 'Skala'),
-    select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); }, 'Spurfarbe'),
-    select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }, 'Präzision (Abtastpunkte)'),
-    select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, `Falschfarben ${k}`]), (v) => { state.falsePreset = v; save(); }, 'Falschfarben-Preset'),
-    h('label', { class: 'inline', title: 'Zebra-Schwelle' }, 'Zebra ',
-      h('input', { type: 'number', min: 50, max: 109, step: 1, value: Math.round(state.zebra * 100), onchange: (e: Event) => { state.zebra = Number((e.target as HTMLInputElement).value) / 100; save(); } }), '%'),
+    h('details', { class: 'menu' },
+      h('summary', { title: 'Einstellungen' }, `⚙ ${DISPLAY_LABELS[disp].split(' ')[0]}${state.display === 'auto' ? ' auto' : ''}`),
+      h('div', { class: 'menu-body' }, ...settingsItems())),
   );
+}
+
+function settingsItems(): Node[] {
+  const row = (label: string, ...kids: (Node | string)[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
+  return [
+    row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}${detected.hdr ? ' (HDR-fähig)' : ''}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])],
+      (v) => { state.display = v as Persisted['display']; save(); renderHeader(); }, 'Display-Farbraum der Bildansicht; die Scopes messen immer das Signal')),
+    row('Spurfarbe', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); })),
+    row('Präzision', select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }, 'Abtastpunkte je Scope')),
+    row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); })),
+    row('Hautton Luma',
+      numIn(Math.round(state.skin.lo * 100), 0, 100, (v) => { state.skin.lo = v / 100; }), '–',
+      numIn(Math.round(state.skin.hi * 100), 0, 100, (v) => { state.skin.hi = v / 100; }), '%'),
+    row('Hautton Farbton ±', numIn(state.skin.tol, 2, 45, (v) => { state.skin.tol = v; }), '° um die Hautton-Linie'),
+    row('Zebra', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%'),
+  ];
+}
+
+function numIn(value: number, min: number, max: number, set: (v: number) => void) {
+  return h('input', { type: 'number', class: 'num', min, max, step: 1, value, onchange: (e: Event) => { set(Number((e.target as HTMLInputElement).value)); save(); } });
 }
 
 function setLayout(k: string) {
@@ -208,6 +229,7 @@ function renderSources() {
     } else if (s.kind === 'pattern') {
       card.append(...patternControls(s));
     } else {
+      if (s.isVideoFile) card.append(...transportControls(s));
       card.append(h('div', { class: 'row' },
         running ? h('button', { onclick: () => s.stop() }, '■ Stopp')
           : h('button', { class: 'primary', onclick: () => startLocal(s) }, s.kind === 'file' ? 'Datei wählen …' : '▶ Start')));
@@ -293,6 +315,7 @@ function renderPanels() {
   const L = LAYOUTS[state.layout] ?? LAYOUTS.lc;
   views.forEach((v) => v.el.remove());
   views = [];
+  needClear = true;
   const letters = 'abcdefghi';
   if (solo !== null) {
     grid.style.gridTemplateAreas = '"a"';
@@ -309,13 +332,14 @@ function renderPanels() {
     const el = h('div', { class: 'panel', style: `grid-area:${letters[k]}` },
       h('div', { class: 'phead', ondblclick: () => toggleSolo(idx) },
         select(p.scope, Object.entries(SCOPE_LABELS) as [string, string][], (v) => { p.scope = v as ScopeType; if (v === 'vector' || v === 'cie') p.colorize = true; save(); renderPanels(); }),
-        sources.length > 1 ? select(p.sourceId || sources[0]?.id || '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (v) => { p.sourceId = v; save(); }) : '',
+        sources.length > 1 ? select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (v) => switchSource(p, v), 'Quelle – alle nicht angehefteten Panels folgen') : '',
+        sources.length > 1 ? h('button', { class: `icon pin ${p.pin ? 'on' : ''}`, title: p.pin ? 'Angeheftet: behält seine Quelle' : 'Anheften: Panel behält seine Quelle, wenn andere umschalten', onclick: () => { p.pin = !p.pin; save(); renderPanels(); } }, '📌') : '',
         h('div', { class: 'opts' }, ...opts),
         h('button', { class: 'icon', title: solo === idx ? 'Zurück (Esc)' : 'Solo', onclick: () => toggleSolo(idx) }, solo === idx ? '⤡' : '⤢')),
       body);
     body.addEventListener('dblclick', () => toggleSolo(idx));
-    body.addEventListener('click', (e) => setProbe(p, body, e));
-    body.addEventListener('contextmenu', (e) => { e.preventDefault(); const s = panelSource(p); if (s) s.probe = null; });
+    attachPointer(p, body);
+    body.addEventListener('contextmenu', (e) => { e.preventDefault(); const s = panelSource(p); if (s) { s.probe = null; s.roi = null; } });
     grid.append(el);
     views.push({ idx, el, body, overlay });
   });
@@ -336,7 +360,7 @@ function panelOptions(p: PanelState): (Node | string)[] {
     out.push(select(String(p.zoom), [['1', '×1'], ['2', '×2'], ['5', '×5']], (v) => { p.zoom = Number(v); save(); }, 'Zoom'));
   }
   if (p.scope === 'picture') {
-    out.push(select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['luma', 'Luma']], (v) => { p.picture = v as PictureMode; save(); }, 'Bild-Overlay'));
+    out.push(select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma']], (v) => { p.picture = v as PictureMode; save(); }, 'Bild-Overlay'));
   }
   if (p.scope === 'hist') {
     out.push(select(p.hist, [['rgb', 'RGB'], ['luma', 'Luma'], ['split', 'Getrennt']], (v) => { p.hist = v as PanelState['hist']; save(); }));
@@ -350,27 +374,99 @@ function toggleSolo(idx: number) {
   renderPanels();
 }
 
-function setProbe(p: PanelState, body: HTMLElement, e: MouseEvent) {
-  if (p.scope !== 'picture') return;
-  const s = panelSource(p);
-  if (!s || !s.width) return;
-  const b = body.getBoundingClientRect();
-  const r = plotRect('picture', b.width, b.height, s.width / s.height);
-  const fx = (e.clientX - b.left - r.x) / r.w, fy = (e.clientY - b.top - r.y) / r.h;
-  if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return;
-  s.probe = { x: Math.floor(fx * s.width), y: Math.floor(fy * s.height) };
+/** Switching the source in one panel switches every panel that is not pinned. */
+function switchSource(from: PanelState, id: string) {
+  from.sourceId = id;
+  for (const q of state.panels) if (!q.pin) q.sourceId = id;
+  save(); renderPanels();
+}
+
+/** Picture panel: click = probe, drag = region of interest (highlighted in all scopes). */
+function attachPointer(p: PanelState, body: HTMLElement) {
+  const toSrc = (e: PointerEvent, s: Source, clamp: boolean) => {
+    const b = body.getBoundingClientRect();
+    const r = plotRect('picture', b.width, b.height, s.width / s.height);
+    let fx = (e.clientX - b.left - r.x) / r.w, fy = (e.clientY - b.top - r.y) / r.h;
+    if (!clamp && (fx < 0 || fy < 0 || fx > 1 || fy > 1)) return null;
+    fx = Math.min(1, Math.max(0, fx)); fy = Math.min(1, Math.max(0, fy));
+    return { x: Math.min(s.width - 1, Math.floor(fx * s.width)), y: Math.min(s.height - 1, Math.floor(fy * s.height)) };
+  };
+  let start: { x: number; y: number; cx: number; cy: number } | null = null;
+  body.addEventListener('pointerdown', (e) => {
+    const s = panelSource(p);
+    if (p.scope !== 'picture' || !s?.width || e.button !== 0) return;
+    const pt = toSrc(e, s, false);
+    if (!pt) return;
+    start = { ...pt, cx: e.clientX, cy: e.clientY };
+    try { body.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
+  });
+  body.addEventListener('pointermove', (e) => {
+    const s = panelSource(p);
+    if (!start || !s) return;
+    if (Math.hypot(e.clientX - start.cx, e.clientY - start.cy) < 5) return;
+    const pt = toSrc(e, s, true)!;
+    s.roi = [Math.min(start.x, pt.x), Math.min(start.y, pt.y), Math.max(start.x, pt.x) + 1, Math.max(start.y, pt.y) + 1];
+  });
+  body.addEventListener('pointerup', (e) => {
+    const s = panelSource(p);
+    if (start && s && Math.hypot(e.clientX - start.cx, e.clientY - start.cy) < 5) s.probe = { x: start.x, y: start.y };
+    start = null;
+  });
+}
+
+// ---------------------------------------------------------------- transport (video files)
+
+/** The video file shown in the most panels (fallback: any video file). */
+function activeVideo(): Source | null {
+  const shown = views.map((v) => panelSource(state.panels[v.idx])).filter((s): s is Source => !!s && s.isVideoFile);
+  return shown[0] ?? sources.find((s) => s.isVideoFile) ?? null;
+}
+
+function transportControls(s: Source): Node[] {
+  const range = h('input', { type: 'range', class: 'playhead', 'data-src': s.id, min: 0, max: 1000, step: 1, value: 0, title: 'Playhead' }) as HTMLInputElement;
+  range.oninput = () => { const v = s.video; if (v && v.duration) { v.pause(); s.seek((Number(range.value) / 1000) * v.duration); } };
+  const btn = (label: string, title: string, fn: () => void) => h('button', { class: 'mini', title, onclick: fn }, label);
+  return [
+    h('div', { class: 'row' }, range),
+    h('div', { class: 'row transport' },
+      btn('⏮', 'Anfang (Pos1)', () => s.seek(0)),
+      btn('◀◀', 'Rückwärts (J, mehrfach = schneller)', () => s.shuttle(-1)),
+      btn('◀|', 'Frame zurück (←)', () => s.step(-1)),
+      btn(s.video?.paused === false ? '❚❚' : '▶', 'Start/Stopp (Leertaste, K)', () => s.togglePlay()),
+      btn('|▶', 'Frame vor (→)', () => s.step(1)),
+      btn('▶▶', 'Vorwärts (L, mehrfach = schneller)', () => s.shuttle(1)),
+      h('span', { class: 'tc', 'data-tc': s.id }, s.timecode())),
+  ];
+}
+
+/** Move playheads and timecodes without re-rendering the source list. */
+function updateTransport() {
+  for (const s of sources) {
+    const v = s.video;
+    if (!v || !s.isVideoFile) continue;
+    const r = document.querySelector<HTMLInputElement>(`input.playhead[data-src="${s.id}"]`);
+    if (r && document.activeElement !== r && v.duration) r.value = String(Math.round((v.currentTime / v.duration) * 1000));
+    const tc = document.querySelector<HTMLElement>(`[data-tc="${s.id}"]`);
+    if (tc) tc.textContent = `${s.timecode()} / ${s.timecode(v.duration || 0)}${v.playbackRate !== 1 ? ` ×${v.playbackRate}` : ''}${s.reverseSpeed ? ` ◀×${s.reverseSpeed}` : ''}`;
+  }
 }
 
 // ---------------------------------------------------------------- render loop
 
 let lastStats = 0;
+let needClear = true;
+const panelSigs = new Map<number, string>();
 
 function frame(now: number) {
   requestAnimationFrame(frame);
   const g = grid.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  renderer.resize(g.width, g.height, dpr);
-  renderer.beginFrame();
+  const displaySpace = state.display === 'auto' ? detected.space : state.display;
+  renderer.setOutputSpace(displaySpace === 'p3' ? 'display-p3' : 'srgb');
+  if (renderer.resize(g.width, g.height, dpr)) needClear = true;
+  renderer.beginFrame(needClear);
+  if (needClear) { panelSigs.clear(); needClear = false; }
+  updateTransport();
 
   if (now - lastStats > 100) {
     lastStats = now;
@@ -383,15 +479,21 @@ function frame(now: number) {
     const src = panelSource(p);
     const b = v.body.getBoundingClientRect();
     const bx = b.left - g.left, by = b.top - g.top;
+    const bodyRect = { x: bx, y: by, w: b.width, h: b.height };
+    const opts = {
+      unit: state.unit, tint: state.tint, maxSamples: state.maxSamples, falsePreset: state.falsePreset,
+      zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps, skin: state.skin, display: displaySpace,
+    };
+    // Skip panels whose inputs did not change: no GPU work, no overlay redraw.
+    const sig = panelSignature(p, src, bodyRect, opts) + dpr;
+    if (panelSigs.get(v.idx) === sig) continue;
+    panelSigs.set(v.idx, sig);
     const W = Math.round(b.width * dpr), H = Math.round(b.height * dpr);
     if (v.overlay.width !== W || v.overlay.height !== H) { v.overlay.width = W; v.overlay.height = H; }
     const ctx = v.overlay.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, b.width, b.height);
-    drawPanel(renderer, ctx, `p${v.idx}`, p, src, { x: bx, y: by, w: b.width, h: b.height }, {
-      unit: state.unit, tint: state.tint, maxSamples: state.maxSamples, falsePreset: state.falsePreset,
-      zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps,
-    });
+    drawPanel(renderer, ctx, `p${v.idx}`, p, src, bodyRect, opts);
   }
 
   fpsFrames++;
@@ -423,11 +525,22 @@ document.addEventListener('keydown', (e) => {
   if ((e.target as HTMLElement).closest('input, select, textarea')) return;
   const keys = Object.keys(LAYOUTS);
   if (/^[1-6]$/.test(e.key)) setLayout(keys[Number(e.key) - 1]);
-  else if (e.key === ' ') { e.preventDefault(); toggleFreeze(); }
+  else if (e.key === ' ') { e.preventDefault(); const v = activeVideo(); if (v) v.togglePlay(); else toggleFreeze(); }
+  else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    const v = activeVideo(); if (!v) return;
+    e.preventDefault();
+    const d = e.key === 'ArrowRight' ? 1 : -1;
+    if (e.shiftKey) v.seek((v.video?.currentTime ?? 0) + d); else v.step(d);
+  }
+  else if (e.key === 'j' || e.key === 'J') activeVideo()?.shuttle(-1);
+  else if (e.key === 'k' || e.key === 'K') activeVideo()?.shuttle(0);
+  else if (e.key === 'l' || e.key === 'L') activeVideo()?.shuttle(1);
+  else if (e.key === 'Home') activeVideo()?.seek(0);
+  else if (e.key === 'End') { const v = activeVideo(); v?.seek(v.video?.duration ?? 0); }
   else if (e.key === 'f' || e.key === 'F') $('#full').click();
   else if (e.key === 's' || e.key === 'S') snapshot();
   else if (e.key === 'b' || e.key === 'B') $('#toggle-side').click();
-  else if (e.key === 'Escape') { if (solo !== null) toggleSolo(solo); else sources.forEach((s) => (s.probe = null)); }
+  else if (e.key === 'Escape') { if (solo !== null) toggleSolo(solo); else sources.forEach((s) => { s.probe = null; s.roi = null; }); }
 });
 
 for (const saved of state.sources) {

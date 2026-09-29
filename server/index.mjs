@@ -76,7 +76,8 @@ export function validateInput(url) {
 function inputArgs(url, transport) {
   if (url in TEST_PATTERNS) return ['-re', '-f', 'lavfi', '-i', TEST_PATTERNS[url]];
   const a = ['-fflags', 'nobuffer', '-flags', 'low_delay', '-analyzeduration', '1000000', '-probesize', '2000000'];
-  if (/^rtsps?:/i.test(url)) a.push('-rtsp_transport', transport === 'udp' ? 'udp' : 'tcp', '-timeout', '5000000');
+  // low latency: no reorder queue, no demuxer delay (the probe already ran separately)
+  if (/^rtsps?:/i.test(url)) a.push('-rtsp_transport', transport === 'udp' ? 'udp' : 'tcp', '-timeout', '5000000', '-reorder_queue_size', '0', '-max_delay', '0');
   else a.push('-rw_timeout', '5000000');
   return [...a, '-i', url];
 }
@@ -210,7 +211,7 @@ async function startStream(ws, params) {
     ...inputArgs(url, transport),
     '-an', '-sn', '-dn', '-map', '0:v:0',
     '-vf', vf.join(','),
-    '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba',
+    '-fps_mode', 'passthrough', '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba',
     '-f', 'rawvideo', 'pipe:1',
   ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
 

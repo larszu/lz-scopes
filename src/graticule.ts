@@ -7,15 +7,15 @@ import {
 import { CIE_VIEW, WAVE_MAX, WAVE_MIN, type Rect } from './renderer';
 import type { Source } from './sources';
 
-export type ScopeType = 'picture' | 'wf-luma' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'hist' | 'stats';
+export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'hist' | 'stats';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits';
 
 export const SCOPE_LABELS: Record<ScopeType, string> = {
-  picture: 'Bild', 'wf-luma': 'Waveform Luma', 'wf-rgb': 'Waveform RGB', parade: 'RGB-Parade', yrgb: 'YRGB-Parade',
+  picture: 'Bild', 'wf-luma': 'Waveform Luma', 'wf-color': 'Waveform Farbe', 'wf-skin': 'Waveform Hauttöne', 'wf-rgb': 'Waveform RGB', parade: 'RGB-Parade', yrgb: 'YRGB-Parade',
   ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE 1931', hist: 'Histogramm', stats: 'Messwerte',
 };
 
-export const isWaveform = (s: ScopeType) => s === 'wf-luma' || s === 'wf-rgb' || s === 'parade' || s === 'yrgb' || s === 'ycbcr';
+export const isWaveform = (s: ScopeType) => s === 'wf-luma' || s === 'wf-color' || s === 'wf-skin' || s === 'wf-rgb' || s === 'parade' || s === 'yrgb' || s === 'ycbcr';
 export const sections = (s: ScopeType) => (s === 'parade' || s === 'ycbcr' ? 3 : s === 'yrgb' ? 4 : 1);
 
 const GRID = 'rgba(210, 190, 120, 0.42)';
@@ -87,12 +87,23 @@ export function drawWaveGraticule(ctx: CanvasRenderingContext2D, scope: ScopeTyp
   ctx.fillText(unit === 'nits' ? `cd/m² ${transfer.toUpperCase()}` : unit === 'percent' ? '%' : unit === 'bit8' ? '8 bit' : '10 bit', r.x + r.w - 4, r.y + 2);
 }
 
+/** Skin-tone luma window of the skin waveform. */
+export function drawSkinRange(ctx: CanvasRenderingContext2D, r: Rect, skin: { lo: number; hi: number; tol: number }) {
+  const y0 = waveY(r, skin.hi), y1 = waveY(r, skin.lo);
+  ctx.fillStyle = 'rgba(255, 170, 110, 0.07)'; ctx.fillRect(r.x, y0, r.w, y1 - y0);
+  ctx.strokeStyle = 'rgba(255, 170, 110, 0.8)'; ctx.setLineDash([6, 4]);
+  for (const y of [y0, y1]) { ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke(); }
+  ctx.setLineDash([]);
+  ctx.font = FONT; ctx.fillStyle = 'rgba(255, 190, 140, 0.95)'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText(`Hautton ${Math.round(skin.lo * 100)}–${Math.round(skin.hi * 100)} %  ±${skin.tol}°`, r.x + 4, y0 - 2);
+}
+
 export function drawWaveProbe(ctx: CanvasRenderingContext2D, scope: ScopeType, r: Rect, src: Source, rgb: [number, number, number]) {
   if (!src.probe) return;
   const n = sections(scope);
   const fx = src.probe.x / src.width;
   const { y, cb, cr } = ycbcr(rgb[0], rgb[1], rgb[2], src.colorspace);
-  const vals: [number, string][] = scope === 'wf-luma' ? [[y, '#fff']]
+  const vals: [number, string][] = scope === 'wf-luma' || scope === 'wf-color' || scope === 'wf-skin' ? [[y, '#fff']]
     : scope === 'wf-rgb' || scope === 'parade' ? [[rgb[0], '#ff6b6b'], [rgb[1], '#6bff7a'], [rgb[2], '#7b9bff']]
       : scope === 'yrgb' ? [[y, '#fff'], [rgb[0], '#ff6b6b'], [rgb[1], '#6bff7a'], [rgb[2], '#7b9bff']]
         : [[y, '#fff'], [cb + 0.5, '#7b9bff'], [cr + 0.5, '#ff6b6b']];

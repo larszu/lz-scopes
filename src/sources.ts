@@ -52,7 +52,13 @@ export class Source {
   dropped = 0;
   frozen = false;
   stats: Stats | null = null;
+  statsVersion = 0;
   probe: { x: number; y: number } | null = null;
+  /** Region of interest in source pixels [x0, y0, x1, y1). */
+  roi: [number, number, number, number] | null = null;
+  /** Estimated frame duration of a video file (from presented frames). */
+  frameDuration = 1 / 25;
+  private probeCache = { key: '', rgb: null as [number, number, number] | null };
   onChange: () => void = () => {};
 
   private ws: WebSocket | null = null;
@@ -61,7 +67,7 @@ export class Source {
   private objectUrl: string | null = null;
   private frameTimes: number[] = [];
   private statsCanvas: HTMLCanvasElement | null = null;
-  private statsSeq = -1;
+  private statsSeq = '';
 
   constructor(kind: SourceKind, name?: string, settings?: Partial<SourceSettings>) {
     this.id = `s${nextId++}`;
@@ -227,9 +233,20 @@ export class Source {
       if (this.element !== v) return;
       this.width = v.videoWidth; this.height = v.videoHeight;
       this.tick();
-      if ('requestVideoFrameCallback' in v) v.requestVideoFrameCallback(onFrame);
+      if ('requestVideoFrameCallback' in v) v.requestVideoFrameCallback(onFrameMeta);
       else setTimeout(onFrame, 1000 / 30);
     };
+    let lastMedia = -1;
+    const onFrameMeta = (_now: number, meta: VideoFrameCallbackMetadata) => {
+      const d = meta.mediaTime - lastMedia;
+      if (lastMedia >= 0 && d > 0.005 && d < 0.2 && !v.paused) this.frameDuration = this.frameDuration * 0.8 + d * 0.2;
+      lastMedia = meta.mediaTime;
+      onFrame();
+    };
+    // a paused seek (frame step, scrubbing) must refresh the scopes as well
+    v.addEventListener('seeked', () => { if (this.element === v) { this.tick(); this.onChange(); } });
+    v.addEventListener('play', () => this.onChange());
+    v.addEventListener('pause', () => this.onChange());
     onFrame();
   }
 
@@ -238,6 +255,7 @@ export class Source {
   }
 
   stop() {
+    if (this.reverseTimer) { clearInterval(this.reverseTimer); this.reverseTimer = null; }
     if (this.patternTimer) { clearInterval(this.patternTimer); this.patternTimer = null; }
     if (this.ws) { const ws = this.ws; this.ws = null; ws.onclose = null; ws.close(); }
     this.media?.getTracks().forEach((t) => t.stop());
@@ -249,8 +267,61 @@ export class Source {
     if (this.status !== 'idle') this.set('idle');
   }
 
-  /** Read one pixel as normalised R'G'B'. */
+  // ---- transport (video files), Resolve-style
+  get isVideoFile() { return this.kind === 'file' && this.video !== null; }
+  togglePlay() { const v = this.video; if (!v) return; if (v.paused && !this.reverseTimer) { v.playbackRate = 1; v.play(); } else this.shuttle(0); }
+  pause() { this.video?.pause(); }
+  play() { this.video?.play(); }
+  private reverseTimer: ReturnType<typeof setInterval> | null = null;
+  /** Resolve J/K/L: dir 1 = forward (repeated: faster), -1 = reverse (repeated: faster), 0 = stop. */
+  shuttle(dir: -1 | 0 | 1) {
+    const v = this.video;
+    if (!v) return;
+    const reversing = this.reverseTimer !== null;
+    if (this.reverseTimer) { clearInterval(this.reverseTimer); this.reverseTimer = null; }
+    if (dir === 0) { v.pause(); v.playbackRate = 1; this.reverseSpeed = 0; return; }
+    if (dir === 1) {
+      this.reverseSpeed = 0;
+      v.playbackRate = !v.paused && v.playbackRate >= 1 ? Math.min(8, v.playbackRate * 2) : 1;
+      v.play();
+      return;
+    }
+    v.pause(); v.playbackRate = 1;
+    this.reverseSpeed = reversing ? Math.min(8, this.reverseSpeed * 2) : 1;
+    const speed = this.reverseSpeed;
+    this.reverseTimer = setInterval(() => {
+      if (v.currentTime <= 0) { this.shuttle(0); return; }
+      if (!v.seeking) this.seek(v.currentTime - this.frameDuration * speed);
+    }, this.frameDuration * 1000);
+  }
+  reverseSpeed = 0;
+  seek(t: number) { const v = this.video; if (v) v.currentTime = Math.max(0, Math.min(v.duration || 0, t)); }
+  /** Step n frames (paused). Lands in the middle of the target frame to avoid rounding onto the neighbour. */
+  step(n: number) {
+    const v = this.video;
+    if (!v) return;
+    if (this.reverseTimer) this.shuttle(0);
+    v.pause();
+    const f = this.frameDuration, idx = Math.round(v.currentTime / f) + n;
+    this.seek(idx * f + f / 2);
+  }
+  timecode(t = this.video?.currentTime ?? 0) {
+    const fps = Math.max(1, Math.round(1 / this.frameDuration));
+    const fr = Math.floor(t * fps + 1e-6), ff = fr % fps, s = Math.floor(fr / fps);
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    return `${p2(Math.floor(s / 3600))}:${p2(Math.floor(s / 60) % 60)}:${p2(s % 60)}:${p2(ff)}`;
+  }
+
+  /** Read one pixel as normalised R'G'B' (cached per frame – DOM readback is slow). */
   readPixel(x: number, y: number): [number, number, number] | null {
+    const key = `${this.frameSeq}:${Math.floor(x)}:${Math.floor(y)}`;
+    if (this.probeCache.key === key) return this.probeCache.rgb;
+    const rgb = this.readPixelNow(x, y);
+    this.probeCache = { key, rgb };
+    return rgb;
+  }
+
+  private readPixelNow(x: number, y: number): [number, number, number] | null {
     x = Math.floor(x); y = Math.floor(y);
     if (x < 0 || y < 0 || x >= this.width || y >= this.height) return null;
     if (this.data) {
@@ -275,8 +346,9 @@ export class Source {
 
   /** Histogram and clipping statistics on a subsampled frame (CPU, ~130 k samples). */
   updateStats(kr: number, kb: number) {
-    if (!this.ready || this.statsSeq === this.frameSeq) return;
-    this.statsSeq = this.frameSeq;
+    const seqKey = `${this.frameSeq}:${this.roi?.join(',') ?? ''}`;
+    if (!this.ready || this.statsSeq === seqKey) return;
+    this.statsSeq = seqKey;
     let px: Uint8Array | Uint8ClampedArray | Uint16Array, w: number, h: number, step: number, scale: number;
     if (this.data) {
       px = this.data; w = this.width; h = this.height; scale = this.depth === 16 ? 65535 : 255;
@@ -287,18 +359,26 @@ export class Source {
       ctx.drawImage(this.element!, 0, 0, w, h);
       px = ctx.getImageData(0, 0, w, h).data; scale = 255; step = 1;
     }
-    this.stats = computeStats(px, w, h, step, scale, kr, kb);
+    // restrict to the region of interest, scaled to the analysed buffer
+    let roi: [number, number, number, number] | null = null;
+    if (this.roi) {
+      const sx = w / this.width, sy = h / this.height;
+      roi = [Math.floor(this.roi[0] * sx), Math.floor(this.roi[1] * sy), Math.ceil(this.roi[2] * sx), Math.ceil(this.roi[3] * sy)];
+    }
+    this.stats = computeStats(px, w, h, step, scale, kr, kb, roi);
+    this.statsVersion++;
   }
 }
 
-export function computeStats(px: ArrayLike<number>, w: number, h: number, step: number, scale: number, kr: number, kb: number): Stats {
+export function computeStats(px: ArrayLike<number>, w: number, h: number, step: number, scale: number, kr: number, kb: number, roi: [number, number, number, number] | null = null): Stats {
+  const [x0, y0, x1, y1] = roi ?? [0, 0, w, h];
   const hist = [0, 1, 2, 3].map(() => new Float32Array(256));
   const kg = 1 - kr - kb;
   const lo = 0.5 / 255, hi = 254.5 / 255;
   const clipLow = [0, 0, 0], clipHigh = [0, 0, 0];
   let yMin = 1, yMax = 0, ySum = 0, n = 0;
-  for (let y = 0; y < h; y += step) {
-    for (let x = 0; x < w; x += step) {
+  for (let y = Math.max(0, y0); y < Math.min(h, y1); y += step) {
+    for (let x = Math.max(0, x0); x < Math.min(w, x1); x += step) {
       const i = (y * w + x) * 4;
       const r = px[i] / scale, g = px[i + 1] / scale, b = px[i + 2] / scale;
       const Y = kr * r + kg * g + kb * b;

@@ -2,9 +2,9 @@
 // One WebGL canvas behind a small panel grid; feed it a Source (bridge frames,
 // video element, test pattern). Framework-free so React/Vue hosts wrap it in a ref.
 
-import { LUMA } from './color';
+import { LUMA, detectDisplay } from './color';
 import { SCOPE_LABELS, type ScopeType, type Unit } from './graticule';
-import { defaultPanel, drawPanel, type PanelState, type Tint } from './panel';
+import { DEFAULT_SKIN, defaultPanel, drawPanel, panelSignature, type PanelState, type Tint } from './panel';
 import { Renderer } from './renderer';
 import type { Source } from './sources';
 
@@ -39,6 +39,8 @@ export class ScopeView {
   private source: Source | null = null;
   private raf = 0;
   private lastStats = 0;
+  private dirty = true;
+  private sigs = new Map<number, string>();
   private opts: Required<Omit<ScopeViewOptions, 'onScopesChange' | 'emptyText'>> & ScopeViewOptions;
 
   constructor(container: HTMLElement, options: ScopeViewOptions = {}) {
@@ -57,11 +59,12 @@ export class ScopeView {
 
   setSource(src: Source | null) { this.source = src; }
 
-  setOptions(o: Partial<Pick<ScopeViewOptions, 'unit' | 'tint' | 'maxSamples'>>) { Object.assign(this.opts, o); }
+  setOptions(o: Partial<Pick<ScopeViewOptions, 'unit' | 'tint' | 'maxSamples'>>) { Object.assign(this.opts, o); this.dirty = true; }
 
   setScopes(scopes: ScopeType[]) {
     this.panels.forEach((p, i) => { p.el.remove(); this.renderer.dropPanel(`e${i}`); });
     this.opts.scopes = scopes;
+    this.dirty = true;
     const n = scopes.length;
     const cols = n <= 1 ? 1 : n <= 4 ? 2 : 3;
     this.root.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
@@ -95,8 +98,11 @@ export class ScopeView {
     const g = this.root.getBoundingClientRect();
     if (g.width < 2 || g.height < 2) return;
     const dpr = window.devicePixelRatio || 1;
-    this.renderer.resize(g.width, g.height, dpr);
-    this.renderer.beginFrame();
+    const display = detectDisplay().space;
+    this.renderer.setOutputSpace(display === 'p3' ? 'display-p3' : 'srgb');
+    const cleared = this.renderer.resize(g.width, g.height, dpr) || this.dirty;
+    this.renderer.beginFrame(cleared);
+    if (cleared) { this.sigs.clear(); this.dirty = false; }
     const src = this.source;
     const now = performance.now();
     if (src && now - this.lastStats > 100) {
@@ -108,13 +114,19 @@ export class ScopeView {
       const b = p.body.getBoundingClientRect();
       const W = Math.round(b.width * dpr), H = Math.round(b.height * dpr);
       if (p.overlay.width !== W || p.overlay.height !== H) { p.overlay.width = W; p.overlay.height = H; }
+      const body = { x: b.left - g.left, y: b.top - g.top, w: b.width, h: b.height };
+      const o = {
+        unit: this.opts.unit, tint: this.opts.tint, maxSamples: this.opts.maxSamples, falsePreset: 'ARRI',
+        zebra: 0.95, zebraLow: 0, frozen: false, displayFps: 0, skin: DEFAULT_SKIN, display,
+        emptyText: this.opts.emptyText ?? 'Kein Signal',
+      };
+      const sig = panelSignature(p.state, src, body, o) + dpr;
+      if (this.sigs.get(i) === sig) return;
+      this.sigs.set(i, sig);
       const ctx = p.overlay.getContext('2d')!;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, b.width, b.height);
-      drawPanel(this.renderer, ctx, `e${i}`, p.state, src, { x: b.left - g.left, y: b.top - g.top, w: b.width, h: b.height }, {
-        unit: this.opts.unit, tint: this.opts.tint, maxSamples: this.opts.maxSamples, falsePreset: 'ARRI',
-        zebra: 0.95, zebraLow: 0, frozen: false, displayFps: 0, emptyText: this.opts.emptyText ?? 'Kein Signal',
-      });
+      drawPanel(this.renderer, ctx, `e${i}`, p.state, src, body, o);
     });
   };
 

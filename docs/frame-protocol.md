@@ -20,3 +20,41 @@ ffmpeg -rtsp_transport tcp -i <url> -an -map 0:v:0 \
 ```
 
 `in_color_matrix` immer explizit setzen, sonst wandelt swscale ungetaggte HD-Streams mit BT.601. Kommt der Browser nicht hinterher, Bilder verwerfen statt puffern (`ws.bufferedAmount`).
+
+## Protokoll 2: Bild und Ton (`audio=1`)
+
+Opt-in über die Anfrage: `/stream?url=…&audio=1` (optional `&video=0` für reine Tonquellen). Ohne `audio=1` bleibt alles wie oben; Hosts, die nur Protokoll 1 sprechen, funktionieren unverändert weiter (der Client erkennt Protokoll 2 an `info.proto`).
+
+`info` bekommt zwei Felder:
+
+```json
+{"type":"info", "...":"wie oben", "proto":2,
+ "audio":{"sampleRate":48000,"channels":2,"format":"f32le","layout":"stereo",
+          "codec":"aac","sourceSampleRate":48000,"sourceChannels":2}}
+```
+
+`"audio": null`, wenn die Quelle keinen Ton hat; dann kommen auch keine Tonpakete. Bei reinen Tonquellen sind `width` und `height` 0.
+
+Jede Binärnachricht beginnt bei `proto: 2` mit einem 16-Byte-Kopf (Little Endian), die Nutzlast bleibt auf 4 Byte ausgerichtet:
+
+| Offset | Typ | Bild `LZV1` | Ton `LZA1` |
+|---|---|---|---|
+| 0 | 4 × ASCII | `LZV1` | `LZA1` |
+| 4 | uint32 | Bildnummer seit Start | Anzahl Sample-Frames n im Paket |
+| 8 | float64 | PTS in s (derzeit immer NaN) | Index des ersten Samples seit Start (lückenlos; ein Sprung = Lücke) |
+| 16 | … | RGBA wie oben | n × channels float32, verschachtelt |
+
+- Tonpakete zu 20 ms (960 Frames bei 48 kHz). Keine Abtastraten- oder Kanalwandlung: Rate und Layout wie in der Quelle.
+- **Ton wird nie verworfen.** Die Drop-Regel über `bufferedAmount` gilt nur für Bilder.
+- `stats` enthält zusätzlich `audioSent`, `audioDropped` (immer 0), `audioGaps` und `audioSplit` (Ersatzweg aktiv, siehe unten).
+- Die Testbilder `test:*` liefern mit `audio=1` einen 1-kHz-Ton in Stereo mit Amplitude 1/8 (−18,06 dBFS, Ausrichtungspegel nach EBU R 68).
+
+ffmpeg, ein Prozess mit zwei Ausgängen (Ton auf Dateideskriptor 3):
+
+```
+ffmpeg … -i <url> \
+  -map 0:v:0 -an -vf scale=… -pix_fmt rgba -f rawvideo pipe:1 \
+  -map 0:a:0 -vn -c:a pcm_f32le -f f32le pipe:3
+```
+
+Ersatzweg: Beendet sich ffmpeg in den ersten Sekunden mit einem Fehler zu `pipe:3` (möglich unter Windows, wenn der Deskriptor nicht vererbt wird), startet die Bridge einen zweiten ffmpeg-Prozess nur für den Ton (`-vn … pipe:1`). Der öffnet eine zweite Sitzung zur Quelle; manche Kameras vertragen das nicht. Mit `LZS_AUDIO_SPLIT=1` lässt sich der Ersatzweg erzwingen.

@@ -1,8 +1,15 @@
 import { detectColorspace, detectTransfer, isLog, type Colorspace, type GamutId, type Transfer } from './color';
 import { LOG_CURVES } from './camera';
 import { patternById, renderPattern } from './patterns';
+import { AudioAnalysis } from './audio/analysis';
+import { AudioTap, generator, measurementConstraints } from './audio/io';
 
-export type SourceKind = 'stream' | 'webcam' | 'screen' | 'file' | 'pattern' | 'folder';
+export type SourceKind = 'stream' | 'webcam' | 'screen' | 'file' | 'pattern' | 'folder' | 'audio';
+
+/** Input of an audio-only source. */
+export interface AudioInput { mode: 'device' | 'file' | 'generator'; deviceId: string }
+
+export interface AudioStreamInfo { sampleRate: number; channels: number; format: string; layout?: string; codec?: string }
 
 export interface SourceSettings {
   transfer: 'auto' | Transfer;
@@ -16,11 +23,16 @@ export interface SourceSettings {
   fps: number;
   depth: 8 | 16;
   transport: 'tcp' | 'udp';
+  /** bridge streams: request the sound as well (protocol 2) */
+  audio?: boolean;
 }
 
 export interface StreamInfo {
   width: number; height: number; sourceWidth: number; sourceHeight: number; depth: 8 | 16; fps: number;
   codec?: string; pixFmt?: string; decodeMatrix?: string; transfer?: string; primaries?: string; matrix?: string; range?: string;
+  /** protocol 2 (audio=1): header on every binary message */
+  proto?: number;
+  audio?: AudioStreamInfo | null;
 }
 
 export interface Stats {
@@ -32,7 +44,7 @@ export interface Stats {
   samples: number;
 }
 
-export const DEFAULT_SETTINGS: SourceSettings = { transfer: 'auto', colorspace: 'auto', gamut: 'auto', hlgLw: 1000, width: 960, fps: 0, depth: 8, transport: 'tcp' };
+export const DEFAULT_SETTINGS: SourceSettings = { transfer: 'auto', colorspace: 'auto', gamut: 'auto', hlgLw: 1000, width: 960, fps: 0, depth: 8, transport: 'tcp', audio: true };
 
 let nextId = 1;
 
@@ -60,6 +72,12 @@ export class Source {
   frozen = false;
   stats: Stats | null = null;
   statsVersion = 0;
+  /** Sound of this source (bridge PCM, video file, audio device, generator); null = none. */
+  audio: AudioAnalysis | null = null;
+  audioIn: AudioInput = { mode: 'device', deviceId: '' };
+  /** audio file playing in an audio source (mode 'file') */
+  audioEl: HTMLAudioElement | null = null;
+  private audioTap: AudioTap | null = null;
   private lastFrame: { px: ArrayLike<number>; w: number; h: number; step: number; scale: number } | null = null;
 
   /**
@@ -120,7 +138,7 @@ export class Source {
   constructor(kind: SourceKind, name?: string, settings?: Partial<SourceSettings>) {
     this.id = `s${nextId++}`;
     this.kind = kind;
-    this.name = name ?? { stream: 'Stream', webcam: 'Kamera', screen: 'Bildschirm/Fenster', file: 'Datei', pattern: 'Testbild', folder: 'Ordner' }[kind];
+    this.name = name ?? { stream: 'Stream', webcam: 'Kamera', screen: 'Bildschirm/Fenster', file: 'Datei', pattern: 'Testbild', folder: 'Ordner', audio: 'Audio' }[kind];
     this.settings = { ...DEFAULT_SETTINGS, ...settings };
   }
 
@@ -161,6 +179,7 @@ export class Source {
     this.set('connecting', 'Verbinde …');
     const { width, fps, depth, transport } = this.settings;
     const q = new URLSearchParams({ url, width: String(width), fps: String(fps), depth: String(depth), transport });
+    if (this.settings.audio !== false) q.set('audio', '1');
     this.connectFrames(`${bridge}/stream?${q}`, false);
   }
 
@@ -178,7 +197,11 @@ export class Source {
         const msg = JSON.parse(ev.data);
         if (msg.type === 'info') {
           this.info = msg; this.width = msg.width; this.height = msg.height; this.depth = msg.depth;
-          this.set('live', `${msg.sourceWidth}×${msg.sourceHeight} ${msg.codec ?? ''}`.trim());
+          const a = msg.audio as AudioStreamInfo | null | undefined;
+          this.audio = a ? new AudioAnalysis(a.sampleRate, a.channels, a.layout) : null;
+          if (this.audio && a) this.audio.label = `Bridge · ${a.codec ?? ''} ${a.sampleRate / 1000} kHz`.replace('  ', ' ');
+          const pic = msg.width ? `${msg.sourceWidth}×${msg.sourceHeight} ${msg.codec ?? ''}`.trim() : 'nur Ton';
+          this.set('live', a ? `${pic} · Ton ${a.codec ?? ''} ${a.sampleRate / 1000} kHz ${a.channels} Kan.` : msg.proto === 2 ? `${pic} · kein Ton` : pic);
         } else if (msg.type === 'stats') {
           this.dropped = msg.dropped;
           if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', msg.message);
@@ -187,8 +210,24 @@ export class Source {
         }
         return;
       }
+      const buf = ev.data as ArrayBuffer;
+      if (this.info?.proto === 2) {
+        // 16-byte header: 'LZV1' | 'LZA1', uint32, float64 (docs/frame-protocol.md)
+        const head = new DataView(buf, 0, 16);
+        const magic = String.fromCharCode(head.getUint8(0), head.getUint8(1), head.getUint8(2), head.getUint8(3));
+        if (magic === 'LZA1') {
+          // audio keeps running while frozen: loudness must not have gaps
+          const n = head.getUint32(4, true), first = head.getFloat64(8, true);
+          if (this.audio) this.audio.pushInterleaved(new Float32Array(buf, 16, n * this.audio.channels), first);
+          return;
+        }
+        if (this.frozen || magic !== 'LZV1') return;
+        this.data = this.depth === 16 ? new Uint16Array(buf, 16) : new Uint8Array(buf, 16);
+        this.tick();
+        return;
+      }
       if (this.frozen) return;
-      this.data = this.depth === 16 ? new Uint16Array(ev.data) : new Uint8Array(ev.data);
+      this.data = this.depth === 16 ? new Uint16Array(buf) : new Uint8Array(buf);
       this.tick();
     };
     ws.onerror = () => this.set('error', 'Bridge nicht erreichbar – läuft `npm run dev` bzw. `npm start`?');
@@ -320,6 +359,7 @@ export class Source {
       await v.play();
       this.attachVideo(v);
       this.set('live', `${v.videoWidth}×${v.videoHeight} Video`);
+      this.tapElement(v).catch(() => { /* no sound track or no AudioContext */ });
     } catch (e) {
       this.set('error', `Nicht abspielbar: ${(e as Error).message}`);
     }
@@ -380,6 +420,65 @@ export class Source {
     onFrame();
   }
 
+  /** Feed samples from a capture worklet or the generator loop-back. */
+  private feed(chs: Float32Array[], n: number, rate: number, label: string) {
+    if (!this.audio || this.audio.fs !== rate || this.audio.channels !== chs.length) {
+      this.audio = new AudioAnalysis(rate, chs.length);
+      this.audio.label = label;
+    }
+    this.audio.push(chs, n);
+  }
+
+  /** Sound of a video/audio element: routed into the analysis, audible only with monitoring. */
+  private async tapElement(el: HTMLMediaElement) {
+    this.audioTap?.close();
+    const tap = await AudioTap.fromElement(el, (chs, n, rate) => this.feed(chs, n, rate, `Datei · ${rate / 1000} kHz`));
+    this.audioTap = tap;
+    el.addEventListener('play', () => tap.resume());
+  }
+
+  get monitoring() { return this.audioTap?.monitoring ?? false; }
+  setMonitor(on: boolean) { this.audioTap?.setMonitor(on); this.onChange(); }
+  get canMonitor() { return !!this.audioTap; }
+
+  /** Audio-only source: audio device, audio file or the generator loop-back. */
+  async startAudio(file?: File) {
+    this.stop();
+    const inp = this.audioIn;
+    try {
+      if (inp.mode === 'generator') {
+        generator.setLoopback((chs, n, rate) => this.feed(chs, n, rate, `Generator · ${rate / 1000} kHz`));
+        this.generatorBound = true;
+        this.set('live', generator.running ? 'Generator (Rückweg)' : 'Generator (Rückweg) – Generator starten');
+        return;
+      }
+      if (inp.mode === 'file') {
+        if (!file) return;
+        this.objectUrl = URL.createObjectURL(file);
+        this.name = file.name;
+        const el = new Audio(this.objectUrl);
+        el.controls = true; el.loop = true;
+        this.audioEl = el;
+        await this.tapElement(el);
+        await el.play();
+        this.set('live', `${file.name}`);
+        return;
+      }
+      this.set('connecting', 'Warte auf Freigabe …');
+      this.media = await navigator.mediaDevices.getUserMedia({ audio: measurementConstraints(inp.deviceId || undefined), video: false });
+      const track = this.media.getAudioTracks()[0];
+      const st = track.getSettings();
+      const tap = await AudioTap.fromStream(this.media, (chs, n, rate) => this.feed(chs, n, rate, `${track.label} · ${rate / 1000} kHz`));
+      this.audioTap = tap;
+      track.addEventListener('ended', () => this.set('ended', 'Gerät getrennt'));
+      const off = [st.echoCancellation, st.noiseSuppression, st.autoGainControl].some((x) => x === true) ? ' · Achtung: Browser-Regelung aktiv' : '';
+      this.set('live', `${track.label || 'Audiogerät'} · ${tap.ctx.sampleRate / 1000} kHz${st.channelCount ? ` · ${st.channelCount} Kan.` : ''}${off}`);
+    } catch (e) {
+      this.set('error', (e as Error).message);
+    }
+  }
+  private generatorBound = false;
+
   get video(): HTMLVideoElement | null {
     return this.videoEl;
   }
@@ -391,6 +490,10 @@ export class Source {
     if (this.ws) { const ws = this.ws; this.ws = null; ws.onclose = null; ws.close(); }
     this.media?.getTracks().forEach((t) => t.stop());
     this.media = null;
+    this.audioTap?.close(); this.audioTap = null;
+    if (this.audioEl) { this.audioEl.pause(); this.audioEl.removeAttribute('src'); this.audioEl = null; }
+    if (this.generatorBound) { generator.setLoopback(null); this.generatorBound = false; }
+    this.audio = null;
     if (this.videoEl) { this.videoEl.pause(); this.videoEl.srcObject = null; this.videoEl = null; }
     if (this.objectUrl) { URL.revokeObjectURL(this.objectUrl); this.objectUrl = null; }
     this.element = null; this.data = null; this.info = null; this.width = 0; this.height = 0; this.stats = null;

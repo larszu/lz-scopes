@@ -221,6 +221,38 @@ function safeAreas(c: CanvasRenderingContext2D, w: number, h: number) {
   c.fillStyle = '#fff'; c.fillRect(Math.floor(w / 2) - h * 0.02, Math.floor(h / 2), h * 0.04, 1); c.fillRect(Math.floor(w / 2), Math.floor(h / 2) - h * 0.02, 1, h * 0.04);
 }
 
+/** Flash length; the generator's A/V-sync beep has the same length (src/audio/dsp/signals.ts). */
+export const AV_FLASH_MS = 80;
+
+/**
+ * A/V sync: white flash for 80 ms at every whole second of the shared clock
+ * (performance.timeOrigin + performance.now(), equal in all windows of this browser);
+ * the tone generator's “A/V-Sync-Piep” beeps at the same instants. In between a marker
+ * runs along a scale of ±500 ms so a delay can be read off a recording.
+ */
+function avSync(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const now = performance.timeOrigin + performance.now();
+  const ph = now % 1000;
+  if (ph < AV_FLASH_MS) { fill(ctx, gray(1), 0, 0, w, h); return; }
+  fill(ctx, gray(0), 0, 0, w, h);
+  const y = h * 0.62, x0 = w * 0.1, x1 = w * 0.9;
+  ctx.fillStyle = css(gray(0.5));
+  for (let i = -10; i <= 10; i++) {
+    const x = x0 + ((i + 10) / 20) * (x1 - x0), big = i % 5 === 0;
+    ctx.fillRect(Math.round(x) - 1, Math.round(y - (big ? h * 0.05 : h * 0.025)), 2, Math.round(big ? h * 0.1 : h * 0.05));
+  }
+  text(ctx, '−500 ms', x0, y + h * 0.09, h * 0.03, css(gray(0.6)));
+  text(ctx, 'Blitz', (x0 + x1) / 2, y + h * 0.09, h * 0.03, css(gray(0.6)));
+  text(ctx, '+500 ms', x1, y + h * 0.09, h * 0.03, css(gray(0.6)));
+  // marker: position relative to the nearest flash
+  const rel = ph > 500 ? ph - 1000 : ph;
+  const mx = x0 + ((rel + 500) / 1000) * (x1 - x0);
+  ctx.fillStyle = css(gray(1));
+  ctx.fillRect(Math.round(mx) - 3, Math.round(y - h * 0.08), 6, Math.round(h * 0.16));
+  text(ctx, 'A/V-Sync', w / 2, h * 0.22, h * 0.09);
+  text(ctx, 'Blitz und Piep (Tongenerator „A/V-Sync-Piep“) zu jeder vollen Sekunde', w / 2, h * 0.34, h * 0.03, css(gray(0.75)));
+}
+
 export const PATTERNS: PatternDef[] = [
   // Vollfelder
   { id: 'red', name: 'Rot', group: 'Vollfeld', draw: (c, w, h) => fill(c, [255, 0, 0], 0, 0, w, h) },
@@ -356,6 +388,7 @@ export const PATTERNS: PatternDef[] = [
 
   // Testbild
   { id: 'testcard', name: 'Testbild mit Kreis und Uhr', group: 'Testbild', animated: true, draw: testCard },
+  { id: 'avsync', name: 'A/V-Sync (Blitz zum Piep)', group: 'Testbild', animated: true, draw: avSync },
 
   // HDR
   {

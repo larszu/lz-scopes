@@ -129,7 +129,7 @@ Einfrieren, PNG-Export, Vollbild.
 
 ## Testbilder
 
-Die Quelle *Testbild* erzeugt die Muster selbst, in 720p bis 2160p. Rampen und Zonenplatte werden pixelgenau geschrieben, damit der Browser sie nicht dithert.
+Die Quelle *Testbild* erzeugt die Muster selbst, in 720p bis 2160p oder in freier Auflösung (z. B. Wandauflösung einer LED-Wand). Rampen und Zonenplatte werden pixelgenau geschrieben, damit der Browser sie nicht dithert.
 
 - **Vollfeld** Rot, Grün, Blau, Weiß, Grau 50 %, Grau 18 % (BT.709-OETF: 40,9 %), Schwarz
 - **Grau** Verlauf, Verläufe W/R/G/B, 11 Graustufen, Graukeil in TE-165-Anordnung (lineare 10-%-Stufen), wandernder Verlauf, PLUGE nach ITU-R BT.814-4 (Streifen ±2 % = Codes 80/48, Positionen nach Tab. 4/5)
@@ -139,11 +139,16 @@ Die Quelle *Testbild* erzeugt die Muster selbst, in 720p bis 2160p. Rampen und Z
 - **Testbild** mit Kreis, Balken, Frequenzgittern und Uhr
 - **HDR** PQ-Graukeil 0–10 000 cd/m², HLG-Graukeil, PQ-Verlauf mit Referenzweiß 203, PLUGE nach BT.814-4 (Higher level 38,2 %) und Graukarte 38 % (BT.2408) jeweils für HLG und PQ; die Scopes schalten dabei automatisch auf PQ bzw. HLG
 - **LZ Displaytest** die 20 Displaytestbilder (1920×1080) aus `Broadcast/displaytest`
+- **LED-Wand** Cabinet-Raster mit ID (auch mit Modulraster), Pixel-Mapping (1-px-Gitter, Diagonale, R/G/B/W-Eckpixel je Cabinet), Scroll 1 px/Frame, Vollfeld mit freiem Pegel und Kanalwahl, feine Graustufen und Rampen für Low-Level, Shutter/Genlock mit Frame-Zähler, Moiré, Messfeld mit Patch-Sequenzer (u. a. Unreal-Sätze R/G/B/W und 5×5×5)
 - **Eigene Bilder** über *+ Bilder*, gelten für die laufende Sitzung
 
 Optional lässt sich eine Kennung einblenden. *⧉ Ausgeben* öffnet das Muster in einem eigenen Fenster (`?out=<id>&w=&h=&label=`) für Monitor, Beamer oder Capture: `←`/`→` wechseln, `F` Vollbild, `L` Label. In nativer Auflösung und im Vollbild wird 1:1 ausgegeben.
 
 Grenze: Canvas arbeitet in Full-Range-RGB, deshalb gibt es keine Pegel unter 0 %. Die PLUGE-Stufen −2 % liegen dadurch auf 0 %.
+
+### LED-Wand
+
+*▦ LED-Wand* in der Kopfleiste: Wand- und Cabinet-Konfiguration (Cabinet-Pixel, Spalten/Reihen, Modulraster, Versatz, Zählung zeilen-/spaltenweise oder als Schlange; speicherbar), die LED-Testbilder in Wandauflösung und eine **relative Prüfung mit der Kamera**: Wandecken im Kamerabild anklicken, 4-Punkt-Entzerrung (Homographie), je Cabinet Median, Streuung und Farbabweichung (ΔCb/ΔCr) zum Wandmedian als Heatmap, Nahtprofile mit Kontrast je Cabinetgrenze, Mittelung mehrerer Bilder, Vorher/Nachher, Blickwinkelserie, Scan-Linien-Index (Zeilenprofil-Varianz zum Vergleich von Shutter und Genlock-Phase), Suche nach toten/hängenden Pixeln, Bericht als CSV und PNG. Dazu die 3×3-Kameramatrix nach dem Unreal-Verfahren (R/G/B/W-Felder, OCIO-Matrix). Kalibriert wird die Wand im LED-Prozessor (Brompton, NovaStar, Colorlight); LZ Scopes schreibt keine Korrekturwerte, und eine Videokamera ist kein Kolorimeter. Die Auswertung ist mit synthetischen Bildern getestet, an einer echten Wand noch nicht erprobt. Recherche: [docs/research/led-wall-und-messgeraete.md](docs/research/led-wall-und-messgeraete.md).
 
 ## Audio
 

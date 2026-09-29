@@ -20,6 +20,8 @@ import type { GenConfig } from './audio/dsp/signals';
 import { audioPanelSettings, audioRow, audioSourceControls, mountGenerator } from './audio/ui';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
+import { openLedTool } from './led/ui';
+import { ledSettings, pictureSize } from './led/wall';
 import { Renderer, type PictureMode, type SkinRange } from './renderer';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 
@@ -119,6 +121,7 @@ app.innerHTML = `
     <button id="freeze" title="Standbild (Leertaste)">❚❚ Einfrieren</button>
     <details class="menu" id="laymenu"><summary title="Layout-Konfigurationen speichern und laden (Anordnung + Einstellungen der Scopes)">▦ Layouts</summary><div class="menu-body right" id="laybody"></div></details>
     <details class="menu" id="outmenu"><summary title="Ausgabe auf einen Bildschirm dieses Rechners oder als Stream">⧉ Ausgabe</summary><div class="menu-body right" id="outbody"></div></details>
+    <button id="led" title="LED-Wand: Cabinet-Testbilder und Kamera-Prüfung (Heatmap, Nähte)">▦ LED-Wand</button>
     <button id="snap" title="Screenshot als PNG (S)">⤓ PNG</button>
     <button id="full" title="Vollbild (F)">⛶</button>
   </header>
@@ -217,6 +220,15 @@ $('#toggle-side').onclick = () => { state.sidebar = !state.sidebar; applySidebar
 const applySidebar = () => $('#side').classList.toggle('hidden', !state.sidebar);
 $('#freeze').onclick = () => toggleFreeze();
 $('#snap').onclick = () => snapshot();
+$('#led').onclick = () => openLedTool({
+  sources: () => sources,
+  showPattern: (id, w, hh) => {
+    const s = sources.find((x) => x.kind === 'pattern') ?? addSource('pattern', 'LED-Wand');
+    Object.assign(s.pattern, { id, width: w, height: hh });
+    save(); s.startPattern(); renderSources(); openOutput(s.pattern);
+  },
+  patternsChanged: () => sources.filter((s) => s.kind === 'pattern' && s.pattern.id.startsWith('led-')).forEach((s) => s.startPattern()),
+});
 $('#full').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen());
 const bridgeInput = $<HTMLInputElement>('#bridge');
 bridgeInput.value = state.bridge;
@@ -455,14 +467,27 @@ function patternControls(s: Source): Node[] {
       patternSelect(pt.id, (id) => apply({ id })),
       h('button', { class: 'mini', title: 'Nächstes Testbild', onclick: () => step(1) }, '▶')),
     h('div', { class: 'row' },
-      select(`${pt.width}x${pt.height}`, RESOLUTIONS.map(([w, hh]) => [`${w}x${hh}`, `${w}×${hh}`]), (v) => {
-        const [w, hh] = v.split('x').map(Number); apply({ width: w, height: hh });
-      }, 'Auflösung'),
+      resolutionControls(pt, apply),
       label),
     h('div', { class: 'row' },
       h('button', { class: 'primary', title: 'Testbild im eigenen Fenster ausgeben (für Monitor, Beamer, Capture)', onclick: () => openOutput(pt) }, '⧉ Ausgeben'),
       h('button', { title: 'Eigene Bilder als Testbilder laden', onclick: () => imgs.click() }, '+ Bilder'), imgs),
   ];
+}
+
+/** Preset resolutions, the LED wall's picture size, or any size (free, e.g. an LED wall). */
+function resolutionControls(pt: PatternState, applyPt: (p: Partial<PatternState>) => void): Node {
+  const apply = (p: Partial<PatternState>) => { applyPt(p); renderSources(); };
+  const cur = `${pt.width}x${pt.height}`, wall = pictureSize(ledSettings().wall), wallKey = `${wall.w}x${wall.h}`;
+  const opts: [string, string][] = RESOLUTIONS.map(([w, hh]) => [`${w}x${hh}`, `${w}×${hh}`]);
+  if (!opts.some(([k]) => k === wallKey)) opts.push([wallKey, `${wall.w}×${wall.h} (LED-Wand)`]);
+  if (!opts.some(([k]) => k === cur)) opts.push([cur, `${pt.width}×${pt.height}`]);
+  const size = (v: number) => Math.max(16, Math.min(16384, Math.round(v) || 16));
+  const w = h('input', { type: 'number', value: String(pt.width), min: 16, max: 16384, title: 'Breite in Pixeln (frei)', style: 'width:64px' }) as HTMLInputElement;
+  const hh = h('input', { type: 'number', value: String(pt.height), min: 16, max: 16384, title: 'Höhe in Pixeln (frei)', style: 'width:64px' }) as HTMLInputElement;
+  w.onchange = hh.onchange = () => apply({ width: size(Number(w.value)), height: size(Number(hh.value)) });
+  return h('span', { class: 'row', style: 'margin:0' },
+    select(cur, opts, (v) => { const [a, b] = v.split('x').map(Number); apply({ width: a, height: b }); }, 'Auflösung'), w, '×', hh);
 }
 
 function openOutput(pt: PatternState) {

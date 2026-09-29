@@ -5,6 +5,8 @@ const { app, BrowserWindow, desktopCapturer, ipcMain, screen, session, shell } =
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
+// Own profile (localStorage, single-instance lock) for automated tests: LZS_USER_DATA.
+if (process.env.LZS_USER_DATA) app.setPath('userData', process.env.LZS_USER_DATA);
 if (!app.requestSingleInstanceLock()) app.quit();
 
 let mainWindow = null;

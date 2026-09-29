@@ -99,9 +99,12 @@ npm install
 npm run dev                  # UI http://localhost:4191, bridge on 4192
 npm run build && npm start   # production, everything on http://127.0.0.1:4192
 npm test                     # colour maths, statistics, bridge input validation
+npm run test:e2e             # desktop app via Playwright: waveform pixels, RTSP (mediamtx), outputs/MJPEG, layouts, CST/LUT stages
 npm run typecheck
 npm run dist:mac             # or dist:win: desktop app with bridge and ffmpeg
 ```
+
+CI (`ci.yml`) runs types, unit tests, build and the E2E tests on every PR and push to main. The RTSP test is skipped without `mediamtx`/`ffmpeg`.
 
 Release: push a tag `v*`; `release.yml` builds Windows and macOS and attaches the installers to the release.
 

@@ -1,0 +1,54 @@
+name: CI
+
+# Checks for every pull request and every push to main: types, unit tests, build, and
+# the end-to-end tests (Electron via Playwright, e2e/). The repo is public, Actions
+# minutes are free. Publishing stays in pages.yml.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx tsc -p e2e --noEmit
+      - run: npm test
+      - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MEDIAMTX_VERSION: v1.21.1
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - name: ffmpeg, Xvfb, mediamtx
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg xvfb
+          curl -fsSL "https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMTX_VERSION}/mediamtx_${MEDIAMTX_VERSION}_linux_amd64.tar.gz" | sudo tar -xz -C /usr/local/bin mediamtx
+          mediamtx --version
+      # Electron downloads its binary on first use; WebGL runs in SwiftShader (slow, see e2e/playwright.config.ts)
+      - run: xvfb-run -a npm run test:e2e

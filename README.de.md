@@ -218,8 +218,11 @@ Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in
 npm test        # Farbmathematik (PQ, HLG, Matrizen, XYZ), Statistik, Bridge-Eingabeprüfung, Steuerbefehle, Overlay-Szenen
                 # Audio: K-Filter, Tech 3341/3342 bei 44,1 und 48 kHz, Generator, Bridge-Protokoll 2
 npm run typecheck
+npm run test:e2e  # Desktop-App per Playwright: Waveform-Pixel, RTSP über mediamtx, Ausgabefenster/MJPEG, Layouts, CST/LUT-Messpunkte
 npm --prefix companion ci && npm run companion:test && npm run companion:build   # Companion-Modul
 ```
+
+Die CI (`ci.yml`) prüft bei jedem PR und Push auf main Typen, Unit-Tests, Build und E2E; der RTSP-Test wird ohne `mediamtx`/`ffmpeg` übersprungen.
 
 Zum Ausprobieren mit echtem RTSP: `brew install mediamtx`, dann `mediamtx` starten und z. B. `ffmpeg -re -f lavfi -i testsrc2=size=1920x1080:rate=25 -c:v libx264 -f rtsp rtsp://127.0.0.1:8554/test` veröffentlichen.
 

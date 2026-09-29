@@ -334,7 +334,10 @@ export function drawCieGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Col
     ctx.strokeStyle = c; ctx.setLineDash(k === src ? [] : [4, 3]);
     ctx.beginPath();
     [g.r, g.g, g.b].forEach(([x, y], j) => { const [px, py] = cieToPlot(r, x, y, uv); if (j) ctx.lineTo(px, py); else ctx.moveTo(px, py); });
-    ctx.closePath(); ctx.stroke();
+    ctx.closePath();
+    ctx.save(); ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
+    ctx.beginPath(); [g.r, g.g, g.b].forEach(([x, y], j) => { const [px, py] = cieToPlot(r, x, y, uv); if (j) ctx.lineTo(px, py); else ctx.moveTo(px, py); });
+    ctx.closePath(); ctx.stroke(); ctx.restore();
     ctx.fillStyle = c; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
     if (uv) { ctx.textBaseline = 'bottom'; ctx.fillText(g.name, r.x + r.w - 4, r.y + r.h - 4 - (tri.length - 1 - i) * 13); } else ctx.fillText(g.name, r.x + r.w - 4, r.y + 4 + i * 13);
   });

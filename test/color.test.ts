@@ -87,3 +87,18 @@ describe('bridge decode matrix', () => {
     expect(decodeParams({ matrix: 'bt709', height: 1080, range: 'pc' }).decodeRange).toBe('full');
   });
 });
+
+describe('display transform & ROI', () => {
+  it('709 → 709 is identity, 709 → P3 matches the published matrix', async () => {
+    const { gamutConvert, GAMUTS } = await import('../src/color');
+    gamutConvert(GAMUTS['709'], GAMUTS['709']).forEach((v, i) => expect(v).toBeCloseTo([1, 0, 0, 0, 1, 0, 0, 0, 1][i], 9));
+    const m = gamutConvert(GAMUTS['709'], GAMUTS.p3);
+    [0.8225, 0.1774, 0, 0.0332, 0.9669, 0, 0.0171, 0.0724, 0.9108].forEach((v, i) => expect(m[i]).toBeCloseTo(v, 3));
+  });
+  it('stats honour the region of interest', () => {
+    // 2×1: left black, right white; ROI = right pixel only
+    const px = new Uint8Array([0, 0, 0, 255, 255, 255, 255, 255]);
+    const s = computeStats(px, 2, 1, 1, 255, 0.2126, 0.0722, [1, 0, 2, 1]);
+    expect(s.samples).toBe(1); expect(s.yMin).toBe(1);
+  });
+});

@@ -37,11 +37,34 @@ export function rgbToXyzMatrix(g: Gamut): number[] {
   return [m[0] * s[0], m[1] * s[1], m[2] * s[2], m[3] * s[0], m[4] * s[1], m[5] * s[2], m[6] * s[0], m[7] * s[1], m[8] * s[2]];
 }
 
+export function mul33(a: number[], b: number[]) {
+  const r = new Array(9).fill(0);
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) r[i * 3 + j] += a[i * 3 + k] * b[k * 3 + j];
+  return r;
+}
+
+/** Linear RGB in one gamut → linear RGB in another (row-major 3×3). */
+export function gamutConvert(from: Gamut, to: Gamut) {
+  return mul33(inv3(rgbToXyzMatrix(to)), rgbToXyzMatrix(from));
+}
+
+export type DisplaySpace = 'srgb' | 'p3' | 'rec709' | 'raw';
+export const DISPLAY_LABELS: Record<DisplaySpace, string> = {
+  srgb: 'sRGB-Display', p3: 'Display P3', rec709: 'Rec.709 / BT.1886 (2.4)', raw: 'Signal direkt (ohne Umrechnung)',
+};
+
+/** What the end device can show, via CSS media queries. */
+export function detectDisplay(): { space: DisplaySpace; hdr: boolean; gamut: string } {
+  const mq = (q: string) => typeof matchMedia === 'function' && matchMedia(q).matches;
+  const gamut = mq('(color-gamut: rec2020)') ? 'rec2020' : mq('(color-gamut: p3)') ? 'p3' : 'srgb';
+  return { space: gamut === 'srgb' ? 'srgb' : 'p3', hdr: mq('(dynamic-range: high)'), gamut };
+}
+
 function mul3(m: number[], v: number[]) {
   return [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]];
 }
 
-function inv3(m: number[]) {
+export function inv3(m: number[]) {
   const [a, b, c, d, e, f, g, h, i] = m;
   const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
   const det = a * A + b * B + c * C;

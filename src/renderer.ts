@@ -5,13 +5,23 @@
 import { GAMUTS, LUMA, hexToRgb, rgbToXyzMatrix, type Colorspace, type FalseColorBand, type Transfer } from './color';
 import type { Source } from './sources';
 
-export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie';
-const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6 };
-const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1 };
+export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'skin';
+const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7 };
+const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1 };
 const TRANSFER_ID: Record<Transfer, number> = { sdr: 0, pq: 1, hlg: 2 };
 
-export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma';
-const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4 };
+export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin';
+const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5 };
+
+/** Region of interest in source pixels [x0, y0, x1, y1) and skin-tone detection window. */
+export type Roi = [number, number, number, number] | null;
+export interface SkinRange { lo: number; hi: number; tol: number }
+
+const SKIN_GLSL = `
+bool isSkin(float cb, float cr, float tol) {
+  float ang = degrees(atan(cr, cb));
+  return length(vec2(cb, cr)) > 0.012 && abs(ang - 123.0) <= tol;
+}`;
 
 export interface Rect { x: number; y: number; w: number; h: number }
 
@@ -36,7 +46,11 @@ uniform vec2 uK;
 uniform float uZoom, uIntensity, uWMin, uWMax, uPointSize;
 uniform mat3 uToXYZ;
 uniform vec4 uCie;
+uniform ivec4 uRoi; uniform int uRoiOn;
+uniform vec3 uSkin, uTint;
 out vec3 vColor;
+out float vW;
+${SKIN_GLSL}
 
 float eotf(float v) {
   v = max(v, 0.0);
@@ -64,10 +78,14 @@ void main() {
   float x = (float(p.x) + 0.5) / float(uSize.x);
   int ch = gl_InstanceID;
   vec3 unit[3] = vec3[3](vec3(1.0, 0.18, 0.18), vec3(0.2, 1.0, 0.25), vec3(0.3, 0.45, 1.0));
-  vec3 mono = vec3(1.0);
+  vec3 mono = uTint;
   vec2 pos; vec3 col = mono;
 
-  if (uMode == 0) {
+  if (uMode == 7) {
+    pos = vec2(x * 2.0 - 1.0, waveY(Y));
+    bool inRange = Y >= uSkin.x && Y <= uSkin.y;
+    col = isSkin(cb, cr, uSkin.z) ? (inRange ? vec3(1.0, 0.62, 0.36) : vec3(1.0, 0.12, 0.08)) : vec3(0.22);
+  } else if (uMode == 0) {
     pos = vec2(x * 2.0 - 1.0, waveY(Y));
     if (uColorize == 1) col = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
   } else if (uMode == 1 || uMode == 2) {
@@ -95,14 +113,20 @@ void main() {
     pos = vec2((xy.x - uCie.x) / (uCie.y - uCie.x), (xy.y - uCie.z) / (uCie.w - uCie.z)) * 2.0 - 1.0;
     col = uColorize == 1 ? clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0) : mono;
   }
+  if (uRoiOn == 1) {
+    bool inside = p.x >= uRoi.x && p.y >= uRoi.y && p.x < uRoi.z && p.y < uRoi.w;
+    bool colored = uColorize == 1 || uMode == 1 || uMode == 7;
+    col = inside ? (colored ? col : vec3(1.0, 0.72, 0.25)) : col * 0.25;
+  }
   vColor = col * uIntensity;
+  vW = uIntensity;
   gl_Position = vec4(pos, 0.0, 1.0);
 }`;
 
 const SCATTER_FS = `#version 300 es
 precision highp float;
-in vec3 vColor; out vec4 o;
-void main() { o = vec4(vColor, 1.0); }`;
+in vec3 vColor; in float vW; out vec4 o;
+void main() { o = vec4(vColor, vW); }`;
 
 const QUAD_VS = `#version 300 es
 out vec2 vUv;
@@ -113,11 +137,20 @@ void main() {
 
 const DISPLAY_FS = `#version 300 es
 precision highp float;
-uniform sampler2D uAcc; uniform float uGain; uniform vec3 uTint;
+uniform sampler2D uAcc; uniform float uGain; uniform vec3 uTint; uniform int uAvg;
 in vec2 vUv; out vec4 o;
 void main() {
-  vec3 a = texture(uAcc, vUv).rgb;
-  vec3 c = 1.0 - exp(-a * uGain);
+  vec4 a = texture(uAcc, vUv);
+  vec3 c;
+  if (uAvg == 1) {
+    // average colour of the points × density: dimmed/highlighted points keep their
+    // weight, colours do not wash out to white in dense traces
+    c = a.a > 0.0 ? clamp(a.rgb / a.a, 0.0, 1.0) * (1.0 - exp(-a.a * uGain)) : vec3(0.0);
+  } else {
+    // additive channels (RGB overlay): hue-preserving, R+G+B on top of each other → white
+    float m = max(a.r, max(a.g, a.b));
+    c = m > 0.0 ? a.rgb / m * (1.0 - exp(-m * uGain)) : vec3(0.0);
+  }
   o = vec4(c * uTint, 1.0);
 }`;
 
@@ -127,14 +160,48 @@ ${FETCH(u16)}
 uniform ivec2 uSize; uniform int uMode; uniform vec2 uK;
 uniform vec4 uBand[8]; uniform int uBands;
 uniform float uZebra, uZebraLow;
+uniform int uInTransfer, uDisp;
+uniform mat3 uGamut;
+uniform vec3 uSkin;
+uniform ivec4 uRoi; uniform int uRoiOn;
 in vec2 vUv; out vec4 o;
+${SKIN_GLSL}
+float lin(float v) {
+  v = max(v, 0.0);
+  if (uInTransfer == 1) { // PQ → relative to 203 cd/m² reference white
+    float p = pow(v, 1.0 / 78.84375);
+    return 10000.0 / 203.0 * pow(max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125);
+  }
+  if (uInTransfer == 2) { // HLG on a 1000 cd/m² display, relative to 203
+    float e = v <= 0.5 ? v * v / 3.0 : (exp((v - 0.55991073) / 0.17883277) + 0.28466892) / 12.0;
+    return 1000.0 / 203.0 * pow(e, 1.2);
+  }
+  return pow(v, 2.4); // BT.1886
+}
+float srgbOetf(float l) { return l <= 0.0031308 ? 12.92 * l : 1.055 * pow(l, 1.0 / 2.4) - 0.055; }
+/** Signal → what the chosen display should show (uDisp 0 sRGB/P3 curve, 1 BT.1886, 2 raw). */
+vec3 toDisplay(vec3 rgb) {
+  if (uDisp == 2) return rgb;
+  vec3 l = uGamut * vec3(lin(rgb.r), lin(rgb.g), lin(rgb.b));
+  if (uInTransfer != 0) { // simple highlight roll-off for HDR on SDR
+    float m = max(l.r, max(l.g, l.b)), w = 4.0;
+    if (m > 0.0) l *= (1.0 + m / (w * w)) / (1.0 + m);
+  }
+  l = clamp(l, 0.0, 1.0);
+  return uDisp == 1 ? pow(l, vec3(1.0 / 2.4)) : vec3(srgbOetf(l.r), srgbOetf(l.g), srgbOetf(l.b));
+}
 void main() {
   ivec2 p = clamp(ivec2(vec2(vUv.x, 1.0 - vUv.y) * vec2(uSize)), ivec2(0), uSize - 1);
   vec3 rgb = fetchRGB(p);
   float kr = uK.x, kb = uK.y;
   float Y = dot(rgb, vec3(kr, 1.0 - kr - kb, kb));
-  vec3 c = rgb;
-  if (uMode == 1) {
+  vec3 c = toDisplay(rgb);
+  if (uMode == 5) {
+    float cb = (rgb.b - Y) / (2.0 * (1.0 - kb)), cr = (rgb.r - Y) / (2.0 * (1.0 - kr));
+    bool inRange = Y >= uSkin.x && Y <= uSkin.y;
+    if (!isSkin(cb, cr, uSkin.z)) c = vec3(dot(c, vec3(0.3333)) * 0.45);
+    else if (!inRange) c = mix(c, vec3(1.0, 0.1, 0.08), 0.6);
+  } else if (uMode == 1) {
     c = vec3(Y * 0.8);
     for (int i = 0; i < 8; i++) {
       if (i >= uBands) break;
@@ -159,6 +226,7 @@ void main() {
   } else if (uMode == 4) {
     c = vec3(Y);
   }
+  if (uRoiOn == 1 && !(p.x >= uRoi.x && p.y >= uRoi.y && p.x < uRoi.z && p.y < uRoi.w)) c *= 0.55;
   o = vec4(c, 1.0);
 }`;
 
@@ -167,8 +235,11 @@ interface Accum { tex: WebGLTexture; fbo: WebGLFramebuffer; w: number; h: number
 
 export interface ScatterParams {
   mode: ScatterMode; gain: number; colorize: boolean; zoom: number; tint: [number, number, number]; maxSamples: number;
+  roi: Roi; skin: SkinRange;
 }
-export interface PictureParams { mode: PictureMode; bands: FalseColorBand[]; zebra: number; zebraLow: number }
+/** How the picture view maps the signal to the screen. */
+export interface DisplayParams { curve: 0 | 1 | 2; gamut: number[] /* row-major 3×3 input→display, linear */ }
+export interface PictureParams { mode: PictureMode; bands: FalseColorBand[]; zebra: number; zebraLow: number; roi: Roi; skin: SkinRange; display: DisplayParams }
 
 export class Renderer {
   readonly gl: WebGL2RenderingContext;
@@ -177,6 +248,7 @@ export class Renderer {
   private vao: WebGLVertexArrayObject;
   private textures = new Map<string, SrcTex>();
   private accums = new Map<string, Accum>();
+  private sigs = new Map<string, string>();
   dpr = 1;
 
   constructor(readonly canvas: HTMLCanvasElement) {
@@ -215,17 +287,28 @@ export class Renderer {
     return m.get(name)!;
   }
 
+  /** Colour space the browser assumes for the canvas output (Display P3 on wide-gamut screens). */
+  setOutputSpace(space: 'srgb' | 'display-p3') {
+    const gl = this.gl as WebGL2RenderingContext & { drawingBufferColorSpace?: string };
+    if ('drawingBufferColorSpace' in gl && gl.drawingBufferColorSpace !== space) gl.drawingBufferColorSpace = space;
+  }
+
+  /** Returns true when the canvas size changed (its content is then gone). */
   resize(w: number, h: number, dpr: number) {
     this.dpr = dpr;
     const W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr));
-    if (this.canvas.width !== W || this.canvas.height !== H) { this.canvas.width = W; this.canvas.height = H; }
+    if (this.canvas.width === W && this.canvas.height === H) return false;
+    this.canvas.width = W; this.canvas.height = H;
+    return true;
   }
 
-  beginFrame() {
+  /** Clear the whole canvas (after layout/size changes); otherwise untouched panels keep their pixels. */
+  beginFrame(clear = true) {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.disable(gl.SCISSOR_TEST);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    if (!clear) return;
     gl.clearColor(0.043, 0.047, 0.055, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
   }
@@ -323,6 +406,11 @@ export class Renderer {
     const dot = p.mode === 'vector' || p.mode === 'cie' ? Math.max(1, Math.round(this.dpr)) : 1;
     const intensity = ((p.mode === 'vector' || p.mode === 'cie' ? 0.6 : 0.9) * area) / n / (dot * dot);
 
+    // Only re-scatter when the frame or a parameter changed; otherwise reuse the accumulation.
+    const sig = `${src.id}:${src.frameSeq}:${t.w}x${t.h}:${acc.w}x${acc.h}:${src.colorspace}:${src.transfer}:${JSON.stringify(p)}`;
+    const fresh = this.sigs.get(key) !== sig;
+    this.sigs.set(key, sig);
+    if (fresh) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, acc.fbo);
     gl.viewport(0, 0, acc.w, acc.h);
     gl.disable(gl.SCISSOR_TEST);
@@ -350,9 +438,14 @@ export class Renderer {
     // GLSL mat3 is column-major
     gl.uniformMatrix3fv(this.u(prog, 'uToXYZ'), false, [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]]);
     gl.uniform4f(this.u(prog, 'uCie'), CIE_VIEW.x0, CIE_VIEW.x1, CIE_VIEW.y0, CIE_VIEW.y1);
+    gl.uniform1i(this.u(prog, 'uRoiOn'), p.roi ? 1 : 0);
+    if (p.roi) gl.uniform4i(this.u(prog, 'uRoi'), p.roi[0], p.roi[1], p.roi[2], p.roi[3]);
+    gl.uniform3f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol);
+    gl.uniform3fv(this.u(prog, 'uTint'), p.tint);
     gl.bindVertexArray(this.vao);
     gl.drawArraysInstanced(gl.POINTS, 0, n, INSTANCES[p.mode]);
     gl.disable(gl.BLEND);
+    }
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(vp.x, vp.y, vp.w, vp.h);
@@ -361,7 +454,8 @@ export class Renderer {
     gl.bindTexture(gl.TEXTURE_2D, acc.tex);
     gl.uniform1i(this.u(dp, 'uAcc'), 0);
     gl.uniform1f(this.u(dp, 'uGain'), p.gain);
-    gl.uniform3fv(this.u(dp, 'uTint'), p.tint);
+    gl.uniform3f(this.u(dp, 'uTint'), 1, 1, 1);
+    gl.uniform1i(this.u(dp, 'uAvg'), p.mode === 'rgb' ? 0 : 1);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -383,6 +477,13 @@ export class Renderer {
     gl.uniform2f(this.u(prog, 'uK'), kr, kb);
     gl.uniform1f(this.u(prog, 'uZebra'), p.zebra);
     gl.uniform1f(this.u(prog, 'uZebraLow'), p.zebraLow);
+    gl.uniform1i(this.u(prog, 'uInTransfer'), TRANSFER_ID[src.transfer]);
+    gl.uniform1i(this.u(prog, 'uDisp'), p.display.curve);
+    const g = p.display.gamut;
+    gl.uniformMatrix3fv(this.u(prog, 'uGamut'), false, [g[0], g[3], g[6], g[1], g[4], g[7], g[2], g[5], g[8]]);
+    gl.uniform3f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol);
+    gl.uniform1i(this.u(prog, 'uRoiOn'), p.roi ? 1 : 0);
+    if (p.roi) gl.uniform4i(this.u(prog, 'uRoi'), p.roi[0], p.roi[1], p.roi[2], p.roi[3]);
     const bands = new Float32Array(32);
     p.bands.slice(0, 8).forEach((b, i) => {
       const [r, g, bl] = hexToRgb(b.color).map((v) => Math.round(v * 255));

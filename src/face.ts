@@ -31,7 +31,11 @@ function imageOf(src: Source): TexImageSource | null {
   if (!src.data) return null;
   const w = src.width, h = src.height;
   let px: Uint8ClampedArray;
-  if (src.depth === 8) px = new Uint8ClampedArray(src.data.buffer, src.data.byteOffset, w * h * 4);
+  if (src.yuv) {
+    const dec = src.decoder(), d = src.data;
+    px = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < px.length; i += 4) { const c = dec(d, i); px[i] = c[0] * 255; px[i + 1] = c[1] * 255; px[i + 2] = c[2] * 255; px[i + 3] = 255; }
+  } else if (src.depth === 8) px = new Uint8ClampedArray(src.data.buffer, src.data.byteOffset, w * h * 4);
   else { px = new Uint8ClampedArray(w * h * 4); for (let i = 0; i < px.length; i++) px[i] = src.data[i] / 257; }
   scratch.width = w; scratch.height = h;
   scratch.getContext('2d')!.putImageData(new ImageData(px as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0);

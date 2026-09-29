@@ -21,7 +21,7 @@ export function runOutputWindow() {
   let hudTimer = 0;
   const showHud = () => {
     const p = PATTERNS[idx];
-    hud.textContent = `${p.group} · ${p.name} · ${w}×${h}   ← → wechseln · F Vollbild · L Label`;
+    hud.textContent = `${p.group} · ${p.name} · ${w}×${h}${p.note ? ' · 8 bit: unter 0 % / über 100 % abgeschnitten' : ''}   ← → wechseln · F Vollbild · L Label`;
     hud.style.opacity = '1';
     clearTimeout(hudTimer); hudTimer = window.setTimeout(() => (hud.style.opacity = '0'), 2500);
   };

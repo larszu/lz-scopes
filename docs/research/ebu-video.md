@@ -228,3 +228,20 @@ Ohne Abweichung geprüft: EBU-Balken 100/0/75/0 und 100/0/100/0 (`patterns.ts:28
 6. **ARRI-Falschfarben** (`color.ts:157–164`) sind herstellereigen und nicht Teil der EBU/ITU-Normen. Ein BT.2408-Preset wäre die normbasierte Ergänzung.
 7. Die **EBU-Testmuster-Dateien** (Tech 3325, Tech 3373-C-Code, Tech 3374-TIFF) liegen auf tech.ebu.ch bzw. qc.ebu.io. Lizenz und Weitergabe im Repo sind nicht geprüft. Deshalb eher selbst erzeugen als Dateien bündeln.
 8. **BT.1848-1** (ITU-Safe-Areas) wurde geladen, aber nicht mit R 95 abgeglichen.
+
+---
+
+## (f) Umsetzung Y′CbCr-Pfad und 16-bit-Testbilder (Issue #7, 30.09.2026)
+
+Geöffnet: BT.2111-3 (PDF, Fig. 1–6, Tab. 1–6), R 103 v3.0, BT.2100-3 Tab. 9, BT.814-4; ffmpeg 9.0.1 lokal geprüft.
+
+| Punkt | Befund | Quelle |
+|---|---|---|
+| BT.2111-Aufbau | Zeilen b/12 (100-%-Balken), b/2 (75 %/58 %), b/12 (Stufen), b/12 (Rampe), b/4 (Schwarz/709-Balken). Spalten c, d, d, d, e, d, d, d, c; unten c/3 ×3, f, g, h, g, h, g, i, j, k, c/3 ×3 | BT.2111-3, Fig. 1–3, p4–6 |
+| Stufenzeile | links c 75 % (HLG) bzw. 58 % Weiß, dann d −7 % (PQ full: 0 %), dann je Balken zwei Stufen 0/10 … 100/109 % (PQ full: 100/100) | BT.2111-3, Fig. 1–3 |
+| Rampe narrow | beginnt bei x = c, 1680 px: B = 559 px auf 4, dann 1 Code/Pixel 5…1018 (C = 1014), D = 107 px auf 1019; 0 % liegt an der linken Kante des Grün-Balkens | BT.2111-3, Tab. 5, Fig. 5, Attachment 1 |
+| Rampe PQ full | B = 618 px auf 0, 1…1022 (C = 1022), D = 40 px auf 1023 | BT.2111-3, Tab. 6, Fig. 6 |
+| Schwarzfelder PQ full | kein −2 %; an dieser Stelle 0 % | BT.2111-3, Fig. 3, Tab. 4 |
+| ffmpeg-Bittiefe | n-bit-Codes werden nach 16 bit linksbündig geschoben, auch Full Range: 10 bit 943 → 60352, 8 bit 235 → 60160, 8 bit full 255 → 65280 | eigene Messung |
+| ffmpeg ohne Range-Wandlung | `scale=…:in_range=limited:out_range=limited` nach `ayuv64le` erhält Y 8 und 1019 (10 bit) sowie Cb 1016, Cr 4 | eigene Messung |
+| Ausgabe > 8 bit | Chrome 154 (headless) bietet 2D-Canvas `colorType: 'float16'` und WebGL `drawingBufferStorage(RGBA16F)`. Ob der Monitor 10 bit bekommt, hängt von Betriebssystem, Treiber und Anschluss ab; ohne 10-bit-Capture am Ausgang nicht prüfbar. Sub-Black ließe sich ohnehin nur mit einem Legal-Range-Ausgabemodus zeigen. Deshalb bleibt die Ausgabe 8 bit mit Hinweis | eigene Prüfung |

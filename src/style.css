@@ -116,3 +116,5 @@ details.menu[open] > summary { border-color: #3f6b4a; color: var(--accent); }
 .mrow { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .mrow > span:first-child { width: 120px; flex: none; }
 .mrow select { flex: 1; min-width: 0; }
+.menu-body.right { left: auto; right: 0; }
+.menu-body input:not([type='checkbox']) { flex: 1; min-width: 0; }

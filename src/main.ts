@@ -1,7 +1,8 @@
 import './style.css';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, LUMA, detectDisplay, type DisplaySpace } from './color';
 import { SCOPE_LABELS, isWaveform, plotRect, type ScopeType, type Unit } from './graticule';
-import { DEFAULT_SKIN, defaultPanel as panel, drawPanel, panelSignature, type PanelState, type Tint } from './panel';
+import { DEFAULT_SKIN, defaultPanel as panel, drawPanel, panelSignature, type DrawOptions, type PanelState, type Tint } from './panel';
+import type { OutputHost } from './outputView';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
 import { Renderer, type PictureMode, type SkinRange } from './renderer';
 import { Source, type SourceKind, type SourceSettings } from './sources';
@@ -91,6 +92,7 @@ app.innerHTML = `
     <div class="spacer"></div>
     <span class="fps" id="fps"></span>
     <button id="freeze" title="Standbild (Leertaste)">❚❚ Einfrieren</button>
+    <details class="menu" id="outmenu"><summary title="Ausgabe auf einen Bildschirm dieses Rechners oder als Stream">⧉ Ausgabe</summary><div class="menu-body right" id="outbody"></div></details>
     <button id="snap" title="Screenshot als PNG (S)">⤓ PNG</button>
     <button id="full" title="Vollbild (F)">⛶</button>
   </header>
@@ -160,6 +162,7 @@ function setLayout(k: string) {
   state.layout = k; solo = null; save(); renderHeader(); renderPanels();
 }
 
+$<HTMLDetailsElement>('#outmenu').addEventListener('toggle', (e) => { if ((e.target as HTMLDetailsElement).open) renderOutputMenu(); });
 $('#toggle-side').onclick = () => { state.sidebar = !state.sidebar; applySidebar(); save(); };
 const applySidebar = () => $('#side').classList.toggle('hidden', !state.sidebar);
 $('#freeze').onclick = () => toggleFreeze();
@@ -480,10 +483,7 @@ function frame(now: number) {
     const b = v.body.getBoundingClientRect();
     const bx = b.left - g.left, by = b.top - g.top;
     const bodyRect = { x: bx, y: by, w: b.width, h: b.height };
-    const opts = {
-      unit: state.unit, tint: state.tint, maxSamples: state.maxSamples, falsePreset: state.falsePreset,
-      zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps, skin: state.skin, display: displaySpace,
-    };
+    const opts = drawOptions();
     // Skip panels whose inputs did not change: no GPU work, no overlay redraw.
     const sig = panelSignature(p, src, bodyRect, opts) + dpr;
     if (panelSigs.get(v.idx) === sig) continue;
@@ -501,6 +501,65 @@ function frame(now: number) {
     displayFps = Math.round((fpsFrames * 1000) / (now - fpsT)); fpsFrames = 0; fpsT = now;
     $('#fps').textContent = `${displayFps} fps`;
   }
+}
+
+function drawOptions(): DrawOptions {
+  const displaySpace = state.display === 'auto' ? detected.space : state.display;
+  return {
+    unit: state.unit, tint: state.tint, maxSamples: state.maxSamples, falsePreset: state.falsePreset,
+    zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps, skin: state.skin, display: displaySpace,
+  };
+}
+
+// ---------------------------------------------------------------- outputs
+
+// The output windows read live sources and settings from here (same origin).
+(window as unknown as { lzs: OutputHost }).lzs = {
+  panels: state.panels,
+  layout: () => LAYOUTS[state.layout] ?? LAYOUTS.lc,
+  panelSource,
+  source: (id) => sources.find((s) => s.id === id) ?? null,
+  drawOptions,
+  bridgeUrl,
+};
+
+interface DesktopApi { displays: () => Promise<{ id: number; label: string; bounds: { width: number; height: number }; primary: boolean }[]> }
+const desktop = (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop;
+
+async function renderOutputMenu() {
+  const out = { view: 'grid', idx: '0', src: sources[0]?.id ?? '', scope: 'wf-luma', bg: 'picture', display: '', fs: true, stream: '', target: '' };
+  const screens: [string, string][] = [['', 'Neues Fenster']];
+  if (desktop) {
+    for (const d of await desktop.displays()) screens.push([String(d.id), `${d.label || 'Bildschirm'} ${d.bounds.width}×${d.bounds.height}${d.primary ? ' (Haupt)' : ''}`]);
+  }
+  const L = LAYOUTS[state.layout] ?? LAYOUTS.lc;
+  const row = (label: string, ...kids: (Node | string)[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
+  const txt = (key: 'stream' | 'target', ph: string) => { const i = h('input', { placeholder: ph, spellcheck: 'false' }) as HTMLInputElement; i.oninput = () => (out[key] = i.value.trim()); return i; };
+  const fsBox = h('input', { type: 'checkbox', checked: true }) as HTMLInputElement;
+  fsBox.onchange = () => (out.fs = fsBox.checked);
+  $('#outbody').replaceChildren(
+    row('Inhalt', select(out.view, [['grid', 'Gesamtansicht (Layout)'], ['panel', 'Einzelnes Panel'], ['clean', 'Quellbild sauber'], ['overlay', 'Bild + Scope-Overlay']], (v) => (out.view = v))),
+    row('Panel', select('0', [...Array(L.n).keys()].map((i) => [String(i), `${i + 1} · ${SCOPE_LABELS[state.panels[i].scope]}`]), (v) => (out.idx = v))),
+    row('Quelle', select(out.src, sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (v) => (out.src = v))),
+    row('Overlay-Scope', select(out.scope, (['wf-luma', 'wf-color', 'wf-skin', 'parade', 'yrgb', 'vector', 'cie'] as ScopeType[]).map((k) => [k, SCOPE_LABELS[k]]), (v) => (out.scope = v))),
+    row('Overlay-Hintergrund', select(out.bg, [['picture', 'Bild'], ['black', 'Schwarz (für Luma-Key am Mischer)']], (v) => (out.bg = v))),
+    row('Ausgang', select('', screens, (v) => (out.display = v)), h('label', { class: 'inline' }, fsBox, 'Vollbild')),
+    row('Stream-Name', txt('stream', 'optional, z. B. scopes → /out/scopes.mjpeg')),
+    row('Push an', txt('target', 'optional: rtmp:// srt:// rtsp:// udp://')),
+    h('div', { class: 'mrow' }, h('span', {}, ''), h('button', { class: 'primary', onclick: () => openOutputView(out) }, 'Ausgabe öffnen')),
+    h('p', { class: 'hint' }, desktop ? 'Vollbild auf dem gewählten Bildschirm.' : 'Im Browser: Fenster auf den Zielbildschirm ziehen, dann F oder Doppelklick für Vollbild. Die Desktop-App wählt den Bildschirm direkt.'),
+  );
+}
+
+function openOutputView(o: { view: string; idx: string; src: string; scope: string; bg: string; display: string; fs: boolean; stream: string; target: string }) {
+  const q = new URLSearchParams({ view: o.view });
+  if (o.view === 'panel') q.set('idx', o.idx);
+  if (o.view === 'clean' || o.view === 'overlay') q.set('src', o.src);
+  if (o.view === 'overlay') { q.set('scope', o.scope); q.set('bg', o.bg); }
+  if (o.stream) { q.set('stream', o.stream.replace(/[^\w-]/g, '')); if (o.target) q.set('target', o.target); }
+  if (o.display) q.set('display', o.display);
+  if (o.fs) q.set('fs', '1');
+  window.open(`${location.pathname}?${q}`, `lzs-out-${Date.now()}`, 'popup,width=1280,height=720');
 }
 
 function snapshot() {

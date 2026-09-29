@@ -390,7 +390,8 @@ export class Renderer {
     return { x, y, w, h };
   }
 
-  drawScatter(key: string, src: Source, rect: Rect, p: ScatterParams) {
+  /** @param overlay add the traces on top of what is already there (scope over picture) */
+  drawScatter(key: string, src: Source, rect: Rect, p: ScatterParams, overlay = false) {
     const t = this.sourceTexture(src);
     if (!t) return;
     const gl = this.gl;
@@ -459,7 +460,24 @@ export class Renderer {
     gl.uniform1f(this.u(dp, 'uGain'), p.gain);
     gl.uniform3f(this.u(dp, 'uTint'), 1, 1, 1);
     gl.uniform1i(this.u(dp, 'uAvg'), p.mode === 'rgb' ? 0 : 1);
+    if (overlay) { gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); }
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.disable(gl.BLEND);
+  }
+
+  /** Darken a rect (translucent black), e.g. behind an overlaid scope. */
+  shade(rect: Rect, alpha: number) {
+    const gl = this.gl, vp = this.viewport(rect);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(vp.x, vp.y, vp.w, vp.h);
+    const prog = this.program('solid', QUAD_VS, `#version 300 es
+precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor; }`);
+    gl.useProgram(prog);
+    gl.uniform4f(this.u(prog, 'uColor'), 0, 0, 0, alpha);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.bindVertexArray(this.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.disable(gl.BLEND);
   }
 
   drawPicture(src: Source, rect: Rect, p: PictureParams) {

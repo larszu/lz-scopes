@@ -255,6 +255,12 @@ const server = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
     return res.end(JSON.stringify({ ok: true, name: 'lz-scopes-bridge', patterns: Object.keys(TEST_PATTERNS) }));
   }
+  const mj = /^\/out\/([\w-]+)\.mjpeg$/.exec(path);
+  if (mj) return serveMjpeg(mj[1], res);
+  if (path === '/api/outputs') {
+    res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
+    return res.end(JSON.stringify([...outputs.entries()].map(([name, o]) => ({ name, url: `/out/${name}.mjpeg`, viewers: o.clients.size, target: o.target || null }))));
+  }
   if (DEV) { res.writeHead(404); return res.end('bridge only (dev mode) – UI via vite'); }
   let file = normalize(join(DIST, decodeURIComponent(path)));
   if (!file.startsWith(DIST)) { res.writeHead(403); return res.end(); }
@@ -264,9 +270,78 @@ const server = createServer((req, res) => {
   createReadStream(file).pipe(res);
 });
 
-const wss = new WebSocketServer({ server, path: '/stream', perMessageDeflate: false });
+const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 wss.on('connection', (ws, req) => {
   startStream(ws, new URL(req.url ?? '', 'http://x').searchParams).catch((e) => fail(ws, e.message));
+});
+
+// ---- outputs: the UI sends JPEG frames of an output window; served as MJPEG and optionally pushed
+/** @type {Map<string, { frame: Buffer | null, clients: Set<import('node:http').ServerResponse>, ff: import('node:child_process').ChildProcess | null, target: string }>} */
+const outputs = new Map();
+const outWss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 16 * 1024 * 1024 });
+
+/** Container format for a push target, or null if the URL is not allowed. */
+export function pushFormat(target) {
+  if (!/^(rtmps?|srt|rtsp|udp):\/\//i.test(target) || target.length > 2048) return null;
+  return /^rtmp/i.test(target) ? 'flv' : /^rtsp/i.test(target) ? 'rtsp' : 'mpegts';
+}
+
+outWss.on('connection', (ws, req) => {
+  const q = new URL(req.url ?? '', 'http://x').searchParams;
+  const name = (q.get('name') ?? '').replace(/[^\w-]/g, '').slice(0, 40) || 'out';
+  const fps = Math.min(60, Math.max(1, Number(q.get('fps')) || 25));
+  const target = q.get('target') ?? '';
+  const out = outputs.get(name) ?? { frame: null, clients: new Set(), ff: null, target: '' };
+  outputs.set(name, out);
+  const msg = (type, message) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type, message }));
+  if (target) {
+    const fmt = pushFormat(target);
+    const ffmpeg = ffmpegCandidates()[0];
+    if (!fmt) msg('error', 'Push-Ziel nur rtmp(s)://, srt://, rtsp://, udp://');
+    else if (!ffmpeg) msg('error', 'ffmpeg nicht gefunden');
+    else {
+      out.ff = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'mjpeg', '-i', 'pipe:0',
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-g', String(fps * 2), '-f', fmt, target],
+      { stdio: ['pipe', 'ignore', 'pipe'], windowsHide: true });
+      out.target = target;
+      let err = '';
+      out.ff.stderr.on('data', (d) => { err = (err + d).slice(-1000); });
+      out.ff.on('close', (code) => { if (code) msg('error', `Push beendet: ${err.trim().split('\n').pop() ?? code}`); out.ff = null; });
+      out.ff.stdin.on('error', () => {});
+    }
+  }
+  msg('live', `/out/${name}.mjpeg${target ? ` → ${target}` : ''}`);
+  ws.on('message', (data, isBinary) => {
+    if (!isBinary) return;
+    const frame = Buffer.from(data);
+    out.frame = frame;
+    for (const res of out.clients) {
+      if (res.writableLength > frame.length * 2) continue; // slow viewer: skip
+      res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`);
+      res.write(frame); res.write('\r\n');
+    }
+    if (out.ff?.stdin.writable && out.ff.stdin.writableLength < frame.length * 3) out.ff.stdin.write(frame);
+  });
+  ws.on('close', () => {
+    out.ff?.stdin.end(); out.ff?.kill('SIGTERM'); out.ff = null;
+    for (const res of out.clients) res.end();
+    outputs.delete(name);
+  });
+});
+
+function serveMjpeg(name, res) {
+  const out = outputs.get(name);
+  if (!out) { res.writeHead(404); return res.end('keine Ausgabe mit diesem Namen'); }
+  res.writeHead(200, { 'content-type': 'multipart/x-mixed-replace; boundary=frame', 'cache-control': 'no-cache', 'access-control-allow-origin': '*' });
+  out.clients.add(res);
+  res.on('close', () => out.clients.delete(res));
+}
+
+server.on('upgrade', (req, socket, head) => {
+  const path = new URL(req.url ?? '', 'http://x').pathname;
+  const target = path === '/stream' ? wss : path === '/out' ? outWss : null;
+  if (!target) return socket.destroy();
+  target.handleUpgrade(req, socket, head, (ws) => target.emit('connection', ws, req));
 });
 
 /**

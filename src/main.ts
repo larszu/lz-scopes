@@ -2,7 +2,13 @@ import './vendor/dockview.css';
 import './style.css';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, HLG_PEAKS, LUMA, detectDisplay, transferLabel, type DisplaySpace, type GamutId } from './color';
 import { CAMERA_GAMUTS, LOG_CURVES } from './camera';
-import { SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget } from './graticule';
+import {
+  CAMERA_PRESETS, CST_TARGETS, DEFAULT_CST, STAGES, STAGE_LABELS, TONEMAP_LABELS, autoPeaks, stageNote,
+  type ChainSettings, type CstSettings, type Stage, type ToneMap,
+} from './chain';
+import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
+import { LUT_SOURCES } from './lutLibrary';
+import { SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOMS, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
 import { DEFAULT_SKIN, ROI_CLOSE, defaultPanel as panel, drawPanel, panelSignature, roiCloseBox, type DrawOptions, type PanelState, type Tint } from './panel';
 import type { OutputHost, OutputWindowApi } from './outputView';
 import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } from './scene';
@@ -12,7 +18,7 @@ import type { GenConfig } from './audio/dsp/signals';
 import { audioPanelSettings, audioRow, audioSourceControls, mountGenerator } from './audio/ui';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
-import { Renderer, WAVE_MAX, WAVE_MIN, type PictureMode, type SkinRange } from './renderer';
+import { Renderer, type PictureMode, type SkinRange } from './renderer';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 
 // ---------------------------------------------------------------- state
@@ -23,6 +29,8 @@ interface Persisted {
   zebra: number; zebraLow: number; maxSamples: number; bridge: string; sidebar: boolean;
   skin: SkinRange; display: 'auto' | DisplaySpace;
   targets: VectorTarget[];
+  /** default measuring stage in the CST/LUT chain (panels can override) */
+  stage?: Stage;
   /** dockview layout (toJSON) */
   dock?: unknown;
   /** overlay scenes of the output windows (#1) and the one new overlay outputs use */
@@ -159,6 +167,7 @@ function renderHeader() {
 function settingsItems(): Node[] {
   const row = (label: string, ...kids: (Node | string)[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
   return [
+    row('Messpunkt', select(state.stage ?? 'signal', STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string]), (v) => setStage(v as Stage), 'Standard für alle Panels ohne eigenen Messpunkt (Taste C)')),
     row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}${detected.hdr ? ' (HDR-fähig)' : ''}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])],
       (v) => { state.display = v as Persisted['display']; save(); renderHeader(); }, 'Display-Farbraum der Bildansicht; die Scopes messen immer das Signal')),
     row('Spurfarbe', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); })),
@@ -296,11 +305,9 @@ function renderSources() {
     const ar = audioRow(s, renderSources);
     if (ar) card.append(ar);
     if (s.kind !== 'audio') card.append(h('div', { class: 'row' },
-      groupedSelect(set.transfer, [
-        ['', [['auto', `Transfer auto (${transferLabel(s.transfer)})`], ['sdr', 'SDR BT.1886'], ['pq', 'PQ ST 2084'], ['hlg', 'HLG']]],
-        ['Kamera-Log (Szene)', Object.entries(LOG_CURVES).map(([k, c]) => [k, c.name])],
-      ], (v) => upd({ transfer: v as SourceSettings['transfer'] }), 'Transferfunktion; Log-Kurven werden nicht signalisiert und müssen gewählt werden'),
-      select(set.colorspace, [['auto', `Matrix auto (${s.colorspace})`], ['709', 'Rec.709'], ['2020', 'Rec.2020'], ['601', 'Rec.601 525 (SMPTE-C)'], ['601-625', 'Rec.601 625 (EBU)']], (v) => upd({ colorspace: v as SourceSettings['colorspace'] }), 'Y′CbCr-Matrix & Primärfarben')),
+      groupedSelect(set.transfer, transferGroups(`auto: ${transferLabel(s.transfer)} (${s.transferOrigin})`),
+        (v) => upd({ transfer: v as SourceSettings['transfer'] }), 'Transferfunktion. Erkannt wird sie nur aus den Stream-Metadaten (ffprobe color_transfer); aus dem Bild selbst lässt sich die Kurve nicht bestimmen. Log-Kurven werden nie signalisiert und müssen gewählt werden.'),
+      select(set.colorspace, [['auto', `Matrix auto: ${s.colorspace} (${s.colorspaceOrigin})`], ['709', 'Rec.709'], ['2020', 'Rec.2020'], ['601', 'Rec.601 525 (SMPTE-C)'], ['601-625', 'Rec.601 625 (EBU)']], (v) => upd({ colorspace: v as SourceSettings['colorspace'] }), 'Y′CbCr-Matrix & Primärfarben')),
       h('div', { class: 'row' },
         groupedSelect(set.gamut ?? 'auto', [
           ['', [['auto', `Gamut auto (${GAMUTS[s.gamut].name})`]]],
@@ -308,9 +315,115 @@ function renderSources() {
           ['Kamera / ACES', (Object.keys(CAMERA_GAMUTS) as GamutId[]).map((k) => [k, GAMUTS[k].name])],
         ], (v) => upd({ gamut: v as SourceSettings['gamut'] }), 'Primärfarben des linearen Lichts (CIE, Bild, Gamut-Warnung); auto = Kamera-Gamut der Log-Kurve bzw. Farbraum'),
         s.transfer === 'hlg' ? select(String(s.hlgLw), HLG_PEAKS.map((n) => [String(n), `HLG-Display ${n} cd/m²`]), (v) => upd({ hlgLw: Number(v) }), 'Spitzenleuchtdichte Lw des HLG-Displays (Systemgamma nach BT.2100, Presets nach EBU R 167)') : ''));
+    if (s.kind !== 'audio') card.append(chainControls(s, upd));
     if (s.message) card.append(h('div', { class: 'msg' }, s.message));
+    // LUT files dropped on a source card: LUT 1, with Shift LUT 2
+    card.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); card.classList.add('drop'); } });
+    card.addEventListener('dragleave', () => card.classList.remove('drop'));
+    card.addEventListener('drop', (e) => { card.classList.remove('drop'); const f = [...(e.dataTransfer?.files ?? [])]; if (f.length && isLutFile(f[0])) { e.preventDefault(); loadLutInto(s, f[0], e.shiftKey ? 'lut2' : 'lut1'); } });
     return card;
   }));
+}
+
+const isLutFile = (f: File) => LUT_EXTENSIONS.some((x) => f.name.toLowerCase().endsWith(x));
+
+async function loadLutInto(s: Source, f: File, slot: 'lut1' | 'lut2') {
+  try {
+    await addLutFile(f);
+    s.settings.chain = { ...s.settings.chain, [slot]: f.name };
+    save(); await refreshRecent(); renderSources(); refreshHeads(); needClear = true;
+    alertHud(`LUT ${f.name} → ${slot === 'lut1' ? 'LUT 1' : 'LUT 2'} von ${s.name}`);
+  } catch (e) { alertHud(`LUT nicht lesbar: ${(e as Error).message}`); }
+}
+
+let recentLutNames: string[] = [];
+async function refreshRecent() { recentLutNames = await recentLuts(); }
+
+function transferGroups(autoLabel: string, withAuto = true): [string, [string, string][]][] {
+  return [
+    ['', withAuto ? [['auto', autoLabel]] : []],
+    ['Display (SDR)', [['sdr', 'SDR BT.1886 (γ 2,4)'], ['g22', 'Gamma 2,2'], ['g26', 'Gamma 2,6'], ['g28', 'Gamma 2,8'], ['srgb', 'sRGB'], ['linear', 'Linear']]],
+    ['HDR', [['pq', 'PQ ST 2084'], ['hlg', 'HLG']]],
+    ['Kamera-Log (Szene)', Object.entries(LOG_CURVES).map(([k, c]) => [k, c.name] as [string, string])],
+  ];
+}
+const gamutGroups = (): [string, [string, string][]][] => [
+  ['Video', (['709', 'p3', '2020', '601', '601-625'] as GamutId[]).map((k) => [k, GAMUTS[k].name])],
+  ['Kamera / ACES', (Object.keys(CAMERA_GAMUTS) as GamutId[]).map((k) => [k, GAMUTS[k].name])],
+];
+
+/** CST / LUT block of a source card (chain.ts). */
+function chainControls(s: Source, upd: (p: Partial<SourceSettings>) => void): Node {
+  const ch: ChainSettings = s.settings.chain ?? {};
+  const cst: CstSettings = { ...DEFAULT_CST, ...ch.cst };
+  const setChain = (patch: Partial<ChainSettings>) => { upd({ chain: { ...ch, ...patch } }); refreshHeads(); needClear = true; };
+  const setCst = (patch: Partial<CstSettings>) => setChain({ cst: { ...cst, ...patch } });
+  const on = h('input', { type: 'checkbox', checked: cst.on }) as HTMLInputElement;
+  on.onchange = () => setCst({ on: on.checked });
+  const peaks = autoPeaks({ transfer: s.transfer, gamut: s.gamut, lw: s.hlgLw }, { transfer: cst.transfer, gamut: cst.gamut, lw: cst.lw ?? 1000 });
+  const num = (v: number | undefined, auto: number, title: string, set: (n: number) => void) => {
+    const i = h('input', { type: 'number', class: 'num', min: 0, step: 1, value: v || '', placeholder: `auto ${Math.round(auto)}`, title }) as HTMLInputElement;
+    i.onchange = () => set(Number(i.value) || 0);
+    return i;
+  };
+  const lutSel = (slot: 'lut1' | 'lut2') => {
+    const cur = ch[slot] ?? '';
+    const file = h('input', { type: 'file', accept: LUT_EXTENSIONS.join(','), hidden: true }) as HTMLInputElement;
+    file.onchange = () => { const f = file.files?.[0]; if (f) loadLutInto(s, f, slot); };
+    const names = [...new Set([...recentLutNames, ...LUTS.keys()])];
+    const opts: [string, string][] = [['', slot === 'lut1' ? 'LUT 1: keine' : 'LUT 2: keine'],
+      ...names.map((n) => [n, `${slot === 'lut1' ? 'LUT 1' : 'LUT 2'}: ${n}`] as [string, string]), ['__load', 'Datei laden …']];
+    if (cur && !names.includes(cur)) opts.splice(1, 0, [cur, `⚠ ${cur} (nicht geladen)`]);
+    const sel = select(cur, opts, async (v) => {
+      if (v === '__load') { file.click(); return; }
+      if (v && !(await ensureLut(v))) { alertHud(`LUT ${v} ist nicht gespeichert – bitte Datei neu laden`); return; }
+      setChain({ [slot]: v || undefined });
+    }, 'LUT-Datei (.cube, .3dl, .spi3d, .spi1d, .csp); auch per Drag & Drop auf die Quellenkarte (Umschalt = LUT 2)');
+    return h('span', { class: 'lutslot' }, sel, file);
+  };
+  const out = ch.lutOut ?? {};
+  const summary = [cst.on ? `CST → ${GAMUTS[cst.gamut].name} ${transferLabel(cst.transfer)}` : '', ch.lut1 ? `LUT ${ch.lut1}` : '', ch.lut2 ? `LUT ${ch.lut2}` : ''].filter(Boolean).join(' · ');
+  return h('details', { class: 'chain', open: !!summary },
+    h('summary', { title: 'Farbraum-Transformation und LUTs; welche Stufe ein Panel misst, steht in dessen ⚙ (Taste C = Standard umschalten)' }, `CST / LUT${summary ? `: ${summary}` : ''}`),
+    h('div', { class: 'row' },
+      select('', [['', 'Kamera-Preset …'], ...CAMERA_PRESETS.map((p) => [p.id, `${p.name} → Rec.709`] as [string, string])], (v) => {
+        const p = CAMERA_PRESETS.find((x) => x.id === v);
+        if (!p) return;
+        const t = CST_TARGETS[0];
+        upd({ transfer: p.curve, gamut: 'auto', chain: { ...ch, cst: { ...cst, on: true, gamut: t.gamut, transfer: t.transfer, tonemap: t.tonemap } } });
+        refreshHeads(); needClear = true;
+      }, 'Setzt Transfer und Gamut der Quelle auf die Kamera-Log-Kurve und eine CST nach Rec.709 mit ACES-2.0-Tonescale'),
+      select('', [['', 'Ziel …'], ...CST_TARGETS.map((t) => [t.id, t.name] as [string, string])], (v) => {
+        const t = CST_TARGETS.find((x) => x.id === v);
+        if (t) setCst({ on: true, gamut: t.gamut, transfer: t.transfer, tonemap: t.tonemap, lw: 1000 });
+      })),
+    h('div', { class: 'row' },
+      h('label', { class: 'inline', title: 'Farbraum-Transformation: Eingang (Transfer/Gamut oben) → linear → Ziel-Gamut (Bradford bei anderem Weißpunkt) → Tone-Mapping → Ziel-Transfer' }, on, 'CST'),
+      groupedSelect(cst.gamut, gamutGroups(), (v) => setCst({ gamut: v as GamutId }), 'Ziel-Gamut'),
+      groupedSelect(cst.transfer, transferGroups('', false), (v) => setCst({ transfer: v as CstSettings['transfer'] }), 'Ziel-Transfer')),
+    h('div', { class: 'row' },
+      select(cst.tonemap ?? 'bt2390', Object.entries(TONEMAP_LABELS) as [string, string][], (v) => setCst({ tonemap: v as ToneMap }), 'Tone-Mapping in der CST (bei Log-Zielen ohne Wirkung)'),
+      num(cst.srcPeak, peaks.src, 'Quellspitze in cd/m² (leer = automatisch)', (n) => setCst({ srcPeak: n })),
+      num(cst.tgtPeak, peaks.tgt, 'Zielspitze in cd/m² (leer = automatisch)', (n) => setCst({ tgtPeak: n })),
+      cst.transfer === 'hlg' ? select(String(cst.lw ?? 1000), HLG_PEAKS.map((n) => [String(n), `Ziel-HLG ${n}`]), (v) => setCst({ lw: Number(v) })) : ''),
+    h('div', { class: 'row' }, lutSel('lut1'), lutSel('lut2')),
+    ch.lut1 || ch.lut2 ? h('div', { class: 'row' },
+      groupedSelect(out.transfer ?? 'auto', transferGroups('LUT-Ausgang Transfer: wie Eingang'), (v) => setChain({ lutOut: { ...out, transfer: v === 'auto' ? undefined : v as CstSettings['transfer'] } }), 'Was die LUT ausgibt – steht nicht in der Datei und muss angegeben werden'),
+      groupedSelect(out.gamut ?? 'auto', [['', [['auto', 'LUT-Ausgang Gamut: wie Eingang']]], ...gamutGroups()], (v) => setChain({ lutOut: { ...out, gamut: v === 'auto' ? undefined : v as GamutId } }))) : '',
+    h('div', { class: 'row' }, h('button', { class: 'mini', title: 'Offizielle Download-Seiten der Hersteller-LUTs', onclick: () => showLutLibrary() }, 'Hersteller-LUTs …')),
+    h('p', { class: 'hint' }, 'LUT-Dateien auf diese Karte ziehen (Umschalt = LUT 2). Geladene LUTs bleiben im Browser gespeichert.'));
+}
+
+function showLutLibrary() {
+  const dlg = h('dialog', { class: 'lutlib' },
+    h('h3', {}, 'Hersteller-LUTs'),
+    h('p', { class: 'hint' }, 'Hersteller-LUTs werden nicht mitgeliefert: Ihre Nutzungsbedingungen erlauben die Weitergabe nicht oder sagen nichts dazu. Hier die offiziellen Download-Seiten; heruntergeladene Dateien per Drag & Drop auf eine Quellenkarte ziehen.'),
+    h('table', {}, ...LUT_SOURCES.map((l) => h('tr', {},
+      h('td', {}, l.vendor), h('td', {}, l.looks), h('td', {}, l.url ? h('a', { href: l.url, target: '_blank', rel: 'noopener' }, 'Download-Seite') : '–'), h('td', { class: 'hint' }, l.note)))),
+    h('div', { class: 'row' }, h('button', { onclick: () => dlg.close() }, 'Schließen')));
+  document.body.append(dlg);
+  dlg.addEventListener('close', () => dlg.remove());
+  dlg.showModal();
 }
 
 function patternSelect(value: string, onchange: (id: string) => void) {
@@ -467,6 +580,7 @@ function fillHead(v: PanelView) {
       p.scope = val as ScopeType; if (val === 'vector' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
     }),
     sources.length > 1 ? select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), 'Quelle – alle nicht angehefteten Panels folgen') : '',
+    stageChip(p),
     sources.length > 1 ? h('button', { class: `icon pin ${p.pin ? 'on' : ''}`, title: p.pin ? 'Angeheftet: behält seine Quelle' : 'Anheften: Panel behält seine Quelle, wenn andere umschalten', onclick: () => { p.pin = !p.pin; save(); fillHead(v); } }, '📌') : '',
     h('div', { class: 'opts' },
       roiChip(p),
@@ -475,6 +589,13 @@ function fillHead(v: PanelView) {
         h('div', { class: 'menu-body right' }, h('div', { class: 'mtitle' }, SCOPE_LABELS[p.scope]), ...panelSettings(p)))),
     h('button', { class: 'icon', title: 'Groß / zurück (Doppelklick, Esc)', onclick: () => toggleSolo(idx) }, '⤢'),
   );
+}
+
+/** Measuring stage in the panel head, honest about stages that have nothing to apply. */
+function stageChip(p: PanelState): Node | string {
+  if (isAudio(p.scope)) return '';
+  const n = stageNote(panelSource(p), p.stage ?? state.stage ?? 'signal');
+  return n.text ? h('span', { class: `stagechip${n.warn ? ' warn' : ''}`, title: 'Messpunkt in der CST/LUT-Kette (⚙ → Messpunkt, Taste C)' }, n.text) : '';
 }
 
 /** Re-fill all panel headers (sources or settings changed). */
@@ -495,7 +616,9 @@ function panelSettings(p: PanelState): Node[] {
   if (isAudio(p.scope)) return audioPanelSettings(p, save);
   const rows: Node[] = [];
   const row = (label: string, ...kids: (Node | string)[]) => rows.push(h('label', { class: 'mrow' }, h('span', {}, label), ...kids));
-  const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv', label: string, dflt = false) => {
+  row('Messpunkt', select(p.stage ?? 'auto', [['auto', `wie Standard (${STAGE_LABELS[state.stage ?? 'signal']})`], ...STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string])],
+    (v) => { p.stage = v === 'auto' ? undefined : v as Stage; save(); refreshHeads(); }, 'Wo in der Kette der Quelle (CST/LUT, Quellenkarte) dieses Panel misst'));
+  const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv' | 'skinBand', label: string, dflt = false) => {
     const c = h('input', { type: 'checkbox', checked: p[key] ?? dflt }) as HTMLInputElement;
     c.onchange = () => { p[key] = c.checked; save(); refreshHeads(); };
     return h('label', { class: 'inline' }, c, label);
@@ -517,7 +640,20 @@ function panelSettings(p: PanelState): Node[] {
     row('Skala', select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m² / Szene']], (v) => { state.unit = v as Unit; save(); renderHeader(); }));
     row('Marken', check('marks', 'BT.2408 (HDR) / 18 % Grau (Log)', true));
     row('EBU R 103', check('r103', 'Grenzen −5 / 105 %'));
+    row('Lupe', select(p.waveZoom ?? 'full', Object.entries(WAVE_ZOOM_LABELS) as [string, string][], (v) => { p.waveZoom = v as WaveZoom; save(); }, 'Vergrößert die Schwarz- bzw. Lichterbereiche, z. B. für den Schwarzabgleich'));
+    const chans = channelsOf(p.scope);
+    if (chans.length) {
+      row('Kanäle', ...chans.map((c) => {
+        const box = h('input', { type: 'checkbox', checked: p.channels?.[c.key] !== false }) as HTMLInputElement;
+        box.onchange = () => { p.channels = { ...p.channels, [c.key]: box.checked }; save(); };
+        return h('label', { class: 'inline' }, box, c.name);
+      }));
+    }
+    const names = h('input', { type: 'checkbox', checked: p.names !== false }) as HTMLInputElement;
+    names.onchange = () => { p.names = names.checked; save(); };
+    row('Beschriftung', h('label', { class: 'inline' }, names, 'Kanalnamen und Einheit'));
   }
+  if (p.scope === 'wf-skin') row('Hautton-Bereich', check('skinBand', 'Band und Linien einblenden (aus = nur farbige Hauttöne)', true));
   if (p.scope === 'cie') row('Diagramm', check('cieUv', 'CIE 1976 u′v′ statt 1931 xy'));
   if (scatter) row('Spurfarbe (Mono)', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); }));
   if (p.scope === 'vector') {
@@ -662,7 +798,7 @@ function attachSkinDrag(p: PanelState, body: HTMLElement) {
   const levelAt = (e: PointerEvent | WheelEvent) => {
     const b = body.getBoundingClientRect();
     const r = plotRect('wf-skin', b.width, b.height);
-    return WAVE_MIN + ((r.y + r.h - (e.clientY - b.top)) / r.h) * (WAVE_MAX - WAVE_MIN);
+    return waveLevel(r, e.clientY - b.top, WAVE_ZOOMS[p.waveZoom ?? 'full']);
   };
   let which: 'lo' | 'hi' | null = null;
   body.addEventListener('pointerdown', (e) => {
@@ -825,7 +961,13 @@ function drawOptions(): DrawOptions {
   return {
     unit: state.unit, tint: state.tint, maxSamples: state.maxSamples, falsePreset: state.falsePreset,
     zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps, skin: state.skin, display: displaySpace, targets: state.targets,
+    stage: state.stage ?? 'signal',
   };
+}
+
+function setStage(st: Stage) {
+  state.stage = st; save(); renderHeader(); refreshHeads(); needClear = true;
+  alertHud(`Messpunkt: ${STAGE_LABELS[st]}`);
 }
 
 // ---------------------------------------------------------------- saved layout configurations
@@ -835,7 +977,9 @@ interface LayoutConfig {
   dock: unknown; panels: PanelState[];
   /** overlay scenes (#1); older files have none */
   scenes?: OverlayScene[]; activeScene?: string;
-  settings: Pick<Persisted, 'unit' | 'tint' | 'skin' | 'falsePreset' | 'zebra' | 'zebraLow' | 'display' | 'maxSamples' | 'targets'>;
+  settings: Pick<Persisted, 'unit' | 'tint' | 'skin' | 'falsePreset' | 'zebra' | 'zebraLow' | 'display' | 'maxSamples' | 'targets' | 'stage'>;
+  /** CST/LUT chain per source, by source name (LUT files themselves stay in the browser's LUT store) */
+  chains?: Record<string, ChainSettings>;
   saved: string;
 }
 function loadLayouts(): Record<string, LayoutConfig> {
@@ -845,13 +989,21 @@ function storeLayouts(l: Record<string, LayoutConfig>) {
   try { localStorage.setItem(LAYOUTS_KEY, JSON.stringify(l)); } catch { /* ignore */ }
 }
 function currentLayout(): LayoutConfig {
-  const { unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets } = state;
-  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), scenes: structuredClone(state.scenes), activeScene: state.activeScene, settings: structuredClone({ unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets }), saved: new Date().toISOString() };
+  const { unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets, stage } = state;
+  const chains = Object.fromEntries(sources.filter((s) => s.settings.chain).map((s) => [s.name, structuredClone(s.settings.chain!)]));
+  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), scenes: structuredClone(state.scenes), activeScene: state.activeScene, settings: structuredClone({ unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets, stage }), chains, saved: new Date().toISOString() };
 }
 function applyLayout(c: LayoutConfig) {
   // mutate in place: panel views hold references to their state objects
-  c.panels.forEach((p, i) => { if (state.panels[i]) Object.assign(state.panels[i], p); else state.panels.push(p); });
+  c.panels.forEach((p, i) => { if (state.panels[i]) { delete state.panels[i].stage; Object.assign(state.panels[i], p); } else state.panels.push(p); });
   Object.assign(state, structuredClone(c.settings));
+  for (const [name, chain] of Object.entries(c.chains ?? {})) {
+    const s = sources.find((x) => x.name === name);
+    if (!s) continue;
+    s.settings.chain = structuredClone(chain);
+    [chain.lut1, chain.lut2].forEach((n) => { if (n) ensureLut(n).then(() => { refreshHeads(); needClear = true; }); });
+  }
+  renderSources();
   if (c.scenes) {
     // merge by id, in place: open output windows hold the scene objects
     for (const sc of sanitizeScenes(c.scenes)) {
@@ -1219,10 +1371,15 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'f' || e.key === 'F') $('#full').click();
   else if (e.key === 's' || e.key === 'S') snapshot();
   else if (e.key === 'b' || e.key === 'B') $('#toggle-side').click();
+  else if (e.key === 'c' || e.key === 'C') setStage(STAGES[(STAGES.indexOf(state.stage ?? 'signal') + 1) % STAGES.length]);
   else if (e.key === 'Escape') { if (dock.api.hasMaximizedGroup()) dock.exitMaximized(); else { sources.forEach((s) => { s.probe = null; s.roi = null; s.faceMode = 'off'; }); refreshHeads(); } }
 });
 
+// LUTs referenced by saved chains come back from the browser's LUT store
+lutListeners.add(() => { renderSources(); refreshHeads(); needClear = true; });
+refreshRecent().then(() => renderSources());
 for (const saved of state.sources) {
+  [saved.settings.chain?.lut1, saved.settings.chain?.lut2].forEach((n) => { if (n) ensureLut(n); });
   const s = addSource(saved.kind, saved.name, saved.url, saved.settings);
   if (saved.pattern) Object.assign(s.pattern, saved.pattern);
   if (saved.audioIn) Object.assign(s.audioIn, saved.audioIn);

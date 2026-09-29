@@ -1,4 +1,4 @@
-# LZ Scope
+# LZ Scopes
 
 Software-Messtechnik im Browser: Waveform, Parade, Vectorscope, Histogramm, CIE-Diagramm, Falschfarben und Messwerte, auch für **RTSP-Streams** und andere Netzwerkquellen. Vorbilder: VMA Scope, Nobe OmniScope, HDRScopes, LiveScopes.tv, openrv-web.
 
@@ -21,6 +21,7 @@ Voraussetzung: `ffmpeg` und `ffprobe` im `PATH` (`brew install ffmpeg`). Ohne Br
 |---|---|
 | `rtsp://`, `rtsps://`, `rtmp://`, `rtp://`, `udp://`, `srt://`, `tcp://`, `http(s)://` (auch HLS) | Bridge: ffprobe → ffmpeg → rohe RGBA-Frames per WebSocket |
 | `test:bars`, `test:ramp`, `test:testsrc`, `test:colors` | Bridge: lavfi-Testbilder |
+| Testbild-Generator (siehe unten) | direkt im Browser, auch als Ausgabefenster |
 | Kamera, Bildschirm, Video-/Bilddatei | direkt im Browser |
 
 Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einstellbar sind Analyseauflösung, Bildrate, 8 oder 16 bit (für 10-bit/HDR), RTSP über TCP oder UDP, Transfer (SDR/PQ/HLG) und Farbraum (709/2020/601). „auto“ übernimmt die Stream-Metadaten.
@@ -37,6 +38,36 @@ Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einste
 Layouts 1, 1+1, 2×2, Colorist, 3×2, 3×3. Doppelklick schaltet ein Panel solo. Einfrieren, PNG-Export, Vollbild. Die Einstellungen bleiben im Browser gespeichert.
 
 **Tasten:** `1`–`6` Layout · `Leertaste` Einfrieren · `F` Vollbild · `S` PNG · `B` Seitenleiste · `Esc` Solo beenden bzw. Messpunkt löschen
+
+## Testbilder
+
+Die Quelle *Testbild* erzeugt die Muster selbst, in 720p bis 2160p. Rampen und Zonenplatte werden pixelgenau geschrieben, damit der Browser sie nicht dithert.
+
+- **Vollfeld** Rot, Grün, Blau, Weiß, Grau 50 %, Grau 18 %, Schwarz
+- **Grau** Verlauf, Verläufe W/R/G/B, 11 Graustufen, Graukeil in TE-165-Anordnung (lineare 10-%-Stufen), wandernder Verlauf, PLUGE
+- **Geometrie** Schachbrett, Konvergenzgitter, Fadenkreuz, Kreisraster, Zonenplatte (auch bewegt), sichere Bereiche nach EBU R 95
+- **Farbe** SMPTE 75 % und 100 % mit PLUGE, EBU 100/0/75/0 und 100/0/100/0, Sättigungsverläufe, Farbkreis, ColorChecker (Näherung)
+- **Animiert** Farbwechsel, Farbwechsel-Verlauf, dreigeteilt, bewegte Diagonalen, Regenbogenfluss, Chroma-Crawl
+- **Testbild** mit Kreis, Balken, Frequenzgittern und Uhr
+- **HDR** PQ-Graukeil 0–10 000 cd/m², HLG-Graukeil, PQ-Verlauf mit Referenzweiß 203; die Scopes schalten dabei automatisch auf PQ bzw. HLG
+- **LZ Displaytest** die 20 Displaytestbilder (1920×1080) aus `Broadcast/displaytest`
+- **Eigene Bilder** über *+ Bilder*, gelten für die laufende Sitzung
+
+Optional lässt sich eine Kennung einblenden. *⧉ Ausgeben* öffnet das Muster in einem eigenen Fenster (`?out=<id>&w=&h=&label=`) für Monitor, Beamer oder Capture: `←`/`→` wechseln, `F` Vollbild, `L` Label. In nativer Auflösung und im Vollbild wird 1:1 ausgegeben.
+
+Grenze: Canvas arbeitet in Full-Range-RGB, deshalb gibt es keine Pegel unter 0 %. Die PLUGE-Stufe −4 % liegt dadurch auf 0 %.
+
+## Einbetten
+
+`src/index.ts` exportiert `ScopeView`: ein WebGL-Canvas mit wählbaren Scopes, ohne Framework.
+
+```ts
+import { ScopeView, Source } from 'lz-scopes/src';
+const view = new ScopeView(el, { scopes: ['wf-luma', 'vector', 'parade', 'hist'] });
+const src = new Source('stream', 'Kamera 1');
+src.connectFrames('ws://bridge/scope/1');  // Frame-Protokoll: docs/frame-protocol.md
+view.setSource(src);
+```
 
 ## Technik
 

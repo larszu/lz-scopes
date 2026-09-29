@@ -1,23 +1,18 @@
 import './style.css';
 import { FALSE_COLOR_PRESETS, LUMA } from './color';
-import {
-  SCOPE_LABELS, cieToPlot, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
-  isWaveform, plotRect, probeLines, statsLines, vectorPoint, type ScopeType, type Unit,
-} from './graticule';
-import { Renderer, type PictureMode, type ScatterMode } from './renderer';
+import { SCOPE_LABELS, isWaveform, plotRect, type ScopeType, type Unit } from './graticule';
+import { defaultPanel as panel, drawPanel, type PanelState, type Tint } from './panel';
+import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
+import { Renderer, type PictureMode } from './renderer';
 import { Source, type SourceKind, type SourceSettings } from './sources';
-import { ycbcr } from './color';
 
 // ---------------------------------------------------------------- state
 
-interface PanelState {
-  scope: ScopeType; sourceId: string; gain: number; colorize: boolean; zoom: number;
-  picture: PictureMode; hist: 'rgb' | 'luma' | 'split'; log: boolean;
-}
+type PatternState = Source['pattern'];
 interface Persisted {
-  layout: string; panels: PanelState[]; unit: Unit; tint: 'white' | 'green' | 'amber'; falsePreset: string;
+  layout: string; panels: PanelState[]; unit: Unit; tint: Tint; falsePreset: string;
   zebra: number; zebraLow: number; maxSamples: number; bridge: string; sidebar: boolean;
-  sources: { kind: SourceKind; name: string; url: string; settings: SourceSettings }[];
+  sources: { kind: SourceKind; name: string; url: string; settings: SourceSettings; pattern?: PatternState }[];
 }
 
 const LAYOUTS: Record<string, { label: string; areas: string[]; n: number }> = {
@@ -30,18 +25,13 @@ const LAYOUTS: Record<string, { label: string; areas: string[]; n: number }> = {
   l9: { label: '3×3', areas: ['a b c', 'd e f', 'g h i'], n: 9 },
 };
 const DEFAULT_SCOPES: ScopeType[] = ['picture', 'wf-luma', 'vector', 'parade', 'hist', 'cie', 'stats', 'yrgb', 'ycbcr'];
-const TINTS = { white: [1, 1, 1], green: [0.55, 1, 0.62], amber: [1, 0.82, 0.45] } as const;
-const STORE_KEY = 'lz-scope.v1';
-
-const panel = (scope: ScopeType): PanelState => ({
-  scope, sourceId: '', gain: 1, colorize: scope === 'vector' || scope === 'cie', zoom: 1, picture: 'normal', hist: 'rgb', log: false,
-});
+const STORE_KEY = 'lz-scopes.v1';
 
 function load(): Persisted {
   const base: Persisted = {
     layout: 'lc', panels: DEFAULT_SCOPES.map(panel), unit: 'percent', tint: 'green', falsePreset: 'ARRI', zebra: 0.95, zebraLow: 0,
     maxSamples: 1_000_000, bridge: '', sidebar: true,
-    sources: [{ kind: 'stream', name: 'Testbild', url: 'test:bars', settings: { transfer: 'auto', colorspace: 'auto', width: 960, fps: 0, depth: 8, transport: 'tcp' } }],
+    sources: [{ kind: 'pattern', name: 'Testbild', url: '', settings: { transfer: 'auto', colorspace: 'auto', width: 960, fps: 0, depth: 8, transport: 'tcp' }, pattern: { id: 'smpte75', width: 1920, height: 1080, label: '' } }],
   };
   try {
     const s = JSON.parse(localStorage.getItem(STORE_KEY) ?? 'null');
@@ -59,7 +49,8 @@ let fpsFrames = 0, displayFps = 0, fpsT = performance.now();
 function save() {
   const p: Persisted = {
     ...state,
-    sources: sources.filter((s) => s.kind === 'stream').map((s) => ({ kind: s.kind, name: s.name, url: s.url, settings: s.settings })),
+    sources: sources.filter((s) => s.kind === 'stream' || s.kind === 'pattern')
+      .map((s) => ({ kind: s.kind, name: s.name, url: s.url, settings: s.settings, pattern: s.pattern })),
   };
   try { localStorage.setItem(STORE_KEY, JSON.stringify(p)); } catch { /* ignore */ }
 }
@@ -91,7 +82,7 @@ const select = (value: string, options: [string, string][], onchange: (v: string
 const app = $('#app');
 app.innerHTML = `
   <header class="bar">
-    <div class="brand"><span class="mark">LZ</span> Scope</div>
+    <div class="brand"><span class="mark">LZ</span> Scopes</div>
     <button class="icon" id="toggle-side" title="Quellen ein/aus (B)">☰</button>
     <div class="group" id="layouts"></div>
     <div class="group" id="globals"></div>
@@ -136,7 +127,7 @@ function renderHeader() {
     h('button', { class: k === state.layout ? 'on' : '', title: `Layout ${l.label} (${i + 1})`, onclick: () => setLayout(k) }, l.label)));
   $('#globals').replaceChildren(
     select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m²']], (v) => { state.unit = v as Unit; save(); }, 'Skala'),
-    select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Persisted['tint']; save(); }, 'Spurfarbe'),
+    select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); }, 'Spurfarbe'),
     select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }, 'Präzision (Abtastpunkte)'),
     select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, `Falschfarben ${k}`]), (v) => { state.falsePreset = v; save(); }, 'Falschfarben-Preset'),
     h('label', { class: 'inline', title: 'Zebra-Schwelle' }, 'Zebra ',
@@ -214,6 +205,8 @@ function renderSources() {
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
             h('button', { class: 'mini', title: `Testbild ${p}`, onclick: () => { urlIn.value = `test:${p}`; connect(); } }, p)))),
       );
+    } else if (s.kind === 'pattern') {
+      card.append(...patternControls(s));
     } else {
       card.append(h('div', { class: 'row' },
         running ? h('button', { onclick: () => s.stop() }, '■ Stopp')
@@ -227,7 +220,51 @@ function renderSources() {
   }));
 }
 
+function patternSelect(value: string, onchange: (id: string) => void) {
+  const groups = [...new Set(PATTERNS.map((p) => p.group))];
+  return h('select', { class: 'pattern', title: 'Testbild', onchange: (e: Event) => onchange((e.target as HTMLSelectElement).value) },
+    ...groups.map((g) => h('optgroup', { label: g },
+      ...PATTERNS.filter((p) => p.group === g).map((p) => h('option', { value: p.id, selected: p.id === value }, p.name)))));
+}
+
+function patternControls(s: Source): Node[] {
+  const pt = s.pattern;
+  const apply = (patch: Partial<PatternState>) => { Object.assign(pt, patch); save(); s.startPattern(); };
+  const step = (d: number) => {
+    const i = PATTERNS.findIndex((p) => p.id === pt.id);
+    apply({ id: PATTERNS[(i + d + PATTERNS.length) % PATTERNS.length].id });
+  };
+  const label = h('input', { class: 'url', value: pt.label, placeholder: 'Kennung / Label (optional)' }) as HTMLInputElement;
+  label.onchange = () => apply({ label: label.value });
+  const imgs = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true }) as HTMLInputElement;
+  imgs.onchange = () => {
+    const added = addImagePatterns([...(imgs.files ?? [])]);
+    if (added.length) apply({ id: added[0].id });
+  };
+  return [
+    h('div', { class: 'row' },
+      h('button', { class: 'mini', title: 'Vorheriges Testbild', onclick: () => step(-1) }, '◀'),
+      patternSelect(pt.id, (id) => apply({ id })),
+      h('button', { class: 'mini', title: 'Nächstes Testbild', onclick: () => step(1) }, '▶')),
+    h('div', { class: 'row' },
+      select(`${pt.width}x${pt.height}`, RESOLUTIONS.map(([w, hh]) => [`${w}x${hh}`, `${w}×${hh}`]), (v) => {
+        const [w, hh] = v.split('x').map(Number); apply({ width: w, height: hh });
+      }, 'Auflösung'),
+      label),
+    h('div', { class: 'row' },
+      h('button', { class: 'primary', title: 'Testbild im eigenen Fenster ausgeben (für Monitor, Beamer, Capture)', onclick: () => openOutput(pt) }, '⧉ Ausgeben'),
+      h('button', { title: 'Eigene Bilder als Testbilder laden', onclick: () => imgs.click() }, '+ Bilder'), imgs),
+  ];
+}
+
+function openOutput(pt: PatternState) {
+  const q = new URLSearchParams({ out: pt.id, w: String(pt.width), h: String(pt.height), label: pt.label });
+  if (patternById(pt.id).group === 'Eigene Bilder') q.set('out', 'smpte75'); // object URLs don't cross windows
+  window.open(`${location.pathname}?${q}`, 'lz-scopes-pattern', 'popup,width=1280,height=720');
+}
+
 async function startLocal(s: Source) {
+  if (s.kind === 'pattern') return s.startPattern();
   if (s.kind === 'webcam' || s.kind === 'screen') return s.startCapture(s.kind);
   const input = h('input', { type: 'file', accept: 'video/*,image/*' }) as HTMLInputElement;
   input.onchange = () => { const f = input.files?.[0]; if (f) s.openFile(f).then(renderPanels); };
@@ -236,6 +273,7 @@ async function startLocal(s: Source) {
 
 $('#add').replaceChildren(
   h('span', {}, '+ Quelle'),
+  h('button', { onclick: () => startLocal(addSource('pattern', `Testbild ${sources.length + 1}`)) }, 'Testbild'),
   h('button', { onclick: () => addSource('stream', `Stream ${sources.length + 1}`) }, 'RTSP / Netz'),
   h('button', { onclick: () => startLocal(addSource('webcam')) }, 'Kamera'),
   h('button', { onclick: () => startLocal(addSource('screen')) }, 'Bildschirm'),
@@ -325,9 +363,6 @@ function setProbe(p: PanelState, body: HTMLElement, e: MouseEvent) {
 
 // ---------------------------------------------------------------- render loop
 
-const SCATTER: Partial<Record<ScopeType, ScatterMode>> = {
-  'wf-luma': 'luma', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie',
-};
 let lastStats = 0;
 
 function frame(now: number) {
@@ -353,66 +388,10 @@ function frame(now: number) {
     const ctx = v.overlay.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, b.width, b.height);
-    const aspect = src && src.width ? src.width / src.height : 16 / 9;
-    const r = plotRect(p.scope, b.width, b.height, aspect);
-    const abs = { x: bx + r.x, y: by + r.y, w: r.w, h: r.h };
-    renderer.clearRect(abs);
-
-    if (!src || !src.ready) {
-      ctx.fillStyle = '#6b7078'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(src ? (src.message || 'Keine Daten – Quelle starten') : 'Links eine Quelle hinzufügen', b.width / 2, b.height / 2);
-      if (isWaveform(p.scope)) drawWaveGraticule(ctx, p.scope, r, state.unit, src?.transfer ?? 'sdr');
-      continue;
-    }
-    const probeRgb = src.probe ? src.readPixel(src.probe.x, src.probe.y) : null;
-    const mode = SCATTER[p.scope];
-    if (mode) {
-      renderer.drawScatter(`p${v.idx}`, src, abs, {
-        mode, gain: p.gain, colorize: p.colorize, zoom: p.zoom, tint: [...TINTS[state.tint]] as [number, number, number], maxSamples: state.maxSamples,
-      });
-    }
-    if (isWaveform(p.scope)) {
-      drawWaveGraticule(ctx, p.scope, r, state.unit, src.transfer);
-      if (probeRgb) drawWaveProbe(ctx, p.scope, r, src, probeRgb);
-    } else if (p.scope === 'vector') {
-      drawVectorGraticule(ctx, r, src.colorspace, p.zoom);
-      if (probeRgb) {
-        const { cb, cr } = ycbcr(probeRgb[0], probeRgb[1], probeRgb[2], src.colorspace);
-        const [x, y] = vectorPoint(r, cb, cr, p.zoom);
-        ctx.strokeStyle = '#00dcff'; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.moveTo(x - 9, y); ctx.lineTo(x + 9, y); ctx.moveTo(x, y - 9); ctx.lineTo(x, y + 9); ctx.stroke();
-      }
-    } else if (p.scope === 'cie') {
-      drawCieGraticule(ctx, r, src.colorspace);
-      void cieToPlot;
-    } else if (p.scope === 'hist') {
-      drawHistogram(ctx, r, src, p.hist, p.log);
-    } else if (p.scope === 'picture') {
-      renderer.drawPicture(src, abs, { mode: p.picture, bands: FALSE_COLOR_PRESETS[state.falsePreset] ?? [], zebra: state.zebra, zebraLow: state.zebraLow });
-      if (p.picture === 'false') {
-        const bands = FALSE_COLOR_PRESETS[state.falsePreset] ?? [];
-        ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-        bands.forEach((bd, i) => {
-          const y = r.y + r.h - 12 - (bands.length - 1 - i) * 14;
-          ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(r.x + 4, y - 7, 150, 14);
-          ctx.fillStyle = bd.color; ctx.fillRect(r.x + 6, y - 4, 8, 8);
-          ctx.fillStyle = '#ddd'; ctx.fillText(`${bd.from}–${Math.min(100, bd.to)} % ${bd.label}`, r.x + 18, y);
-        });
-      }
-      if (src.probe && probeRgb) {
-        const x = r.x + ((src.probe.x + 0.5) / src.width) * r.w, y = r.y + ((src.probe.y + 0.5) / src.height) * r.h;
-        ctx.strokeStyle = '#00dcff'; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(x - 10, y); ctx.lineTo(x - 3, y); ctx.moveTo(x + 3, y); ctx.lineTo(x + 10, y);
-        ctx.moveTo(x, y - 10); ctx.lineTo(x, y - 3); ctx.moveTo(x, y + 3); ctx.lineTo(x, y + 10); ctx.stroke();
-        drawTextBox(ctx, r.x + r.w - 6, r.y + 6, probeLines(src, probeRgb, state.unit), 'right');
-      }
-      if (frozen) drawTextBox(ctx, r.x + 6, r.y + 6, ['STANDBILD']);
-    } else if (p.scope === 'stats') {
-      const lines = statsLines(src, displayFps);
-      if (probeRgb) lines.push('', 'Messpunkt', ...probeLines(src, probeRgb, state.unit));
-      ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.fillStyle = '#d6d6d6'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      lines.forEach((l, i) => ctx.fillText(l, 12, 10 + i * 15));
-    }
+    drawPanel(renderer, ctx, `p${v.idx}`, p, src, { x: bx, y: by, w: b.width, h: b.height }, {
+      unit: state.unit, tint: state.tint, maxSamples: state.maxSamples, falsePreset: state.falsePreset,
+      zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps,
+    });
   }
 
   fpsFrames++;
@@ -433,7 +412,7 @@ function snapshot() {
     ctx.drawImage(v.overlay, (b.left - g.left) * dpr, (b.top - g.top) * dpr);
   }
   const a = document.createElement('a');
-  a.download = `lz-scope-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.png`;
+  a.download = `lz-scopes-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.png`;
   a.href = c.toDataURL('image/png');
   a.click();
 }
@@ -451,7 +430,11 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Escape') { if (solo !== null) toggleSolo(solo); else sources.forEach((s) => (s.probe = null)); }
 });
 
-for (const s of state.sources) addSource(s.kind, s.name, s.url, s.settings);
+for (const saved of state.sources) {
+  const s = addSource(saved.kind, saved.name, saved.url, saved.settings);
+  if (saved.pattern) Object.assign(s.pattern, saved.pattern);
+  if (s.kind === 'pattern') s.startPattern();
+}
 applySidebar();
 renderHeader();
 renderPanels();

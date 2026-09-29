@@ -28,6 +28,13 @@ export interface SourceSettings {
   transport: 'tcp' | 'udp';
   /** bridge streams: request the sound as well (protocol 2) */
   audio?: boolean;
+  /** bridge capture devices (device:…): explicit mode and raw pixel format, e.g. 1920x1080 / 50 / yuv422p10le */
+  device?: { size?: string; rate?: string; pixfmt?: string };
+  /** bridge: Y′CbCr → R′G′B′ matrix and range of the ffmpeg conversion ('auto' = tags, else BT.709 above SD) */
+  decodeMatrix?: 'auto' | 'bt709' | 'bt601' | 'bt2020';
+  decodeRange?: 'auto' | 'tv' | 'pc';
+  /** DeckLink helper: 10 bit (v210) or 8 bit (UYVY) capture */
+  deckLinkBits?: 8 | 10;
 }
 
 export interface StreamInfo {
@@ -45,6 +52,20 @@ export interface Stats {
   rgbAvg: [number, number, number];
   clipLow: number[]; clipHigh: number[]; // fraction per R, G, B
   samples: number;
+}
+
+/** Extra query parameters of the bridge for capture devices, DeckLink and the decode matrix. */
+export function bridgeInputParams(url: string, set: SourceSettings): Record<string, string> {
+  const q: Record<string, string> = {};
+  if (url.startsWith('device:')) {
+    if (set.device?.size) q.size = set.device.size;
+    if (set.device?.rate) q.rate = set.device.rate;
+    if (set.device?.pixfmt) q.pixfmt = set.device.pixfmt;
+  }
+  if (url.startsWith('decklink:') && set.deckLinkBits === 8) q.pixel = '8';
+  if (set.decodeMatrix && set.decodeMatrix !== 'auto') q.matrix = set.decodeMatrix;
+  if (set.decodeRange && set.decodeRange !== 'auto') q.range = set.decodeRange;
+  return q;
 }
 
 export const DEFAULT_SETTINGS: SourceSettings = { transfer: 'auto', colorspace: 'auto', gamut: 'auto', hlgLw: 1000, width: 960, fps: 0, depth: 8, transport: 'tcp', audio: true };
@@ -210,6 +231,7 @@ export class Source {
     const { width, fps, depth, transport } = this.settings;
     const q = new URLSearchParams({ url, width: String(width), fps: String(fps), depth: String(depth), transport });
     if (this.settings.audio !== false) q.set('audio', '1');
+    for (const [k, v] of Object.entries(bridgeInputParams(url, this.settings))) q.set(k, v);
     this.connectFrames(`${bridge}/stream?${q}`, false);
   }
 

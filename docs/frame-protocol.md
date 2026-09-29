@@ -58,3 +58,35 @@ ffmpeg … -i <url> \
 ```
 
 Ersatzweg: Beendet sich ffmpeg in den ersten Sekunden mit einem Fehler zu `pipe:3` (möglich unter Windows, wenn der Deskriptor nicht vererbt wird), startet die Bridge einen zweiten ffmpeg-Prozess nur für den Ton (`-vn … pipe:1`). Der öffnet eine zweite Sitzung zur Quelle; manche Kameras vertragen das nicht. Mit `LZS_AUDIO_SPLIT=1` lässt sich der Ersatzweg erzwingen.
+
+## Anfrage-Parameter für Geräte und Wandlung
+
+Zusätzlich zu `url`, `width`, `fps`, `depth`, `transport`, `audio`:
+
+| Parameter | Werte | gilt für |
+|---|---|---|
+| `size` | `1920x1080` | `device:` – Modus des Geräts (ohne Angabe auf macOS der größte 16:9-Modus) |
+| `rate` | `50`, `59.94`, `30000/1001` | `device:` – Aufnahmerate des Geräts |
+| `pixfmt` | ffmpeg-Name, z. B. `yuv422p10le`, `uyvy422` | `device:` – Rohformat (ohne Angabe das tiefste angebotene) |
+| `pixel` | `8` | `decklink:` – 8 bit UYVY statt 10 bit v210 |
+| `matrix` | `bt709`, `bt601`, `bt2020`, `smpte240m` | alle – feste Matrix für Y′CbCr → R′G′B′ statt Kennzeichnung/Größenregel |
+| `range` | `tv`, `pc` | alle – fester Wertebereich |
+
+`GET /api/devices/formats?url=device:…` liefert `{modes:[{width,height,fpsMin,fpsMax,pixfmt?}], pixfmts:[…], preferred, defaultSize}`, `GET /api/decklink` den Zustand des DeckLink-Helfers `{available, helper, devices, error}`.
+
+## Helfer-Protokoll (native Aufnahme-Helfer → Bridge)
+
+Geräte ohne freien ffmpeg-Weg (DeckLink, NDI) laufen über einen eigenen Helfer-Prozess, den die Bridge startet. Er schreibt auf stdout Datensätze:
+
+| Offset | Typ | Inhalt |
+|---|---|---|
+| 0 | 4 × ASCII | Kennung `INFO`, `FRAM`, `STAT`, `ERR ` |
+| 4 | uint32 LE | Länge n der Nutzlast |
+| 8 | n Byte | Nutzlast |
+
+- `INFO` (JSON, vor dem ersten Bild und bei jedem Formatwechsel): `{"width":1920,"height":1080,"fpsNum":50,"fpsDen":1,"pixel":"v210","matrix":"bt709","range":"tv","transfer":"unknown","primaries":"unknown","name":"1080i50","timecode":"10:00:00:00"}`
+- `FRAM`: ein Bild im Format `pixel`, Zeilen ohne weiteres Padding. `pixel` ∈ `v210` (48 Pixel je 128 Byte), `uyvy422`, `p216le`, `rgb48le`, `bgra`, `bgr0`, `rgba`, `rgb0`, `nv12`, `yuv420p`.
+- `STAT` (JSON `{"message":"…"}`): Zustand, z. B. „kein Eingangssignal“.
+- `ERR `: Fehlertext; der Helfer beendet sich danach.
+
+`--list` gibt stattdessen eine JSON-Zeile `{"ok":true,"devices":[…]}` bzw. `{"ok":false,"error":"…"}` aus. Die Bridge leitet die Bilder durch ffmpeg (`-f v210` bzw. `-f rawvideo -pix_fmt …` von stdin) und dieselbe Skalierung wie bei Streams; Richtung Browser gilt Protokoll 1. Zum Testen ohne Hardware: `test/fixtures/fake-helper.mjs`.

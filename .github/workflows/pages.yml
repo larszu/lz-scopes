@@ -1,0 +1,93 @@
+name: Deploy Web (GitHub Pages)
+
+# Publishes the browser build as a static web app. Without the bridge only
+# test patterns, camera, screen and files work; RTSP/SRT/HLS need the desktop
+# app or `npm start` (ffmpeg bridge). Asset paths are relative (vite base './').
+#
+# The run asks the Pages API first. If Pages is not enabled for the repo, the
+# build still runs (a real check) and publishing is skipped with a warning, so
+# the run stays green. The GITHUB_TOKEN cannot create a Pages site; the owner
+# switches Settings -> Pages -> Source to "GitHub Actions" (see docs/PUBLISHING.md).
+# Private repo: every run costs Actions minutes.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      seite-aktiv: ${{ steps.pages-status.outputs.aktiv }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Ist Pages in diesem Repo aktiviert?
+        id: pages-status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -u
+          # 200 = Site exists, 404 = not enabled, 000 = the question did not get through.
+          code="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pages")" || code=000
+          echo "GET /repos/$GITHUB_REPOSITORY/pages -> HTTP $code"
+          if [ "$code" = "200" ]; then
+            echo "aktiv=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "aktiv=false" >> "$GITHUB_OUTPUT"
+          if [ "$code" = "000" ]; then
+            grund="Die Pages-API war nicht erreichbar (HTTP 000). Ob die Site existiert, ist unbekannt."
+          else
+            grund="Fuer dieses Repo ist keine Pages-Site angelegt (HTTP $code)."
+          fi
+          echo "::warning title=Nicht veroeffentlicht::$grund Der Build ist durchgelaufen, das Deploy wurde uebersprungen."
+          {
+            echo "## Nicht veroeffentlicht"
+            echo
+            echo "$grund"
+            echo
+            echo "Der Build ist durchgelaufen. Es fehlt nur die Freigabe:"
+            echo "Repo-Einstellungen -> Pages -> *Source* auf **GitHub Actions** stellen."
+            echo "Ab dann veroeffentlicht jeder Push auf main von selbst."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Pages konfigurieren
+        if: steps.pages-status.outputs.aktiv == 'true'
+        uses: actions/configure-pages@v6
+      - name: Seite hochladen
+        if: steps.pages-status.outputs.aktiv == 'true'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.seite-aktiv == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,130 +1,134 @@
-# LZ Scopes
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/lzm_hauptlogo_offwhite.svg" />
+    <img src="docs/brand/lzm_hauptlogo_navy.svg" alt="Lars Zumpe Medienproduktion" width="220" />
+  </picture>
+</p>
 
-Software-Messtechnik im Browser: Waveform, Parade, Vectorscope, Histogramm, CIE-Diagramm, Falschfarben und Messwerte, auch für **RTSP-Streams** und andere Netzwerkquellen. Vorbilder: VMA Scope, Nobe OmniScope, HDRScopes, LiveScopes.tv, openrv-web.
+<h1 align="center">LZ Scopes</h1>
 
-![Scopes](docs/screenshot.png)
+<p align="center">
+  <b>Software waveform monitor, vectorscope, histogram and CIE diagram, including RTSP streams.</b><br />
+  Measure camera, screen, file, network stream or a built-in test pattern. In the browser or as a desktop app for macOS and Windows.
+</p>
 
-## Start
+<p align="center">
+  <a href="https://github.com/larszu/lz-scopes/releases/latest">
+    <img src="https://img.shields.io/badge/Download-macOS%20%26%20Windows-1D324F?style=for-the-badge&logo=github&logoColor=white" alt="Download LZ Scopes for macOS and Windows" height="40" />
+  </a>
+  &nbsp;
+  <a href="https://larszu.github.io/lz-scopes/">
+    <img src="https://img.shields.io/badge/Open%20in%20browser-web%20edition-5C6B85?style=for-the-badge" alt="Open the web edition" height="40" />
+  </a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20web-1D324F" alt="Platforms" />
+  <img src="https://img.shields.io/badge/license-proprietary%2C%20free%20to%20use-5C6B85" alt="License" />
+  <img src="https://img.shields.io/badge/node-%E2%89%A520-132040" alt="Node 20+" />
+  <img src="https://img.shields.io/badge/WebGL2-renderer-132040" alt="WebGL2" />
+</p>
+
+<p align="center"><sub><a href="README.de.md">Deutsche Fassung / German version</a></sub></p>
+
+<p align="center">
+  <img src="docs/screenshots/hero.png" alt="LZ Scopes: picture, luma waveform, vectorscope, RGB parade, histogram and CIE diagram docked in one window" width="860" />
+</p>
+
+---
+
+## Why LZ Scopes
+
+- **Real scopes, in software.** Waveform (luma, RGB overlay, RGB / YRGB / YCbCr parade), vectorscope, CIE 1931 xy, histogram, false colour, zebra and numeric readout.
+- **Streams, not just files.** RTSP, RTMP, SRT, UDP, RTP, HLS and HTTP via an ffmpeg bridge; camera, screen, video and image files directly in the browser.
+- **HDR aware.** 8 or 16 bit analysis, PQ and HLG, BT.709 / 2020 / 601, waveform scale in cd/m².
+- **Built-in test patterns.** About 40 generated patterns from PLUGE and SMPTE bars to PQ wedges, plus 20 LZ display test images. Open any of them full screen on a monitor, projector or capture.
+- **Your layout.** Dock, stack and resize panels by drag and drop, keep layout configurations as JSON.
+- **Face tracking.** Skin-tone waveform that follows a detected face (MediaPipe BlazeFace, runs locally).
+- **Outputs.** Send a scope view or clean picture to another screen, as an MJPEG stream or by ffmpeg to RTMP / SRT / RTSP / UDP.
+- **Embeddable.** `ScopeView` renders scopes in any page without a framework.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/colorchecker.png" alt="Four panel layout measuring a ColorChecker pattern" width="420" /><br /><b>ColorChecker, 2x2 layout</b></td>
+    <td width="50%" align="center"><img src="docs/screenshots/hdr-pq.png" alt="PQ grey wedge with waveform in cd/m2" width="420" /><br /><b>HDR: PQ wedge in cd/m&sup2;</b></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/lz-displaytest.png" alt="LZ display test image gamma" width="420" /><br /><b>LZ display test images</b></td>
+    <td width="50%" align="center"><img src="docs/screenshots/gradbars.png" alt="Saturation ramps measured in the vectorscope" width="420" /><br /><b>Saturation ramps</b></td>
+  </tr>
+</table>
+
+## Download and install
+
+Get the installer from the [latest release](https://github.com/larszu/lz-scopes/releases/latest).
+
+| Platform | File |
+|---|---|
+| macOS (Apple Silicon and Intel) | `LZ Scopes-<version>-universal.dmg` or `.zip` |
+| Windows 10/11 (x64) | `LZ Scopes-<version>-x64.exe` (installer) or `-portable.exe` |
+
+The desktop app contains the bridge and ffmpeg, so RTSP and other network sources work right away. macOS builds are ad-hoc signed: on first start, right-click and choose *Open*.
+
+**Web edition:** <https://larszu.github.io/lz-scopes/>. Test patterns, camera, screen and files work there. RTSP, SRT and other network streams need the desktop app or `npm start`, because a browser cannot open them.
+
+## Quick start
+
+1. Start the app. The first source is a test pattern (SMPTE 75 % bars); all panels follow it.
+2. Pick another source per panel: *Test pattern*, *Camera*, *Screen*, *File* or *Stream*.
+3. For a stream enter the URL (for example `rtsp://user:pass@host:554/stream`) and connect. Resolution, frame rate, 8 / 16 bit, TCP / UDP, transfer and colour space are set per stream, *auto* reads the metadata.
+4. Drag a rectangle in the picture to measure only that area. Click sets a measurement point that is marked in waveform and vectorscope.
+5. Arrange the windows with drag and drop, store the result under *Layouts*.
+
+Keys: `1`-`6` layout, `Space` freeze or play, `Left` / `Right` frame, `J` `K` `L` shuttle, `F` full screen, `S` PNG, `B` sidebar, `Esc` leave zoom.
+
+## Build from source
+
+Requires [Node.js](https://nodejs.org/) 20+ and, for network streams without the desktop app, `ffmpeg` and `ffprobe` in the `PATH` (`brew install ffmpeg`).
 
 ```bash
 npm install
-npm run dev        # UI http://localhost:4191, Bridge auf 4192
-# oder Produktion
-npm run build && npm start   # alles auf http://127.0.0.1:4192
+npm run dev                  # UI http://localhost:4191, bridge on 4190
+npm run build && npm start   # production, everything on http://127.0.0.1:4190
+npm test                     # colour maths, statistics, bridge input validation
+npm run typecheck
+npm run dist:mac             # or dist:win: desktop app with bridge and ffmpeg
 ```
 
-Voraussetzung: `ffmpeg` und `ffprobe` im `PATH` (`brew install ffmpeg`). Ohne Bridge funktionieren nur Kamera, Bildschirm und Dateien.
+Release: push a tag `v*`; `release.yml` builds Windows and macOS and attaches the installers to the release.
 
-## Quellen
+## Architecture
 
-| Quelle | Weg |
-|---|---|
-| `rtsp://`, `rtsps://`, `rtmp://`, `rtp://`, `udp://`, `srt://`, `tcp://`, `http(s)://` (auch HLS) | Bridge: ffprobe → ffmpeg → rohe RGBA-Frames per WebSocket |
-| `test:bars`, `test:ramp`, `test:testsrc`, `test:colors` | Bridge: lavfi-Testbilder |
-| Testbild-Generator (siehe unten) | direkt im Browser, auch als Ausgabefenster |
-| Kamera, Bildschirm, Video-/Bilddatei | direkt im Browser |
+- **Bridge** (`server/index.mjs`): ffprobe for resolution and colour metadata, then ffmpeg scales to the analysis width and writes raw `rgba` / `rgba64le` frames over a WebSocket. Slow browsers get frames dropped, no queue builds up. The Y'CbCr matrix is passed to ffmpeg explicitly, the transfer function is left untouched. It listens on `127.0.0.1` only and accepts network URLs and test patterns, never local files, ffmpeg options or a shell.
+- **Renderer** (`src/renderer.ts`): one WebGL2 context behind all panels. Every sampled pixel is scattered as an additive point into a float target (up to 4 million per scope and frame) and mapped with `1 - e^(-k x)`.
+- **UI**: plain TypeScript, [dockview](https://github.com/mathuo/dockview) for the docking layout, Vite for the build, Electron for the desktop shell.
+- **Web build**: asset paths are relative, so it runs at `/` and under `/lz-scopes/`.
 
-Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einstellbar sind Analyseauflösung, Bildrate, 8 oder 16 bit (für 10-bit/HDR), RTSP über TCP oder UDP, Transfer (SDR/PQ/HLG) und Farbraum (709/2020/601). „auto“ übernimmt die Stream-Metadaten.
+Details: [docs/frame-protocol.md](docs/frame-protocol.md) (frame protocol), [docs/cable-planner-integration.md](docs/cable-planner-integration.md) (use inside cable-planner), [docs/research](docs/research) (standards and market research), [docs/PUBLISHING.md](docs/PUBLISHING.md) (going public).
 
-## Scopes
-
-- **Waveform** Luma, RGB-Overlay, RGB-, YRGB- und YCbCr-Parade. Skala in %, 8 bit, 10 bit (Legal-Range-Codes) oder cd/m² (PQ absolut, HLG bezogen auf ein 1000-cd/m²-Display, SDR nach BT.1886 mit 100 cd/m²)
-- **Vectorscope** mit 75-%- und 100-%-Zielen passend zur Matrix, Hautton-Linie, Zoom ×1/×2/×5, Spur optional in Bildfarbe
-- **CIE 1931 xy** mit Spektralzug, Rec.709, P3-D65, Rec.2020 und D65
-- **Histogramm** RGB, Luma, getrennt, linear oder log, mit Clipping-Anteil
-- **Bild** mit Falschfarben (ARRI-Schema), Zebra, Clipping-Anzeige und Luma. Ein Klick setzt einen Messpunkt, der zusätzlich in Waveform und Vectorscope markiert wird
-- **Messwerte**: Quelle, Codec, Metadaten, Y' min/max/Mittel (bei HDR in cd/m²), Clipping je Kanal, verworfene Frames
-
-**Anordnung:** Panels per Drag-and-drop am Tab verschieben, andocken, als Tabs stapeln und mit den Trennern skalieren (dockview, wie das Raster im multicam-planner). Die Vorlagen 1 bis 3×3 und „+ Panel“ dienen als Start. Ein Doppelklick vergrößert ein Panel, `Esc` holt es zurück.
-
-**Einstellungen je Messwerkzeug** über das ⚙ in der Panel-Kopfzeile. **Layout-Konfigurationen** (Anordnung plus Einstellungen aller Scopes) werden unter *▦ Layouts* gespeichert, geladen und als JSON exportiert oder importiert.
-
-**Quellen:** Wird die Quelle in einem Panel umgeschaltet, folgen alle Panels ohne 📌.
-
-**Messrahmen:** Im Bild einen Rahmen ziehen; dieser Bereich leuchtet in allen Scopes hervor, und die Statistik gilt nur für ihn.
-
-**Waveforms:**
-- *Waveform Farbe* zeigt die Pixelfarben.
-- *Waveform Hauttöne* zeigt Hauttöne in ihrer Quellfarbe, den Rest schwarz-weiß. Den Bereich stellt man ein, indem man die Linien zieht (Mausrad = Farbton-Toleranz) oder ihn „Aus Messrahmen“ übernimmt; das Vectorscope zeigt den Toleranzkeil.
-- Parade, YRGB und RGB-Overlay wahlweise mono, in Kanalfarben oder in Bildfarben.
-
-**Display-Farbraum** der Bildansicht wird automatisch erkannt (sRGB/P3, HDR-fähig) oder gewählt; die Scopes messen immer das Signal.
-
-**Videodateien** mit Playhead, Timecode, Start/Stopp, Frame ±1 und J/K/L wie in Resolve.
-
-**Ausgaben** (*⧉ Ausgabe*): Gesamtansicht, einzelnes Panel, sauberes Quellbild oder Bild mit Scope-Overlay (auch auf Schwarz für den Luma-Key) auf einem Bildschirm dieses Rechners, optional als MJPEG-Stream (`/out/<name>.mjpeg`) oder per ffmpeg an RTMP/SRT/RTSP/UDP.
-
-**Overlay-Szenen:** Das Overlay zeigt eine Szene aus beliebig vielen Scopes (Waveforms, Paraden, Vectorscope, CIE, Histogramm), jeder mit eigener Position, Größe, Deckkraft, Abdunklung des Bildes dahinter und wahlweise eigener Quelle. Im Ausgabefenster schaltet `E` den Bearbeiten-Modus ein: Scopes ziehen, an den Griffen skalieren, über die Leiste hinzufügen, umstellen oder entfernen (`Entf`), Pfeiltasten verschieben fein. Außerhalb des Bearbeitens gibt es weder Mauszeiger noch Griffe, und der Stream enthält die Bearbeitungsebene nie. Szenen werden im Ausgabe-Menü angelegt, kopiert, gewählt und gelöscht, bleiben gespeichert und sind Teil der Layout-Konfigurationen. Die Stream-Ausgabe eines Fensters zeigt dieselbe Szene.
-
-Einfrieren, PNG-Export, Vollbild.
-
-**Fernsteuerung** (Bitfocus Companion, curl): `POST /api/control` bzw. WebSocket `/control` an der Bridge; das Hauptfenster führt aus und meldet Quelle, Freeze, Clipping, Y′ min/max, Layout, Szene und Ausgaben zurück. Standardmäßig nur von 127.0.0.1, mit `LZS_CONTROL_TOKEN` auch aus dem Netz. Befehle und Beispiele: [docs/control-api.md](docs/control-api.md). Das Companion-Modul liegt in [`companion/`](companion).
-
-**Tasten:** `1`–`6` Layout-Vorlage · `Leertaste` Play/Pause (Videodatei) bzw. Einfrieren · `←`/`→` Frame · `J`/`K`/`L` Shuttle · `F` Vollbild · `S` PNG · `B` Seitenleiste · `Esc` Vergrößerung beenden bzw. Messpunkt/Rahmen löschen · im Overlay-Ausgabefenster `E` Bearbeiten
-
-## Testbilder
-
-Die Quelle *Testbild* erzeugt die Muster selbst, in 720p bis 2160p. Rampen und Zonenplatte werden pixelgenau geschrieben, damit der Browser sie nicht dithert.
-
-- **Vollfeld** Rot, Grün, Blau, Weiß, Grau 50 %, Grau 18 %, Schwarz
-- **Grau** Verlauf, Verläufe W/R/G/B, 11 Graustufen, Graukeil in TE-165-Anordnung (lineare 10-%-Stufen), wandernder Verlauf, PLUGE
-- **Geometrie** Schachbrett, Konvergenzgitter, Fadenkreuz, Kreisraster, Zonenplatte (auch bewegt), sichere Bereiche nach EBU R 95
-- **Farbe** SMPTE 75 % und 100 % mit PLUGE, EBU 100/0/75/0 und 100/0/100/0, Sättigungsverläufe, Farbkreis, ColorChecker (Näherung)
-- **Animiert** Farbwechsel, Farbwechsel-Verlauf, dreigeteilt, bewegte Diagonalen, Regenbogenfluss, Chroma-Crawl
-- **Testbild** mit Kreis, Balken, Frequenzgittern und Uhr
-- **HDR** PQ-Graukeil 0–10 000 cd/m², HLG-Graukeil, PQ-Verlauf mit Referenzweiß 203; die Scopes schalten dabei automatisch auf PQ bzw. HLG
-- **LZ Displaytest** die 20 Displaytestbilder (1920×1080) aus `Broadcast/displaytest`
-- **Eigene Bilder** über *+ Bilder*, gelten für die laufende Sitzung
-
-Optional lässt sich eine Kennung einblenden. *⧉ Ausgeben* öffnet das Muster in einem eigenen Fenster (`?out=<id>&w=&h=&label=`) für Monitor, Beamer oder Capture: `←`/`→` wechseln, `F` Vollbild, `L` Label. In nativer Auflösung und im Vollbild wird 1:1 ausgegeben.
-
-Grenze: Canvas arbeitet in Full-Range-RGB, deshalb gibt es keine Pegel unter 0 %. Die PLUGE-Stufe −4 % liegt dadurch auf 0 %.
-
-## Einbetten
-
-`src/index.ts` exportiert `ScopeView`: ein WebGL-Canvas mit wählbaren Scopes, ohne Framework.
+Embedding:
 
 ```ts
 import { ScopeView, Source } from 'lz-scopes/src';
 const view = new ScopeView(el, { scopes: ['wf-luma', 'vector', 'parade', 'hist'] });
-const src = new Source('stream', 'Kamera 1');
-src.connectFrames('ws://bridge/scope/1');  // Frame-Protokoll: docs/frame-protocol.md
+const src = new Source('stream', 'Camera 1');
+src.connectFrames('ws://bridge/scope/1');
 view.setSource(src);
 ```
 
-## Integration
+## Limits
 
-- **lz-camera-bridge** (Nachfolger von av-control-center): Scopes an den RTSP-Kacheln der Ansicht *Video*, Bridge-Endpunkt `/scope/<n>`
-- **cable-planner**: Konzept in [docs/cable-planner-integration.md](docs/cable-planner-integration.md), Scopes am Gerät im Canvas, Frames per Electron-IPC (`Source.pushFrame`)
+- Values are full-range R'G'B' after conversion. Sub-black and super-white outside 16-235 are clipped; there is no legal / illegal check at Y'CbCr level yet.
+- No audio, NDI or SDI (DeckLink / AJA) input.
+- Browser sources (camera, file) are always 8 bit and pass through the browser's colour management.
 
-## Technik
+## Author
 
-- Die **Bridge** (`server/index.mjs`) ermittelt mit ffprobe Auflösung und Farbmetadaten und startet dann ffmpeg: Skalierung auf die Analysebreite, Ausgabe `rgba` oder `rgba64le` als Rohdaten. Hinkt der Browser hinterher, verwirft sie Frames, statt eine Warteschlange aufzubauen. Die Y'CbCr-Matrix gibt sie ffmpeg explizit vor, weil swscale bei ungetaggten Streams sonst BT.601 annimmt und HD-Kameras verfälscht. Die Transferfunktion bleibt unangetastet, PQ- und HLG-Codewerte kommen also unverändert an.
-- Der **Renderer** (`src/renderer.ts`) ist ein einziger WebGL2-Kontext hinter allen Panels. Jeder abgetastete Pixel wird als Punkt additiv in ein Float-Target gestreut (bis 4 Mio. Punkte pro Scope und Frame) und danach per `1 − e^(−k·x)` dargestellt. 16-bit-Frames liegen als `RGBA16UI`-Textur vor.
-- Die Bridge lauscht standardmäßig nur auf `127.0.0.1` und akzeptiert ausschließlich Netzwerk-URLs und die Testbilder: keine lokalen Dateien, keine ffmpeg-Optionen, keine Shell. Für Zugriff aus dem Netz gibt es `--host 0.0.0.0`.
+Built and maintained by **Lars Zumpe**, Lars Zumpe Medienproduktion. Scopes can also be used inside [LZ Cable Planner](https://github.com/larszu/cable-planner).
 
-Konfiguration: `--port`/`PORT` (4192; nicht 4190 – steht auf der Sperrliste des Fetch-Standards), `--host`/`HOST`, `--control-token`/`LZS_CONTROL_TOKEN`, `FFMPEG`, `FFPROBE`. Die Desktop-App nimmt Port 4192, wenn er frei ist (feste Adresse für Companion), sonst einen freien; `LZS_PORT`, `LZS_HOST` und `LZS_CONTROL_TOKEN` überschreiben das.
+## License
 
-## Desktop-App
-
-`npm run dist:mac` bzw. `npm run dist:win` baut die App mit eingebetteter Bridge und mitgeliefertem ffmpeg (Mac: Universal). Release: Tag `v*` → `release.yml` baut Windows und macOS und hängt die Installer ans Release.
-
-## Offene Punkte
-
-Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in [docs/research](docs/research).
-
-## Grenzen
-
-- Die Werte sind Full-Range-R'G'B' nach der Wandlung. Sub-Black und Super-White außerhalb 16–235 werden abgeschnitten, eine Legal/Illegal-Prüfung auf Y'CbCr-Ebene gibt es noch nicht.
-- Kein Audio, kein NDI, kein SDI (DeckLink/AJA): Die Homebrew-Version von ffmpeg bringt dafür keine Unterstützung mit.
-- Browser-Quellen (Kamera, Datei) liefern immer 8 bit und durchlaufen das Farbmanagement des Browsers.
-
-## Tests
-
-```bash
-npm test        # Farbmathematik (PQ, HLG, Matrizen, XYZ), Statistik, Bridge-Eingabeprüfung, Steuerbefehle, Overlay-Szenen
-npm run typecheck
-npm --prefix companion ci && npm run companion:test && npm run companion:build   # Companion-Modul
-```
-
-Zum Ausprobieren mit echtem RTSP: `brew install mediamtx`, dann `mediamtx` starten und z. B. `ffmpeg -re -f lavfi -i testsrc2=size=1920x1080:rate=25 -c:v libx264 -f rtsp rtsp://127.0.0.1:8554/test` veröffentlichen.
+Proprietary, &copy; 2026 Lars Zumpe, all rights reserved. Using the published builds is free; redistribution and derivative works are not. See [LICENSE](LICENSE). Not open source: the code is public to read.
+Bundled third-party components keep their own licences: [THIRD_PARTY.md](THIRD_PARTY.md) (including the GPL ffmpeg binary in the desktop app).

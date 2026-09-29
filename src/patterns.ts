@@ -366,7 +366,7 @@ export const PATTERNS: PatternDef[] = [
   },
 ];
 
-// LZ display test set (Lars Zumpe · Foto & Film, bundled 1920×1080)
+// LZ display test set (Lars Zumpe Medienproduktion, bundled 1920×1080)
 const LZ = [
   ['01', 'schwarzwert-pluge', 'Schwarzwert & PLUGE'], ['02', 'weissclipping', 'Weißclipping'], ['03', 'gamma', 'Gamma'],
   ['04', 'ansi-kontrast', 'ANSI-Kontrast'], ['05', 'ausleuchtung', 'Ausleuchtung'], ['06', 'schwarzbild', 'Schwarzbild'],

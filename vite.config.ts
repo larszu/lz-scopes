@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 
 // Dev: UI on 4191, bridge (server/index.mjs --dev) on 4192.
 export default defineConfig({
+  // Relative asset paths: works at / (bridge, Electron) and under /lz-scopes/ (GitHub Pages).
+  base: './',
   server: {
     port: 4191,
     strictPort: true,

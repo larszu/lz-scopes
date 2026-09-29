@@ -157,25 +157,54 @@ export const logSceneToSignal = (c: LogCurve, x: number) => curveToSignal(logEnc
  * (uLogA = base, logSlope, logOff, linSideSlope; uLogB = linSideOff, cutEnc, linSlope, linOff),
  * the three special shapes are written out with the same constants as above.
  */
-export const LOG_GLSL = `
-uniform int uLogKind; uniform vec4 uLogA, uLogB;
-float logDecode(float s) {
+export const logGlsl = (sfx = '') => `
+uniform int uLogKind${sfx}; uniform vec4 uLogA${sfx}, uLogB${sfx};
+float logDecode${sfx}(float s) {
   float v = (64.0 + 876.0 * s) / 1023.0;
-  if (uLogKind == 1) {
+  if (uLogKind${sfx} == 1) {
     float x = v < 0.097465473 ? -(pow(10.0, (0.12783901 - v) / 0.36726845) - 1.0) / 14.98325
       : v <= 0.15277891 ? (v - 0.12512219) / 1.9754798
       : (pow(10.0, (v - 0.12240537) / 0.36726845) - 1.0) / 14.98325;
     return x * 0.9;
   }
-  if (uLogKind == 2) return v < 0.4418377321603128 ? pow(v / 0.635386119257087, 3.0) - 0.0075 : exp((v - 0.6050830889540567) / 0.1466275659824047);
-  if (uLogKind == 3) return v < 0.0 ? -0.05641088 : v < 0.20855531595464202 ? sqrt(v / 47.28711236) - 0.05641088 : exp2((v - 0.69336945) / 0.08550479) - 0.00964052;
-  if (v < uLogB.y) return (v - uLogB.w) / uLogB.z;
-  return (pow(uLogA.x, (v - uLogA.z) / uLogA.y) - uLogB.x) / uLogA.w;
+  if (uLogKind${sfx} == 2) return v < 0.4418377321603128 ? pow(v / 0.635386119257087, 3.0) - 0.0075 : exp((v - 0.6050830889540567) / 0.1466275659824047);
+  if (uLogKind${sfx} == 3) return v < 0.0 ? -0.05641088 : v < 0.20855531595464202 ? sqrt(v / 47.28711236) - 0.05641088 : exp2((v - 0.69336945) / 0.08550479) - 0.00964052;
+  if (v < uLogB${sfx}.y) return (v - uLogB${sfx}.w) / uLogB${sfx}.z;
+  return (pow(uLogA${sfx}.x, (v - uLogA${sfx}.z) / uLogA${sfx}.y) - uLogB${sfx}.x) / uLogA${sfx}.w;
+}`;
+export const LOG_GLSL = logGlsl();
+
+/**
+ * Scene-linear → scope signal for the CST output (same constants as logEncode).
+ * Generic curve: uLogE (cutLin, clampNeg) in addition to uLogA/uLogB of logGlsl(sfx).
+ */
+export const logEncodeGlsl = (sfx = '') => `
+uniform vec2 uLogE${sfx};
+float logEncode${sfx}(float x) {
+  float v;
+  if (uLogKind${sfx} == 1) {
+    float s = x / 0.9;
+    v = s < -0.014 ? -0.36726845 * log(-s * 14.98325 + 1.0) / log(10.0) + 0.12783901
+      : s <= 0.014 ? 1.9754798 * s + 0.12512219
+      : 0.36726845 * log(s * 14.98325 + 1.0) / log(10.0) + 0.12240537;
+  } else if (uLogKind${sfx} == 2) {
+    float a = x + 0.0075;
+    v = x < 0.328 ? 0.635386119257087 * sign(a) * pow(abs(a), 1.0 / 3.0) : 0.1466275659824047 * log(x) + 0.6050830889540567;
+  } else if (uLogKind${sfx} == 3) {
+    v = x < -0.05641088 ? 0.0 : x < 0.01 ? 47.28711236 * (x + 0.05641088) * (x + 0.05641088) : 0.08550479 * log2(x + 0.00964052) + 0.69336945;
+  } else {
+    if (uLogE${sfx}.y > 0.5) x = max(x, 0.0);
+    v = x < uLogE${sfx}.x ? uLogB${sfx}.z * x + uLogB${sfx}.w
+      : uLogA${sfx}.y * log(uLogA${sfx}.w * x + uLogB${sfx}.x) / log(uLogA${sfx}.x) + uLogA${sfx}.z;
+  }
+  return (v * 1023.0 - 64.0) / 876.0;
 }`;
 
-/** Uniform values for LOG_GLSL. */
-export function logUniforms(c: LogCurve): { kind: number; a: [number, number, number, number]; b: [number, number, number, number] } {
+/** Uniform values for logGlsl / logEncodeGlsl. */
+export function logUniforms(c: LogCurve): { kind: number; a: [number, number, number, number]; b: [number, number, number, number]; e: [number, number] } {
   const d = LOG_CURVES[c];
-  const p = d.p ?? { base: 10, logSlope: 1, logOff: 0, linSideSlope: 1, linSideOff: 0, cutEnc: 0, linSlope: 1, linOff: 0 };
-  return { kind: d.kind, a: [p.base, p.logSlope, p.logOff, p.linSideSlope], b: [p.linSideOff, p.cutEnc, p.linSlope, p.linOff] };
+  const p = d.p ?? { base: 10, logSlope: 1, logOff: 0, linSideSlope: 1, linSideOff: 0, cutLin: 0, cutEnc: 0, linSlope: 1, linOff: 0 };
+  return { kind: d.kind, a: [p.base, p.logSlope, p.logOff, p.linSideSlope], b: [p.linSideOff, p.cutEnc, p.linSlope, p.linOff], e: [p.cutLin, p.clampNeg ? 1 : 0] };
 }
+/** Neutral values when no log curve is active. */
+export const NO_LOG = { kind: 0, a: [10, 1, 0, 1] as [number, number, number, number], b: [0, 0, 1, 0] as [number, number, number, number], e: [0, 0] as [number, number] };

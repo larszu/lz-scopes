@@ -179,6 +179,10 @@ Lautheit nach ITU-R BS.1770-5 und EBU Tech 3341: K-Filter für jede Abtastrate, 
 
 Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Zyklus 3 s), Polaritätstest (positiver Halbsinus-Puls, 1 ms alle 20 ms), Rauschen mit dem Effektivwert eines Sinus gleichen Spitzenpegels, Korrelationsfenster Standard 600 ms. GLITS-Zeitplan nur nach Sekundärquelle.
 
+## Lichtmesser
+
+*Lichtmesser (Opple)* in der Seitenleiste verbindet einen Opple Light Master 3 oder 4 per Web Bluetooth (Chrome/Edge oder Desktop-App) und zeigt Beleuchtungsstärke, CCT (McCamy), Duv (Ohno) und xy, mit Verlauf und CSV-Export. Die Werte rechnet LZ Scopes aus den Rohkanälen des Filtersensors; für LED-Primärfarben nur ein Trendmesser. **Ungeprüft:** Ohne Gerät getestet sind nur Protokoll und Umrechnung (mit aufgezeichneten Paketen aus [sunday-light-meter](https://github.com/natmart-in/sunday-light-meter), MIT), nicht die Bluetooth-Verbindung. Details: [docs/research/opple-light-master.md](docs/research/opple-light-master.md).
+
 ## Einbetten
 
 `src/index.ts` exportiert `ScopeView`: ein WebGL-Canvas mit wählbaren Scopes, ohne Framework.

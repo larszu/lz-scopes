@@ -82,6 +82,8 @@ export class Source {
   probe: { x: number; y: number } | null = null;
   /** Region of interest in source pixels [x0, y0, x1, y1). */
   roi: [number, number, number, number] | null = null;
+  /** ROI follows the largest detected face (src/face.ts). */
+  faceTrack = false;
   /** Estimated frame duration of a video file (from presented frames). */
   frameDuration = 1 / 25;
   private probeCache = { key: '', rgb: null as [number, number, number] | null };

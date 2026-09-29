@@ -96,11 +96,16 @@ void main() {
     float v = ch == 0 ? rgb.r : ch == 1 ? rgb.g : rgb.b;
     float px = uMode == 2 ? (float(ch) + x) / 3.0 : x;
     pos = vec2(px * 2.0 - 1.0, waveY(v));
-    col = uColorize == 2 ? srcCol : uColorize == 1 || uMode == 1 ? unit[ch] : mono;
+    // source colours: in each channel's section only the pixels dominated by that channel are coloured
+    float cv = ch == 0 ? rgb.r : ch == 1 ? rgb.g : rgb.b;
+    bool dom = cv >= max(rgb.r, max(rgb.g, rgb.b)) - 0.02 && cv - min(rgb.r, min(rgb.g, rgb.b)) > 0.04;
+    col = uColorize == 2 ? (dom ? srcCol : vec3(0.3)) : uColorize == 1 || uMode == 1 ? unit[ch] : mono;
   } else if (uMode == 3) {
     float v = ch == 0 ? Y : ch == 1 ? rgb.r : ch == 2 ? rgb.g : rgb.b;
     pos = vec2((float(ch) + x) / 4.0 * 2.0 - 1.0, waveY(v));
-    col = uColorize == 2 ? srcCol : ch == 0 || uColorize == 0 ? mono : unit[ch - 1];
+    float cv3 = ch == 1 ? rgb.r : ch == 2 ? rgb.g : rgb.b;
+    bool dom3 = ch > 0 && cv3 >= max(rgb.r, max(rgb.g, rgb.b)) - 0.02 && cv3 - min(rgb.r, min(rgb.g, rgb.b)) > 0.04;
+    col = uColorize == 2 ? (ch == 0 ? srcCol : dom3 ? srcCol : vec3(0.3)) : ch == 0 || uColorize == 0 ? mono : unit[ch - 1];
   } else if (uMode == 4) {
     float v = ch == 0 ? Y : ch == 1 ? cb + 0.5 : cr + 0.5;
     pos = vec2((float(ch) + x) / 3.0 * 2.0 - 1.0, waveY(v));

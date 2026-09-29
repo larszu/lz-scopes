@@ -39,6 +39,10 @@ export function displayParams(src: Source, display: DisplaySpace): DisplayParams
 }
 export { DISPLAY_LABELS };
 
+export const ROI_CLOSE = 16;
+/** Top-left corner of the ROI's close box (CSS px, relative to the panel body). */
+export const roiCloseBox = (rx: number, ry: number, rw: number) => [rx + rw - ROI_CLOSE / 2, ry - ROI_CLOSE / 2] as const;
+
 /** Everything a panel's pixels depend on; unchanged → the panel is not redrawn. */
 export function panelSignature(p: PanelState, src: Source | null, body: Rect, o: DrawOptions) {
   const s = src ? `${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}` : '-';
@@ -104,8 +108,15 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     if (src.roi) {
       const [x0, y0, x1, y1] = src.roi;
       ctx.strokeStyle = '#ffb840'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
-      ctx.strokeRect(r.x + (x0 / src.width) * r.w, r.y + (y0 / src.height) * r.h, ((x1 - x0) / src.width) * r.w, ((y1 - y0) / src.height) * r.h);
+      const rx = r.x + (x0 / src.width) * r.w, ry = r.y + (y0 / src.height) * r.h, rw = ((x1 - x0) / src.width) * r.w, rh = ((y1 - y0) / src.height) * r.h;
+      ctx.strokeRect(rx, ry, rw, rh);
       ctx.setLineDash([]);
+      // close box at the top-right corner (click removes the ROI)
+      const [bx, by] = roiCloseBox(rx, ry, rw);
+      ctx.fillStyle = '#ffb840'; ctx.fillRect(bx, by, ROI_CLOSE, ROI_CLOSE);
+      ctx.strokeStyle = '#111'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(bx + 4, by + 4); ctx.lineTo(bx + ROI_CLOSE - 4, by + ROI_CLOSE - 4); ctx.moveTo(bx + ROI_CLOSE - 4, by + 4); ctx.lineTo(bx + 4, by + ROI_CLOSE - 4); ctx.stroke();
+      if (src.faceTrack) { ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.fillStyle = '#ffb840'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText('Gesicht', rx, ry - 2); }
     }
     if (p.picture === 'false') {
       const bands = FALSE_COLOR_PRESETS[o.falsePreset] ?? [];

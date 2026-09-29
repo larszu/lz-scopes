@@ -153,3 +153,4 @@ details.menu[open] > summary { border-color: #3f6b4a; color: var(--accent); }
 .menu-body .mtitle { font-weight: 600; color: var(--text); margin-bottom: 2px; }
 .dock-content, .dv-content-container { overflow: visible; }
 .mrow.lay .lname { flex: 1; text-align: left; }
+button.roichip { background: #3a2a10; border-color: #6b4f1f; color: #ffb840; }

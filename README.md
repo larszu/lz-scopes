@@ -8,9 +8,9 @@ Software-Messtechnik im Browser: Waveform, Parade, Vectorscope, Histogramm, CIE-
 
 ```bash
 npm install
-npm run dev        # UI http://localhost:4191, Bridge auf 4190
+npm run dev        # UI http://localhost:4191, Bridge auf 4192
 # oder Produktion
-npm run build && npm start   # alles auf http://127.0.0.1:4190
+npm run build && npm start   # alles auf http://127.0.0.1:4192
 ```
 
 Voraussetzung: `ffmpeg` und `ffprobe` im `PATH` (`brew install ffmpeg`). Ohne Bridge funktionieren nur Kamera, Bildschirm und Dateien.
@@ -103,7 +103,7 @@ view.setSource(src);
 - Der **Renderer** (`src/renderer.ts`) ist ein einziger WebGL2-Kontext hinter allen Panels. Jeder abgetastete Pixel wird als Punkt additiv in ein Float-Target gestreut (bis 4 Mio. Punkte pro Scope und Frame) und danach per `1 − e^(−k·x)` dargestellt. 16-bit-Frames liegen als `RGBA16UI`-Textur vor.
 - Die Bridge lauscht standardmäßig nur auf `127.0.0.1` und akzeptiert ausschließlich Netzwerk-URLs und die Testbilder: keine lokalen Dateien, keine ffmpeg-Optionen, keine Shell. Für Zugriff aus dem Netz gibt es `--host 0.0.0.0`.
 
-Konfiguration: `--port`/`PORT` (4190), `--host`/`HOST`, `--control-token`/`LZS_CONTROL_TOKEN`, `FFMPEG`, `FFPROBE`. Die Desktop-App nimmt Port 4192, wenn er frei ist (feste Adresse für Companion), sonst einen freien; `LZS_PORT`, `LZS_HOST` und `LZS_CONTROL_TOKEN` überschreiben das.
+Konfiguration: `--port`/`PORT` (4192; nicht 4190 – steht auf der Sperrliste des Fetch-Standards), `--host`/`HOST`, `--control-token`/`LZS_CONTROL_TOKEN`, `FFMPEG`, `FFPROBE`. Die Desktop-App nimmt Port 4192, wenn er frei ist (feste Adresse für Companion), sonst einen freien; `LZS_PORT`, `LZS_HOST` und `LZS_CONTROL_TOKEN` überschreiben das.
 
 ## Desktop-App
 

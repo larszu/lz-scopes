@@ -409,8 +409,11 @@ export class Renderer {
     return { x, y, w, h };
   }
 
-  /** @param overlay add the traces on top of what is already there (scope over picture) */
-  drawScatter(key: string, src: Source, rect: Rect, p: ScatterParams, overlay = false) {
+  /**
+   * @param overlay add the traces on top of what is already there (scope over picture)
+   * @param opacity trace strength when overlaid (0…1)
+   */
+  drawScatter(key: string, src: Source, rect: Rect, p: ScatterParams, overlay = false, opacity = 1) {
     const t = this.sourceTexture(src);
     if (!t) return;
     const gl = this.gl;
@@ -478,7 +481,10 @@ export class Renderer {
     gl.uniform1f(this.u(dp, 'uGain'), p.gain);
     gl.uniform3f(this.u(dp, 'uTint'), 1, 1, 1);
     gl.uniform1i(this.u(dp, 'uAvg'), p.mode === 'rgb' ? 0 : 1);
-    if (overlay) { gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); }
+    if (overlay) {
+      gl.enable(gl.BLEND);
+      if (opacity < 1) { gl.blendColor(0, 0, 0, opacity); gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE); } else gl.blendFunc(gl.ONE, gl.ONE);
+    }
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.disable(gl.BLEND);
   }

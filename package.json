@@ -14,7 +14,9 @@
     "dist:mac": "npm run build && node scripts/ffmpeg-universal.mjs && electron-builder --config electron-builder.js --mac --universal --publish never",
     "dist:win": "npm run build && electron-builder --config electron-builder.js --win --publish never",
     "predev": "node scripts/copy-mediapipe.mjs",
-    "prebuild": "node scripts/copy-mediapipe.mjs"
+    "prebuild": "node scripts/copy-mediapipe.mjs",
+    "companion:test": "npm --prefix companion test",
+    "companion:build": "npm --prefix companion run build"
   },
   "engines": {
     "node": ">=20"

@@ -3,9 +3,12 @@ import './style.css';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, LUMA, detectDisplay, type DisplaySpace } from './color';
 import { SCOPE_LABELS, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget } from './graticule';
 import { DEFAULT_SKIN, ROI_CLOSE, defaultPanel as panel, drawPanel, panelSignature, roiCloseBox, type DrawOptions, type PanelState, type Tint } from './panel';
-import type { OutputHost } from './outputView';
+import type { OutputHost, OutputWindowApi } from './outputView';
+import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } from './scene';
+import { connectRemote } from './remote';
+import type { Command } from '../server/control.mjs';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
-import { PRESETS, createDock } from './dock';
+import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { Renderer, WAVE_MAX, WAVE_MIN, type PictureMode, type SkinRange } from './renderer';
 import { Source, type SourceKind, type SourceSettings } from './sources';
 
@@ -19,6 +22,10 @@ interface Persisted {
   targets: VectorTarget[];
   /** dockview layout (toJSON) */
   dock?: unknown;
+  /** overlay scenes of the output windows (#1) and the one new overlay outputs use */
+  scenes: OverlayScene[]; activeScene: string;
+  /** name of the last loaded layout configuration ('' after a preset) */
+  layoutName: string;
   sources: { kind: SourceKind; name: string; url: string; settings: SourceSettings; pattern?: PatternState }[];
 }
 
@@ -28,12 +35,12 @@ const STORE_KEY = 'lz-scopes.v1';
 function load(): Persisted {
   const base: Persisted = {
     layout: 'lc', panels: DEFAULT_SCOPES.map(panel), unit: 'percent', tint: 'green', falsePreset: 'ARRI', zebra: 0.95, zebraLow: 0,
-    maxSamples: 1_000_000, bridge: '', sidebar: true, skin: { ...DEFAULT_SKIN }, display: 'auto', targets: [],
+    maxSamples: 1_000_000, bridge: '', sidebar: true, skin: { ...DEFAULT_SKIN }, display: 'auto', targets: [], scenes: [defaultScene()], activeScene: '', layoutName: '',
     sources: [{ kind: 'pattern', name: 'Testbild', url: '', settings: { transfer: 'auto', colorspace: 'auto', width: 960, fps: 0, depth: 8, transport: 'tcp' }, pattern: { id: 'smpte75', width: 1920, height: 1080, label: '' } }],
   };
   try {
     const s = JSON.parse(localStorage.getItem(STORE_KEY) ?? 'null');
-    if (s && Array.isArray(s.panels)) return { ...base, ...s, layout: s.layout in PRESETS ? s.layout : base.layout, panels: [...DEFAULT_SCOPES, ...Array(Math.max(0, s.panels.length - DEFAULT_SCOPES.length)).fill('wf-luma')].map((d, i) => ({ ...panel(d as ScopeType), ...s.panels[i] })) };
+    if (s && Array.isArray(s.panels)) return { ...base, ...s, scenes: sanitizeScenes(s.scenes), layout: s.layout in PRESETS ? s.layout : base.layout, panels: [...DEFAULT_SCOPES, ...Array(Math.max(0, s.panels.length - DEFAULT_SCOPES.length)).fill('wf-luma')].map((d, i) => ({ ...panel(d as ScopeType), ...s.panels[i] })) };
   } catch { /* storage unavailable */ }
   return base;
 }
@@ -156,7 +163,7 @@ function numIn(value: number, min: number, max: number, set: (v: number) => void
 }
 
 function setLayout(k: string) {
-  state.layout = k; save(); renderHeader(); dock.applyPreset(k);
+  state.layout = k; state.layoutName = ''; save(); renderHeader(); dock.applyPreset(k);
 }
 
 // Panel ⚙ menus live inside clipped dock containers: pin them to the viewport when opened.
@@ -776,6 +783,8 @@ function drawOptions(): DrawOptions {
 const LAYOUTS_KEY = 'lz-scopes.layouts';
 interface LayoutConfig {
   dock: unknown; panels: PanelState[];
+  /** overlay scenes (#1); older files have none */
+  scenes?: OverlayScene[]; activeScene?: string;
   settings: Pick<Persisted, 'unit' | 'tint' | 'skin' | 'falsePreset' | 'zebra' | 'zebraLow' | 'display' | 'maxSamples' | 'targets'>;
   saved: string;
 }
@@ -787,12 +796,20 @@ function storeLayouts(l: Record<string, LayoutConfig>) {
 }
 function currentLayout(): LayoutConfig {
   const { unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets } = state;
-  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), settings: structuredClone({ unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets }), saved: new Date().toISOString() };
+  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), scenes: structuredClone(state.scenes), activeScene: state.activeScene, settings: structuredClone({ unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets }), saved: new Date().toISOString() };
 }
 function applyLayout(c: LayoutConfig) {
   // mutate in place: panel views hold references to their state objects
   c.panels.forEach((p, i) => { if (state.panels[i]) Object.assign(state.panels[i], p); else state.panels.push(p); });
   Object.assign(state, structuredClone(c.settings));
+  if (c.scenes) {
+    // merge by id, in place: open output windows hold the scene objects
+    for (const sc of sanitizeScenes(c.scenes)) {
+      const have = state.scenes.find((x) => x.id === sc.id);
+      if (have) Object.assign(have, sc); else state.scenes.push(sc);
+    }
+    if (c.activeScene && state.scenes.some((x) => x.id === c.activeScene)) state.activeScene = c.activeScene;
+  }
   if (!dock.restore(c.dock)) dock.applyPreset(state.layout);
   state.dock = dock.api.toJSON();
   save(); renderHeader(); refreshHeads(); needClear = true;
@@ -804,7 +821,7 @@ function renderLayoutMenu() {
   const saveAs = () => {
     const n = name.value.trim();
     if (!n) return;
-    all[n] = currentLayout(); storeLayouts(all); renderLayoutMenu();
+    all[n] = currentLayout(); storeLayouts(all); state.layoutName = n; save(); renderLayoutMenu();
   };
   name.onkeydown = (e) => { if (e.key === 'Enter') saveAs(); };
   const file = h('input', { type: 'file', accept: 'application/json,.json', hidden: true }) as HTMLInputElement;
@@ -825,7 +842,7 @@ function renderLayoutMenu() {
   $('#laybody').replaceChildren(
     h('div', { class: 'mtitle' }, 'Layout-Konfigurationen'),
     ...(names.length ? names.map((n) => h('div', { class: 'mrow lay' },
-      h('button', { class: 'lname', title: `Laden (gespeichert ${new Date(all[n].saved).toLocaleString('de-DE')})`, onclick: () => { applyLayout(all[n]); ($('#laymenu') as HTMLDetailsElement).open = false; } }, n),
+      h('button', { class: `lname${n === state.layoutName ? ' on' : ''}`, title: `Laden (gespeichert ${new Date(all[n].saved).toLocaleString('de-DE')})`, onclick: () => { applyLayout(all[n]); state.layoutName = n; save(); ($('#laymenu') as HTMLDetailsElement).open = false; } }, n),
       h('button', { class: 'mini', title: 'Mit dem aktuellen Stand überschreiben', onclick: () => { all[n] = currentLayout(); storeLayouts(all); renderLayoutMenu(); } }, '↻'),
       h('button', { class: 'mini', title: 'Als Datei exportieren', onclick: () => download(all[n], `lz-scopes-layout-${n}.json`) }, '⤓'),
       h('button', { class: 'mini', title: 'Löschen', onclick: () => { delete all[n]; storeLayouts(all); renderLayoutMenu(); } }, '✕')))
@@ -851,9 +868,16 @@ function renderLayoutMenu() {
   },
   panelSource,
   source: (id) => sources.find((s) => s.id === id) ?? null,
+  sources: () => sources.map((s) => ({ id: s.id, name: s.name })),
   drawOptions,
   bridgeUrl,
+  sceneFor: (name, fallbackId) => {
+    const id = outWins.get(name)?.scene || fallbackId || state.activeScene;
+    return state.scenes.find((s) => s.id === id) ?? state.scenes[0] ?? null;
+  },
+  sceneChanged: () => { clearTimeout(sceneSave); sceneSave = window.setTimeout(save, 300); },
 };
+let sceneSave = 0;
 
 interface DesktopApi {
   displays: () => Promise<{ id: number; label: string; bounds: { width: number; height: number }; primary: boolean }[]>;
@@ -861,39 +885,71 @@ interface DesktopApi {
 }
 const desktop = (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop;
 
+interface OutputOptions { name: string; view: string; idx: string; src: string; scene: string; bg: string; display: string; fs: boolean; stream: string; target: string }
+/** Open output windows by name (control API: output.close, scene.select, stream.*). */
+const outWins = new Map<string, { win: Window; view: string; scene: string }>();
+const liveOutputs = () => { for (const [n, o] of outWins) if (o.win.closed) outWins.delete(n); return outWins; };
+const outApi = (w: Window) => { try { return (w as unknown as { lzsOut?: OutputWindowApi }).lzsOut ?? null; } catch { return null; } };
+const activeSceneObj = () => state.scenes.find((s) => s.id === state.activeScene) ?? state.scenes[0];
+
 async function renderOutputMenu() {
-  const out = { view: 'grid', idx: '0', src: sources[0]?.id ?? '', scope: 'wf-luma', bg: 'picture', display: '', fs: true, stream: '', target: '' };
+  const out: OutputOptions = { name: '', view: 'grid', idx: String(dock.openIdx()[0] ?? 0), src: sources[0]?.id ?? '', scene: activeSceneObj()?.id ?? '', bg: 'picture', display: '', fs: true, stream: '', target: '' };
   const screens: [string, string][] = [['', 'Neues Fenster']];
   if (desktop) {
     for (const d of await desktop.displays()) screens.push([String(d.id), `${d.label || 'Bildschirm'} ${d.bounds.width}×${d.bounds.height}${d.primary ? ' (Haupt)' : ''}`]);
   }
   const row = (label: string, ...kids: (Node | string)[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
-  const txt = (key: 'stream' | 'target', ph: string) => { const i = h('input', { placeholder: ph, spellcheck: 'false' }) as HTMLInputElement; i.oninput = () => (out[key] = i.value.trim()); return i; };
+  const txt = (key: 'stream' | 'target' | 'name', ph: string) => { const i = h('input', { placeholder: ph, spellcheck: 'false' }) as HTMLInputElement; i.oninput = () => (out[key] = i.value.trim()); return i; };
   const fsBox = h('input', { type: 'checkbox', checked: true }) as HTMLInputElement;
   fsBox.onchange = () => (out.fs = fsBox.checked);
+  const sceneName = h('input', { placeholder: 'Name der neuen Szene' }) as HTMLInputElement;
+  const newScene = (copy: boolean) => {
+    const base = copy ? state.scenes.find((s) => s.id === out.scene) : null;
+    const sc: OverlayScene = base ? { ...structuredClone(base), id: newId(), name: sceneName.value.trim() || `${base.name} Kopie` } : defaultScene(sceneName.value.trim() || `Szene ${state.scenes.length + 1}`);
+    state.scenes.push(sc); state.activeScene = sc.id; save(); renderOutputMenu();
+  };
+  const delScene = () => {
+    if (state.scenes.length < 2) return;
+    state.scenes.splice(state.scenes.findIndex((s) => s.id === out.scene), 1);
+    if (!state.scenes.some((s) => s.id === state.activeScene)) state.activeScene = state.scenes[0].id;
+    save(); renderOutputMenu();
+  };
+  const open = [...liveOutputs().entries()];
   $('#outbody').replaceChildren(
     row('Inhalt', select(out.view, [['grid', 'Gesamtansicht (Layout)'], ['panel', 'Einzelnes Panel'], ['clean', 'Quellbild sauber'], ['overlay', 'Bild + Scope-Overlay']], (v) => (out.view = v))),
-    row('Panel', select(String(dock.openIdx()[0] ?? 0), dock.openIdx().map((i) => [String(i), panelTitle(i)]), (v) => (out.idx = v))),
+    row('Panel', select(out.idx, dock.openIdx().map((i) => [String(i), panelTitle(i)]), (v) => (out.idx = v))),
     row('Quelle', select(out.src, sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (v) => (out.src = v))),
-    row('Overlay-Scope', select(out.scope, (['wf-luma', 'wf-color', 'wf-skin', 'parade', 'yrgb', 'vector', 'cie'] as ScopeType[]).map((k) => [k, SCOPE_LABELS[k]]), (v) => (out.scope = v))),
+    row('Overlay-Szene', select(out.scene, state.scenes.map((s) => [s.id, `${s.name} (${s.elements.length})`]), (v) => { out.scene = v; state.activeScene = v; save(); }, 'Scopes über dem Bild; im Ausgabefenster mit E anordnen'),
+      h('button', { class: 'mini', title: 'Szene löschen', onclick: delScene }, '✕')),
+    row('', sceneName, h('button', { class: 'mini', title: 'Neue Szene mit einer Waveform', onclick: () => newScene(false) }, '+ Neu'), h('button', { class: 'mini', title: 'Gewählte Szene kopieren', onclick: () => newScene(true) }, 'Kopie')),
     row('Overlay-Hintergrund', select(out.bg, [['picture', 'Bild'], ['black', 'Schwarz (für Luma-Key am Mischer)']], (v) => (out.bg = v))),
     row('Ausgang', select('', screens, (v) => (out.display = v)), h('label', { class: 'inline' }, fsBox, 'Vollbild')),
+    row('Name', txt('name', 'optional, für Companion, z. B. beamer')),
     row('Stream-Name', txt('stream', 'optional, z. B. scopes → /out/scopes.mjpeg')),
     row('Push an', txt('target', 'optional: rtmp:// srt:// rtsp:// udp://')),
     h('div', { class: 'mrow' }, h('span', {}, ''), h('button', { class: 'primary', onclick: () => openOutputView(out) }, 'Ausgabe öffnen')),
-    h('p', { class: 'hint' }, desktop ? 'Vollbild auf dem gewählten Bildschirm.' : 'Im Browser: Fenster auf den Zielbildschirm ziehen, dann F oder Doppelklick für Vollbild. Die Desktop-App wählt den Bildschirm direkt.'),
+    ...(open.length ? [h('div', { class: 'mtitle' }, 'Offen'), ...open.map(([n, o]) => h('div', { class: 'mrow' },
+      h('span', {}, n), h('span', { class: 'hint' }, `${o.view}${o.view === 'overlay' ? ` · ${state.scenes.find((s) => s.id === o.scene)?.name ?? ''}` : ''}${outApi(o.win)?.stream() ? ` · Stream ${outApi(o.win)!.stream()}` : ''}`),
+      h('button', { class: 'mini', title: 'Schließen', onclick: () => { o.win.close(); outWins.delete(n); renderOutputMenu(); } }, '✕')))] : []),
+    h('p', { class: 'hint' }, `${desktop ? 'Vollbild auf dem gewählten Bildschirm.' : 'Im Browser: Fenster auf den Zielbildschirm ziehen, dann F oder Doppelklick für Vollbild. Die Desktop-App wählt den Bildschirm direkt.'} Overlay: im Ausgabefenster E drücken, um Scopes zu verschieben, zu skalieren, hinzuzufügen oder zu entfernen.`),
   );
 }
 
-function openOutputView(o: { view: string; idx: string; src: string; scope: string; bg: string; display: string; fs: boolean; stream: string; target: string }) {
-  const q = new URLSearchParams({ view: o.view });
+function openOutputView(o: OutputOptions): string {
+  let name = o.name.replace(/[^\w-]/g, '').slice(0, 40);
+  if (!name) { let n = 1; while (liveOutputs().has(`out${n}`)) n++; name = `out${n}`; }
+  outWins.get(name)?.win.close();
+  const q = new URLSearchParams({ view: o.view, name });
   if (o.view === 'panel') q.set('idx', o.idx);
   if (o.view === 'clean' || o.view === 'overlay') q.set('src', o.src);
-  if (o.view === 'overlay') { q.set('scope', o.scope); q.set('bg', o.bg); }
+  if (o.view === 'overlay') { q.set('scene', o.scene); q.set('bg', o.bg); }
   if (o.stream) { q.set('stream', o.stream.replace(/[^\w-]/g, '')); if (o.target) q.set('target', o.target); }
   if (o.display) q.set('display', o.display);
   if (o.fs) q.set('fs', '1');
-  window.open(`${location.pathname}?${q}`, `lzs-out-${Date.now()}`, 'popup,width=1280,height=720');
+  const win = window.open(`${location.pathname}?${q}`, `lzs-out-${name}`, 'popup,width=1280,height=720');
+  if (!win) throw new Error('Fenster wurde blockiert (Browser: Pop-ups für diese Seite erlauben)');
+  outWins.set(name, { win, view: o.view, scene: o.view === 'overlay' ? o.scene : '' });
+  return name;
 }
 
 function snapshot() {
@@ -912,6 +968,184 @@ function snapshot() {
   a.download = `lz-scopes-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.png`;
   a.href = c.toDataURL('image/png');
   a.click();
+}
+
+// ---------------------------------------------------------------- remote control (Companion, docs/control-api.md)
+
+/** Source by 1-based number, id or name. */
+function findSource(ref: unknown): Source | null {
+  if (typeof ref === 'number') return sources[ref - 1] ?? null;
+  const low = String(ref).toLowerCase();
+  return sources.find((s) => s.id === ref) ?? sources.find((s) => s.name.toLowerCase() === low) ?? null;
+}
+function panelIndex(ref: unknown): number {
+  const i = typeof ref === 'number' ? ref - 1 : Number(String(ref).replace(/^p/i, '')) - 1;
+  if (!Number.isInteger(i) || i < 0 || i >= state.panels.length) throw new Error(`Panel ${ref} gibt es nicht (1–${state.panels.length})`);
+  return i;
+}
+/** Source shown by the most open panels. */
+function activeSource(): Source | null {
+  const count = new Map<Source, number>();
+  for (const v of openViews()) { const s = panelSource(state.panels[v.idx]); if (s) count.set(s, (count.get(s) ?? 0) + 1); }
+  return [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? sources[0] ?? null;
+}
+const maximizedPanel = () => { const p = dock.api.panels.find((x) => x.api.isMaximized()); return p ? panelIdx(p.id) + 1 : null; };
+
+function execute(c: Command): unknown {
+  const need = <T,>(v: T | null | undefined, msg: string): T => { if (v === null || v === undefined) throw new Error(msg); return v; };
+  const mode = (cur: boolean) => (c.mode === 'toggle' ? !cur : c.mode === 'on');
+  switch (c.cmd) {
+    case 'state': return controlState();
+    case 'source.select': {
+      const s = need(findSource(c.source), `Quelle ${c.source} nicht gefunden`);
+      if (c.panel !== undefined) state.panels[panelIndex(c.panel)].sourceId = s.id;
+      else state.panels.forEach((p) => (p.sourceId = s.id));
+      save(); renderPanels();
+      return { source: s.name };
+    }
+    case 'layout.preset': {
+      const keys = Object.keys(PRESETS), r = c.preset;
+      const low = String(r).toLowerCase().replace('x', '×');
+      const key = typeof r === 'number' ? keys[r - 1] : keys.find((k) => k === r || PRESETS[k].label.toLowerCase() === low);
+      setLayout(need(key, `Layout-Vorlage ${r} gibt es nicht (1–${keys.length} oder ${keys.map((k) => PRESETS[k].label).join(', ')})`));
+      return { preset: state.layout };
+    }
+    case 'layout.load': {
+      const all = loadLayouts(), low = String(c.name).toLowerCase();
+      const n = need(Object.keys(all).find((k) => k.toLowerCase() === low), `Layout-Konfiguration ${c.name} nicht gespeichert`);
+      applyLayout(all[n]); state.layoutName = n; save();
+      return { layout: n };
+    }
+    case 'panel.scope': {
+      const i = panelIndex(c.panel), p = state.panels[i];
+      p.scope = c.scope as ScopeType;
+      if (p.scope === 'vector' || p.scope === 'cie') p.colorize = true;
+      save(); const v = views.get(i); if (v) fillHead(v); dock.setTitle(i); needClear = true;
+      return { panel: i + 1, scope: p.scope };
+    }
+    case 'panel.maximize': {
+      if (c.panel === undefined) { dock.exitMaximized(); return { maximized: null }; }
+      const i = panelIndex(c.panel);
+      const dp = need(dock.api.getPanel(panelId(i)), `Panel ${i + 1} ist nicht im Layout`);
+      if (mode(dp.api.isMaximized()) !== dp.api.isMaximized()) dock.toggleMaximize(i);
+      return { maximized: maximizedPanel() };
+    }
+    case 'freeze':
+      if (mode(frozen) !== frozen) toggleFreeze();
+      return { frozen };
+    case 'roi.clear':
+      for (const s of c.source !== undefined ? [need(findSource(c.source), `Quelle ${c.source} nicht gefunden`)] : sources) { s.probe = null; s.roi = null; s.faceMode = 'off'; }
+      refreshHeads();
+      return {};
+    case 'pattern.select': case 'pattern.next': case 'pattern.prev': {
+      const s = need(c.source !== undefined ? findSource(c.source) : sources.find((x) => x.kind === 'pattern'), 'Keine Testbild-Quelle');
+      if (s.kind !== 'pattern') throw new Error(`${s.name} ist keine Testbild-Quelle`);
+      let i = PATTERNS.findIndex((p) => p.id === s.pattern.id);
+      if (c.cmd === 'pattern.select') {
+        const low = String(c.pattern).toLowerCase();
+        i = typeof c.pattern === 'number' ? c.pattern - 1 : PATTERNS.findIndex((p) => p.id === c.pattern || p.name.toLowerCase() === low);
+        if (!PATTERNS[i]) throw new Error(`Testbild ${c.pattern} gibt es nicht`);
+      } else i = (i + (c.cmd === 'pattern.next' ? 1 : -1) + PATTERNS.length) % PATTERNS.length;
+      s.pattern.id = PATTERNS[i].id; save(); s.startPattern(); renderSources();
+      return { pattern: PATTERNS[i].id, name: PATTERNS[i].name };
+    }
+    case 'output.open': {
+      const src = c.source !== undefined ? need(findSource(c.source), `Quelle ${c.source} nicht gefunden`) : activeSource();
+      const sc = c.scene !== undefined ? need(findScene(state.scenes, c.scene as string | number), `Szene ${c.scene} gibt es nicht`) : activeSceneObj();
+      const name = openOutputView({
+        name: String(c.name ?? ''), view: String(c.view), idx: String(c.panel !== undefined ? panelIndex(c.panel) : dock.openIdx()[0] ?? 0),
+        src: src?.id ?? '', scene: sc?.id ?? '', bg: String(c.bg), display: String(c.display ?? ''), fs: c.fullscreen !== false,
+        stream: String(c.stream ?? ''), target: String(c.target ?? ''),
+      });
+      return { output: name };
+    }
+    case 'output.close': {
+      const list = [...liveOutputs().entries()].filter(([n]) => c.name === undefined || n === c.name);
+      if (c.name !== undefined && !list.length) throw new Error(`Ausgabe ${c.name} ist nicht offen`);
+      for (const [n, o] of list) { o.win.close(); outWins.delete(n); }
+      return { closed: list.map(([n]) => n) };
+    }
+    case 'scene.select': {
+      const sc = need(findScene(state.scenes, c.scene as string | number), `Szene ${c.scene} gibt es nicht`);
+      if (c.output !== undefined) need(liveOutputs().get(String(c.output)), `Ausgabe ${c.output} ist nicht offen`).scene = sc.id;
+      else {
+        state.activeScene = sc.id;
+        for (const o of liveOutputs().values()) if (o.view === 'overlay') o.scene = sc.id;
+        save();
+      }
+      return { scene: sc.name };
+    }
+    case 'stream.start': {
+      const outs = liveOutputs();
+      let name = c.output !== undefined ? String(c.output) : [...outs.keys()][0];
+      if (c.output !== undefined && !outs.has(name)) throw new Error(`Ausgabe ${name} ist nicht offen`);
+      if (!name) {
+        // nothing open yet: open the overlay output with the stream running
+        name = openOutputView({ name: '', view: 'overlay', idx: '0', src: activeSource()?.id ?? '', scene: activeSceneObj()?.id ?? '', bg: 'picture', display: '', fs: false, stream: String(c.stream), target: String(c.target ?? '') });
+        return { output: name, stream: c.stream };
+      }
+      need(outApi(outs.get(name)!.win), `Ausgabe ${name} lädt noch`).startStream(String(c.stream), String(c.target ?? ''));
+      return { output: name, stream: c.stream };
+    }
+    case 'stream.stop': {
+      const stopped: string[] = [];
+      for (const [n, o] of liveOutputs()) {
+        const api = outApi(o.win);
+        if (!api?.stream() || (c.output !== undefined && n !== c.output) || (c.stream !== undefined && api.stream() !== c.stream)) continue;
+        stopped.push(api.stream()); api.stopStream();
+      }
+      return { stopped };
+    }
+    case 'transport': {
+      const s = need(c.source !== undefined ? findSource(c.source) : activeVideo(), 'Keine Videodatei geöffnet');
+      const v = need(s.isVideoFile ? s.video : null, `${s.name} ist keine Videodatei`);
+      const playing = !v.paused || !!s.reverseSpeed;
+      switch (c.op) {
+        case 'play': if (!playing) s.togglePlay(); break;
+        case 'pause': case 'stop': s.shuttle(0); if (c.op === 'stop') s.seek(0); break;
+        case 'toggle': s.togglePlay(); break;
+        case 'next': s.step(1); break;
+        case 'prev': s.step(-1); break;
+        case 'forward': s.shuttle(1); break;
+        case 'rewind': s.shuttle(-1); break;
+        case 'start': s.seek(0); break;
+        case 'end': s.seek(v.duration || 0); break;
+      }
+      return { source: s.name };
+    }
+  }
+  throw new Error(`Befehl ${c.cmd} nicht umgesetzt`);
+}
+
+/** State for the control API: Companion feedbacks and variables. Percent values rounded to 0.1. */
+function controlState() {
+  const act = activeSource(), st = act?.stats ?? null;
+  const pct = (v: number) => Math.round(v * 1000) / 10;
+  const vid = activeVideo();
+  const pat = sources.find((s) => s.kind === 'pattern');
+  const sc = activeSceneObj();
+  return {
+    source: act ? { index: sources.indexOf(act) + 1, id: act.id, name: act.name, status: act.status } : null,
+    sources: sources.map((s, i) => ({ index: i + 1, id: s.id, name: s.name, kind: s.kind, status: s.status })),
+    frozen,
+    clip: st ? pct(Math.max(...st.clipHigh, ...st.clipLow)) : null,
+    clipHigh: st ? pct(Math.max(...st.clipHigh)) : null,
+    clipLow: st ? pct(Math.max(...st.clipLow)) : null,
+    yMin: st ? pct(st.yMin) : null,
+    yMax: st ? pct(st.yMax) : null,
+    layoutName: state.layoutName || PRESETS[state.layout]?.label || '',
+    preset: state.layout,
+    layouts: Object.keys(loadLayouts()).sort((a, b) => a.localeCompare(b)),
+    presets: Object.entries(PRESETS).map(([key, l], i) => ({ index: i + 1, key, label: l.label })),
+    panels: dock.openIdx().map((i) => ({ panel: i + 1, scope: state.panels[i].scope, source: panelSource(state.panels[i])?.name ?? '' })),
+    maximized: maximizedPanel(),
+    scene: sc ? { id: sc.id, name: sc.name } : null,
+    scenes: state.scenes.map((s) => ({ id: s.id, name: s.name, elements: s.elements.length })),
+    outputs: [...liveOutputs().entries()].map(([name, o]) => ({ name, view: o.view, scene: state.scenes.find((s) => s.id === o.scene)?.name ?? '', stream: outApi(o.win)?.stream() ?? '' })),
+    pattern: pat ? { id: pat.pattern.id, name: patternById(pat.pattern.id).name } : null,
+    patterns: PATTERNS.map((p) => ({ id: p.id, name: p.name })),
+    playing: vid?.video ? !vid.video.paused || !!vid.reverseSpeed : null,
+  };
 }
 
 // ---------------------------------------------------------------- keys & boot
@@ -956,6 +1190,9 @@ const dock = createDock($('#dock'), {
 });
 let layoutSave = 0;
 if (!(state.dock && dock.restore(state.dock))) dock.applyPreset(state.layout);
+if (!state.scenes.some((sc) => sc.id === state.activeScene)) state.activeScene = state.scenes[0].id;
 requestAnimationFrame(frame);
+// Control API: the bridge forwards Companion/HTTP commands to this window.
+connectRemote(bridgeUrl, execute, controlState);
 // Auto-connect saved network sources (bridge must be running).
 sources.forEach((s) => { if (s.kind === 'stream' && s.url) s.connectStream(s.url, bridgeUrl()); });

@@ -19,6 +19,7 @@ import { createRequire } from 'node:module';
 import { basename, delimiter, dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
+import { COMMANDS, controlAccess, validateCommand } from './control.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -26,6 +27,8 @@ const arg = (name, fallback) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 };
 let DEV = args.includes('--dev');
+/** Control API token (optional); with a token, clients outside 127.0.0.1 are allowed. */
+let CONTROL_TOKEN = arg('control-token', process.env.LZS_CONTROL_TOKEN ?? '');
 let DIST = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
 
 /**
@@ -384,6 +387,7 @@ const server = createServer((req, res) => {
     listDevices().then((list) => { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(list)); });
     return;
   }
+  if (path === '/api/control' || path === '/api/control/commands') return handleControlHttp(req, res, path);
   if (path === '/api/outputs') {
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
     return res.end(JSON.stringify([...outputs.entries()].map(([name, o]) => ({ name, url: `/out/${name}.mjpeg`, viewers: o.clients.size, target: o.target || null }))));
@@ -464,8 +468,112 @@ function serveMjpeg(name, res) {
   res.on('close', () => out.clients.delete(res));
 }
 
+// ---- control API: HTTP POST /api/control and WebSocket /control (Companion, curl).
+// The main window of the UI connects as /control?role=app, executes the commands and
+// reports its state; the bridge only validates, forwards and relays.
+/** @type {Set<import('ws').WebSocket>} */
+const appClients = new Set();
+/** @type {Set<import('ws').WebSocket>} */
+const controlClients = new Set();
+/** @type {Map<string, (reply: { ok: boolean, error?: string, result?: unknown }) => void>} */
+const pending = new Map();
+let appState = null, seq = 0;
+const ctlWss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 256 * 1024 });
+
+const presentedToken = (req) => {
+  const auth = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? '')?.[1];
+  return auth ?? new URL(req.url ?? '', 'http://x').searchParams.get('token');
+};
+const accessProblem = (req) => controlAccess({
+  remote: req.socket.remoteAddress, token: CONTROL_TOKEN, presented: presentedToken(req),
+  origin: req.headers.origin, host: req.headers.host,
+});
+
+/** Forward a validated command to the main window; resolves with its reply. */
+export function sendToApp(command, timeoutMs = 4000) {
+  const app = [...appClients].pop();
+  if (!app) return Promise.resolve({ ok: false, status: 503, error: 'Kein LZ-Scopes-Hauptfenster verbunden' });
+  const id = `c${++seq}`;
+  return new Promise((ok) => {
+    const timer = setTimeout(() => { pending.delete(id); ok({ ok: false, status: 504, error: 'Hauptfenster antwortet nicht' }); }, timeoutMs);
+    pending.set(id, (reply) => { clearTimeout(timer); ok(reply); });
+    app.send(JSON.stringify({ type: 'command', id, command }));
+  });
+}
+
+async function runControl(raw) {
+  const v = validateCommand(raw);
+  if (!v.ok) return { status: 400, body: { ok: false, error: v.error } };
+  const reply = await sendToApp(v.command);
+  return { status: reply.ok ? 200 : reply.status ?? 422, body: { ok: reply.ok, ...(reply.error ? { error: reply.error } : {}), ...(reply.result !== undefined ? { result: reply.result } : {}), state: appState } };
+}
+
+function handleControlHttp(req, res, path) {
+  const send = (status, body) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+  const problem = accessProblem(req);
+  if (problem) return send(problem.status, { ok: false, error: problem.error });
+  if (path === '/api/control/commands') return send(200, COMMANDS);
+  if (req.method === 'GET') return send(200, { ok: true, connected: appClients.size > 0, state: appState });
+  if (req.method !== 'POST') return send(405, { ok: false, error: 'GET oder POST' });
+  // JSON only: a foreign web page cannot send that without a CORS preflight, which we never allow
+  if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) return send(415, { ok: false, error: 'Content-Type: application/json' });
+  let body = '';
+  req.on('data', (d) => { body += d; if (body.length > 64 * 1024) req.destroy(); });
+  req.on('end', async () => {
+    let raw;
+    try { raw = JSON.parse(body); } catch { return send(400, { ok: false, error: 'Kein gültiges JSON' }); }
+    const r = await runControl(raw);
+    send(r.status, r.body);
+  });
+}
+
+ctlWss.on('connection', (ws, req) => {
+  const role = new URL(req.url ?? '', 'http://x').searchParams.get('role');
+  if (role === 'app') {
+    appClients.add(ws);
+    broadcast({ type: 'connected', connected: true });
+    ws.on('message', (data, isBinary) => {
+      if (isBinary) return;
+      let m;
+      try { m = JSON.parse(String(data)); } catch { return; }
+      if (m.type === 'state') { appState = m.state; broadcast({ type: 'state', state: appState }); }
+      else if (m.type === 'result' && pending.has(m.id)) { const done = pending.get(m.id); pending.delete(m.id); done(m); }
+    });
+    ws.on('close', () => {
+      appClients.delete(ws);
+      if (!appClients.size) { appState = null; broadcast({ type: 'connected', connected: false }); }
+    });
+    return;
+  }
+  controlClients.add(ws);
+  ws.send(JSON.stringify({ type: 'hello', name: 'lz-scopes', connected: appClients.size > 0, state: appState, commands: Object.keys(COMMANDS) }));
+  ws.on('message', async (data, isBinary) => {
+    if (isBinary) return;
+    let raw;
+    try { raw = JSON.parse(String(data)); } catch { return ws.send(JSON.stringify({ type: 'result', ok: false, error: 'Kein gültiges JSON' })); }
+    const r = await runControl(raw);
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'result', id: raw?.id ?? null, ...r.body, state: undefined }));
+  });
+  ws.on('close', () => controlClients.delete(ws));
+});
+
+function broadcast(msg) {
+  const text = JSON.stringify(msg);
+  for (const c of controlClients) if (c.readyState === c.OPEN) c.send(text);
+}
+
 server.on('upgrade', (req, socket, head) => {
   const path = new URL(req.url ?? '', 'http://x').pathname;
+  if (path === '/control') {
+    // the main window is always local and same-origin; it needs no token
+    const isApp = new URL(req.url ?? '', 'http://x').searchParams.get('role') === 'app';
+    const problem = isApp ? controlAccess({ remote: req.socket.remoteAddress, origin: req.headers.origin, host: req.headers.host }) : accessProblem(req);
+    if (problem) {
+      socket.end(`HTTP/1.1 ${problem.status} ${problem.status === 401 ? 'Unauthorized' : 'Forbidden'}\r\n\r\n`);
+      return;
+    }
+    return ctlWss.handleUpgrade(req, socket, head, (ws) => ctlWss.emit('connection', ws, req));
+  }
   const target = path === '/stream' ? wss : path === '/out' ? outWss : null;
   if (!target) return socket.destroy();
   target.handleUpgrade(req, socket, head, (ws) => target.emit('connection', ws, req));
@@ -475,8 +583,9 @@ server.on('upgrade', (req, socket, head) => {
  * Start the bridge. Used by the CLI below and by the desktop app (electron/main.cjs),
  * which passes port 0 for a free port and its own dist folder.
  */
-export function startBridge({ port = 4190, host = '127.0.0.1', dist, dev = false } = {}) {
+export function startBridge({ port = 4190, host = '127.0.0.1', dist, dev = false, controlToken } = {}) {
   if (dist) DIST = resolve(dist);
+  if (controlToken !== undefined) CONTROL_TOKEN = controlToken;
   DEV = dev;
   return new Promise((ok, fail) => {
     server.once('error', fail);

@@ -1,0 +1,26 @@
+{
+  "$schema": "../node_modules/@companion-module/base/assets/manifest.schema.json",
+  "id": "lz-scopes",
+  "name": "LZ Scopes",
+  "shortname": "lz-scopes",
+  "description": "Steuerung von LZ Scopes (Software-Scopes): Quellen, Layouts, Einfrieren, Testbilder, Ausgaben mit Overlay-Szenen, Streams, Transport; Feedbacks für Quelle, Freeze, Clipping und Y′ min/max",
+  "version": "0.1.0",
+  "license": "UNLICENSED",
+  "repository": "https://github.com/larszu/lz-scopes",
+  "bugs": "https://github.com/larszu/lz-scopes/issues",
+  "maintainers": [
+    {
+      "name": "Lars Zumpe"
+    }
+  ],
+  "runtime": {
+    "type": "node22",
+    "api": "nodejs-ipc",
+    "apiVersion": "0.0.0",
+    "entrypoint": "../dist/main.js"
+  },
+  "legacyIds": [],
+  "manufacturer": "Lars Zumpe Medienproduktion",
+  "products": ["LZ Scopes"],
+  "keywords": ["scopes", "waveform", "vectorscope", "measurement", "overlay"]
+}

@@ -11,7 +11,8 @@
 import { spawn } from 'node:child_process';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, join, normalize, resolve } from 'node:path';
+import { createRequire } from 'node:module';
+import { basename, delimiter, dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 
@@ -20,12 +21,39 @@ const arg = (name, fallback) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 };
-const PORT = Number(arg('port', process.env.PORT ?? 4190));
-const HOST = arg('host', process.env.HOST ?? '127.0.0.1');
-const DEV = args.includes('--dev');
-const FFMPEG = process.env.FFMPEG ?? 'ffmpeg';
-const FFPROBE = process.env.FFPROBE ?? 'ffprobe';
-const DIST = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
+let DEV = args.includes('--dev');
+let DIST = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
+
+/**
+ * Where ffmpeg lives: $FFMPEG, the bundled ffmpeg-static (desktop app; outside the
+ * asar archive), then PATH plus the Homebrew prefixes – an app started from the
+ * Finder does not inherit the shell's PATH.
+ */
+export function ffmpegCandidates(env = process.env) {
+  const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  const list = [];
+  if (env.FFMPEG) list.push(env.FFMPEG);
+  try {
+    const bundled = createRequire(import.meta.url)('ffmpeg-static');
+    if (bundled) list.push(String(bundled).replace(`app.asar${process.platform === 'win32' ? '\\' : '/'}`, `app.asar.unpacked${process.platform === 'win32' ? '\\' : '/'}`));
+  } catch { /* not installed */ }
+  const dirs = (env.PATH ?? '').split(delimiter).filter(Boolean);
+  if (process.platform === 'darwin') dirs.push('/opt/homebrew/bin', '/usr/local/bin');
+  if (process.platform === 'linux') dirs.push('/usr/bin', '/usr/local/bin');
+  for (const d of dirs) list.push(join(d, exe));
+  return [...new Set(list)].filter((f) => existsSync(f));
+}
+
+/** ffprobe next to each ffmpeg, then $FFPROBE. ffmpeg-static ships none – see parseFfmpegBanner. */
+export function ffprobeCandidates(ffmpegs, env = process.env) {
+  const list = [];
+  if (env.FFPROBE) list.push(env.FFPROBE);
+  for (const f of ffmpegs) {
+    const name = basename(f);
+    if (/^ffmpeg(\.exe)?$/.test(name)) list.push(join(dirname(f), name.replace('ffmpeg', 'ffprobe')));
+  }
+  return [...new Set(list)].filter((f) => existsSync(f));
+}
 
 // Only network inputs plus the built-in test pattern. No local files, no ffmpeg
 // option injection: the URL is passed as a single argv element, never via a shell.
@@ -53,10 +81,55 @@ function inputArgs(url, transport) {
   return [...a, '-i', url];
 }
 
-function probe(url, transport) {
-  if (url in TEST_PATTERNS) {
-    return Promise.resolve({ width: 1920, height: 1080, codec: 'lavfi', fps: 25, transfer: 'bt709', primaries: 'bt709', matrix: 'bt709', range: 'tv' });
+/** Size and colour tags from ffmpeg's input banner (used when there is no ffprobe). */
+export function parseFfmpegBanner(stderr) {
+  const line = stderr.split('\n').find((l) => /Stream #\d+:\d+.*: Video: /.test(l));
+  if (!line) return null;
+  const size = /,\s*(\d{2,5})x(\d{2,5})\b/.exec(line);
+  if (!size) return null;
+  const codec = /Video: ([\w-]+)/.exec(line)?.[1];
+  const fmt = /Video: [^,]+,\s*(\w+)(?:\(([^)]*)\))?/.exec(line);
+  let range = 'unknown', matrix = 'unknown', primaries = 'unknown', transfer = 'unknown';
+  for (const part of (fmt?.[2] ?? '').split(',').map((x) => x.trim())) {
+    if (part === 'tv' || part === 'pc') range = part;
+    else if (/^[\w-]+\/[\w-]+\/[\w-]+$/.test(part)) [matrix, primaries, transfer] = part.split('/');
+    else if (/^(bt|smpte|arib|iec|gbr|ycgco|fcc)/.test(part)) matrix = primaries = transfer = part;
   }
+  const fps = Number(/([\d.]+) fps/.exec(line)?.[1] ?? /([\d.]+) tbr/.exec(line)?.[1] ?? 0);
+  return { width: Number(size[1]), height: Number(size[2]), codec, pixFmt: fmt?.[1], fps, transfer, primaries, matrix, range };
+}
+
+function run(binary, a, timeoutMs) {
+  return new Promise((ok) => {
+    let p;
+    try { p = spawn(binary, a, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }); } catch { return ok(null); }
+    let out = '', err = '';
+    const timer = setTimeout(() => p.kill('SIGKILL'), timeoutMs);
+    p.stdout.on('data', (d) => (out += d));
+    p.stderr.on('data', (d) => { err = (err + d).slice(-8000); });
+    p.on('error', () => { clearTimeout(timer); ok(null); });
+    p.on('close', (code) => { clearTimeout(timer); ok({ code, out, err }); });
+  });
+}
+
+async function probe(url, transport) {
+  if (url in TEST_PATTERNS) {
+    return { width: 1920, height: 1080, codec: 'lavfi', fps: 25, transfer: 'bt709', primaries: 'bt709', matrix: 'bt709', range: 'tv' };
+  }
+  const ffmpegs = ffmpegCandidates();
+  const probes = ffprobeCandidates(ffmpegs);
+  if (!probes.length) {
+    for (const ffmpeg of ffmpegs) {
+      // Without an output ffmpeg prints the input banner and exits.
+      const r = await run(ffmpeg, ['-hide_banner', ...inputArgs(url, transport)], 15000);
+      if (!r) continue;
+      const info = parseFfmpegBanner(r.err);
+      if (info) return info;
+      throw new Error(r.err.trim().split('\n').filter((l) => !/output file/i.test(l)).pop() || 'Quelle nicht erreichbar');
+    }
+    throw new Error('ffmpeg nicht gefunden');
+  }
+  const FFPROBE = probes[0];
   const a = ['-v', 'error', '-analyzeduration', '1000000', '-probesize', '2000000', '-select_streams', 'v:0', '-show_entries',
     'stream=width,height,codec_name,avg_frame_rate,r_frame_rate,color_transfer,color_primaries,color_space,color_range,pix_fmt',
     '-of', 'json'];
@@ -130,14 +203,16 @@ async function startStream(ws, params) {
   const { decodeMatrix, decodeRange } = decodeParams(info);
   const vf = [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}`];
   if (fpsLimit) vf.push(`fps=${fpsLimit}`);
-  const ff = spawn(FFMPEG, [
+  const ffmpeg = ffmpegCandidates()[0];
+  if (!ffmpeg) return fail(ws, 'ffmpeg nicht gefunden – installieren (brew install ffmpeg) oder FFMPEG setzen');
+  const ff = spawn(ffmpeg, [
     '-hide_banner', '-loglevel', 'error', '-nostdin',
     ...inputArgs(url, transport),
     '-an', '-sn', '-dn', '-map', '0:v:0',
     '-vf', vf.join(','),
     '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba',
     '-f', 'rawvideo', 'pipe:1',
-  ], { stdio: ['ignore', 'pipe', 'pipe'] });
+  ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
 
   ws.send(JSON.stringify({ type: 'info', ...info, decodeMatrix, sourceWidth: info.width, sourceHeight: info.height, width, height, depth, fps: fpsLimit || info.fps }));
 
@@ -193,6 +268,22 @@ wss.on('connection', (ws, req) => {
   startStream(ws, new URL(req.url ?? '', 'http://x').searchParams).catch((e) => fail(ws, e.message));
 });
 
+/**
+ * Start the bridge. Used by the CLI below and by the desktop app (electron/main.cjs),
+ * which passes port 0 for a free port and its own dist folder.
+ */
+export function startBridge({ port = 4190, host = '127.0.0.1', dist, dev = false } = {}) {
+  if (dist) DIST = resolve(dist);
+  DEV = dev;
+  return new Promise((ok, fail) => {
+    server.once('error', fail);
+    server.listen(port, host, () => ok({ port: server.address().port, close: () => server.close() }));
+  });
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  server.listen(PORT, HOST, () => console.log(`lz-scopes bridge on http://${HOST}:${PORT}${DEV ? ' (dev)' : ''}`));
+  const port = Number(arg('port', process.env.PORT ?? 4190)), host = arg('host', process.env.HOST ?? '127.0.0.1');
+  startBridge({ port, host, dev: DEV }).then(({ port: p }) => {
+    console.log(`lz-scopes bridge on http://${host}:${p}${DEV ? ' (dev)' : ''} · ffmpeg: ${ffmpegCandidates()[0] ?? 'nicht gefunden'}`);
+  });
 }

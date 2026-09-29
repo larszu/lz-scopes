@@ -12,6 +12,8 @@ import type { Source } from './sources';
 export interface PanelState {
   scope: ScopeType; sourceId: string; gain: number; colorize: boolean; zoom: number;
   picture: PictureMode; hist: 'rgb' | 'luma' | 'split'; log: boolean;
+  /** parades / RGB overlay: 'mono' | 'channel' | 'source' colours */
+  paradeColor?: 'mono' | 'channel' | 'source';
   /** Pinned panels keep their source when another panel switches. */
   pin?: boolean;
 }
@@ -48,6 +50,8 @@ export const defaultPanel = (scope: ScopeType): PanelState => ({
   scope, sourceId: '', gain: 1, colorize: scope === 'vector' || scope === 'cie', zoom: 1, picture: 'normal', hist: 'rgb', log: false,
 });
 
+const PARADE: ScopeType[] = ['parade', 'yrgb', 'wf-rgb'];
+
 const SCATTER: Partial<Record<ScopeType, ScatterMode>> = {
   'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie',
 };
@@ -72,7 +76,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   const mode = SCATTER[p.scope];
   if (mode) {
     renderer.drawScatter(key, src, abs, {
-      mode, gain: p.gain, colorize: p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: [...TINTS[o.tint]] as [number, number, number],
+      mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: [...TINTS[o.tint]] as [number, number, number],
       maxSamples: o.maxSamples, roi: src.roi, skin: o.skin,
     });
   }
@@ -81,7 +85,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     if (p.scope === 'wf-skin') drawSkinRange(ctx, r, o.skin);
     if (probeRgb) drawWaveProbe(ctx, p.scope, r, src, probeRgb);
   } else if (p.scope === 'vector') {
-    drawVectorGraticule(ctx, r, src.colorspace, p.zoom);
+    drawVectorGraticule(ctx, r, src.colorspace, p.zoom, o.skin.tol);
     if (probeRgb) {
       const { cb, cr } = ycbcr(probeRgb[0], probeRgb[1], probeRgb[2], src.colorspace);
       const [x, y] = vectorPoint(r, cb, cr, p.zoom);

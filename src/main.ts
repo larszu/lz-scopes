@@ -6,7 +6,7 @@ import { DEFAULT_SKIN, defaultPanel as panel, drawPanel, panelSignature, type Dr
 import type { OutputHost } from './outputView';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
 import { PRESETS, createDock } from './dock';
-import { Renderer, type PictureMode, type SkinRange } from './renderer';
+import { Renderer, WAVE_MAX, WAVE_MIN, type PictureMode, type SkinRange } from './renderer';
 import { Source, type SourceKind, type SourceSettings } from './sources';
 
 // ---------------------------------------------------------------- state
@@ -86,6 +86,7 @@ app.innerHTML = `
     <div class="spacer"></div>
     <span class="fps" id="fps"></span>
     <button id="freeze" title="Standbild (Leertaste)">❚❚ Einfrieren</button>
+    <details class="menu" id="laymenu"><summary title="Layout-Konfigurationen speichern und laden (Anordnung + Einstellungen der Scopes)">▦ Layouts</summary><div class="menu-body right" id="laybody"></div></details>
     <details class="menu" id="outmenu"><summary title="Ausgabe auf einen Bildschirm dieses Rechners oder als Stream">⧉ Ausgabe</summary><div class="menu-body right" id="outbody"></div></details>
     <button id="snap" title="Screenshot als PNG (S)">⤓ PNG</button>
     <button id="full" title="Vollbild (F)">⛶</button>
@@ -157,6 +158,27 @@ function setLayout(k: string) {
   state.layout = k; save(); renderHeader(); dock.applyPreset(k);
 }
 
+// Panel ⚙ menus live inside clipped dock containers: pin them to the viewport when opened.
+document.addEventListener('toggle', (e) => {
+  const d = e.target as HTMLDetailsElement;
+  if (!d.classList?.contains('psettings')) return;
+  const body = d.querySelector<HTMLElement>('.menu-body');
+  if (!body) return;
+  if (!d.open) { body.style.cssText = ''; return; }
+  document.querySelectorAll<HTMLDetailsElement>('details.psettings[open]').forEach((o) => { if (o !== d) o.open = false; });
+  const r = d.getBoundingClientRect();
+  body.style.position = 'fixed';
+  body.style.top = `${Math.min(r.bottom + 4, window.innerHeight - 40)}px`;
+  body.style.right = `${Math.max(8, window.innerWidth - r.right)}px`;
+  body.style.left = 'auto';
+  body.style.maxHeight = `${window.innerHeight - r.bottom - 16}px`;
+  body.style.overflowY = 'auto';
+}, true);
+document.addEventListener('pointerdown', (e) => {
+  if ((e.target as HTMLElement).closest('details.psettings')) return;
+  document.querySelectorAll<HTMLDetailsElement>('details.psettings[open]').forEach((o) => (o.open = false));
+});
+$<HTMLDetailsElement>('#laymenu').addEventListener('toggle', (e) => { if ((e.target as HTMLDetailsElement).open) renderLayoutMenu(); });
 $<HTMLDetailsElement>('#outmenu').addEventListener('toggle', (e) => { if ((e.target as HTMLDetailsElement).open) renderOutputMenu(); });
 $('#toggle-side').onclick = () => { state.sidebar = !state.sidebar; applySidebar(); save(); };
 const applySidebar = () => $('#side').classList.toggle('hidden', !state.sidebar);
@@ -326,6 +348,7 @@ function panelElement(idx: number): HTMLElement {
     const el = h('div', { class: 'panel' }, head, body);
     body.addEventListener('dblclick', () => toggleSolo(idx));
     attachPointer(p(), body);
+    attachSkinDrag(p(), body);
     body.addEventListener('contextmenu', (e) => { e.preventDefault(); const s = panelSource(p()); if (s) { s.probe = null; s.roi = null; } });
     v = { idx, el, head, body, blit, overlay };
     views.set(idx, v);
@@ -342,7 +365,10 @@ function fillHead(v: PanelView) {
     }),
     sources.length > 1 ? select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), 'Quelle – alle nicht angehefteten Panels folgen') : '',
     sources.length > 1 ? h('button', { class: `icon pin ${p.pin ? 'on' : ''}`, title: p.pin ? 'Angeheftet: behält seine Quelle' : 'Anheften: Panel behält seine Quelle, wenn andere umschalten', onclick: () => { p.pin = !p.pin; save(); fillHead(v); } }, '📌') : '',
-    h('div', { class: 'opts' }, ...panelOptions(p)),
+    h('div', { class: 'opts' },
+      h('details', { class: 'menu psettings' },
+        h('summary', { title: `Einstellungen ${SCOPE_LABELS[p.scope]}` }, '⚙'),
+        h('div', { class: 'menu-body right' }, h('div', { class: 'mtitle' }, SCOPE_LABELS[p.scope]), ...panelSettings(p)))),
     h('button', { class: 'icon', title: 'Groß / zurück (Doppelklick, Esc)', onclick: () => toggleSolo(idx) }, '⤢'),
   );
 }
@@ -360,29 +386,61 @@ function addScopePanel() {
   dock.addPanel(idx);
 }
 
-function panelOptions(p: PanelState): (Node | string)[] {
-  const out: (Node | string)[] = [];
-  const toggle = (label: string, key: 'colorize' | 'log', title: string) =>
-    h('button', { class: `mini ${p[key] ? 'on' : ''}`, title, onclick: (e: Event) => { p[key] = !p[key]; save(); (e.target as HTMLElement).classList.toggle('on', p[key]); } }, label);
-  if (isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'cie') {
-    const gain = h('input', { type: 'range', min: -3, max: 3, step: 0.1, value: Math.log2(p.gain), title: 'Helligkeit der Spur' }) as HTMLInputElement;
+/** Settings of one measuring tool, shown in its ⚙ menu. */
+function panelSettings(p: PanelState): Node[] {
+  const rows: Node[] = [];
+  const row = (label: string, ...kids: (Node | string)[]) => rows.push(h('label', { class: 'mrow' }, h('span', {}, label), ...kids));
+  const check = (key: 'colorize' | 'log', label: string) => {
+    const c = h('input', { type: 'checkbox', checked: !!p[key] }) as HTMLInputElement;
+    c.onchange = () => { p[key] = c.checked; save(); };
+    return h('label', { class: 'inline' }, c, label);
+  };
+  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'cie';
+  if (scatter) {
+    const gain = h('input', { type: 'range', min: -3, max: 3, step: 0.1, value: Math.log2(p.gain), title: 'Doppelklick = Standard' }) as HTMLInputElement;
     gain.oninput = () => { p.gain = 2 ** Number(gain.value); save(); };
-    gain.ondblclick = (e) => { e.stopPropagation(); p.gain = 1; gain.value = '0'; save(); };
-    out.push(gain);
-    if (p.scope !== 'wf-rgb') out.push(toggle('Farbe', 'colorize', 'Spur in Bildfarbe'));
+    gain.ondblclick = () => { p.gain = 1; gain.value = '0'; save(); };
+    row('Helligkeit', gain);
   }
+  if (p.scope === 'parade' || p.scope === 'yrgb' || p.scope === 'wf-rgb') {
+    row('Farbe', select(p.paradeColor ?? (p.scope === 'wf-rgb' || p.colorize ? 'channel' : 'mono'),
+      [['mono', 'Mono'], ['channel', 'Kanalfarben'], ['source', 'Bildfarben (Quellpixel)']], (v) => { p.paradeColor = v as PanelState['paradeColor']; save(); }));
+  } else if (scatter && p.scope !== 'wf-skin' && p.scope !== 'wf-color') {
+    row('Farbe', check('colorize', 'Spur in Bildfarbe'));
+  }
+  if (scatter && p.scope !== 'vector' && p.scope !== 'cie') {
+    row('Skala', select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m²']], (v) => { state.unit = v as Unit; save(); renderHeader(); }));
+  }
+  if (scatter) row('Spurfarbe (Mono)', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); }));
   if (p.scope === 'vector') {
-    out.push(select(String(p.zoom), [['1', '×1'], ['2', '×2'], ['5', '×5']], (v) => { p.zoom = Number(v); save(); }, 'Zoom'));
+    row('Zoom', select(String(p.zoom), [['1', '×1'], ['2', '×2'], ['5', '×5']], (v) => { p.zoom = Number(v); save(); }));
+  }
+  if (p.scope === 'wf-skin' || p.scope === 'vector' || (p.scope === 'picture' && p.picture === 'skin')) {
+    row('Hautton Luma',
+      numIn(Math.round(state.skin.lo * 100), 0, 100, (v) => { state.skin.lo = v / 100; }), '–',
+      numIn(Math.round(state.skin.hi * 100), 0, 100, (v) => { state.skin.hi = v / 100; }), '%');
+    row('Hautton Farbton ±', numIn(state.skin.tol, 2, 45, (v) => { state.skin.tol = v; }), '°');
+    if (p.scope === 'wf-skin') {
+      row('', h('button', { title: 'Messrahmen im Bild aufs Gesicht ziehen, dann hier übernehmen', onclick: () => skinFromRoi(p) }, 'Bereich aus Messrahmen'));
+      rows.push(h('p', { class: 'hint' }, 'Im Waveform: Linien ziehen = Bereich, Mausrad = Farbton-Toleranz.'));
+    }
   }
   if (p.scope === 'picture') {
-    out.push(select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma']], (v) => { p.picture = v as PictureMode; save(); }, 'Bild-Overlay'));
+    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
+    if (p.picture === 'false') row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); }));
+    if (p.picture === 'zebra') row('Zebra ab', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%');
+    row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])], (v) => { state.display = v as Persisted['display']; save(); renderHeader(); }));
+    rows.push(h('p', { class: 'hint' }, 'Klick = Messpunkt, Ziehen = Messrahmen, Rechtsklick löscht.'));
   }
   if (p.scope === 'hist') {
-    out.push(select(p.hist, [['rgb', 'RGB'], ['luma', 'Luma'], ['split', 'Getrennt']], (v) => { p.hist = v as PanelState['hist']; save(); }));
-    out.push(toggle('log', 'log', 'Logarithmische Skala'));
+    row('Darstellung', select(p.hist, [['rgb', 'RGB'], ['luma', 'Luma'], ['split', 'Getrennt']], (v) => { p.hist = v as PanelState['hist']; save(); }));
+    row('Skala', check('log', 'logarithmisch'));
   }
-  return out;
+  if (scatter) row('Präzision', select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }));
+  return rows;
 }
+
+function refreshHeads() { views.forEach(fillHead); }
 
 function toggleSolo(idx: number) {
   dock.toggleMaximize(idx);
@@ -393,6 +451,52 @@ function switchSource(from: PanelState, id: string) {
   from.sourceId = id;
   for (const q of state.panels) if (!q.pin) q.sourceId = id;
   save(); renderPanels();
+}
+
+function skinFromRoi(p: PanelState) {
+  const s = panelSource(p);
+  if (!s) return;
+  const { kr, kb } = LUMA[s.colorspace];
+  const r = s.skinLumaRange(kr, kb, state.skin.tol);
+  if (!r) { alertHud('Keine Hauttöne im Messrahmen gefunden'); return; }
+  state.skin.lo = Math.round(r.lo * 100) / 100; state.skin.hi = Math.round(r.hi * 100) / 100;
+  save(); renderHeader();
+  alertHud(`Hautton-Bereich ${Math.round(r.lo * 100)}–${Math.round(r.hi * 100)} % aus ${r.n} Pixeln`);
+}
+
+function alertHud(msg: string) {
+  const el = $('#fps');
+  el.textContent = msg;
+}
+
+/** Skin-tone waveform: drag the lo/hi lines, mouse wheel = hue tolerance. */
+function attachSkinDrag(p: PanelState, body: HTMLElement) {
+  const levelAt = (e: PointerEvent | WheelEvent) => {
+    const b = body.getBoundingClientRect();
+    const r = plotRect('wf-skin', b.width, b.height);
+    return WAVE_MIN + ((r.y + r.h - (e.clientY - b.top)) / r.h) * (WAVE_MAX - WAVE_MIN);
+  };
+  let which: 'lo' | 'hi' | null = null;
+  body.addEventListener('pointerdown', (e) => {
+    if (p.scope !== 'wf-skin' || e.button !== 0) return;
+    const v = levelAt(e);
+    which = Math.abs(v - state.skin.lo) < Math.abs(v - state.skin.hi) ? 'lo' : 'hi';
+    try { body.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
+    state.skin[which] = Math.min(1.05, Math.max(0, v));
+  });
+  body.addEventListener('pointermove', (e) => {
+    if (!which || p.scope !== 'wf-skin') return;
+    const v = Math.min(1.05, Math.max(0, levelAt(e)));
+    state.skin[which] = v;
+    if (state.skin.lo > state.skin.hi) { const t = state.skin.lo; state.skin.lo = state.skin.hi; state.skin.hi = t; which = which === 'lo' ? 'hi' : 'lo'; }
+  });
+  body.addEventListener('pointerup', () => { if (which) { which = null; save(); renderHeader(); } });
+  body.addEventListener('wheel', (e) => {
+    if (p.scope !== 'wf-skin') return;
+    e.preventDefault();
+    state.skin.tol = Math.min(45, Math.max(2, state.skin.tol + (e.deltaY < 0 ? 1 : -1)));
+    save();
+  }, { passive: false });
 }
 
 /** Picture panel: click = probe, drag = region of interest (highlighted in all scopes). */
@@ -523,6 +627,72 @@ function drawOptions(): DrawOptions {
     unit: state.unit, tint: state.tint, maxSamples: state.maxSamples, falsePreset: state.falsePreset,
     zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps, skin: state.skin, display: displaySpace,
   };
+}
+
+// ---------------------------------------------------------------- saved layout configurations
+
+const LAYOUTS_KEY = 'lz-scopes.layouts';
+interface LayoutConfig {
+  dock: unknown; panels: PanelState[];
+  settings: Pick<Persisted, 'unit' | 'tint' | 'skin' | 'falsePreset' | 'zebra' | 'zebraLow' | 'display' | 'maxSamples'>;
+  saved: string;
+}
+function loadLayouts(): Record<string, LayoutConfig> {
+  try { return JSON.parse(localStorage.getItem(LAYOUTS_KEY) ?? '{}'); } catch { return {}; }
+}
+function storeLayouts(l: Record<string, LayoutConfig>) {
+  try { localStorage.setItem(LAYOUTS_KEY, JSON.stringify(l)); } catch { /* ignore */ }
+}
+function currentLayout(): LayoutConfig {
+  const { unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples } = state;
+  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), settings: structuredClone({ unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples }), saved: new Date().toISOString() };
+}
+function applyLayout(c: LayoutConfig) {
+  // mutate in place: panel views hold references to their state objects
+  c.panels.forEach((p, i) => { if (state.panels[i]) Object.assign(state.panels[i], p); else state.panels.push(p); });
+  Object.assign(state, structuredClone(c.settings));
+  if (!dock.restore(c.dock)) dock.applyPreset(state.layout);
+  state.dock = dock.api.toJSON();
+  save(); renderHeader(); refreshHeads(); needClear = true;
+}
+
+function renderLayoutMenu() {
+  const all = loadLayouts();
+  const name = h('input', { placeholder: 'Name, z. B. Grading, LED-Wand, Studio' }) as HTMLInputElement;
+  const saveAs = () => {
+    const n = name.value.trim();
+    if (!n) return;
+    all[n] = currentLayout(); storeLayouts(all); renderLayoutMenu();
+  };
+  name.onkeydown = (e) => { if (e.key === 'Enter') saveAs(); };
+  const file = h('input', { type: 'file', accept: 'application/json,.json', hidden: true }) as HTMLInputElement;
+  file.onchange = async () => {
+    const f = file.files?.[0];
+    if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      const entries: Record<string, LayoutConfig> = data.panels ? { [f.name.replace(/\.json$/i, '')]: data } : data;
+      Object.assign(all, entries); storeLayouts(all); renderLayoutMenu();
+    } catch (e) { alertHud(`Import fehlgeschlagen: ${(e as Error).message}`); }
+  };
+  const download = (obj: unknown, fname: string) => {
+    const a = h('a', { download: fname, href: URL.createObjectURL(new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' })) }) as HTMLAnchorElement;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  const names = Object.keys(all).sort((a, b) => a.localeCompare(b));
+  $('#laybody').replaceChildren(
+    h('div', { class: 'mtitle' }, 'Layout-Konfigurationen'),
+    ...(names.length ? names.map((n) => h('div', { class: 'mrow lay' },
+      h('button', { class: 'lname', title: `Laden (gespeichert ${new Date(all[n].saved).toLocaleString('de-DE')})`, onclick: () => { applyLayout(all[n]); ($('#laymenu') as HTMLDetailsElement).open = false; } }, n),
+      h('button', { class: 'mini', title: 'Mit dem aktuellen Stand überschreiben', onclick: () => { all[n] = currentLayout(); storeLayouts(all); renderLayoutMenu(); } }, '↻'),
+      h('button', { class: 'mini', title: 'Als Datei exportieren', onclick: () => download(all[n], `lz-scopes-layout-${n}.json`) }, '⤓'),
+      h('button', { class: 'mini', title: 'Löschen', onclick: () => { delete all[n]; storeLayouts(all); renderLayoutMenu(); } }, '✕')))
+      : [h('p', { class: 'hint' }, 'Noch keine gespeichert. Anordnung per Drag & Drop einrichten, Scopes über ⚙ einstellen, dann hier speichern.')]),
+    h('div', { class: 'mrow' }, name, h('button', { class: 'primary', onclick: saveAs }, 'Speichern')),
+    h('div', { class: 'mrow' },
+      h('button', { onclick: () => download(all, 'lz-scopes-layouts.json') }, '⤓ Alle exportieren'),
+      h('button', { onclick: () => file.click() }, '⤒ Importieren'), file),
+  );
 }
 
 // ---------------------------------------------------------------- outputs

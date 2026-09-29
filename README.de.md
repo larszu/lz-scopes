@@ -87,6 +87,8 @@ Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einste
 
 - **Transfer**: SDR (BT.1886), PQ, HLG mit wählbarem Display-Spitzenwert Lw (500–10 000 cd/m², Presets nach EBU R 167; Systemgamma nach BT.2100 auf die Luminanz angewandt) und die **Kamera-Log-Kurven** ARRI LogC3/LogC4, Sony S-Log3, Panasonic V-Log, Blackmagic Film Gen 5, Canon Log 2/3, RED Log3G10, Fujifilm F-Log2, DJI D-Log, Nikon N-Log und Apple Log. Log wird nicht signalisiert und muss gewählt werden.
 - **Gamut**: auto nimmt das Kamera-Gamut der Log-Kurve (AWG3/4, S-Gamut3.Cine, V-Gamut, BMD WG Gen5, Cinema Gamut, REDWideGamutRGB, D-Gamut, BT.2020 für F-/N-/Apple Log), sonst die Primaries der Matrix. S-Gamut3, DaVinci WG, ACES AP0/AP1 und P3 sind wählbar. Unterschiedliche Weißpunkte (ACES) werden per Bradford angepasst.
+- **CST und LUTs je Quelle** (Karte „CST / LUT“): Farbraum-Transformation nach Rec.709, Rec.2020 PQ/HLG oder beliebigem Gamut/Transfer mit Bradford-Anpassung und Tone-Mapping (ACES-2.0-Tonescale, BT.2390-EETF, Reinhard erweitert, Clip), Kamera-Presets (Log → Rec.709), danach bis zu zwei LUTs (`.cube`, `.3dl`, `.spi3d`, `.spi1d`, `.csp`, tetraedrisch, per Drag & Drop auf die Karte, Umschalt = LUT 2). Jedes Panel misst wahlweise das Signal, nach der CST oder nach den LUTs (⚙ → Messpunkt, Taste `C` für den Standard); die Stufe steht im Panel-Kopf, auch wenn sie nichts anwendet. Hersteller-LUTs werden nicht mitgeliefert, die App verlinkt die offiziellen Download-Seiten ([docs/research/lut-cst.md](docs/research/lut-cst.md)).
+- **Gamma**: BT.1886, Gamma 2,2/2,6/2,8, sRGB und linear sind wählbar. Erkannt wird die Kurve nur aus den Metadaten; fehlen sie, steht „nicht signalisiert, Annahme“ an der Quelle.
 - Log wirkt in der Waveform-Skala „cd/m² / Szene“ (Szene-Reflexion in %, 18 % = Graukarte, Blendenschritte), im CIE-Diagramm, in der Bildansicht und bei den Vectorscope-Zielen (Rec.709-Balken in Kurve und Gamut der Quelle). Die Kurvenwerte gelten als 10-bit-Code/1023 im Narrow-Range-Signal, wie die Hersteller sie angeben.
 
 ## Scopes
@@ -123,7 +125,7 @@ Einfrieren, PNG-Export, Vollbild.
 
 **Fernsteuerung** (Bitfocus Companion, curl): `POST /api/control` bzw. WebSocket `/control` an der Bridge; das Hauptfenster führt aus und meldet Quelle, Freeze, Clipping, Y′ min/max, Layout, Szene und Ausgaben zurück. Standardmäßig nur von 127.0.0.1, mit `LZS_CONTROL_TOKEN` auch aus dem Netz. Befehle und Beispiele: [docs/control-api.md](docs/control-api.md). Das Companion-Modul liegt in [`companion/`](companion).
 
-**Tasten:** `1`–`6` Layout-Vorlage · `Leertaste` Play/Pause (Videodatei) bzw. Einfrieren · `←`/`→` Frame · `J`/`K`/`L` Shuttle · `F` Vollbild · `S` PNG · `B` Seitenleiste · `Esc` Vergrößerung beenden bzw. Messpunkt/Rahmen löschen · im Overlay-Ausgabefenster `E` Bearbeiten
+**Tasten:** `1`–`6` Layout-Vorlage · `C` Messpunkt (Signal / nach CST / nach LUT) · `Leertaste` Play/Pause (Videodatei) bzw. Einfrieren · `←`/`→` Frame · `J`/`K`/`L` Shuttle · `F` Vollbild · `S` PNG · `B` Seitenleiste · `Esc` Vergrößerung beenden bzw. Messpunkt/Rahmen löschen · im Overlay-Ausgabefenster `E` Bearbeiten
 
 ## Testbilder
 

@@ -17,7 +17,8 @@ import { LUMA } from './color';
 
 export interface OutputHost {
   panels: PanelState[];
-  layout: () => { areas: string[]; n: number };
+  /** Open panels as fractions of the main window's scope area. */
+  panelRects: () => { idx: number; x: number; y: number; w: number; h: number }[];
   panelSource: (p: PanelState) => Source | null;
   source: (id: string) => Source | null;
   drawOptions: () => DrawOptions;
@@ -45,6 +46,8 @@ export function runOutputView() {
   const renderer = new Renderer(glCanvas);
 
   const cells: Cell[] = [];
+  const sigs = new Map<number, string>();
+  let clear = true;
   const addCell = (state: PanelState, src: () => Source | null, area = '') => {
     const body = document.createElement('div');
     body.style.cssText = `position:relative;min-width:0;min-height:0${area ? `;grid-area:${area}` : ''}`;
@@ -55,9 +58,21 @@ export function runOutputView() {
   };
 
   if (view === 'grid') {
-    const L = host.layout();
-    root.style.gridTemplateAreas = L.areas.map((a) => `"${a}"`).join(' ');
-    for (let i = 0; i < L.n; i++) addCell(host.panels[i], () => host.panelSource(host.panels[i]), 'abcdefghi'[i]);
+    // mirror the main window's dock layout; follows changes twice a second
+    root.style.display = 'block';
+    const place = () => {
+      const rects = host.panelRects();
+      const key = JSON.stringify(rects);
+      if (key === root.dataset.layout) return;
+      root.dataset.layout = key;
+      cells.forEach((c) => c.body.remove()); cells.length = 0; clear = true;
+      for (const r of rects) {
+        addCell(host.panels[r.idx], () => host.panelSource(host.panels[r.idx]));
+        cells[cells.length - 1].body.style.cssText += `;position:absolute;left:${r.x * 100}%;top:${r.y * 100}%;width:${r.w * 100}%;height:${r.h * 100}%`;
+      }
+    };
+    place();
+    setInterval(place, 500);
   } else if (view === 'panel') {
     const i = Number(q.get('idx') ?? 0);
     addCell(host.panels[i], () => host.panelSource(host.panels[i]));
@@ -69,8 +84,6 @@ export function runOutputView() {
 
   const overlayScope = (q.get('scope') ?? 'wf-luma') as ScopeType;
   const blackBg = q.get('bg') === 'black';
-  const sigs = new Map<number, string>();
-  let clear = true;
 
   const frame = () => {
     requestAnimationFrame(frame);

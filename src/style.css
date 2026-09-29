@@ -118,3 +118,32 @@ details.menu[open] > summary { border-color: #3f6b4a; color: var(--accent); }
 .mrow select { flex: 1; min-width: 0; }
 .menu-body.right { left: auto; right: 0; }
 .menu-body input:not([type='checkbox']) { flex: 1; min-width: 0; }
+
+/* docking layout */
+.dockwrap { flex: 1; position: relative; min-width: 0; }
+.dockwrap > canvas#gl { position: absolute; left: 0; top: 0; width: 100%; height: 100%; visibility: hidden; pointer-events: none; }
+#dock { position: absolute; inset: 0; }
+.lzs-dock {
+  --dv-background-color: var(--bg);
+  --dv-group-view-background-color: var(--bg);
+  --dv-tabs-and-actions-container-background-color: var(--panel);
+  --dv-activegroup-visiblepanel-tab-background-color: #181b1f;
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--panel);
+  --dv-inactivegroup-visiblepanel-tab-background-color: #15181b;
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--panel);
+  --dv-activegroup-visiblepanel-tab-color: var(--text);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--muted);
+  --dv-inactivegroup-hiddenpanel-tab-color: #5b6168;
+  --dv-separator-border: var(--line);
+  --dv-paneview-header-border-color: var(--line);
+  --dv-tabs-and-actions-container-font-size: 11px;
+  --dv-tabs-and-actions-container-height: 24px;
+  --dv-drag-over-background-color: rgba(140, 255, 158, 0.12);
+  --dv-drag-over-border-color: #3f6b4a;
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: #3f6b4a;
+}
+.dock-content { width: 100%; height: 100%; }
+.dock-content > .panel { width: 100%; height: 100%; border: 0; border-radius: 0; }
+.body canvas.blit, .body canvas.overlay { position: absolute; inset: 0; width: 100%; height: 100%; }

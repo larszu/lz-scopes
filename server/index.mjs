@@ -3,7 +3,7 @@
 //
 //   node server/index.mjs [--port 4192] [--host 127.0.0.1] [--dev]
 //
-// WebSocket: ws://host:port/stream?url=<input>&width=960&fps=25&depth=8|16&transport=tcp|udp[&audio=1][&video=0]
+// WebSocket: ws://host:port/stream?url=<input>&width=960&fps=25&depth=8|16&transport=tcp|udp[&audio=1][&video=0][&format=yuv]
 //   text  {type:"info", width, height, depth, fps, codec, transfer, primaries, matrix, range[, proto:2, audio]}
 //   text  {type:"error"|"end", message}
 //   binary one frame per message, width*height*4 samples (Uint8 or Uint16 LE)
@@ -247,6 +247,26 @@ export function decodeParams(info) {
   return { decodeMatrix, decodeRange };
 }
 
+/**
+ * Unclipped Y′CbCr mode (format=yuv, issue #7): 4:4:4 16 bit as ffmpeg `ayuv64le` (A, Y′, Cb, Cr),
+ * scaled without range or matrix conversion (in_range = out_range), so codes below black and
+ * above white survive. n-bit codes arrive left-justified (× 2^(16−n)). RGB sources gain nothing
+ * from it and stay on rgba64le.
+ */
+export function yuvParams(info, decodeMatrix, decodeRange) {
+  const pf = String(info.pixFmt ?? '');
+  if (/^(rgb|bgr|gbr|argb|abgr|0rgb|0bgr|x2rgb|x2bgr|pal8)/.test(pf)) {
+    return { yuv: false, note: `Quelle ist R′G′B′ (${pf}) – Y′CbCr-Pfad nicht möglich, 16 bit R′G′B′` };
+  }
+  const bits = Number(/p(\d+)(le|be)?$/.exec(pf)?.[1] ?? /^(?:gray|y)(\d+)/.exec(pf)?.[1] ?? 8) || 8;
+  const range = pf.startsWith('yuvj') ? 'full' : decodeRange;
+  const m = decodeMatrix;
+  return {
+    yuv: true, bits, range,
+    scale: `in_color_matrix=${m}:out_color_matrix=${m}:in_range=${range}:out_range=${range}`,
+  };
+}
+
 /** Output size: fit into maxWidth keeping aspect, even dimensions. */
 export function outputSize(w, h, maxWidth) {
   if (!w || !h) return { width: 960, height: 540 };
@@ -260,11 +280,11 @@ export function outputSize(w, h, maxWidth) {
  * process + separate audio process on pipe:1, fallback for Windows) or 'none'.
  * `video: false` = audio only (PCM on pipe:1).
  */
-export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', device = {} }) {
+export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', device = {}, pixFmt = '' }) {
   const test = url in TEST_PATTERNS;
   const head = ['-hide_banner', '-loglevel', 'error', '-nostdin'];
   const pcm = (map, target) => ['-map', map, '-vn', '-sn', '-dn', '-c:a', 'pcm_f32le', '-f', 'f32le', target];
-  const vid = ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vf, '-fps_mode', 'passthrough', '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-f', 'rawvideo', 'pipe:1'];
+  const vid = ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vf, '-fps_mode', 'passthrough', '-pix_fmt', pixFmt || (depth === 16 ? 'rgba64le' : 'rgba'), '-f', 'rawvideo', 'pipe:1'];
   if (!video) return { main: [...head, ...inputArgs(url, transport, { audio: true, video: false }), ...pcm('0:a:0', 'pipe:1')], audio: null };
   if (audio === 'fd3') return { main: [...head, ...inputArgs(url, transport, { audio: true }), ...vid, ...pcm(test ? '1:a:0' : '0:a:0', 'pipe:3')], audio: null };
   if (audio === 'split') {
@@ -313,7 +333,8 @@ async function startStream(ws, params) {
   if (url === 'resolve:') return startResolve(ws, params);
   if (url.startsWith('decklink:')) return startDeckLink(ws, params, url);
   const transport = params.get('transport') ?? 'tcp';
-  const depth = params.get('depth') === '16' ? 16 : 8;
+  const wantYuv = params.get('format') === 'yuv';
+  const depth = wantYuv || params.get('depth') === '16' ? 16 : 8;
   const maxWidth = Math.min(3840, Math.max(0, Number(params.get('width') ?? 960) || 0));
   const fpsLimit = Math.min(60, Math.max(0, Number(params.get('fps') ?? 0) || 0));
   const wantAudio = params.get('audio') === '1';
@@ -338,7 +359,8 @@ async function startStream(ws, params) {
   // The scale filter converts Y'CbCr → R'G'B' with the stream's own matrix/range but
   // leaves the transfer function untouched, so PQ/HLG code values arrive unchanged.
   const { decodeMatrix, decodeRange } = applyDecodeOverride(decodeParams(info), device);
-  const vf = [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}`];
+  const yp = wantYuv ? yuvParams(info, decodeMatrix, decodeRange) : null;
+  const vf = [yp?.yuv ? `scale=${width}:${height}:flags=area:${yp.scale}` : `scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}`];
   if (fpsLimit) vf.push(`fps=${fpsLimit}`);
   const ffmpeg = ffmpegCandidates()[0];
   if (!ffmpeg) return fail(ws, 'ffmpeg nicht gefunden – installieren (brew install ffmpeg) oder FFMPEG setzen');
@@ -346,6 +368,8 @@ async function startStream(ws, params) {
   const proto = wantAudio ? 2 : 1;
   const { audio: _probed, ...videoInfo } = info;
   const msg = { type: 'info', ...videoInfo, decodeMatrix, sourceWidth: info.width, sourceHeight: info.height, width, height, depth, fps: video ? (fpsLimit || info.fps) : 0 };
+  if (yp?.yuv) Object.assign(msg, { format: 'yuv', yuvRange: yp.range, bits: yp.bits });
+  else if (yp) Object.assign(msg, { format: 'rgb', note: yp.note });
   if (proto === 2) {
     Object.assign(msg, {
       proto: 2,
@@ -390,7 +414,7 @@ async function startStream(ws, params) {
   };
 
   const launch = (mode) => {
-    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: audioInfo ? mode : 'none', device });
+    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: audioInfo ? mode : 'none', device, pixFmt: yp?.yuv ? 'ayuv64le' : '' });
     const fd3 = mode === 'fd3' && video && !!audioInfo;
     const t0 = Date.now();
     let audioBytes = 0;

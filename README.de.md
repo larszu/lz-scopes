@@ -95,6 +95,7 @@ Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einste
 
 ## Scopes
 
+- **Y′CbCr unbeschnitten und EBU R 103**: Bridge-Modus *16 bit Y′CbCr* liefert Y′CbCr 4:4:4 ohne Range-Wandlung, der Shader rechnet mit der Matrix der Quelle nach R′G′B′, Werte unter 0 % und über 100 % bleiben erhalten. R-103-v3.0-Prüfung mit Messfilter (1/16…1/16 × 1/4-1/2-1/4): Anteil außerhalb −5/105 % und außerhalb 4–1019 im Messwerte-Panel (Meldung ab 1 % der Fläche) und als Bild-Overlay „EBU R 103“. Testbilder BT.2111-3 (HLG narrow, PQ narrow, PQ full) und BT.814-PLUGE mit echten −2 % als 16-bit-Frames.
 - **Waveform** Luma, RGB-Overlay, RGB-, YRGB- und YCbCr-Parade, Bereich −7 … 110 %. Skala in %, 8 bit, 10 bit (Legal-Range-Codes) oder cd/m² (PQ absolut, HLG bezogen auf das eingestellte Lw, SDR nach BT.1886 mit 100 cd/m², Log als Szene-Reflexion). Marken nach BT.2408 bei HDR (75 % HLG bzw. 58 % PQ Referenzweiß, 38 % Graukarte) und 18 % Grau bei Log; die Grenzen −5/105 % nach EBU R 103 v3.0 lassen sich im ⚙ einblenden
 - **Vectorscope** mit 75-%- und 100-%-Zielen passend zur Matrix (bei Log: 709-Balken in Kurve und Gamut der Quelle), Hautton-Linie, Zoom ×1/×2/×5, Spur optional in Bildfarbe
 - **CIE-Diagramm** 1931 xy oder 1976 u′v′ (⚙) mit Spektralzug, Rec.709, P3-D65, Rec.2020, D65 und dem Gamut der Quelle
@@ -218,7 +219,9 @@ Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in
 
 ## Grenzen
 
-- Die Werte sind Full-Range-R'G'B' nach der Wandlung. Sub-Black und Super-White außerhalb 16–235 werden abgeschnitten, eine Legal/Illegal-Prüfung auf Y'CbCr-Ebene gibt es noch nicht.
+- Sub-Black und Super-White bleiben nur im Bridge-Modus *16 bit Y′CbCr* und bei den 16-bit-Testbildern erhalten. R′G′B′-Streams (8/16 bit) und Browser-Quellen sind auf 0–100 % beschnitten; die R-103-Prüfung weist dann darauf hin.
+- Die R-103-Prüfung misst am Analysebild. Bei skalierter Analysebreite ist sie nicht normgerecht (Breite „nativ“ wählen).
+- Das Ausgabefenster der Testbilder ist 8 bit Full Range: −7 %, −2 % und 109 % werden dort abgeschnitten. Chrome bietet float16-Canvas an; ob die Verbindung zum Monitor wirklich mehr als 8 bit trägt, ist ungeprüft.
 - Kein NDI, kein AJA. DeckLink nur über den selbst zu bauenden Helfer (ffmpegs eigener DeckLink-Weg ist „nonfree“ und nicht weitergebbar) und noch nie mit Hardware gelaufen.
 - Audio: Browser liefern über `getUserMedia` höchstens 2 Kanäle; Mehrkanal kommt nur über die Bridge. Bridge-Ton lässt sich noch nicht abhören, und der A/V-Versatz wird noch nicht gemessen (siehe Issues).
 - Browser-Quellen (Kamera, Datei) liefern immer 8 bit und durchlaufen das Farbmanagement des Browsers.

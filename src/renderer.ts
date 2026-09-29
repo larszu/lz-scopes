@@ -6,13 +6,14 @@ import { GAMUTS, LUMA, hexToRgb, rgbToXyzMatrix, type Colorspace, type FalseColo
 import { CHAIN_GLSL, baseOf, chainOf, linearGlsl, setChainUniforms, setLinearUniforms, type LutTex } from './chain';
 import type { Lut } from './lut';
 import type { Source } from './sources';
+import { R103, R103_GLSL, YUV_FETCH_GLSL, yuvScale } from './ycbcr';
 
 export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'skin';
 const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7 };
 const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1 };
 
-export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'gamut';
-const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5, gamut: 6 };
+export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'gamut' | 'r103';
+const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5, gamut: 6, r103: 7 };
 
 /** Region of interest in source pixels [x0, y0, x1, y1) and skin-tone detection window. */
 export type Roi = [number, number, number, number] | null;
@@ -58,16 +59,21 @@ export const CIE_VIEW_UV = { x0: -0.05, x1: 0.65, y0: -0.05, y1: 0.65 };
  */
 const LINEAR_GLSL = linearGlsl();
 
-/** Raw source texel plus the processing chain (CST/LUT, see chain.ts) → fetchRGB. */
-const FETCH = (u16: boolean) => (u16
+/** How the raw frame is stored: 8-bit or 16-bit R′G′B′, or unclipped 16-bit Y′CbCr (ycbcr.ts). */
+type TexKind = '8' | '16' | 'yuv';
+/**
+ * Raw source texel plus the processing chain (CST/LUT, see chain.ts) → fetchRGB. The Y′CbCr
+ * decode sits in fetchRaw, i.e. before the chain.
+ */
+const FETCH = (k: TexKind) => (k === 'yuv' ? YUV_FETCH_GLSL : k === '16'
   ? `uniform highp usampler2D uSrc;
      vec3 fetchRaw(ivec2 p) { return vec3(texelFetch(uSrc, p, 0).rgb) / 65535.0; }`
   : `uniform highp sampler2D uSrc;
      vec3 fetchRaw(ivec2 p) { return texelFetch(uSrc, p, 0).rgb; }`) + CHAIN_GLSL;
 
-const SCATTER_VS = (u16: boolean) => `#version 300 es
+const SCATTER_VS = (k: TexKind) => `#version 300 es
 precision highp float; precision highp int;
-${FETCH(u16)}
+${FETCH(k)}
 uniform ivec2 uSize;
 uniform int uStep, uCols, uMode, uColorize, uCieUv, uSecN;
 uniform ivec4 uSec; // section per trace instance (-1 = hidden channel)
@@ -183,9 +189,10 @@ void main() {
   o = vec4(c * uTint, 1.0);
 }`;
 
-const PICTURE_FS = (u16: boolean) => `#version 300 es
+const PICTURE_FS = (k: TexKind) => `#version 300 es
 precision highp float; precision highp int;
-${FETCH(u16)}
+${FETCH(k)}
+${R103_GLSL}
 uniform ivec2 uSize; uniform int uMode; uniform vec2 uK;
 uniform vec4 uBand[8]; uniform int uBands;
 uniform float uZebra, uZebraLow;
@@ -251,6 +258,12 @@ void main() {
     if (d > 1.2) c = vec3(1.0, 0.1, 0.75);
     else if (d > 1.05) c = vec3(1.0, 0.45, 0.05);
     else if (d > 1.0) c = vec3(1.0, 0.9, 0.1);
+  } else if (uMode == 7) {
+    // EBU R 103: filtered R, G, B, Y outside the preferred (amber) or total range (red)
+    int lvl = r103Level(p, uSize, uK);
+    c = vec3(dot(c, vec3(0.2126, 0.7152, 0.0722)) * 0.6);
+    if (lvl == 2) c = vec3(1.0, 0.1, 0.2);
+    else if (lvl == 1) c = vec3(1.0, 0.7, 0.1);
   }
   if (uRoiCount > 0 && !inRoi(p)) c *= 0.55;
   o = vec4(c, 1.0);
@@ -426,9 +439,20 @@ export class Renderer {
     return { x, y, w, h };
   }
 
+  private texKind(src: Source, t: SrcTex): TexKind {
+    return !t.u16 ? '8' : baseOf(src).yuv ? 'yuv' : '16';
+  }
+
   /** Uniforms of LINEAR_GLSL (what the scopes see) and CHAIN_GLSL (CST/LUT) for a source or stage view. */
   private linearUniforms(prog: WebGLProgram, src: Source) {
     const u = (n: string) => this.u(prog, n);
+    const base = baseOf(src);
+    if (base.yuv) {
+      // decode with the matrix of the source itself, not of a stage view
+      const s = yuvScale(base.yuv), { kr, kb } = LUMA[base.colorspace];
+      this.gl.uniform4f(u('uYuvN'), s.yOff, s.yScale, s.cOff, s.cScale);
+      this.gl.uniform2f(u('uYuvK'), kr, kb);
+    }
     setLinearUniforms(this.gl, u, '', { transfer: src.transfer, gamut: src.gamut, lw: src.hlgLw });
     setChainUniforms(this.gl, u, chainOf(src), (l) => this.lutTextures(l));
   }
@@ -470,7 +494,8 @@ export class Renderer {
     const gl = this.gl;
     const vp = this.viewport(rect);
     const acc = this.accum(key, vp.w, vp.h);
-    const prog = this.program(`scatter${t.u16 ? 16 : 8}`, SCATTER_VS(t.u16), SCATTER_FS);
+    const kind = this.texKind(src, t);
+    const prog = this.program(`scatter${kind}`, SCATTER_VS(kind), SCATTER_FS);
     const step = Math.max(1, Math.ceil(Math.sqrt((t.w * t.h) / p.maxSamples)));
     const cols = Math.ceil(t.w / step), rows = Math.ceil(t.h / step);
     const cs: Colorspace = src.colorspace;
@@ -484,7 +509,7 @@ export class Renderer {
     const intensity = ((p.mode === 'vector' || p.mode === 'cie' ? 0.6 : 0.9) * area) / n / (dot * dot);
 
     // Only re-scatter when the frame or a parameter changed; otherwise reuse the accumulation.
-    const sig = `${src.id}:${src.frameSeq}:${t.w}x${t.h}:${acc.w}x${acc.h}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${chainOf(src)?.sig ?? ''}:${JSON.stringify(p)}`;
+    const sig = `${src.id}:${src.frameSeq}:${t.w}x${t.h}:${acc.w}x${acc.h}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${chainOf(src)?.sig ?? ''}:${JSON.stringify(baseOf(src).yuv)}:${baseOf(src).colorspace}:${JSON.stringify(p)}`;
     const fresh = this.sigs.get(key) !== sig;
     this.sigs.set(key, sig);
     if (fresh) {
@@ -566,7 +591,8 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
     const vp = this.viewport(rect);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(vp.x, vp.y, vp.w, vp.h);
-    const prog = this.program(`picture${t.u16 ? 16 : 8}`, QUAD_VS, PICTURE_FS(t.u16));
+    const kind = this.texKind(src, t);
+    const prog = this.program(`picture${kind}`, QUAD_VS, PICTURE_FS(kind));
     gl.useProgram(prog);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, t.tex);
@@ -577,6 +603,7 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
     gl.uniform2f(this.u(prog, 'uK'), kr, kb);
     gl.uniform1f(this.u(prog, 'uZebra'), p.zebra);
     gl.uniform1f(this.u(prog, 'uZebraLow'), p.zebraLow);
+    gl.uniform4f(this.u(prog, 'uR103'), R103.prefLo - R103.tol, R103.prefHi + R103.tol, R103.totalLo - R103.tol, R103.totalHi + R103.tol);
     this.linearUniforms(prog, src);
     gl.uniform1i(this.u(prog, 'uDisp'), p.display.curve);
     gl.uniformMatrix3fv(this.u(prog, 'uGamut'), false, colMajor(p.display.gamut));

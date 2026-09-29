@@ -1,9 +1,11 @@
+import './vendor/dockview.css';
 import './style.css';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, LUMA, detectDisplay, type DisplaySpace } from './color';
 import { SCOPE_LABELS, isWaveform, plotRect, type ScopeType, type Unit } from './graticule';
 import { DEFAULT_SKIN, defaultPanel as panel, drawPanel, panelSignature, type DrawOptions, type PanelState, type Tint } from './panel';
 import type { OutputHost } from './outputView';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
+import { PRESETS, createDock } from './dock';
 import { Renderer, type PictureMode, type SkinRange } from './renderer';
 import { Source, type SourceKind, type SourceSettings } from './sources';
 
@@ -14,18 +16,11 @@ interface Persisted {
   layout: string; panels: PanelState[]; unit: Unit; tint: Tint; falsePreset: string;
   zebra: number; zebraLow: number; maxSamples: number; bridge: string; sidebar: boolean;
   skin: SkinRange; display: 'auto' | DisplaySpace;
+  /** dockview layout (toJSON) */
+  dock?: unknown;
   sources: { kind: SourceKind; name: string; url: string; settings: SourceSettings; pattern?: PatternState }[];
 }
 
-const LAYOUTS: Record<string, { label: string; areas: string[]; n: number }> = {
-  // non-numeric keys keep insertion order (= keyboard shortcuts 1–6)
-  l1: { label: '1', areas: ['a'], n: 1 },
-  l2: { label: '1+1', areas: ['a b'], n: 2 },
-  l4: { label: '2×2', areas: ['a b', 'c d'], n: 4 },
-  lc: { label: 'Colorist', areas: ['a a b', 'a a c', 'd e f'], n: 6 },
-  l6: { label: '3×2', areas: ['a b c', 'd e f'], n: 6 },
-  l9: { label: '3×3', areas: ['a b c', 'd e f', 'g h i'], n: 9 },
-};
 const DEFAULT_SCOPES: ScopeType[] = ['picture', 'wf-luma', 'vector', 'parade', 'hist', 'cie', 'stats', 'yrgb', 'ycbcr'];
 const STORE_KEY = 'lz-scopes.v1';
 
@@ -37,7 +32,7 @@ function load(): Persisted {
   };
   try {
     const s = JSON.parse(localStorage.getItem(STORE_KEY) ?? 'null');
-    if (s && Array.isArray(s.panels)) return { ...base, ...s, layout: s.layout in LAYOUTS ? s.layout : base.layout, panels: DEFAULT_SCOPES.map((d, i) => ({ ...panel(d), ...s.panels[i] })) };
+    if (s && Array.isArray(s.panels)) return { ...base, ...s, layout: s.layout in PRESETS ? s.layout : base.layout, panels: [...DEFAULT_SCOPES, ...Array(Math.max(0, s.panels.length - DEFAULT_SCOPES.length)).fill('wf-luma')].map((d, i) => ({ ...panel(d as ScopeType), ...s.panels[i] })) };
   } catch { /* storage unavailable */ }
   return base;
 }
@@ -45,7 +40,6 @@ function load(): Persisted {
 const state = load();
 const detected = detectDisplay();
 const sources: Source[] = [];
-let solo: number | null = null;
 let frozen = false;
 let fpsFrames = 0, displayFps = 0, fpsT = performance.now();
 
@@ -110,7 +104,7 @@ app.innerHTML = `
         Doppelklick = Solo, <kbd>Esc</kbd> zurück · Klick ins Bild = Messpunkt, Rechtsklick löscht</p>
       </details>
     </aside>
-    <section class="grid" id="grid"><canvas id="gl"></canvas></section>
+    <section class="dockwrap" id="grid"><canvas id="gl"></canvas><div id="dock"></div></section>
   </div>`;
 
 const grid = $('#grid');
@@ -127,8 +121,9 @@ try {
 
 function renderHeader() {
   const lay = $('#layouts');
-  lay.replaceChildren(...Object.entries(LAYOUTS).map(([k, l], i) =>
-    h('button', { class: k === state.layout ? 'on' : '', title: `Layout ${l.label} (${i + 1})`, onclick: () => setLayout(k) }, l.label)));
+  lay.replaceChildren(...Object.entries(PRESETS).map(([k, l], i) =>
+    h('button', { class: k === state.layout ? 'on' : '', title: `Layout ${l.label} (${i + 1}) – danach frei per Drag & Drop`, onclick: () => setLayout(k) }, l.label)),
+    h('button', { title: 'Panel hinzufügen', onclick: () => addScopePanel() }, '+ Panel'));
   const disp = state.display === 'auto' ? detected.space : state.display;
   $('#globals').replaceChildren(
     select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m²']], (v) => { state.unit = v as Unit; save(); }, 'Skala'),
@@ -159,7 +154,7 @@ function numIn(value: number, min: number, max: number, set: (v: number) => void
 }
 
 function setLayout(k: string) {
-  state.layout = k; solo = null; save(); renderHeader(); renderPanels();
+  state.layout = k; save(); renderHeader(); dock.applyPreset(k);
 }
 
 $<HTMLDetailsElement>('#outmenu').addEventListener('toggle', (e) => { if ((e.target as HTMLDetailsElement).open) renderOutputMenu(); });
@@ -307,45 +302,62 @@ $('#add').replaceChildren(
 
 // ---------------------------------------------------------------- panels
 
-interface PanelView { idx: number; el: HTMLElement; body: HTMLElement; overlay: HTMLCanvasElement }
-let views: PanelView[] = [];
+interface PanelView { idx: number; el: HTMLElement; head: HTMLElement; body: HTMLElement; blit: HTMLCanvasElement; overlay: HTMLCanvasElement }
+const views = new Map<number, PanelView>();
+/** Views of the panels currently in the dock. */
+const openViews = () => dock.openIdx().map((i) => views.get(i)).filter((v): v is PanelView => !!v);
 
 function panelSource(p: PanelState) {
   return sources.find((s) => s.id === p.sourceId) ?? sources[0] ?? null;
 }
 
-function renderPanels() {
-  const L = LAYOUTS[state.layout] ?? LAYOUTS.lc;
-  views.forEach((v) => v.el.remove());
-  views = [];
-  needClear = true;
-  const letters = 'abcdefghi';
-  if (solo !== null) {
-    grid.style.gridTemplateAreas = '"a"';
-  } else {
-    grid.style.gridTemplateAreas = L.areas.map((a) => `"${a}"`).join(' ');
-  }
-  const indices = solo !== null ? [solo] : [...Array(L.n).keys()];
-  indices.forEach((idx, k) => {
-    const p = state.panels[idx];
-    const body = h('div', { class: 'body' });
+const panelTitle = (idx: number) => `${idx + 1} · ${SCOPE_LABELS[state.panels[idx]?.scope ?? 'picture']}`;
+
+/** The element dockview shows for a panel; built once, its header re-filled on changes. */
+function panelElement(idx: number): HTMLElement {
+  let v = views.get(idx);
+  if (!v) {
+    state.panels[idx] ??= panel('wf-luma');
+    const p = () => state.panels[idx];
+    const blit = h('canvas', { class: 'blit' }) as HTMLCanvasElement;
     const overlay = h('canvas', { class: 'overlay' }) as HTMLCanvasElement;
-    body.append(overlay);
-    const opts = panelOptions(p);
-    const el = h('div', { class: 'panel', style: `grid-area:${letters[k]}` },
-      h('div', { class: 'phead', ondblclick: () => toggleSolo(idx) },
-        select(p.scope, Object.entries(SCOPE_LABELS) as [string, string][], (v) => { p.scope = v as ScopeType; if (v === 'vector' || v === 'cie') p.colorize = true; save(); renderPanels(); }),
-        sources.length > 1 ? select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (v) => switchSource(p, v), 'Quelle – alle nicht angehefteten Panels folgen') : '',
-        sources.length > 1 ? h('button', { class: `icon pin ${p.pin ? 'on' : ''}`, title: p.pin ? 'Angeheftet: behält seine Quelle' : 'Anheften: Panel behält seine Quelle, wenn andere umschalten', onclick: () => { p.pin = !p.pin; save(); renderPanels(); } }, '📌') : '',
-        h('div', { class: 'opts' }, ...opts),
-        h('button', { class: 'icon', title: solo === idx ? 'Zurück (Esc)' : 'Solo', onclick: () => toggleSolo(idx) }, solo === idx ? '⤡' : '⤢')),
-      body);
+    const body = h('div', { class: 'body' }, blit, overlay);
+    const head = h('div', { class: 'phead', ondblclick: () => toggleSolo(idx) });
+    const el = h('div', { class: 'panel' }, head, body);
     body.addEventListener('dblclick', () => toggleSolo(idx));
-    attachPointer(p, body);
-    body.addEventListener('contextmenu', (e) => { e.preventDefault(); const s = panelSource(p); if (s) { s.probe = null; s.roi = null; } });
-    grid.append(el);
-    views.push({ idx, el, body, overlay });
-  });
+    attachPointer(p(), body);
+    body.addEventListener('contextmenu', (e) => { e.preventDefault(); const s = panelSource(p()); if (s) { s.probe = null; s.roi = null; } });
+    v = { idx, el, head, body, blit, overlay };
+    views.set(idx, v);
+    fillHead(v);
+  }
+  return v.el;
+}
+
+function fillHead(v: PanelView) {
+  const idx = v.idx, p = state.panels[idx];
+  v.head.replaceChildren(
+    select(p.scope, Object.entries(SCOPE_LABELS) as [string, string][], (val) => {
+      p.scope = val as ScopeType; if (val === 'vector' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
+    }),
+    sources.length > 1 ? select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), 'Quelle – alle nicht angehefteten Panels folgen') : '',
+    sources.length > 1 ? h('button', { class: `icon pin ${p.pin ? 'on' : ''}`, title: p.pin ? 'Angeheftet: behält seine Quelle' : 'Anheften: Panel behält seine Quelle, wenn andere umschalten', onclick: () => { p.pin = !p.pin; save(); fillHead(v); } }, '📌') : '',
+    h('div', { class: 'opts' }, ...panelOptions(p)),
+    h('button', { class: 'icon', title: 'Groß / zurück (Doppelklick, Esc)', onclick: () => toggleSolo(idx) }, '⤢'),
+  );
+}
+
+/** Re-fill all panel headers (sources or settings changed). */
+function renderPanels() {
+  views.forEach(fillHead);
+  needClear = true;
+}
+
+function addScopePanel() {
+  const idx = state.panels.length;
+  state.panels.push(panel('wf-luma'));
+  save();
+  dock.addPanel(idx);
 }
 
 function panelOptions(p: PanelState): (Node | string)[] {
@@ -373,8 +385,7 @@ function panelOptions(p: PanelState): (Node | string)[] {
 }
 
 function toggleSolo(idx: number) {
-  solo = solo === idx ? null : idx;
-  renderPanels();
+  dock.toggleMaximize(idx);
 }
 
 /** Switching the source in one panel switches every panel that is not pinned. */
@@ -421,7 +432,7 @@ function attachPointer(p: PanelState, body: HTMLElement) {
 
 /** The video file shown in the most panels (fallback: any video file). */
 function activeVideo(): Source | null {
-  const shown = views.map((v) => panelSource(state.panels[v.idx])).filter((s): s is Source => !!s && s.isVideoFile);
+  const shown = openViews().map((v) => panelSource(state.panels[v.idx])).filter((s): s is Source => !!s && s.isVideoFile);
   return shown[0] ?? sources.find((s) => s.isVideoFile) ?? null;
 }
 
@@ -473,27 +484,30 @@ function frame(now: number) {
 
   if (now - lastStats > 100) {
     lastStats = now;
-    const used = new Set(views.map((v) => panelSource(state.panels[v.idx])).filter(Boolean) as Source[]);
+    const used = new Set(openViews().map((v) => panelSource(state.panels[v.idx])).filter(Boolean) as Source[]);
     used.forEach((s) => { const { kr, kb } = LUMA[s.colorspace]; s.updateStats(kr, kb); });
   }
 
-  for (const v of views) {
+  for (const v of openViews()) {
     const p = state.panels[v.idx];
     const src = panelSource(p);
     const b = v.body.getBoundingClientRect();
-    const bx = b.left - g.left, by = b.top - g.top;
-    const bodyRect = { x: bx, y: by, w: b.width, h: b.height };
+    if (b.width < 4 || b.height < 4) continue; // hidden tab
+    const bodyRect = { x: b.left - g.left, y: b.top - g.top, w: b.width, h: b.height };
     const opts = drawOptions();
     // Skip panels whose inputs did not change: no GPU work, no overlay redraw.
     const sig = panelSignature(p, src, bodyRect, opts) + dpr;
     if (panelSigs.get(v.idx) === sig) continue;
     panelSigs.set(v.idx, sig);
     const W = Math.round(b.width * dpr), H = Math.round(b.height * dpr);
-    if (v.overlay.width !== W || v.overlay.height !== H) { v.overlay.width = W; v.overlay.height = H; }
+    for (const c of [v.overlay, v.blit]) if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
     const ctx = v.overlay.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, b.width, b.height);
+    renderer.clearRect(bodyRect, [0.043, 0.047, 0.055]);
     drawPanel(renderer, ctx, `p${v.idx}`, p, src, bodyRect, opts);
+    // The WebGL canvas is off-screen; copy this panel's region into its own canvas.
+    v.blit.getContext('2d')!.drawImage(glCanvas, Math.round(bodyRect.x * dpr), Math.round(bodyRect.y * dpr), W, H, 0, 0, W, H);
   }
 
   fpsFrames++;
@@ -516,7 +530,13 @@ function drawOptions(): DrawOptions {
 // The output windows read live sources and settings from here (same origin).
 (window as unknown as { lzs: OutputHost }).lzs = {
   panels: state.panels,
-  layout: () => LAYOUTS[state.layout] ?? LAYOUTS.lc,
+  panelRects: () => {
+    const g = grid.getBoundingClientRect();
+    return openViews().map((v) => {
+      const b = v.body.getBoundingClientRect();
+      return { idx: v.idx, x: (b.left - g.left) / g.width, y: (b.top - g.top) / g.height, w: b.width / g.width, h: b.height / g.height };
+    }).filter((r) => r.w > 0.001);
+  },
   panelSource,
   source: (id) => sources.find((s) => s.id === id) ?? null,
   drawOptions,
@@ -532,14 +552,13 @@ async function renderOutputMenu() {
   if (desktop) {
     for (const d of await desktop.displays()) screens.push([String(d.id), `${d.label || 'Bildschirm'} ${d.bounds.width}×${d.bounds.height}${d.primary ? ' (Haupt)' : ''}`]);
   }
-  const L = LAYOUTS[state.layout] ?? LAYOUTS.lc;
   const row = (label: string, ...kids: (Node | string)[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
   const txt = (key: 'stream' | 'target', ph: string) => { const i = h('input', { placeholder: ph, spellcheck: 'false' }) as HTMLInputElement; i.oninput = () => (out[key] = i.value.trim()); return i; };
   const fsBox = h('input', { type: 'checkbox', checked: true }) as HTMLInputElement;
   fsBox.onchange = () => (out.fs = fsBox.checked);
   $('#outbody').replaceChildren(
     row('Inhalt', select(out.view, [['grid', 'Gesamtansicht (Layout)'], ['panel', 'Einzelnes Panel'], ['clean', 'Quellbild sauber'], ['overlay', 'Bild + Scope-Overlay']], (v) => (out.view = v))),
-    row('Panel', select('0', [...Array(L.n).keys()].map((i) => [String(i), `${i + 1} · ${SCOPE_LABELS[state.panels[i].scope]}`]), (v) => (out.idx = v))),
+    row('Panel', select(String(dock.openIdx()[0] ?? 0), dock.openIdx().map((i) => [String(i), panelTitle(i)]), (v) => (out.idx = v))),
     row('Quelle', select(out.src, sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (v) => (out.src = v))),
     row('Overlay-Scope', select(out.scope, (['wf-luma', 'wf-color', 'wf-skin', 'parade', 'yrgb', 'vector', 'cie'] as ScopeType[]).map((k) => [k, SCOPE_LABELS[k]]), (v) => (out.scope = v))),
     row('Overlay-Hintergrund', select(out.bg, [['picture', 'Bild'], ['black', 'Schwarz (für Luma-Key am Mischer)']], (v) => (out.bg = v))),
@@ -565,11 +584,13 @@ function openOutputView(o: { view: string; idx: string; src: string; scope: stri
 function snapshot() {
   const g = grid.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
   const c = document.createElement('canvas');
-  c.width = glCanvas.width; c.height = glCanvas.height;
+  c.width = Math.round(g.width * dpr); c.height = Math.round(g.height * dpr);
   const ctx = c.getContext('2d')!;
-  ctx.drawImage(glCanvas, 0, 0);
-  for (const v of views) {
+  ctx.fillStyle = '#0b0c0e'; ctx.fillRect(0, 0, c.width, c.height);
+  for (const v of openViews()) {
     const b = v.body.getBoundingClientRect();
+    if (b.width < 4) continue;
+    ctx.drawImage(v.blit, (b.left - g.left) * dpr, (b.top - g.top) * dpr);
     ctx.drawImage(v.overlay, (b.left - g.left) * dpr, (b.top - g.top) * dpr);
   }
   const a = document.createElement('a');
@@ -582,7 +603,7 @@ function snapshot() {
 
 document.addEventListener('keydown', (e) => {
   if ((e.target as HTMLElement).closest('input, select, textarea')) return;
-  const keys = Object.keys(LAYOUTS);
+  const keys = Object.keys(PRESETS);
   if (/^[1-6]$/.test(e.key)) setLayout(keys[Number(e.key) - 1]);
   else if (e.key === ' ') { e.preventDefault(); const v = activeVideo(); if (v) v.togglePlay(); else toggleFreeze(); }
   else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
@@ -599,7 +620,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'f' || e.key === 'F') $('#full').click();
   else if (e.key === 's' || e.key === 'S') snapshot();
   else if (e.key === 'b' || e.key === 'B') $('#toggle-side').click();
-  else if (e.key === 'Escape') { if (solo !== null) toggleSolo(solo); else sources.forEach((s) => { s.probe = null; s.roi = null; }); }
+  else if (e.key === 'Escape') { if (dock.api.hasMaximizedGroup()) dock.exitMaximized(); else sources.forEach((s) => { s.probe = null; s.roi = null; }); }
 });
 
 for (const saved of state.sources) {
@@ -609,7 +630,17 @@ for (const saved of state.sources) {
 }
 applySidebar();
 renderHeader();
-renderPanels();
+const dock = createDock($('#dock'), {
+  element: panelElement,
+  title: panelTitle,
+  onLayout: () => {
+    needClear = true;
+    clearTimeout(layoutSave);
+    layoutSave = window.setTimeout(() => { state.dock = dock.api.toJSON(); save(); }, 300);
+  },
+});
+let layoutSave = 0;
+if (!(state.dock && dock.restore(state.dock))) dock.applyPreset(state.layout);
 requestAnimationFrame(frame);
 // Auto-connect saved network sources (bridge must be running).
 sources.forEach((s) => { if (s.kind === 'stream' && s.url) s.connectStream(s.url, bridgeUrl()); });

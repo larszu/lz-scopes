@@ -19,7 +19,7 @@ import { Renderer, type Rect } from './renderer';
 import type { Source } from './sources';
 import { drawVectorGraticule, drawWaveGraticule, drawCieGraticule, drawSkinRange, drawHistogram } from './graticule';
 import { LUMA } from './color';
-import { displayParams } from './panel';
+import { displayParams, vectorTargets } from './panel';
 import { CURSORS, MAX_ELEMENTS, dragElement, hitTest, newElement, type Handle, type OverlayElement, type OverlayScene } from './scene';
 import { OVERLAY_SCOPES } from '../server/control.mjs';
 
@@ -226,9 +226,9 @@ function drawOverlay(renderer: Renderer, ctx: CanvasRenderingContext2D, src: Sou
         tint: [0.55, 1, 0.62], maxSamples: o.maxSamples, roi: s.activeRois(), skin: o.skin,
       }, true, el.opacity);
     }
-    if (isWaveform(el.scope)) { drawWaveGraticule(ctx, el.scope, r, o.unit, s.transfer); if (el.scope === 'wf-skin') drawSkinRange(ctx, r, o.skin); }
-    else if (el.scope === 'vector') drawVectorGraticule(ctx, r, s.colorspace, 1);
-    else if (el.scope === 'cie') drawCieGraticule(ctx, r, s.colorspace);
+    if (isWaveform(el.scope)) { drawWaveGraticule(ctx, el.scope, r, o.unit, s.transfer, { lw: s.hlgLw }); if (el.scope === 'wf-skin') drawSkinRange(ctx, r, o.skin); }
+    else if (el.scope === 'vector') drawVectorGraticule(ctx, r, s.colorspace, 1, 0, vectorTargets(s));
+    else if (el.scope === 'cie') drawCieGraticule(ctx, r, s.colorspace, { gamut: s.gamut });
     else if (el.scope === 'hist') drawHistogram(ctx, r, s, 'rgb', false);
     ctx.restore();
   }

@@ -1,6 +1,7 @@
 import './vendor/dockview.css';
 import './style.css';
-import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, LUMA, detectDisplay, type DisplaySpace } from './color';
+import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, HLG_PEAKS, LUMA, detectDisplay, transferLabel, type DisplaySpace, type GamutId } from './color';
+import { CAMERA_GAMUTS, LOG_CURVES } from './camera';
 import { SCOPE_LABELS, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget } from './graticule';
 import { DEFAULT_SKIN, ROI_CLOSE, defaultPanel as panel, drawPanel, panelSignature, roiCloseBox, type DrawOptions, type PanelState, type Tint } from './panel';
 import type { OutputHost, OutputWindowApi } from './outputView';
@@ -83,6 +84,13 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, 
 const select = (value: string, options: [string, string][], onchange: (v: string) => void, title = '') =>
   h('select', { title, onchange: (e: Event) => onchange((e.target as HTMLSelectElement).value) },
     ...options.map(([v, l]) => h('option', { value: v, selected: v === value }, l)));
+/** select with <optgroup>s; a group named '' puts its options at the top level */
+const groupedSelect = (value: string, groups: [string, [string, string][]][], onchange: (v: string) => void, title = '') =>
+  h('select', { title, onchange: (e: Event) => onchange((e.target as HTMLSelectElement).value) },
+    ...groups.flatMap(([g, opts]) => {
+      const o = opts.map(([v, l]) => h('option', { value: v, selected: v === value }, l));
+      return g ? [h('optgroup', { label: g }, ...o)] : o;
+    }));
 
 const app = $('#app');
 app.innerHTML = `
@@ -277,8 +285,18 @@ function renderSources() {
           : h('button', { class: 'primary', onclick: () => startLocal(s) }, s.kind === 'file' ? 'Datei wählen …' : s.kind === 'folder' ? 'Ordner wählen …' : '▶ Start')));
     }
     card.append(h('div', { class: 'row' },
-      select(set.transfer, [['auto', `Transfer auto (${s.transfer.toUpperCase()})`], ['sdr', 'SDR BT.1886'], ['pq', 'PQ ST 2084'], ['hlg', 'HLG']], (v) => upd({ transfer: v as SourceSettings['transfer'] }), 'Transferfunktion'),
-      select(set.colorspace, [['auto', `Farbraum auto (${s.colorspace})`], ['709', 'Rec.709'], ['2020', 'Rec.2020'], ['601', 'Rec.601']], (v) => upd({ colorspace: v as SourceSettings['colorspace'] }), 'Matrix & Primärfarben')));
+      groupedSelect(set.transfer, [
+        ['', [['auto', `Transfer auto (${transferLabel(s.transfer)})`], ['sdr', 'SDR BT.1886'], ['pq', 'PQ ST 2084'], ['hlg', 'HLG']]],
+        ['Kamera-Log (Szene)', Object.entries(LOG_CURVES).map(([k, c]) => [k, c.name])],
+      ], (v) => upd({ transfer: v as SourceSettings['transfer'] }), 'Transferfunktion; Log-Kurven werden nicht signalisiert und müssen gewählt werden'),
+      select(set.colorspace, [['auto', `Matrix auto (${s.colorspace})`], ['709', 'Rec.709'], ['2020', 'Rec.2020'], ['601', 'Rec.601 525 (SMPTE-C)'], ['601-625', 'Rec.601 625 (EBU)']], (v) => upd({ colorspace: v as SourceSettings['colorspace'] }), 'Y′CbCr-Matrix & Primärfarben')),
+      h('div', { class: 'row' },
+        groupedSelect(set.gamut ?? 'auto', [
+          ['', [['auto', `Gamut auto (${GAMUTS[s.gamut].name})`]]],
+          ['Video', (['709', 'p3', '2020', '601', '601-625'] as GamutId[]).map((k) => [k, GAMUTS[k].name])],
+          ['Kamera / ACES', (Object.keys(CAMERA_GAMUTS) as GamutId[]).map((k) => [k, GAMUTS[k].name])],
+        ], (v) => upd({ gamut: v as SourceSettings['gamut'] }), 'Primärfarben des linearen Lichts (CIE, Bild, Gamut-Warnung); auto = Kamera-Gamut der Log-Kurve bzw. Farbraum'),
+        s.transfer === 'hlg' ? select(String(s.hlgLw), HLG_PEAKS.map((n) => [String(n), `HLG-Display ${n} cd/m²`]), (v) => upd({ hlgLw: Number(v) }), 'Spitzenleuchtdichte Lw des HLG-Displays (Systemgamma nach BT.2100, Presets nach EBU R 167)') : ''));
     if (s.message) card.append(h('div', { class: 'msg' }, s.message));
     return card;
   }));
@@ -449,9 +467,9 @@ function addScopePanel() {
 function panelSettings(p: PanelState): Node[] {
   const rows: Node[] = [];
   const row = (label: string, ...kids: (Node | string)[]) => rows.push(h('label', { class: 'mrow' }, h('span', {}, label), ...kids));
-  const check = (key: 'colorize' | 'log', label: string) => {
-    const c = h('input', { type: 'checkbox', checked: !!p[key] }) as HTMLInputElement;
-    c.onchange = () => { p[key] = c.checked; save(); };
+  const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv', label: string, dflt = false) => {
+    const c = h('input', { type: 'checkbox', checked: p[key] ?? dflt }) as HTMLInputElement;
+    c.onchange = () => { p[key] = c.checked; save(); refreshHeads(); };
     return h('label', { class: 'inline' }, c, label);
   };
   const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'cie';
@@ -468,8 +486,11 @@ function panelSettings(p: PanelState): Node[] {
     row('Farbe', check('colorize', 'Spur in Bildfarbe'));
   }
   if (scatter && p.scope !== 'vector' && p.scope !== 'cie') {
-    row('Skala', select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m²']], (v) => { state.unit = v as Unit; save(); renderHeader(); }));
+    row('Skala', select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m² / Szene']], (v) => { state.unit = v as Unit; save(); renderHeader(); }));
+    row('Marken', check('marks', 'BT.2408 (HDR) / 18 % Grau (Log)', true));
+    row('EBU R 103', check('r103', 'Grenzen −5 / 105 %'));
   }
+  if (p.scope === 'cie') row('Diagramm', check('cieUv', 'CIE 1976 u′v′ statt 1931 xy'));
   if (scatter) row('Spurfarbe (Mono)', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); }));
   if (p.scope === 'vector') {
     row('Zoom', select(String(p.zoom), [['1', '×1'], ['2', '×2'], ['5', '×5']], (v) => { p.zoom = Number(v); save(); }));
@@ -521,7 +542,8 @@ function panelSettings(p: PanelState): Node[] {
     }
   }
   if (p.scope === 'picture') {
-    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
+    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
+    if (p.picture === 'gamut') row('Zielgamut', select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, 'Markiert Pixel, die im Zielgamut negative Anteile hätten'));
     if (p.picture === 'false') row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); }));
     if (p.picture === 'zebra') row('Zebra ab', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%');
     row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])], (v) => { state.display = v as Persisted['display']; save(); renderHeader(); }));

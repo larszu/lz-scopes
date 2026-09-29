@@ -1,10 +1,11 @@
 // 2D overlays per panel: graticules, labels, histogram, statistics, probe read-outs.
 
 import {
-  GAMUTS, SKIN_LINE_DEG, gamutConvert, hlgFromNits, pqEncode, SPECTRAL_LOCUS, barTargets, codeValue, nitsToSignal, signalToNits, ycbcr,
-  type Colorspace, type Transfer,
+  GAMUTS, SKIN_LINE_DEG, SPECTRAL_LOCUS, barTargets, codeValue, gamutConvert, hlgFromNits, isLog, levelText, nitsToSignal, pqEncode,
+  sceneToSignal, transferLabel, xyToUv, ycbcr,
+  type Colorspace, type GamutId, type Transfer,
 } from './color';
-import { CIE_VIEW, WAVE_MAX, WAVE_MIN, type Rect } from './renderer';
+import { CIE_VIEW, CIE_VIEW_UV, WAVE_MAX, WAVE_MIN, type Rect } from './renderer';
 import type { Source } from './sources';
 
 export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'hist' | 'stats';
@@ -12,7 +13,7 @@ export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits';
 
 export const SCOPE_LABELS: Record<ScopeType, string> = {
   picture: 'Bild', 'wf-luma': 'Waveform Luma', 'wf-color': 'Waveform Farbe', 'wf-skin': 'Waveform Hauttöne', 'wf-rgb': 'Waveform RGB', parade: 'RGB-Parade', yrgb: 'YRGB-Parade',
-  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE 1931', hist: 'Histogramm', stats: 'Messwerte',
+  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', hist: 'Histogramm', stats: 'Messwerte',
 };
 
 export const isWaveform = (s: ScopeType) => s === 'wf-luma' || s === 'wf-color' || s === 'wf-skin' || s === 'wf-rgb' || s === 'parade' || s === 'yrgb' || s === 'ycbcr';
@@ -43,11 +44,18 @@ export function plotRect(scope: ScopeType, w: number, h: number, aspect = 16 / 9
   return { x: 0, y: 0, w, h };
 }
 
-export function waveTicks(unit: Unit, transfer: Transfer): { level: number; label: string; major: boolean }[] {
+export function waveTicks(unit: Unit, transfer: Transfer, lw = 1000): { level: number; label: string; major: boolean }[] {
+  if (unit === 'nits' && isLog(transfer)) {
+    // scene-referred: reflectance in %, in stops around the 18 % grey card
+    return [0, 0.0225, 0.045, 0.09, 0.18, 0.36, 0.72, 1.44, 2.88, 5.76, 11.52]
+      .map((x) => ({ level: sceneToSignal(x, transfer), label: String(Math.round(x * 1000) / 10), major: x === 0 || x === 0.18 || x === 1.44 }))
+      .filter((t) => t.level >= WAVE_MIN && t.level <= WAVE_MAX);
+  }
   if (unit === 'nits') {
     const list = transfer === 'pq' ? [0, 1, 10, 100, 203, 400, 1000, 2000, 4000, 10000]
       : transfer === 'hlg' ? [0, 1, 10, 50, 100, 203, 500, 1000] : [0, 1, 5, 10, 20, 50, 100];
-    return list.map((n) => ({ level: nitsToSignal(n, transfer), label: n >= 1000 ? `${n / 1000}k` : String(n), major: [0, 100, 203, 1000, 10000].includes(n) }));
+    const hlg = transfer === 'hlg' ? [...new Set([...list.filter((n) => n < lw), lw])] : list;
+    return hlg.map((n) => ({ level: nitsToSignal(n, transfer, lw), label: n >= 1000 ? `${n / 1000}k` : String(n), major: [0, 100, 203, 1000, 10000, transfer === 'hlg' ? lw : 0].includes(n) }));
   }
   const out = [];
   for (let i = 0; i <= 10; i++) {
@@ -60,17 +68,48 @@ export function waveTicks(unit: Unit, transfer: Transfer): { level: number; labe
 
 export const waveY = (r: Rect, level: number) => r.y + r.h - ((level - WAVE_MIN) / (WAVE_MAX - WAVE_MIN)) * r.h;
 
-export function drawWaveGraticule(ctx: CanvasRenderingContext2D, scope: ScopeType, r: Rect, unit: Unit, transfer: Transfer) {
+export interface WaveMark { level: number; label: string; color: string }
+
+/**
+ * Reference marks: BT.2408-8 Tab. 1 p9 for HDR (reference white 75 % HLG / 58 % PQ,
+ * 18 % grey card 38 %; "A 75%-HLG or 58%-PQ marker on a waveform monitor … will help"),
+ * the 18 % grey card of a camera log curve, and the EBU R 103 v3.0 preferred range
+ * −5 %/105 % (Tab. 1 p5: 10 bit 20–984) when enabled.
+ */
+export function waveMarks(transfer: Transfer, o: { r103?: boolean; marks?: boolean } = {}): WaveMark[] {
+  const out: WaveMark[] = [];
+  if (o.marks !== false) {
+    if (transfer === 'hlg') out.push({ level: 0.75, label: 'HLG 75 % Ref.-Weiß', color: 'rgba(255, 214, 90, 0.9)' });
+    if (transfer === 'pq') out.push({ level: 0.58, label: 'PQ 58 % Ref.-Weiß', color: 'rgba(255, 214, 90, 0.9)' });
+    if (transfer === 'hlg' || transfer === 'pq') out.push({ level: 0.38, label: 'Graukarte 38 %', color: 'rgba(150, 220, 255, 0.85)' });
+    if (isLog(transfer)) out.push({ level: sceneToSignal(0.18, transfer), label: `18 % Grau ${transferLabel(transfer)}`, color: 'rgba(150, 220, 255, 0.85)' });
+  }
+  if (o.r103) {
+    out.push({ level: 1.05, label: 'R 103 +105 %', color: 'rgba(255, 90, 90, 0.9)' });
+    out.push({ level: -0.05, label: 'R 103 −5 %', color: 'rgba(255, 90, 90, 0.9)' });
+  }
+  return out;
+}
+
+export function drawWaveGraticule(ctx: CanvasRenderingContext2D, scope: ScopeType, r: Rect, unit: Unit, transfer: Transfer, o: { lw?: number; r103?: boolean; marks?: boolean } = {}) {
   ctx.font = FONT; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   ctx.lineWidth = 1;
   let lastLabel = Infinity;
-  for (const t of waveTicks(unit, transfer)) {
+  for (const t of waveTicks(unit, transfer, o.lw)) {
     const y = Math.round(waveY(r, t.level)) + 0.5;
     ctx.strokeStyle = t.major ? GRID : GRID_DIM;
     ctx.setLineDash(t.major ? [] : [3, 3]);
     ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke();
     // ticks run bottom → top; skip labels that would collide with the previous one
     if (lastLabel - y >= 11) { ctx.fillStyle = LABEL; ctx.fillText(t.label, r.x - 5, y); lastLabel = y; }
+  }
+  ctx.setLineDash([]);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  for (const m of waveMarks(transfer, o)) {
+    const y = Math.round(waveY(r, m.level)) + 0.5;
+    ctx.strokeStyle = m.color; ctx.setLineDash([8, 3]);
+    ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke();
+    ctx.fillStyle = m.color; ctx.fillText(m.label, r.x + r.w * 0.55, m.level < 0 ? y + 11 : y - 1);
   }
   ctx.setLineDash([]);
   const n = sections(scope);
@@ -84,7 +123,8 @@ export function drawWaveGraticule(ctx: CanvasRenderingContext2D, scope: ScopeTyp
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   names.forEach((nm, i) => { ctx.fillStyle = colors[nm]; ctx.fillText(nm, r.x + (r.w * i) / n + 4, r.y + 2); });
   ctx.fillStyle = LABEL; ctx.textAlign = 'right';
-  ctx.fillText(unit === 'nits' ? `cd/m² ${transfer.toUpperCase()}` : unit === 'percent' ? '%' : unit === 'bit8' ? '8 bit' : '10 bit', r.x + r.w - 4, r.y + 2);
+  const nits = isLog(transfer) ? `Szene %` : `cd/m² ${transferLabel(transfer)}${transfer === 'hlg' && (o.lw ?? 1000) !== 1000 ? ` ${o.lw}` : ''}`;
+  ctx.fillText(unit === 'nits' ? nits : unit === 'percent' ? '%' : unit === 'bit8' ? '8 bit' : '10 bit', r.x + r.w - 4, r.y + 2);
 }
 
 /** Skin-tone luma window of the skin waveform. */
@@ -128,7 +168,9 @@ export function vectorPoint(r: Rect, cb: number, cr: number, zoom: number) {
   return [r.x + R + cb * 2 * 0.9 * zoom * R, r.y + R - cr * 2 * 0.9 * zoom * R] as const;
 }
 
-export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, skinTol = 0) {
+export interface BarTargetSet { t100: { label: string; cb: number; cr: number }[]; t75: { label: string; cb: number; cr: number }[]; label: string }
+
+export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, skinTol = 0, targets?: BarTargetSet) {
   const R = r.w / 2, cx = r.x + R, cy = r.y + R;
   ctx.save();
   ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
@@ -154,7 +196,7 @@ export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: 
   ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(s) * R, cy - Math.sin(s) * R); ctx.stroke();
   ctx.setLineDash([]);
   ctx.font = FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const t100 = barTargets(cs, 1), t75 = barTargets(cs, 0.75);
+  const t100 = targets?.t100 ?? barTargets(cs, 1), t75 = targets?.t75 ?? barTargets(cs, 0.75);
   const box = Math.max(5, R * 0.05);
   t75.forEach((t, i) => {
     const [x, y] = vectorPoint(r, t.cb, t.cr, zoom);
@@ -171,7 +213,7 @@ export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: 
   });
   ctx.restore();
   ctx.fillStyle = LABEL; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  ctx.fillText(`Rec.${cs}`, r.x + 2, r.y + 2);
+  ctx.fillText(targets?.label ?? `Rec.${cs}`, r.x + 2, r.y + 2);
   if (zoom !== 1) {
     // unmistakable zoom badge: targets outside the view sit as arrows on the rim
     const label = `×${zoom} ZOOM`;
@@ -206,11 +248,12 @@ export interface VectorTarget { name: string; rgb: [number, number, number] }
  * Gamut boundaries (hexagon through 100 % primaries/secondaries of each gamut, expressed
  * in the source's encoding) and user colour-match targets.
  */
-export function drawVectorExtras(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, gamuts: ('709' | 'p3' | '2020')[], targets: VectorTarget[], transfer: Transfer) {
-  const src = GAMUTS[cs === '2020' ? '2020' : cs === '601' ? '601' : '709'];
+export function drawVectorExtras(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, gamuts: ('709' | 'p3' | '2020')[], targets: VectorTarget[], transfer: Transfer, srcGamut: GamutId = cs) {
+  const src = GAMUTS[srcGamut];
   const enc = (v: number) => {
     const a = Math.abs(v), sgn = Math.sign(v);
-    return sgn * (transfer === 'pq' ? pqEncode(a * 203) : transfer === 'hlg' ? hlgFromNits(a * 203) : Math.pow(a, 1 / 2.4));
+    // log curves: scene-linear 1.0 = diffuse white
+    return sgn * (transfer === 'pq' ? pqEncode(a * 203) : transfer === 'hlg' ? hlgFromNits(a * 203) : isLog(transfer) ? sceneToSignal(a, transfer) : Math.pow(a, 1 / 2.4));
   };
   const colors: Record<string, string> = { '709': 'rgba(255,255,255,0.8)', p3: 'rgba(255,200,60,0.85)', '2020': 'rgba(60,220,255,0.85)' };
   ctx.save();
@@ -246,47 +289,65 @@ export function drawVectorExtras(ctx: CanvasRenderingContext2D, r: Rect, cs: Col
   }
 }
 
-export function cieToPlot(r: Rect, x: number, y: number) {
-  const v = CIE_VIEW;
+/** Plot position of a chromaticity; xy is converted to u′v′ when uv is set. */
+export function cieToPlot(r: Rect, x: number, y: number, uv = false) {
+  const v = uv ? CIE_VIEW_UV : CIE_VIEW;
+  if (uv) [x, y] = xyToUv([x, y]);
   return [r.x + ((x - v.x0) / (v.x1 - v.x0)) * r.w, r.y + r.h - ((y - v.y0) / (v.y1 - v.y0)) * r.h] as const;
 }
 
-export function drawCieGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace) {
+export function drawCieGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, o: { uv?: boolean; gamut?: GamutId } = {}) {
+  const uv = !!o.uv;
   ctx.lineWidth = 1; ctx.font = FONT;
   ctx.strokeStyle = GRID_DIM; ctx.fillStyle = LABEL;
   const every = r.w < 320 ? 2 : 1;
-  for (let i = 0; i <= 8; i++) {
+  const view = uv ? CIE_VIEW_UV : CIE_VIEW;
+  const grid = (a: number, b: number) => {
+    const [x0, y0] = [r.x + ((a - view.x0) / (view.x1 - view.x0)) * r.w, r.y + r.h - ((b - view.y0) / (view.y1 - view.y0)) * r.h];
+    return [x0, y0] as const;
+  };
+  for (let i = 0; i <= (uv ? 6 : 8); i++) {
     const v = i / 10;
-    const [x] = cieToPlot(r, v, 0), [, y] = cieToPlot(r, 0, v);
+    const [x] = grid(v, 0), [, y] = grid(0, v);
     ctx.beginPath(); ctx.moveTo(x, r.y); ctx.lineTo(x, r.y + r.h); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke();
     if (i % every) continue;
     ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(v.toFixed(1), x, r.y + r.h + 3);
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(v.toFixed(1), r.x - 4, y);
   }
   ctx.beginPath();
-  SPECTRAL_LOCUS.forEach(([, x, y], i) => { const [px, py] = cieToPlot(r, x, y); if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); });
+  SPECTRAL_LOCUS.forEach(([, x, y], i) => { const [px, py] = cieToPlot(r, x, y, uv); if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); });
   ctx.closePath();
   ctx.fillStyle = 'rgba(255, 255, 255, 0.04)'; ctx.fill();
   ctx.strokeStyle = 'rgba(230, 230, 230, 0.7)'; ctx.stroke();
   ctx.fillStyle = 'rgba(230, 230, 230, 0.55)'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   for (const [nm, x, y] of SPECTRAL_LOCUS) {
     if (![460, 480, 500, 520, 540, 560, 580, 600, 620].includes(nm) || (r.w < 320 && nm % 40 !== 20 && nm !== 460)) continue;
-    const [px, py] = cieToPlot(r, x, y);
+    const [px, py] = cieToPlot(r, x, y, uv);
     ctx.fillText(String(nm), px + (x < 0.3 ? -26 : 5), py);
   }
-  const tri: [keyof typeof GAMUTS, string][] = [['709', 'rgba(255,255,255,0.75)'], ['p3', 'rgba(255,200,60,0.7)'], ['2020', 'rgba(60,220,255,0.7)']];
+  const src = o.gamut ?? cs;
+  const tri: [GamutId, string][] = [['709', 'rgba(255,255,255,0.75)'], ['p3', 'rgba(255,200,60,0.7)'], ['2020', 'rgba(60,220,255,0.7)']];
+  // the source primaries as a fourth triangle when they are none of the three (601, camera gamuts, ACES)
+  if (!tri.some(([k]) => k === src)) tri.push([src, 'rgba(255,120,200,0.8)']);
   tri.forEach(([k, c], i) => {
     const g = GAMUTS[k];
-    ctx.strokeStyle = c; ctx.setLineDash(k === cs || (k === '709' && cs === '601') ? [] : [4, 3]);
+    ctx.strokeStyle = c; ctx.setLineDash(k === src ? [] : [4, 3]);
     ctx.beginPath();
-    [g.r, g.g, g.b].forEach(([x, y], j) => { const [px, py] = cieToPlot(r, x, y); if (j) ctx.lineTo(px, py); else ctx.moveTo(px, py); });
+    [g.r, g.g, g.b].forEach(([x, y], j) => { const [px, py] = cieToPlot(r, x, y, uv); if (j) ctx.lineTo(px, py); else ctx.moveTo(px, py); });
     ctx.closePath(); ctx.stroke();
     ctx.fillStyle = c; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
-    ctx.fillText(g.name, r.x + r.w - 4, r.y + 4 + i * 13);
+    if (uv) { ctx.textBaseline = 'bottom'; ctx.fillText(g.name, r.x + r.w - 4, r.y + r.h - 4 - (tri.length - 1 - i) * 13); } else ctx.fillText(g.name, r.x + r.w - 4, r.y + 4 + i * 13);
   });
   ctx.setLineDash([]);
-  const [wx, wy] = cieToPlot(r, 0.3127, 0.329);
+  const [wx, wy] = cieToPlot(r, 0.3127, 0.329, uv);
   ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(wx, wy, 3, 0, Math.PI * 2); ctx.stroke();
+  const sw = GAMUTS[src].white;
+  if (Math.abs(sw[0] - 0.3127) > 1e-4 || Math.abs(sw[1] - 0.329) > 1e-4) {
+    const [ax, ay] = cieToPlot(r, sw[0], sw[1], uv);
+    ctx.strokeStyle = 'rgba(255,120,200,0.9)'; ctx.beginPath(); ctx.arc(ax, ay, 3, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.fillStyle = LABEL; ctx.textAlign = 'left'; ctx.textBaseline = uv ? 'bottom' : 'top';
+  ctx.fillText(uv ? 'CIE 1976 u′v′' : 'CIE 1931 xy', r.x + 4, uv ? r.y + r.h - 4 : r.y + 4);
 }
 
 export function drawHistogram(ctx: CanvasRenderingContext2D, r: Rect, src: Source, mode: 'rgb' | 'luma' | 'split', log: boolean) {
@@ -333,7 +394,7 @@ export function probeLines(src: Source, rgb: [number, number, number], unit: Uni
     `R ${fmt(rgb[0])}  G ${fmt(rgb[1])}  B ${fmt(rgb[2])}`,
     `Y' ${pct(y)}  Cb ${cb >= 0 ? '+' : ''}${(cb * 100).toFixed(1)}  Cr ${cr >= 0 ? '+' : ''}${(cr * 100).toFixed(1)}`,
   ];
-  if (src.transfer !== 'sdr' || unit === 'nits') lines.push(`≈ ${Math.round(signalToNits(y, src.transfer))} cd/m² (${src.transfer.toUpperCase()})`);
+  if (src.transfer !== 'sdr' || unit === 'nits') lines.push(`≈ ${levelText(y, src.transfer, src.hlgLw)}`);
   return lines;
 }
 
@@ -357,10 +418,10 @@ export function statsLines(src: Source, displayFps: number): string[] {
     lines.push(`Quelle     ${info.sourceWidth}×${info.sourceHeight}  ${info.codec ?? ''} ${info.pixFmt ?? ''}`);
     lines.push(`Metadaten  ${info.matrix}/${info.primaries}/${info.transfer}  ${info.range}`);
   }
-  lines.push(`Auswertung Rec.${src.colorspace}  ${src.transfer.toUpperCase()}`);
+  lines.push(`Auswertung Rec.${src.colorspace}  ${transferLabel(src.transfer)}${src.transfer === 'hlg' ? ` (Lw ${src.hlgLw})` : ''}  ${GAMUTS[src.gamut].name}`);
   lines.push(`Frames     ${src.fps} fps Eingang  ${displayFps} fps Anzeige${src.dropped ? `  ${src.dropped} verworfen` : ''}`);
   if (st) {
-    const n = (v: number) => (src.transfer === 'sdr' ? '' : `  (${Math.round(signalToNits(v, src.transfer))} cd/m²)`);
+    const n = (v: number) => (src.transfer === 'sdr' ? '' : `  (${levelText(v, src.transfer, src.hlgLw)})`);
     lines.push('');
     lines.push(`Y' min     ${pct(st.yMin)}${n(st.yMin)}`);
     lines.push(`Y' max     ${pct(st.yMax)}${n(st.yMax)}`);

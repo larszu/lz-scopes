@@ -49,7 +49,7 @@ export const roiCloseBox = (rx: number, ry: number, rw: number) => [rx + rw - RO
 
 /** Everything a panel's pixels depend on; unchanged → the panel is not redrawn. */
 export function panelSignature(p: PanelState, src: Source | null, body: Rect, o: DrawOptions) {
-  const s = src ? `${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}` : '-';
+  const s = src ? `${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${src.faceMode}:${src.faces.map((f) => f.id + '/' + f.box.join(',')).join(';')}:${[...src.faceSel].join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}` : '-';
   const { displayFps, ...rest } = o;
   return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}`;
 }
@@ -85,7 +85,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   if (mode) {
     renderer.drawScatter(key, src, abs, {
       mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: [...TINTS[o.tint]] as [number, number, number],
-      maxSamples: o.maxSamples, roi: src.roi, skin: o.skin,
+      maxSamples: o.maxSamples, roi: src.activeRois(), skin: o.skin,
     });
   }
   if (isWaveform(p.scope)) {
@@ -108,9 +108,24 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   } else if (p.scope === 'picture') {
     renderer.drawPicture(src, abs, {
       mode: p.picture, bands: FALSE_COLOR_PRESETS[o.falsePreset] ?? [], zebra: o.zebra, zebraLow: o.zebraLow,
-      roi: src.roi, skin: o.skin, display: displayParams(src, o.display),
+      roi: src.activeRois(), skin: o.skin, display: displayParams(src, o.display),
     });
-    if (src.roi) {
+    if (src.faceTrack) {
+      // detected faces, numbered left to right; active ones highlighted
+      src.faces.forEach(({ id, box: f }, i) => {
+        const on = src.faceMode === 'all' || src.faceSel.has(id);
+        const rx = r.x + (f[0] / src.width) * r.w, ry = r.y + (f[1] / src.height) * r.h;
+        const rw = ((f[2] - f[0]) / src.width) * r.w, rh = ((f[3] - f[1]) / src.height) * r.h;
+        ctx.strokeStyle = on ? '#ffb840' : 'rgba(255,255,255,0.45)'; ctx.lineWidth = on ? 2 : 1;
+        ctx.setLineDash(on ? [] : [4, 3]); ctx.strokeRect(rx, ry, rw, rh); ctx.setLineDash([]);
+        ctx.fillStyle = on ? '#ffb840' : 'rgba(255,255,255,0.7)';
+        ctx.fillRect(rx, ry - 15, 18, 15);
+        ctx.fillStyle = '#111'; ctx.font = '600 11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(i + 1), rx + 9, ry - 7);
+      });
+      if (!src.faces.length) drawTextBox(ctx, r.x + 6, r.y + r.h - 28, ['Suche Gesichter …']);
+      else if (src.faceMode === 'detect' && !src.faceSel.size) drawTextBox(ctx, r.x + 6, r.y + r.h - 28, ['Gesicht anklicken zum Verfolgen']);
+    } else if (src.roi) {
       const [x0, y0, x1, y1] = src.roi;
       ctx.strokeStyle = '#ffb840'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
       const rx = r.x + (x0 / src.width) * r.w, ry = r.y + (y0 / src.height) * r.h, rw = ((x1 - x0) / src.width) * r.w, rh = ((y1 - y0) / src.height) * r.h;
@@ -121,7 +136,6 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       ctx.fillStyle = '#ffb840'; ctx.fillRect(bx, by, ROI_CLOSE, ROI_CLOSE);
       ctx.strokeStyle = '#111'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(bx + 4, by + 4); ctx.lineTo(bx + ROI_CLOSE - 4, by + ROI_CLOSE - 4); ctx.moveTo(bx + ROI_CLOSE - 4, by + 4); ctx.lineTo(bx + 4, by + ROI_CLOSE - 4); ctx.stroke();
-      if (src.faceTrack) { ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.fillStyle = '#ffb840'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText('Gesicht', rx, ry - 2); }
     }
     if (p.picture === 'false') {
       const bands = FALSE_COLOR_PRESETS[o.falsePreset] ?? [];

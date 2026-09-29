@@ -112,7 +112,7 @@ export function runOutputView() {
         const r = plotRect('picture', body.w, body.h, src.width / src.height);
         renderer.clearRect({ x: body.x, y: body.y, w: body.w, h: body.h });
         renderer.drawPicture(src, { x: body.x + r.x, y: body.y + r.y, w: r.w, h: r.h }, {
-          mode: 'normal', bands: [], zebra: 2, zebraLow: 0, roi: null, skin: o.skin, display: displayOf(o, src),
+          mode: 'normal', bands: [], zebra: 2, zebraLow: 0, roi: [], skin: o.skin, display: displayOf(o, src),
         });
       } else drawPanel(renderer, ctx, `o${i}`, c.state, src, body, o);
     });
@@ -150,7 +150,7 @@ function drawOverlay(renderer: Renderer, ctx: CanvasRenderingContext2D, src: Sou
   const pic = plotRect('picture', body.w, body.h, src.width / src.height);
   const abs = (r: Rect) => ({ x: body.x + r.x, y: body.y + r.y, w: r.w, h: r.h });
   if (!blackBg) {
-    renderer.drawPicture(src, abs(pic), { mode: 'normal', bands: [], zebra: 2, zebraLow: 0, roi: null, skin: o.skin, display: displayOf(o, src) });
+    renderer.drawPicture(src, abs(pic), { mode: 'normal', bands: [], zebra: 2, zebraLow: 0, roi: [], skin: o.skin, display: displayOf(o, src) });
   }
   const wave = isWaveform(scope);
   const r: Rect = wave
@@ -160,7 +160,7 @@ function drawOverlay(renderer: Renderer, ctx: CanvasRenderingContext2D, src: Sou
   const mode = scope === 'vector' ? 'vector' : scope === 'cie' ? 'cie' : scope === 'wf-skin' ? 'skin' : scope === 'parade' ? 'parade' : scope === 'yrgb' ? 'yrgb' : scope === 'ycbcr' ? 'ycbcr' : scope === 'wf-rgb' ? 'rgb' : 'luma';
   renderer.drawScatter('overlay', src, abs(r), {
     mode, gain: 2.5, colorize: scope === 'wf-color' || scope === 'vector' || scope === 'cie', zoom: 1,
-    tint: [0.55, 1, 0.62], maxSamples: o.maxSamples, roi: src.roi, skin: o.skin,
+    tint: [0.55, 1, 0.62], maxSamples: o.maxSamples, roi: src.activeRois(), skin: o.skin,
   }, true);
   if (wave) { drawWaveGraticule(ctx, scope, r, o.unit, src.transfer); if (scope === 'wf-skin') drawSkinRange(ctx, r, o.skin); }
   else if (scope === 'vector') drawVectorGraticule(ctx, r, src.colorspace, 1);

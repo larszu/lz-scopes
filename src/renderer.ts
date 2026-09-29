@@ -15,6 +15,19 @@ const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2,
 
 /** Region of interest in source pixels [x0, y0, x1, y1) and skin-tone detection window. */
 export type Roi = [number, number, number, number] | null;
+/** One or more regions of interest (manual rectangle or tracked faces). */
+export type Rois = [number, number, number, number][];
+const MAX_ROIS = 8;
+const ROI_GLSL = `
+uniform ivec4 uRois[8]; uniform int uRoiCount;
+bool inRoi(ivec2 p) {
+  for (int i = 0; i < 8; i++) {
+    if (i >= uRoiCount) break;
+    ivec4 r = uRois[i];
+    if (p.x >= r.x && p.y >= r.y && p.x < r.z && p.y < r.w) return true;
+  }
+  return false;
+}`;
 export interface SkinRange { lo: number; hi: number; tol: number }
 
 const SKIN_GLSL = `
@@ -46,7 +59,7 @@ uniform vec2 uK;
 uniform float uZoom, uIntensity, uWMin, uWMax, uPointSize;
 uniform mat3 uToXYZ;
 uniform vec4 uCie;
-uniform ivec4 uRoi; uniform int uRoiOn;
+${ROI_GLSL}
 uniform vec3 uSkin, uTint;
 out vec3 vColor;
 out float vW;
@@ -122,8 +135,8 @@ void main() {
     pos = vec2((xy.x - uCie.x) / (uCie.y - uCie.x), (xy.y - uCie.z) / (uCie.w - uCie.z)) * 2.0 - 1.0;
     col = uColorize == 1 ? clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0) : mono;
   }
-  if (uRoiOn == 1) {
-    bool inside = p.x >= uRoi.x && p.y >= uRoi.y && p.x < uRoi.z && p.y < uRoi.w;
+  if (uRoiCount > 0) {
+    bool inside = inRoi(p);
     bool colored = uColorize >= 1 || uMode == 1 || uMode == 7;
     col = inside ? (colored ? col : vec3(1.0, 0.72, 0.25)) : col * 0.25;
   }
@@ -172,7 +185,7 @@ uniform float uZebra, uZebraLow;
 uniform int uInTransfer, uDisp;
 uniform mat3 uGamut;
 uniform vec3 uSkin;
-uniform ivec4 uRoi; uniform int uRoiOn;
+${ROI_GLSL}
 in vec2 vUv; out vec4 o;
 ${SKIN_GLSL}
 float lin(float v) {
@@ -234,7 +247,7 @@ void main() {
   } else if (uMode == 4) {
     c = vec3(Y);
   }
-  if (uRoiOn == 1 && !(p.x >= uRoi.x && p.y >= uRoi.y && p.x < uRoi.z && p.y < uRoi.w)) c *= 0.55;
+  if (uRoiCount > 0 && !inRoi(p)) c *= 0.55;
   o = vec4(c, 1.0);
 }`;
 
@@ -244,11 +257,11 @@ interface Accum { tex: WebGLTexture; fbo: WebGLFramebuffer; w: number; h: number
 export interface ScatterParams {
   /** colorize: false/0 mono, true/1 channel colours (or source colours for luma/vector), 2 source colours in parades */
   mode: ScatterMode; gain: number; colorize: boolean | 0 | 1 | 2; zoom: number; tint: [number, number, number]; maxSamples: number;
-  roi: Roi; skin: SkinRange;
+  roi: Rois; skin: SkinRange;
 }
 /** How the picture view maps the signal to the screen. */
 export interface DisplayParams { curve: 0 | 1 | 2; gamut: number[] /* row-major 3×3 input→display, linear */ }
-export interface PictureParams { mode: PictureMode; bands: FalseColorBand[]; zebra: number; zebraLow: number; roi: Roi; skin: SkinRange; display: DisplayParams }
+export interface PictureParams { mode: PictureMode; bands: FalseColorBand[]; zebra: number; zebraLow: number; roi: Rois; skin: SkinRange; display: DisplayParams }
 
 export class Renderer {
   readonly gl: WebGL2RenderingContext;
@@ -448,8 +461,7 @@ export class Renderer {
     // GLSL mat3 is column-major
     gl.uniformMatrix3fv(this.u(prog, 'uToXYZ'), false, [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]]);
     gl.uniform4f(this.u(prog, 'uCie'), CIE_VIEW.x0, CIE_VIEW.x1, CIE_VIEW.y0, CIE_VIEW.y1);
-    gl.uniform1i(this.u(prog, 'uRoiOn'), p.roi ? 1 : 0);
-    if (p.roi) gl.uniform4i(this.u(prog, 'uRoi'), p.roi[0], p.roi[1], p.roi[2], p.roi[3]);
+    this.setRois(prog, p.roi);
     gl.uniform3f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol);
     gl.uniform3fv(this.u(prog, 'uTint'), p.tint);
     gl.bindVertexArray(this.vao);
@@ -509,8 +521,7 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
     const g = p.display.gamut;
     gl.uniformMatrix3fv(this.u(prog, 'uGamut'), false, [g[0], g[3], g[6], g[1], g[4], g[7], g[2], g[5], g[8]]);
     gl.uniform3f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol);
-    gl.uniform1i(this.u(prog, 'uRoiOn'), p.roi ? 1 : 0);
-    if (p.roi) gl.uniform4i(this.u(prog, 'uRoi'), p.roi[0], p.roi[1], p.roi[2], p.roi[3]);
+    this.setRois(prog, p.roi);
     const bands = new Float32Array(32);
     p.bands.slice(0, 8).forEach((b, i) => {
       const [r, g, bl] = hexToRgb(b.color).map((v) => Math.round(v * 255));
@@ -520,6 +531,12 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
     gl.uniform1i(this.u(prog, 'uBands'), Math.min(8, p.bands.length));
     gl.bindVertexArray(this.vao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  private setRois(prog: WebGLProgram, rois: Rois) {
+    const n = Math.min(MAX_ROIS, rois.length);
+    this.gl.uniform1i(this.u(prog, 'uRoiCount'), n);
+    if (n) this.gl.uniform4iv(this.u(prog, 'uRois'), new Int32Array(rois.slice(0, n).flat()));
   }
 
   /** Fill a rect with the plot background colour. */

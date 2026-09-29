@@ -245,7 +245,15 @@ function renderSources() {
         h('div', { class: 'row' },
           running ? h('button', { onclick: () => s.stop() }, '■ Trennen') : h('button', { class: 'primary', onclick: connect }, '▶ Verbinden'),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
-            h('button', { class: 'mini', title: `Testbild ${p}`, onclick: () => { urlIn.value = `test:${p}`; connect(); } }, p)))),
+            h('button', { class: 'mini', title: `Testbild ${p}`, onclick: () => { urlIn.value = `test:${p}`; connect(); } }, p)),
+            h('button', { class: 'mini', title: 'Capture-Gerät dieses Rechners über die Bridge (roh, ohne Browser-Umweg)', onclick: async (e: Event) => {
+              const btn = e.currentTarget as HTMLElement;
+              let list: { name: string; url: string }[] = [];
+              try { list = await (await fetch(`${bridgeUrl().replace(/^ws/, 'http')}/api/devices`)).json(); } catch { /* bridge missing */ }
+              if (!list.length) { alertHud('Keine Capture-Geräte über die Bridge gefunden'); return; }
+              const sel = select('', [['', 'Gerät wählen …'], ...list.map((d) => [d.url, d.name] as [string, string])], (v) => { if (v) { urlIn.value = v; s.name = list.find((d) => d.url === v)?.name ?? s.name; connect(); } });
+              btn.replaceWith(sel);
+            } }, 'Gerät…'))),
       );
     } else if (s.kind === 'pattern') {
       card.append(...patternControls(s));

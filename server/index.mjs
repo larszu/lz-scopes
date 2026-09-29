@@ -72,13 +72,31 @@ const TEST_PATTERNS = {
 export function validateInput(url) {
   if (typeof url !== 'string' || url.length === 0 || url.length > 2048) return 'Keine Quelle angegeben';
   if (url in TEST_PATTERNS || url === 'resolve:') return null;
+  if (/^device:(avfoundation|dshow|v4l2):[^\n\r]{1,200}$/.test(url)) return null;
   if (url.startsWith('-')) return 'Ungültige Quelle';
   if (!ALLOWED.test(url)) return 'Nur rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s)://, resolve: oder test:*';
   return null;
 }
 
+/** Local capture devices through ffmpeg (cards that show up as system video devices). */
+/** Capture rate that worked for each device (probed once, see probe()). */
+const deviceRates = new Map();
+export const DEVICE_RATES = ['60', '50', '30', '25', '59.94', '29.97', '24'];
+
+export function deviceArgs(url, rateOverride) {
+  const [, fmt, name] = /^device:(avfoundation|dshow|v4l2):(.+)$/.exec(url) ?? [];
+  if (!fmt) return null;
+  // the device's own capture rate; the analysis rate is limited later by the fps filter
+  const rate = ['-framerate', rateOverride ?? deviceRates.get(url) ?? '30'];
+  if (fmt === 'avfoundation') return ['-f', 'avfoundation', ...rate, '-pixel_format', 'uyvy422', '-i', `${name}:none`];
+  if (fmt === 'dshow') return ['-f', 'dshow', ...rate, '-rtbufsize', '256M', '-i', `video=${name}`];
+  return ['-f', 'v4l2', ...rate, '-i', name];
+}
+
 function inputArgs(url, transport) {
   if (url in TEST_PATTERNS) return ['-re', '-f', 'lavfi', '-i', TEST_PATTERNS[url]];
+  const dev = deviceArgs(url);
+  if (dev) return dev;
   const a = ['-fflags', 'nobuffer', '-flags', 'low_delay', '-analyzeduration', '1000000', '-probesize', '2000000'];
   // low latency: no reorder queue, no demuxer delay (the probe already ran separately)
   if (/^rtsps?:/i.test(url)) a.push('-rtsp_transport', transport === 'udp' ? 'udp' : 'tcp', '-timeout', '5000000', '-reorder_queue_size', '0', '-max_delay', '0');
@@ -118,6 +136,20 @@ function run(binary, a, timeoutMs) {
 }
 
 async function probe(url, transport) {
+  if (url.startsWith('device:')) {
+    // devices: find a capture rate the device accepts, read size/format from the banner
+    const ffmpeg = ffmpegCandidates()[0];
+    if (!ffmpeg) throw new Error('ffmpeg nicht gefunden');
+    let last = '';
+    for (const rate of [deviceRates.get(url), ...DEVICE_RATES].filter(Boolean)) {
+      const r = await run(ffmpeg, ['-hide_banner', ...deviceArgs(url, rate), '-frames:v', '1', '-f', 'null', '-'], 15000);
+      if (!r) continue;
+      const info = r.code === 0 ? parseFfmpegBanner(r.err) : null;
+      if (info) { deviceRates.set(url, rate); return { ...info, fps: Number(rate) }; }
+      last = r.err.trim().split('\n').filter((l) => !/output file/i.test(l)).pop() ?? '';
+    }
+    throw new Error(last || 'Gerät nicht verfügbar');
+  }
   if (url in TEST_PATTERNS) {
     return { width: 1920, height: 1080, codec: 'lavfi', fps: 25, transfer: 'bt709', primaries: 'bt709', matrix: 'bt709', range: 'tv' };
   }
@@ -302,6 +334,38 @@ async function startResolve(ws, params) {
   ws.on('close', () => { py.kill(); });
 }
 
+/** Video capture devices known to ffmpeg on this machine, as device: URLs. */
+export function parseDeviceList(stderr, fmt) {
+  const out = [];
+  if (fmt === 'avfoundation') {
+    let video = false;
+    for (const l of stderr.split('\n')) {
+      if (/video devices:/i.test(l)) { video = true; continue; }
+      if (/audio devices:/i.test(l)) video = false;
+      const m = /\]\s\[(\d+)\]\s(.+)$/.exec(l);
+      if (video && m && !/^Capture screen/i.test(m[2])) out.push({ name: m[2].trim(), url: `device:avfoundation:${m[2].trim()}` });
+    }
+  } else if (fmt === 'dshow') {
+    for (const l of stderr.split('\n')) {
+      const m = /"([^"]+)"\s*\(video\)/.exec(l);
+      if (m) out.push({ name: m[1], url: `device:dshow:${m[1]}` });
+    }
+  }
+  return out;
+}
+
+async function listDevices() {
+  const ffmpeg = ffmpegCandidates()[0];
+  if (!ffmpeg) return [];
+  if (process.platform === 'linux') {
+    const { readdir } = await import('node:fs/promises');
+    return (await readdir('/dev').catch(() => [])).filter((f) => /^video\d+$/.test(f)).map((f) => ({ name: f, url: `device:v4l2:/dev/${f}` }));
+  }
+  const fmt = process.platform === 'win32' ? 'dshow' : 'avfoundation';
+  const r = await run(ffmpeg, ['-hide_banner', '-f', fmt, '-list_devices', 'true', '-i', fmt === 'dshow' ? 'dummy' : ''], 10000);
+  return r ? parseDeviceList(r.err, fmt) : [];
+}
+
 function fail(ws, message) {
   if (ws.readyState === ws.OPEN) { ws.send(JSON.stringify({ type: 'error', message })); ws.close(); }
 }
@@ -316,6 +380,10 @@ const server = createServer((req, res) => {
   }
   const mj = /^\/out\/([\w-]+)\.mjpeg$/.exec(path);
   if (mj) return serveMjpeg(mj[1], res);
+  if (path === '/api/devices') {
+    listDevices().then((list) => { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(list)); });
+    return;
+  }
   if (path === '/api/outputs') {
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
     return res.end(JSON.stringify([...outputs.entries()].map(([name, o]) => ({ name, url: `/out/${name}.mjpeg`, viewers: o.clients.size, target: o.target || null }))));

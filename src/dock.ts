@@ -19,7 +19,7 @@ export const PRESETS: Record<string, { label: string; build: (add: Adder) => voi
   lc: {
     label: 'Colorist',
     build: (add) => { add(0); add(3, 0, 'below'); add(1, 0, 'right'); add(2, 1, 'below'); add(4, 3, 'right'); add(5, 4, 'right'); },
-    size: { 0: [0.62, 0.62], 1: [0.38, 0.31], 3: [1 / 3, 0.38], 4: [1 / 3, 0.38] },
+    size: { 1: [0.38, 0], 3: [0, 0.38], 2: [0, 0.31], 4: [2 / 3, 0], 5: [1 / 3, 0] },
   },
   l6: {
     label: '3×2', build: (add) => { add(0); add(1, 0, 'right'); add(2, 1, 'right'); add(3, 0, 'below'); add(4, 1, 'below'); add(5, 2, 'below'); },
@@ -58,10 +58,15 @@ export function createDock(el: HTMLElement, host: DockHost) {
   });
   api.onDidLayoutChange(() => host.onLayout());
 
+  let sizing: Record<number, [number, number]> = {};
   const add: Adder = (idx, ref, direction) => {
+    const [fw, fh] = sizing[idx] ?? [0, 0];
     api.addPanel({
       id: panelId(idx), component: 'scope', title: host.title(idx), params: { idx },
       ...(ref !== undefined ? { position: { referencePanel: panelId(ref), direction: direction ?? 'right' } } : {}),
+      // new splits take their share from the preset (width for 'right', height for 'below')
+      ...(fw && direction === 'right' ? { initialWidth: Math.round(fw * el.clientWidth) } : {}),
+      ...(fh && direction === 'below' ? { initialHeight: Math.round(fh * el.clientHeight) } : {}),
     });
   };
 
@@ -70,7 +75,9 @@ export function createDock(el: HTMLElement, host: DockHost) {
     applyPreset(key: string) {
       api.clear();
       const preset = PRESETS[key] ?? PRESETS.lc;
+      sizing = preset.size ?? {};
       preset.build(add);
+      sizing = {};
       // splits start 50/50; bring them to the preset's proportions (two passes: sizes interact)
       requestAnimationFrame(() => {
         const W = el.clientWidth, H = el.clientHeight;

@@ -102,3 +102,17 @@ describe('display transform & ROI', () => {
     expect(s.samples).toBe(1); expect(s.yMin).toBe(1);
   });
 });
+
+describe('bridge capture devices', () => {
+  it('parses avfoundation and dshow device lists, skips screens', async () => {
+    // @ts-expect-error plain JS module
+    const { parseDeviceList, deviceArgs, validateInput } = await import('../server/index.mjs');
+    const av = `[AVFoundation indev @ 0x1] AVFoundation video devices:\n[AVFoundation indev @ 0x1] [0] MEI USB3.0 CAPTURE DEVICE\n[AVFoundation indev @ 0x1] [1] Capture screen 0\n[AVFoundation indev @ 0x1] AVFoundation audio devices:\n[AVFoundation indev @ 0x1] [0] Mic`;
+    expect(parseDeviceList(av, 'avfoundation')).toEqual([{ name: 'MEI USB3.0 CAPTURE DEVICE', url: 'device:avfoundation:MEI USB3.0 CAPTURE DEVICE' }]);
+    const ds = `[dshow @ 0x1] "Blackmagic WDM Capture" (video)\n[dshow @ 0x1] "Mikrofon" (audio)`;
+    expect(parseDeviceList(ds, 'dshow')[0].url).toBe('device:dshow:Blackmagic WDM Capture');
+    expect(deviceArgs('device:avfoundation:X', '50')).toEqual(['-f', 'avfoundation', '-framerate', '50', '-pixel_format', 'uyvy422', '-i', 'X:none']);
+    expect(validateInput('device:avfoundation:MEI')).toBeNull();
+    expect(validateInput('device:evil:x')).not.toBeNull();
+  });
+});

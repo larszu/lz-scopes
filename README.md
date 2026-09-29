@@ -39,10 +39,11 @@
 
 ## Why LZ Scopes
 
-- **Real scopes, in software.** Waveform (luma, RGB overlay, RGB / YRGB / YCbCr parade), vectorscope, CIE 1931 xy, histogram, false colour, zebra and numeric readout.
+- **Real scopes, in software.** Waveform (luma, RGB overlay, RGB / YRGB / YCbCr parade), vectorscope, CIE 1931 xy or 1976 u′v′, histogram, false colour, zebra, gamut warning and numeric readout.
 - **Streams, not just files.** RTSP, RTMP, SRT, UDP, RTP, HLS and HTTP via an ffmpeg bridge; capture cards through the bridge (`device:`); DaVinci Resolve in 16 bit through its scripting API; camera / USB capture with device picker, screen or window with crop, watch folder, video and image files directly in the browser.
-- **HDR aware.** 8 or 16 bit analysis, PQ and HLG, BT.709 / 2020 / 601, waveform scale in cd/m².
-- **Built-in test patterns.** About 40 generated patterns from PLUGE and SMPTE bars to PQ wedges, plus 20 LZ display test images. Open any of them full screen on a monitor, projector or capture.
+- **HDR aware.** 8 or 16 bit analysis, PQ and HLG (display peak Lw 500-10 000 cd/m², system gamma applied to luminance per BT.2100, EBU R 167 presets), BT.709 / 2020 / 601 with 525- and 625-line primaries, waveform scale in cd/m² with BT.2408 reference marks (75 % HLG, 58 % PQ, 38 % grey card) and optional EBU R 103 limits (-5 / 105 %).
+- **Camera log.** ARRI LogC3 / LogC4, Sony S-Log3, Panasonic V-Log, Blackmagic Film Gen 5, Canon Log 2 / 3, RED Log3G10, Fujifilm F-Log2, DJI D-Log, Nikon N-Log and Apple Log with their camera gamuts (Bradford-adapted where the white differs). Log acts on the scene-referred waveform scale (reflectance, 18 % grey), the CIE diagram, the picture view and the vectorscope targets.
+- **Built-in test patterns.** About 40 generated patterns from PLUGE (ITU-R BT.814-4, SDR and HDR) and SMPTE bars to PQ wedges and EBU R 95 safe areas, plus 20 LZ display test images. Open any of them full screen on a monitor, projector or capture.
 - **Your layout.** Dock, stack and resize panels by drag and drop, keep layout configurations as JSON.
 - **Face tracking.** Skin-tone waveform that follows a detected face; pick which face to track (MediaPipe BlazeFace, runs locally).
 - **Vectorscope tools.** Zoom, gamut boundaries and colour-match targets; per-scope settings behind the gear icon.

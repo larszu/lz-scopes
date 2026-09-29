@@ -3,7 +3,7 @@
 // browser cannot dither them. Values below 0 % (PLUGE sub-black) cannot exist in
 // full-range RGB and are clipped to 0.
 
-import { hlgFromNits, pqEncode } from './color';
+import { bt709Oetf, hlgFromNits, pqEncode } from './color';
 
 export interface PatternDef {
   id: string;
@@ -21,6 +21,8 @@ type RGB = [number, number, number];
 const lv = (p: number) => Math.round(Math.max(0, Math.min(1, p)) * 255);
 const gray = (p: number): RGB => [lv(p), lv(p), lv(p)];
 const css = ([r, g, b]: RGB) => `rgb(${r},${g},${b})`;
+/** Signal level of a 10-bit narrow-range code (64 = 0 %, 940 = 100 %). */
+export const code10 = (c: number) => (c - 64) / 876;
 
 function fill(ctx: CanvasRenderingContext2D, c: RGB, x: number, y: number, w: number, h: number) {
   ctx.fillStyle = css(c);
@@ -94,12 +96,32 @@ function smpteBars(ctx: CanvasRenderingContext2D, w: number, h: number, amp: num
   fill(ctx, [255, 255, 255], qw, y, qw, bh);
   fill(ctx, [50, 0, 106], qw * 2, y, qw, bh);
   fill(ctx, [0, 0, 0], qw * 3, y, qw, bh);
-  // PLUGE: -4 % (clipped to 0), 0 %, +4 %, then black
+  // PLUGE as in the BT.2111-3 bars (Tab. 2, p9–10): −2 %, 0 %, +2 %, 0 %, +4 %, 0 % =
+  // 10-bit codes 48, 64, 80, 64, 99, 64. −2 % cannot exist in full-range RGB and lands on 0.
   const pw = bw / 3;
-  fill(ctx, gray(0), bw * 5, y, pw, bh);
-  fill(ctx, gray(0), bw * 5 + pw, y, pw, bh);
-  fill(ctx, gray(0.04), bw * 5 + pw * 2, y, pw, bh);
-  fill(ctx, [0, 0, 0], bw * 6, y, bw, bh);
+  [48, 64, 80, 64, 99, 64].forEach((c, i) => fill(ctx, gray(code10(c)), bw * 5 + i * pw, y, pw, bh));
+}
+
+/**
+ * PLUGE after ITU-R BT.814-4 Annex 2 (Fig. 2, Tab. 2–5, p5–7), positions scaled from the
+ * HDTV sample/line numbers (inclusive; progressive lines 42–1121 → rows 0–1079).
+ * Left: 10-line stripes slightly lighter (upper half) and slightly darker (lower half) than black,
+ * centre: Higher-level box, right: broad lighter (top) and darker (bottom) boxes.
+ * SDR: Higher level 940 (100 %), HDR: 399 (38.2 %, same for PQ and HLG); lighter 80, darker 48.
+ */
+export function plugeBT814(ctx: CanvasRenderingContext2D, w: number, h: number, higher: number) {
+  const X = (s: number) => (s / 1920) * w, Y = (l: number) => ((l - 42) / 1080) * h;
+  const box = (s0: number, s1: number, l0: number, l1: number, c: number) => fill(ctx, gray(code10(c)), X(s0), Y(l0), X(s1 + 1) - X(s0), Y(l1 + 1) - Y(l0));
+  fill(ctx, gray(0), 0, 0, w, h);
+  const [Sb, Sc, Sd, Se, Sf, Sg] = [312, 599, 888, 1031, 1320, 1607];
+  const [Lb, Lc, Ld, Le, Lf, Lg, Lh, Li] = [366, 387, 509, 510, 653, 654, 776, 797];
+  for (let l = Lc; l <= Lh; l += 20) {
+    const lower = l >= Le;
+    box(Sb, Sc, l, Math.min(Lh, l + 9), lower ? 48 : 80);
+  }
+  box(Sd, Se, Le, Lf, higher);
+  box(Sf, Sg, Lb, Ld, 80);
+  box(Sf, Sg, Lg, Li, 48);
 }
 
 function arrows(ctx: CanvasRenderingContext2D, w: number, h: number, color = '#000') {
@@ -169,6 +191,36 @@ function testCard(ctx: CanvasRenderingContext2D, w: number, h: number, t: number
   arrows(ctx, w, h, '#fff');
 }
 
+/**
+ * Safe areas after EBU R 95 v1.1 (Note 5 p4, Fig. 4 p8): action safe 3.5 %, graphics safe 5 %
+ * of width and height (1080p: 67/38 px and 96/54 px), plus the 4:3 caption-safe lines at
+ * 16.25 % from each side (1080p: 312 px, 1296 px wide) within the graphics-safe height.
+ * R 95 has no full-height 4:3 frame.
+ */
+export function safeAreaRects(w: number, h: number) {
+  const inset = (fx: number, fy: number) => { const x = Math.round(w * fx), y = Math.round(h * fy); return { x, y, w: w - 2 * x, h: h - 2 * y }; };
+  return { action: inset(0.035, 0.035), graphics: inset(0.05, 0.05), caption: Math.round(w * 0.1625) };
+}
+
+function safeAreas(c: CanvasRenderingContext2D, w: number, h: number) {
+  fill(c, gray(0.2), 0, 0, w, h);
+  const lw = Math.max(1, Math.round(h / 540)), { action, graphics, caption } = safeAreaRects(w, h);
+  const frame = (r: { x: number; y: number; w: number; h: number }, color: string, label: string) => {
+    c.strokeStyle = color; c.lineWidth = lw;
+    c.strokeRect(r.x + lw / 2, r.y + lw / 2, r.w - lw, r.h - lw);
+    if (label) text(c, label, w / 2, r.y + h * 0.025, h * 0.022, color);
+  };
+  frame({ x: 0, y: 0, w, h }, '#fff', '');
+  frame(action, '#ffd400', `Action safe 3,5 % (${action.w}×${action.h})`);
+  frame(graphics, '#00dcff', `Graphics safe 5 % (${graphics.w}×${graphics.h})`);
+  c.strokeStyle = '#ff4d4d'; c.lineWidth = lw; c.setLineDash([8, 6]);
+  c.beginPath();
+  for (const x of [caption, w - caption]) { c.moveTo(x + 0.5, graphics.y); c.lineTo(x + 0.5, graphics.y + graphics.h); }
+  c.stroke(); c.setLineDash([]);
+  text(c, `4:3 Caption safe (${w - 2 * caption} px)`, w / 2, h / 2 + h * 0.08, h * 0.025, '#ff4d4d');
+  c.fillStyle = '#fff'; c.fillRect(Math.floor(w / 2) - h * 0.02, Math.floor(h / 2), h * 0.04, 1); c.fillRect(Math.floor(w / 2), Math.floor(h / 2) - h * 0.02, 1, h * 0.04);
+}
+
 export const PATTERNS: PatternDef[] = [
   // Vollfelder
   { id: 'red', name: 'Rot', group: 'Vollfeld', draw: (c, w, h) => fill(c, [255, 0, 0], 0, 0, w, h) },
@@ -176,7 +228,8 @@ export const PATTERNS: PatternDef[] = [
   { id: 'blue', name: 'Blau', group: 'Vollfeld', draw: (c, w, h) => fill(c, [0, 0, 255], 0, 0, w, h) },
   { id: 'white', name: 'Weiß 100 %', group: 'Vollfeld', draw: (c, w, h) => fill(c, gray(1), 0, 0, w, h) },
   { id: 'gray50', name: 'Grau 50 %', group: 'Vollfeld', draw: (c, w, h) => fill(c, gray(0.5), 0, 0, w, h) },
-  { id: 'gray18', name: 'Grau 18 % Reflexion (≈ 46 %)', group: 'Vollfeld', draw: (c, w, h) => fill(c, [118, 118, 118], 0, 0, w, h) },
+  // 18 % reflectance through the BT.709 OETF = 40.9 % (BT.709-6 p5; 46 % would be the sRGB curve)
+  { id: 'gray18', name: 'Grau 18 % Reflexion (BT.709, 40,9 %)', group: 'Vollfeld', draw: (c, w, h) => fill(c, gray(bt709Oetf(0.18)), 0, 0, w, h) },
   { id: 'black', name: 'Schwarz', group: 'Vollfeld', draw: (c, w, h) => fill(c, gray(0), 0, 0, w, h) },
 
   // Grau
@@ -207,18 +260,7 @@ export const PATTERNS: PatternDef[] = [
     id: 'sweep', name: 'Grauverlauf wandernd', group: 'Grau', animated: true,
     draw: (c, w, h, t) => hramp(c, 0, 0, w, h, (f) => gray((f + t * 0.1) % 1)),
   },
-  {
-    id: 'pluge', name: 'PLUGE / Schwarzwert', group: 'Grau',
-    draw: (c, w, h) => {
-      fill(c, gray(0), 0, 0, w, h);
-      [0.02, 0.04, 0.01, 0.03].forEach((p, i) => fill(c, gray(p), w * (0.2 + i * 0.15), h * 0.2, w * 0.1, h * 0.6));
-      fill(c, gray(0.75), w * 0.44, h * 0.85, w * 0.12, h * 0.08);
-      text(c, '+2 %', w * 0.25, h * 0.12, h * 0.035, '#555');
-      text(c, '+4 %', w * 0.4, h * 0.12, h * 0.035, '#555');
-      text(c, '+1 %', w * 0.55, h * 0.12, h * 0.035, '#555');
-      text(c, '+3 %', w * 0.7, h * 0.12, h * 0.035, '#555');
-    },
-  },
+  { id: 'pluge', name: 'PLUGE BT.814-4 (SDR)', group: 'Grau', draw: (c, w, h) => plugeBT814(c, w, h, 940) },
 
   // Geometrie
   {
@@ -262,25 +304,7 @@ export const PATTERNS: PatternDef[] = [
   },
   { id: 'zoneplate', name: 'Zonenplatte', group: 'Geometrie', draw: (c, w, h) => zonePlate(c, w, h, 0) },
   { id: 'zoneplate-anim', name: 'Zonenplatte bewegt', group: 'Geometrie', animated: true, draw: zonePlate },
-  {
-    id: 'safe', name: 'Sichere Bereiche (EBU R 95)', group: 'Geometrie',
-    draw: (c, w, h) => {
-      fill(c, gray(0.2), 0, 0, w, h);
-      const box = (f: number, color: string, label: string) => {
-        const bw = w * f, bh = h * f;
-        c.strokeStyle = color; c.lineWidth = Math.max(1, h / 540);
-        c.strokeRect((w - bw) / 2, (h - bh) / 2, bw, bh);
-        text(c, label, w / 2, (h - bh) / 2 + h * 0.025, h * 0.022, color);
-      };
-      box(1, '#fff', '');
-      box(0.93, '#ffd400', 'Action safe 93 %');
-      box(0.9, '#00dcff', 'Graphics safe 90 %');
-      c.strokeStyle = '#ff4d4d'; c.setLineDash([8, 6]);
-      const w43 = (h * 4) / 3; c.strokeRect((w - w43) / 2, 0, w43, h); c.setLineDash([]);
-      text(c, '4:3', (w - w43) / 2 + h * 0.04, h / 2, h * 0.025, '#ff4d4d');
-      c.fillStyle = '#fff'; c.fillRect(Math.floor(w / 2) - h * 0.02, Math.floor(h / 2), h * 0.04, 1); c.fillRect(Math.floor(w / 2), Math.floor(h / 2) - h * 0.02, 1, h * 0.04);
-    },
-  },
+  { id: 'safe', name: 'Sichere Bereiche (EBU R 95)', group: 'Geometrie', draw: safeAreas },
 
   // Farbe
   { id: 'smpte75', name: 'SMPTE 75 % Balken + PLUGE', group: 'Farbe', draw: (c, w, h) => smpteBars(c, w, h, 0.75) },
@@ -356,6 +380,12 @@ export const PATTERNS: PatternDef[] = [
       });
     },
   },
+  // BT.814-4 Tab. 3 (p6): Higher level 399 = 38.2 %, identical for PQ and HLG
+  { id: 'pluge-hlg', name: 'PLUGE BT.814-4 HDR (HLG)', group: 'HDR', transfer: 'hlg', draw: (c, w, h) => plugeBT814(c, w, h, 399) },
+  { id: 'pluge-pq', name: 'PLUGE BT.814-4 HDR (PQ)', group: 'HDR', transfer: 'pq', draw: (c, w, h) => plugeBT814(c, w, h, 399) },
+  // BT.2408-8 Tab. 1 (p9): 18 % grey card at 38 % for HLG and PQ
+  { id: 'gray18-hlg', name: 'Graukarte 18 % HDR (38 %, HLG)', group: 'HDR', transfer: 'hlg', draw: (c, w, h) => fill(c, gray(0.38), 0, 0, w, h) },
+  { id: 'gray18-pq', name: 'Graukarte 18 % HDR (38 %, PQ)', group: 'HDR', transfer: 'pq', draw: (c, w, h) => fill(c, gray(0.38), 0, 0, w, h) },
   {
     id: 'pq-ramp', name: 'PQ-Verlauf mit Referenzweiß 203', group: 'HDR', transfer: 'pq',
     draw: (c, w, h) => {

@@ -1,10 +1,10 @@
 // Draws one scope panel (WebGL trace + 2D overlay). Shared by the full app and the
 // embeddable ScopeView (src/embed.ts).
 
-import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, gamutConvert, ycbcr, type DisplaySpace } from './color';
+import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId } from './color';
 import {
   drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
-  isWaveform, plotRect, probeLines, statsLines, vectorPoint, type ScopeType, type Unit,
+  isWaveform, plotRect, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
 import type { DisplayParams, PictureMode, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
 import type { Source } from './sources';
@@ -18,6 +18,12 @@ export interface PanelState {
   gamuts?: ('709' | 'p3' | '2020')[];
   /** Pinned panels keep their source when another panel switches. */
   pin?: boolean;
+  /** waveforms: EBU R 103 −5/105 % lines (off by default) and reference marks (BT.2408 / 18 % grey, on by default) */
+  r103?: boolean; marks?: boolean;
+  /** CIE scope in CIE 1976 u′v′ */
+  cieUv?: boolean;
+  /** picture 'gamut' overlay: target gamut of the warning */
+  gamutTarget?: '709' | 'p3' | '2020';
 }
 
 export const TINTS = { white: [1, 1, 1], green: [0.55, 1, 0.62], amber: [1, 0.82, 0.45] } as const;
@@ -36,12 +42,22 @@ export const DEFAULT_SKIN: SkinRange = { lo: 0.3, hi: 0.8, tol: 14 };
 
 /** Input gamut → display gamut and output curve for the picture view. */
 export function displayParams(src: Source, display: DisplaySpace): DisplayParams {
-  const from = GAMUTS[src.colorspace === '2020' ? '2020' : src.colorspace === '601' ? '601' : '709'];
+  const from = GAMUTS[src.gamut];
   if (display === 'raw') return { curve: 2, gamut: [1, 0, 0, 0, 1, 0, 0, 0, 1] };
   const to = display === 'p3' ? GAMUTS.p3 : GAMUTS['709'];
   return { curve: display === 'rec709' ? 1 : 0, gamut: gamutConvert(from, to) };
 }
 export { DISPLAY_LABELS };
+
+/** Source linear → target gamut linear for the gamut warning (Bradford-adapted). */
+export const warnMatrix = (src: Source, target: GamutId = '709') => gamutConvert(GAMUTS[src.gamut], GAMUTS[target]);
+
+/** Vectorscope targets: for camera log sources the 709 bars encoded into the source curve and gamut. */
+export function vectorTargets(src: Source): BarTargetSet | undefined {
+  const t = src.transfer;
+  if (!isLog(t)) return undefined;
+  return { t100: logBarTargets(t, src.gamut, src.colorspace, 1), t75: logBarTargets(t, src.gamut, src.colorspace, 0.75), label: `709-Balken in ${transferLabel(t)}/${GAMUTS[src.gamut].name}` };
+}
 
 export const ROI_CLOSE = 16;
 /** Top-left corner of the ROI's close box (CSS px, relative to the panel body). */
@@ -49,7 +65,7 @@ export const roiCloseBox = (rx: number, ry: number, rw: number) => [rx + rw - RO
 
 /** Everything a panel's pixels depend on; unchanged → the panel is not redrawn. */
 export function panelSignature(p: PanelState, src: Source | null, body: Rect, o: DrawOptions) {
-  const s = src ? `${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${src.faceMode}:${src.faces.map((f) => f.id + '/' + f.box.join(',')).join(';')}:${[...src.faceSel].join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}` : '-';
+  const s = src ? `${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${src.faceMode}:${src.faces.map((f) => f.id + '/' + f.box.join(',')).join(';')}:${[...src.faceSel].join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}` : '-';
   const { displayFps, ...rest } = o;
   return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}`;
 }
@@ -77,7 +93,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   if (!src || !src.ready) {
     ctx.fillStyle = '#6b7078'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(src ? (src.message || 'Keine Daten – Quelle starten') : (o.emptyText ?? 'Links eine Quelle hinzufügen'), body.w / 2, body.h / 2);
-    if (isWaveform(p.scope)) drawWaveGraticule(ctx, p.scope, r, o.unit, src?.transfer ?? 'sdr');
+    if (isWaveform(p.scope)) drawWaveGraticule(ctx, p.scope, r, o.unit, src?.transfer ?? 'sdr', { lw: src?.hlgLw, r103: p.r103, marks: p.marks });
     return;
   }
   const probeRgb = src.probe ? src.readPixel(src.probe.x, src.probe.y) : null;
@@ -85,16 +101,16 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   if (mode) {
     renderer.drawScatter(key, src, abs, {
       mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: [...TINTS[o.tint]] as [number, number, number],
-      maxSamples: o.maxSamples, roi: src.activeRois(), skin: o.skin,
+      maxSamples: o.maxSamples, roi: src.activeRois(), skin: o.skin, cieUv: p.scope === 'cie' && !!p.cieUv,
     });
   }
   if (isWaveform(p.scope)) {
-    drawWaveGraticule(ctx, p.scope, r, o.unit, src.transfer);
+    drawWaveGraticule(ctx, p.scope, r, o.unit, src.transfer, { lw: src.hlgLw, r103: p.r103, marks: p.marks });
     if (p.scope === 'wf-skin') drawSkinRange(ctx, r, o.skin);
     if (probeRgb) drawWaveProbe(ctx, p.scope, r, src, probeRgb);
   } else if (p.scope === 'vector') {
-    drawVectorGraticule(ctx, r, src.colorspace, p.zoom, o.skin.tol);
-    drawVectorExtras(ctx, r, src.colorspace, p.zoom, p.gamuts ?? [], o.targets ?? [], src.transfer);
+    drawVectorGraticule(ctx, r, src.colorspace, p.zoom, o.skin.tol, vectorTargets(src));
+    drawVectorExtras(ctx, r, src.colorspace, p.zoom, p.gamuts ?? [], o.targets ?? [], src.transfer, src.gamut);
     if (probeRgb) {
       const { cb, cr } = ycbcr(probeRgb[0], probeRgb[1], probeRgb[2], src.colorspace);
       const [x, y] = vectorPoint(r, cb, cr, p.zoom);
@@ -102,13 +118,13 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.moveTo(x - 9, y); ctx.lineTo(x + 9, y); ctx.moveTo(x, y - 9); ctx.lineTo(x, y + 9); ctx.stroke();
     }
   } else if (p.scope === 'cie') {
-    drawCieGraticule(ctx, r, src.colorspace);
+    drawCieGraticule(ctx, r, src.colorspace, { uv: p.cieUv, gamut: src.gamut });
   } else if (p.scope === 'hist') {
     drawHistogram(ctx, r, src, p.hist, p.log);
   } else if (p.scope === 'picture') {
     renderer.drawPicture(src, abs, {
       mode: p.picture, bands: FALSE_COLOR_PRESETS[o.falsePreset] ?? [], zebra: o.zebra, zebraLow: o.zebraLow,
-      roi: src.activeRois(), skin: o.skin, display: displayParams(src, o.display),
+      roi: src.activeRois(), skin: o.skin, display: displayParams(src, o.display), warn: warnMatrix(src, p.gamutTarget),
     });
     if (src.faceTrack) {
       // detected faces, numbered left to right; active ones highlighted
@@ -145,6 +161,18 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
         ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(r.x + 4, y - 7, 150, 14);
         ctx.fillStyle = bd.color; ctx.fillRect(r.x + 6, y - 4, 8, 8);
         ctx.fillStyle = '#ddd'; ctx.fillText(`${bd.from}–${Math.min(100, bd.to)} % ${bd.label}`, r.x + 18, y);
+      });
+    }
+    if (p.picture === 'gamut') {
+      const legend: [string, string][] = [
+        ['#ffe61a', `knapp außerhalb ${GAMUTS[p.gamutTarget ?? '709'].name} (≤ 5 %)`], ['#ff730d', 'außerhalb (≤ 20 %)'], ['#ff1abf', 'weit außerhalb (> 20 %)'],
+      ];
+      ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      legend.forEach(([col, label], i) => {
+        const y = r.y + r.h - 12 - (legend.length - 1 - i) * 14;
+        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(r.x + 4, y - 7, 200, 14);
+        ctx.fillStyle = col; ctx.fillRect(r.x + 6, y - 4, 8, 8);
+        ctx.fillStyle = '#ddd'; ctx.fillText(label, r.x + 18, y);
       });
     }
     if (src.probe && probeRgb) {

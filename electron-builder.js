@@ -7,7 +7,7 @@ export default {
   productName: 'LZ Scopes',
   copyright: `Copyright © ${year} Lars Zumpe`,
   publish: [{ provider: 'github', owner: 'larszu', repo: 'lz-scopes', releaseType: 'release' }],
-  files: ['dist/**/*', 'server/**/*', 'electron/**/*', 'package.json'],
+  files: ['dist/**/*', 'server/**/*', 'electron/**/*', 'licenses/**/*', 'package.json'],
   // The packaged package.json must NOT say `type: module` (cable-planner v0.1.1
   // crashed on exactly that: the @electron/universal entry shim is CommonJS).
   // `.mjs` files (server/) stay ESM by extension, electron/main.cjs is CommonJS.

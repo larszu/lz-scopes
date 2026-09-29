@@ -1,4 +1,5 @@
-import { detectColorspace, detectTransfer, type Colorspace, type Transfer } from './color';
+import { detectColorspace, detectTransfer, isLog, type Colorspace, type GamutId, type Transfer } from './color';
+import { LOG_CURVES } from './camera';
 import { patternById, renderPattern } from './patterns';
 
 export type SourceKind = 'stream' | 'webcam' | 'screen' | 'file' | 'pattern' | 'folder';
@@ -6,6 +7,10 @@ export type SourceKind = 'stream' | 'webcam' | 'screen' | 'file' | 'pattern' | '
 export interface SourceSettings {
   transfer: 'auto' | Transfer;
   colorspace: 'auto' | Colorspace;
+  /** Primaries of the linear light: 'auto' = native gamut of a log curve, else the colorspace's primaries. */
+  gamut?: 'auto' | GamutId;
+  /** Peak luminance of the assumed HLG display (BT.2100 system gamma, R 167 presets). */
+  hlgLw?: number;
   /** Analysis width in px for bridge streams (0 = native). */
   width: number;
   fps: number;
@@ -27,7 +32,7 @@ export interface Stats {
   samples: number;
 }
 
-export const DEFAULT_SETTINGS: SourceSettings = { transfer: 'auto', colorspace: 'auto', width: 960, fps: 0, depth: 8, transport: 'tcp' };
+export const DEFAULT_SETTINGS: SourceSettings = { transfer: 'auto', colorspace: 'auto', gamut: 'auto', hlgLw: 1000, width: 960, fps: 0, depth: 8, transport: 'tcp' };
 
 let nextId = 1;
 
@@ -126,9 +131,16 @@ export class Source {
   }
   get colorspace(): Colorspace {
     if (this.settings.colorspace !== 'auto') return this.settings.colorspace;
-    if (!this.info) return this.height > 576 || this.height === 0 ? '709' : '601';
+    if (!this.info) return this.height > 576 || this.height === 0 ? '709' : this.height === 576 ? '601-625' : '601';
     return detectColorspace(this.info.decodeMatrix ?? this.info.matrix, this.info.primaries, this.info.sourceHeight);
   }
+  get gamut(): GamutId {
+    const g = this.settings.gamut ?? 'auto';
+    if (g !== 'auto') return g;
+    const t = this.transfer;
+    return isLog(t) ? LOG_CURVES[t].gamut : this.colorspace;
+  }
+  get hlgLw(): number { return this.settings.hlgLw ?? 1000; }
   get ready() { return this.width > 0 && (this.data !== null || this.element !== null); }
 
   private set(status: Source['status'], message = '') {

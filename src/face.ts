@@ -72,9 +72,11 @@ async function detect(s: Source): Promise<Box[]> {
   if (!img) return [];
   lastTs = Math.max(lastTs + 1, performance.now());
   const res = det.detectForVideo(img as HTMLVideoElement, lastTs);
-  const pad = 0.12;
+  // BlazeFace boxes run from the brows to the chin: extend upwards to include the forehead
+  // (skin measurement), only a little sideways and down
+  const side = 0.08, top = 0.3, bottom = 0.02;
   return res.detections.map((d) => d.boundingBox).filter((b): b is NonNullable<typeof b> => !!b).map((b) =>
-    [b.originX - b.width * pad, b.originY - b.height * pad, b.originX + b.width * (1 + pad), b.originY + b.height * (1 + pad)]
+    [b.originX - b.width * side, b.originY - b.height * top, b.originX + b.width * (1 + side), b.originY + b.height * (1 + bottom)]
       .map((v, i) => Math.round(Math.max(0, Math.min(i % 2 ? s.height : s.width, v)))) as Box);
 }
 

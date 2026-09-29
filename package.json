@@ -1,0 +1,28 @@
+{
+  "name": "lz-scope",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Software waveform monitor, vectorscope, histogram and CIE scope in the browser, with RTSP/network inputs via an ffmpeg bridge",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n bridge,web \"node server/index.mjs --dev\" \"vite\"",
+    "build": "tsc --noEmit && vite build",
+    "start": "node server/index.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/ws": "^8.18.2",
+    "concurrently": "^10.0.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  }
+}

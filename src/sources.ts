@@ -133,6 +133,20 @@ export class Source {
     ws.onclose = () => { if (this.ws === ws && this.status === 'live') this.set('ended', 'Verbindung beendet'); };
   }
 
+  /**
+   * Feed frames without a WebSocket, e.g. from an Electron main process over a
+   * MessagePort. `info` once (or on change), then one call per frame.
+   */
+  pushInfo(info: StreamInfo) {
+    this.info = info; this.width = info.width; this.height = info.height; this.depth = info.depth;
+    this.set('live', `${info.sourceWidth}×${info.sourceHeight} ${info.codec ?? ''}`.trim());
+  }
+  pushFrame(buffer: ArrayBuffer) {
+    if (this.frozen || !this.info) return;
+    this.data = this.depth === 16 ? new Uint16Array(buffer) : new Uint8Array(buffer);
+    this.tick();
+  }
+
   async startCapture(kind: 'webcam' | 'screen', deviceId?: string) {
     this.stop();
     this.set('connecting', 'Warte auf Freigabe …');

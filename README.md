@@ -40,7 +40,7 @@
 ## Why LZ Scopes
 
 - **Real scopes, in software.** Waveform (luma, RGB overlay, RGB / YRGB / YCbCr parade), vectorscope, CIE 1931 xy or 1976 u′v′, histogram, false colour, zebra, gamut warning and numeric readout.
-- **Streams, not just files.** RTSP, RTMP, SRT, UDP, RTP, HLS and HTTP via an ffmpeg bridge; capture cards through the bridge (`device:`); DaVinci Resolve in 16 bit through its scripting API; camera / USB capture with device picker, screen or window with crop, watch folder, video and image files directly in the browser.
+- **Streams, not just files.** RTSP, RTMP, SRT, UDP, RTP, HLS and HTTP via an ffmpeg bridge; capture cards through the bridge (`device:`, explicit mode, raw 10-bit formats and decode matrix, also on remote bridges); Blackmagic DeckLink / UltraStudio through a native helper built against the DeckLink SDK (`decklink:`, see [helpers/decklink](helpers/decklink/README.md), untested with hardware); DaVinci Resolve in 16 bit through its scripting API; camera / USB capture with device picker, screen or window with crop, watch folder, video and image files directly in the browser.
 - **HDR aware.** 8 or 16 bit analysis, PQ and HLG (display peak Lw 500-10 000 cd/m², system gamma applied to luminance per BT.2100, EBU R 167 presets), BT.709 / 2020 / 601 with 525- and 625-line primaries, waveform scale in cd/m² with BT.2408 reference marks (75 % HLG, 58 % PQ, 38 % grey card) and optional EBU R 103 limits (-5 / 105 %).
 - **Camera log.** ARRI LogC3 / LogC4, Sony S-Log3, Panasonic V-Log, Blackmagic Film Gen 5, Canon Log 2 / 3, RED Log3G10, Fujifilm F-Log2, DJI D-Log, Nikon N-Log and Apple Log with their camera gamuts (Bradford-adapted where the white differs). Log acts on the scene-referred waveform scale (reflectance, 18 % grey), the CIE diagram, the picture view and the vectorscope targets.
 - **CST and LUTs per source.** Colour space transform to Rec.709 / Rec.2020 PQ / HLG (or any gamut and transfer) with Bradford adaptation and tone mapping (ACES 2.0 tonescale, BT.2390 EETF, extended Reinhard, clip), camera presets (log → Rec.709), then up to two LUTs (`.cube`, `.3dl`, `.spi3d`, `.spi1d`, `.csp`, tetrahedral, by drag and drop). Each panel measures the signal, after the CST or after the LUTs (gear menu, key `C`), shown in the panel head. Manufacturer look LUTs are not bundled; the app links their official download pages ([docs/research/lut-cst.md](docs/research/lut-cst.md)).
@@ -139,7 +139,7 @@ view.setSource(src);
 ## Limits
 
 - Values are full-range R'G'B' after conversion. Sub-black and super-white outside 16-235 are clipped; there is no legal / illegal check at Y'CbCr level yet.
-- No NDI or SDI (DeckLink / AJA) input. Audio from the browser is limited to 2 channels (more only through the bridge); bridge audio cannot be monitored yet.
+- No NDI or AJA input. DeckLink only through the helper you build yourself (ffmpeg's own DeckLink device is "nonfree" and cannot be redistributed); never run with hardware yet. Audio from the browser is limited to 2 channels (more only through the bridge); bridge audio cannot be monitored yet.
 - Browser sources (camera, file) are always 8 bit and pass through the browser's colour management.
 
 ## Author

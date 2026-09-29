@@ -82,6 +82,8 @@ Voraussetzung für Netzwerkquellen ohne Desktop-App: `ffmpeg` und `ffprobe` im `
 | `test:bars`, `test:ramp`, `test:testsrc`, `test:colors` | Bridge: lavfi-Testbilder |
 | Testbild-Generator (siehe unten) | direkt im Browser, auch als Ausgabefenster |
 | Kamera, Bildschirm, Video-/Bilddatei | direkt im Browser |
+| `device:` – Capture-Karten, die sich als Systemgerät melden (AVFoundation/DirectShow/V4L2) | Bridge: ffmpeg mit festem Modus, Rohformat (10 bit, wenn angeboten) und wählbarer Matrix; auch am entfernten Bridge-Rechner |
+| `decklink:<n>` – Blackmagic DeckLink/UltraStudio | Bridge + eigener Helfer (DeckLink SDK, [helpers/decklink](helpers/decklink/README.md)); nur wenn gebaut und Desktop Video installiert, **mit Hardware ungeprüft** |
 
 Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einstellbar sind Analyseauflösung, Bildrate, 8 oder 16 bit (für 10-bit/HDR), RTSP über TCP oder UDP, Transfer, Matrix (709, 2020, 601 525 Zeilen/SMPTE-C, 601 625 Zeilen/EBU) und Gamut. „auto“ übernimmt die Stream-Metadaten (`bt470bg` → 625, `smpte170m` → 525).
 
@@ -213,7 +215,7 @@ Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in
 ## Grenzen
 
 - Die Werte sind Full-Range-R'G'B' nach der Wandlung. Sub-Black und Super-White außerhalb 16–235 werden abgeschnitten, eine Legal/Illegal-Prüfung auf Y'CbCr-Ebene gibt es noch nicht.
-- Kein NDI, kein SDI (DeckLink/AJA): Die Homebrew-Version von ffmpeg bringt dafür keine Unterstützung mit.
+- Kein NDI, kein AJA. DeckLink nur über den selbst zu bauenden Helfer (ffmpegs eigener DeckLink-Weg ist „nonfree“ und nicht weitergebbar) und noch nie mit Hardware gelaufen.
 - Audio: Browser liefern über `getUserMedia` höchstens 2 Kanäle; Mehrkanal kommt nur über die Bridge. Bridge-Ton lässt sich noch nicht abhören, und der A/V-Versatz wird noch nicht gemessen (siehe Issues).
 - Browser-Quellen (Kamera, Datei) liefern immer 8 bit und durchlaufen das Farbmanagement des Browsers.
 

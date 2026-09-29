@@ -36,6 +36,10 @@ The desktop installers bundle a static **ffmpeg binary** (via `ffmpeg-static`) a
 - Build used by `ffmpeg-static`: <https://github.com/eugeneware/ffmpeg-static/releases>
 - The web build does not contain ffmpeg. `npm start` uses an ffmpeg from your `PATH`.
 
+## Capture helpers (optional, built locally)
+
+- **DeckLink helper** (`helpers/decklink/`): own code, built against the Blackmagic Desktop Video SDK, which is **not** in this repository (free download after registration). The SDK headers carry Blackmagic Design's permissive licence (use, reproduce, distribute; notice kept in source copies). The terms of the SDK download itself were not reviewed – check them before shipping a built helper. ffmpeg's own DeckLink device is `nonfree` and is not used.
+
 ## Development only (not shipped)
 
 TypeScript, Vite, Vitest, electron-builder, concurrently, `@types/*`: MIT or Apache-2.0, see `package-lock.json`.

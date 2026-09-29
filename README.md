@@ -69,6 +69,11 @@ src.connectFrames('ws://bridge/scope/1');  // Frame-Protokoll: docs/frame-protoc
 view.setSource(src);
 ```
 
+## Integration
+
+- **lz-camera-bridge** (Nachfolger von av-control-center): Scopes an den RTSP-Kacheln der Ansicht *Video*, Bridge-Endpunkt `/scope/<n>`
+- **cable-planner**: Konzept in [docs/cable-planner-integration.md](docs/cable-planner-integration.md), Scopes am Gerät im Canvas, Frames per Electron-IPC (`Source.pushFrame`)
+
 ## Technik
 
 - Die **Bridge** (`server/index.mjs`) ermittelt mit ffprobe Auflösung und Farbmetadaten und startet dann ffmpeg: Skalierung auf die Analysebreite, Ausgabe `rgba` oder `rgba64le` als Rohdaten. Hinkt der Browser hinterher, verwirft sie Frames, statt eine Warteschlange aufzubauen. Die Y'CbCr-Matrix gibt sie ffmpeg explizit vor, weil swscale bei ungetaggten Streams sonst BT.601 annimmt und HD-Kameras verfälscht. Die Transferfunktion bleibt unangetastet, PQ- und HLG-Codewerte kommen also unverändert an.

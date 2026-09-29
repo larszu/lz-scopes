@@ -180,3 +180,11 @@ Nur nötig z. B. für Light Master 2, Light Spirit oder neue Firmware. Vorgehen:
 5. Welche Kamera für die Rasterauswertung (Log/Rec.709, fixe Belichtung, RTSP oder Capture)? Linearisierung wird für Heatmap-Prozentwerte gebraucht.
 6. Details zum Calman-Videowall-Workflow und zu Pomfort sind nicht öffentlich recherchiert.
 7. macOS-Bluetooth-Berechtigung in der gepackten Electron-App (Info.plist) vor Umsetzung prüfen.
+
+---
+
+## Nachtrag 30.09.2026 – Umsetzung #10 (LED-Wand)
+
+- **Kameramatrix:** [Epic, Camera Color Calibration for In-Camera VFX (UE 5.7)](https://dev.epicgames.com/documentation/en-us/unreal-engine/camera-color-calibration-for-in-camera-vfx-in-unreal-engine) am 30.09. erneut geöffnet. Verfahren laut Doku: R-, G-, B-Patch-Samples der (linearisierten) Kamera als Spalten einer 3×3-Matrix F; S = F⁻¹ · W / max(W) mit dem Weiß-Sample; F mit S skalieren, davon die Inverse = Kalibriermatrix, als neun Werte in eine OCIO-Konvertierung. Umgesetzt in `src/led/analysis.ts` (`cameraMatrix`), Linearisierung wahlweise inverse BT.709-OETF oder „schon linear“ (die Doku sagt nur „standard methods“).
+- **Eigene Festlegungen (keine Norm):** Uniformität = min/max der Cabinet-Mediane; Naht-Kontrast = 4-%-Streifen auf der Grenze gegen 10-%-Streifen des Zellinneren beidseits (8 % Abstand); Scan-Linien-Index = RMS der Zeilenmittel nach Abzug eines gleitenden Mittels, in % vom Mittel (Vergleichswert im Sinne von Megapixel „monitoring of recorded images“, s. A.2); Ausreißer-Pixel = Abweichung vom Median der 8 Nachbarn über einer Schwelle.
+- **Grenzen:** Ausgabe 8 bit (Canvas), Kamera relativ (kein Kolorimeter), an einer echten Wand noch nicht erprobt; die Tests (`test/led.test.ts`) arbeiten mit synthetisch perspektivisch gerenderten Wänden.

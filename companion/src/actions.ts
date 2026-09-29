@@ -7,6 +7,8 @@ export const SCOPES: { id: string; label: string }[] = [
   { id: 'wf-skin', label: 'Waveform Hauttöne' }, { id: 'wf-rgb', label: 'Waveform RGB' }, { id: 'parade', label: 'RGB-Parade' },
   { id: 'yrgb', label: 'YRGB-Parade' }, { id: 'ycbcr', label: 'YCbCr-Parade' }, { id: 'vector', label: 'Vectorscope' },
   { id: 'cie', label: 'CIE 1931' }, { id: 'hist', label: 'Histogramm' }, { id: 'stats', label: 'Messwerte' },
+  { id: 'audio-meter', label: 'Audio Pegel & Lautheit' }, { id: 'audio-loudness', label: 'Audio Lautheitsverlauf' },
+  { id: 'audio-spectrum', label: 'Audio Spektrum' }, { id: 'audio-phase', label: 'Audio Goniometer' },
 ]
 const MODES = [{ id: 'toggle', label: 'Umschalten' }, { id: 'on', label: 'An' }, { id: 'off', label: 'Aus' }]
 const VIEWS = [

@@ -4,8 +4,9 @@
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId } from './color';
 import {
   drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
-  isWaveform, plotRect, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
+  isAudio, isWaveform, plotRect, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
+import { drawAudioPanel, type AudioPanelOptions } from './audio/panels';
 import type { DisplayParams, PictureMode, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
 import type { Source } from './sources';
 
@@ -24,6 +25,8 @@ export interface PanelState {
   cieUv?: boolean;
   /** picture 'gamut' overlay: target gamut of the warning */
   gamutTarget?: '709' | 'p3' | '2020';
+  /** settings of the audio panels */
+  audio?: AudioPanelOptions;
 }
 
 export const TINTS = { white: [1, 1, 1], green: [0.55, 1, 0.62], amber: [1, 0.82, 0.45] } as const;
@@ -65,6 +68,10 @@ export const roiCloseBox = (rx: number, ry: number, rw: number) => [rx + rw - RO
 
 /** Everything a panel's pixels depend on; unchanged → the panel is not redrawn. */
 export function panelSignature(p: PanelState, src: Source | null, body: Rect, o: DrawOptions) {
+  if (isAudio(p.scope)) {
+    const a = src?.audio;
+    return `A|${src?.id}:${a ? `${a.version}:${a.paused}:${a.stale}` : `${src?.status}:${src?.message}`}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}`;
+  }
   const s = src ? `${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${src.faceMode}:${src.faces.map((f) => f.id + '/' + f.box.join(',')).join(';')}:${[...src.faceSel].join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}` : '-';
   const { displayFps, ...rest } = o;
   return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}`;
@@ -85,6 +92,12 @@ const SCATTER: Partial<Record<ScopeType, ScatterMode>> = {
  * @param ctx  2D context of the panel overlay, already scaled to CSS px and cleared
  */
 export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key: string, p: PanelState, src: Source | null, body: Rect, o: DrawOptions) {
+  if (isAudio(p.scope)) {
+    const empty = src ? (src.kind === 'stream' && src.settings.audio === false ? 'Ton ist für diese Quelle aus (Quelle → Ton)'
+      : src.status === 'live' ? 'Kein Ton in dieser Quelle' : (src.message || 'Keine Daten – Quelle starten')) : (o.emptyText ?? 'Links eine Quelle hinzufügen');
+    drawAudioPanel(ctx, p.scope, src?.audio ?? null, body.w, body.h, p.audio, empty, p);
+    return;
+  }
   const aspect = src && src.width ? src.width / src.height : 16 / 9;
   const r = plotRect(p.scope, body.w, body.h, aspect);
   const abs = { x: body.x + r.x, y: body.y + r.y, w: r.w, h: r.h };

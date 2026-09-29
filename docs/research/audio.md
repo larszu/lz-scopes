@@ -1,6 +1,6 @@
 # Audiogenerator und Audioanalyser für LZ Scopes – Recherche
 
-Stand: 29.09.2026. Nur Recherche, kein Produktcode. Normwerte stammen aus den geöffneten PDFs (Links unter [Quellen](#quellen)). Seitenangaben beziehen sich auf die **PDF-Seite** (p). Was als **Einschätzung** markiert ist, ist eine eigene Bewertung und nicht belegt. Angaben aus Sekundärquellen stehen ausdrücklich als solche da.
+Stand: 29.09.2026. Recherche; umgesetzt ist der Muss-Umfang aus (d) in `src/audio` (siehe README, Abschnitt Audio). Normwerte stammen aus den geöffneten PDFs (Links unter [Quellen](#quellen)). Seitenangaben beziehen sich auf die **PDF-Seite** (p). Was als **Einschätzung** markiert ist, ist eine eigene Bewertung und nicht belegt. Angaben aus Sekundärquellen stehen ausdrücklich als solche da.
 
 Ziel: Generator und Analyser „wie VMA, aber besser“, eingebettet in LZ Scopes (Browser/Electron, Bridge mit ffmpeg).
 

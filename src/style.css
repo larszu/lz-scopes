@@ -163,3 +163,19 @@ input.num.wide { width: 80px; }
 .thumb { display: flex; flex-direction: column; gap: 4px; padding: 6px; text-align: left; }
 .thumb img { width: 100%; aspect-ratio: 16/9; object-fit: contain; background: #000; border-radius: 3px; }
 .thumb span { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* audio: generator section, audio sources */
+.side details.gen .row { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-top: 6px; color: var(--muted); }
+.side details.gen .row select { flex: 1; min-width: 0; }
+.side details label.inline { flex-direction: row; margin-top: 0; }
+.row .lbl { color: var(--muted); min-width: 52px; font-size: 11px; }
+.gen .route { display: inline-flex; gap: 2px; align-items: center; margin-right: 8px; }
+.gen .route input.num { width: 48px; }
+.gen .hint.ok, .gen .hint .ok { color: var(--accent); }
+.gen .hint.bad { color: var(--err); }
+.selftest table.st { border-collapse: collapse; font: 10px ui-monospace, Menlo, monospace; margin-top: 4px; }
+.selftest table.st td { padding: 1px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.selftest tr.ok td:first-child { color: var(--accent); }
+.selftest tr.bad td { color: var(--err); }
+.src .audio-el audio { width: 100%; height: 30px; }
+.src .audio-row .lbl { flex: 1; }

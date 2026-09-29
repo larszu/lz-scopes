@@ -481,8 +481,9 @@ export function statsLines(src: Source, displayFps: number): string[] {
   const lines = [
     src.name,
     `Status     ${src.status}${src.message ? ` – ${src.message}` : ''}`,
-    `Analyse    ${src.width}×${src.height}  ${src.depth} bit`,
+    `Analyse    ${src.width}×${src.height}  ${src.yuv ? `16 bit Y′CbCr ${src.yuv.full ? 'full' : 'narrow'}, unbeschnitten (Quelle ${src.yuv.bits} bit)` : `${src.depth} bit R′G′B′`}`,
   ];
+  if (info?.note) lines.push(`Hinweis    ${info.note}`);
   if (info) {
     lines.push(`Quelle     ${info.sourceWidth}×${info.sourceHeight}  ${info.codec ?? ''} ${info.pixFmt ?? ''}`);
     lines.push(`Metadaten  ${info.matrix}/${info.primaries}/${info.transfer}  ${info.range}`);
@@ -498,5 +499,26 @@ export function statsLines(src: Source, displayFps: number): string[] {
     lines.push(`Clip ▲ RGB ${st.clipHigh.map((v) => (v * 100).toFixed(2)).join(' / ')} %`);
     lines.push(`Clip ▼ RGB ${st.clipLow.map((v) => (v * 100).toFixed(2)).join(' / ')} %`);
   }
+  lines.push('', ...r103Lines(src));
   return lines;
+}
+
+/**
+ * EBU R 103 v3.0 block of the Messwerte panel: share of the area outside the preferred
+ * range −5/105 % (R, G, B or Y, after the measurement filter) and outside the total range.
+ */
+export function r103Lines(src: Source): string[] {
+  const r = src.r103Stats();
+  if (!r) return ['R 103      –'];
+  const p2 = (v: number) => `${(v * 100).toFixed(2)} %`;
+  const ext = (v: number) => `${(v * 100).toFixed(1)}`;
+  const out = [
+    `R 103      Vorzug −5/105 %: ${p2(r.pref)} der Fläche${r.alarm ? '  ⚠ außerhalb (> 1 %)' : '  (Meldung ab 1 %)'}`,
+    `           Gesamt 4–1019: ${p2(r.total)}${r.total > 0 ? '  ⚠ harte Grenze' : ''}`,
+    `           min R/G/B/Y ${r.min.map(ext).join(' / ')} %  max ${r.max.map(ext).join(' / ')} %`,
+  ];
+  if (!src.yuv) out.push('           Quelle ist R′G′B′ 0–100 % (beschnitten): nur mit Y′CbCr-Pfad aussagekräftig');
+  else if (src.yuv.full) out.push('           Quelle Full Range: R 103 ist für Narrow Range definiert, hier nur Prozentvergleich');
+  if (src.info && src.info.sourceWidth > r.width) out.push(`           gemessen auf ${r.width}×${r.height} (skaliert; normgerecht bei Analysebreite „nativ“)`);
+  return out;
 }

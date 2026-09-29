@@ -3,8 +3,9 @@
 // browser cannot dither them. Values below 0 % (PLUGE sub-black) cannot exist in
 // full-range RGB and are clipped to 0.
 
-import { bt709Oetf, hlgFromNits, pqEncode } from './color';
+import { bt709Oetf, hlgFromNits, pqEncode, type Colorspace } from './color';
 import { LED_PATTERNS } from './led/patterns';
+import { NOTE_16, PATTERNS_16, PLUGE_16, drawRaster, plugeBoxes, plugeRaster, toFrame16, type Frame16 } from './patterns16';
 
 export interface PatternDef {
   id: string;
@@ -16,6 +17,12 @@ export interface PatternDef {
   /** Image-based pattern (bundled or user file). */
   src?: string;
   draw?: (ctx: CanvasRenderingContext2D, w: number, h: number, t: number) => void;
+  /** exact 16-bit Y′CbCr frame for the scopes (patterns16.ts); the canvas stays 8 bit */
+  frame16?: (w: number, h: number) => Frame16;
+  /** Y′CbCr matrix of the pattern (default: by picture height) */
+  colorspace?: Colorspace;
+  /** shown with the pattern, e.g. what the 8-bit output window cannot carry */
+  note?: string;
 }
 
 type RGB = [number, number, number];
@@ -111,18 +118,8 @@ function smpteBars(ctx: CanvasRenderingContext2D, w: number, h: number, amp: num
  * SDR: Higher level 940 (100 %), HDR: 399 (38.2 %, same for PQ and HLG); lighter 80, darker 48.
  */
 export function plugeBT814(ctx: CanvasRenderingContext2D, w: number, h: number, higher: number) {
-  const X = (s: number) => (s / 1920) * w, Y = (l: number) => ((l - 42) / 1080) * h;
-  const box = (s0: number, s1: number, l0: number, l1: number, c: number) => fill(ctx, gray(code10(c)), X(s0), Y(l0), X(s1 + 1) - X(s0), Y(l1 + 1) - Y(l0));
   fill(ctx, gray(0), 0, 0, w, h);
-  const [Sb, Sc, Sd, Se, Sf, Sg] = [312, 599, 888, 1031, 1320, 1607];
-  const [Lb, Lc, Ld, Le, Lf, Lg, Lh, Li] = [366, 387, 509, 510, 653, 654, 776, 797];
-  for (let l = Lc; l <= Lh; l += 20) {
-    const lower = l >= Le;
-    box(Sb, Sc, l, Math.min(Lh, l + 9), lower ? 48 : 80);
-  }
-  box(Sd, Se, Le, Lf, higher);
-  box(Sf, Sg, Lb, Ld, 80);
-  box(Sf, Sg, Lg, Li, 48);
+  for (const [x, y, bw, bh, c] of plugeBoxes(w, h, higher)) fill(ctx, gray(code10(c)), x, y, bw, bh);
 }
 
 function arrows(ctx: CanvasRenderingContext2D, w: number, h: number, color = '#000') {
@@ -445,6 +442,18 @@ const LZ = [
 ] as const;
 for (const [n, slug, name] of LZ) {
   PATTERNS.push({ id: `lz-${n}`, name: `${n} ${name}`, group: 'LZ Displaytest', src: `patterns/lz-display/lz_${n}_${slug}_1920x1080.png` });
+}
+
+// 16-bit patterns (issue #7): BT.2111-3 HDR bars, and exact frames for the BT.814 PLUGE
+for (const p of PATTERNS_16) {
+  PATTERNS.push({
+    id: p.id, name: p.name, group: 'HDR', transfer: p.transfer, colorspace: p.colorspace, note: NOTE_16,
+    draw: (c, w, h) => drawRaster(c, p.raster(w, h), p.full), frame16: (w, h) => toFrame16(p.raster(w, h), p.full, p.colorspace),
+  });
+}
+for (const p of PATTERNS) {
+  const q = PLUGE_16[p.id];
+  if (q) Object.assign(p, { colorspace: q.colorspace, note: NOTE_16, frame16: (w: number, h: number) => toFrame16(plugeRaster(w, h, q.higher), false, q.colorspace) });
 }
 
 export const RESOLUTIONS: [number, number][] = [[1280, 720], [1920, 1080], [2560, 1440], [3840, 2160], [1920, 1200], [1024, 768]];

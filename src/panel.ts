@@ -194,6 +194,21 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
         ctx.fillStyle = '#ddd'; ctx.fillText(`${bd.from}–${Math.min(100, bd.to)} % ${bd.label}`, r.x + 18, y);
       });
     }
+    if (p.picture === 'r103') {
+      const q = src.r103Stats();
+      const legend: [string, string][] = [
+        ['#ffb31a', `R 103 außerhalb −5/105 %${q ? ` · ${(q.pref * 100).toFixed(2)} %${q.alarm ? ' ⚠' : ''}` : ''}`],
+        ['#ff1a33', `außerhalb 4–1019 (hart)${q ? ` · ${(q.total * 100).toFixed(2)} %` : ''}`],
+      ];
+      if (!src.yuv) legend.push(['#888', 'R′G′B′-Quelle beschnitten – Y′CbCr-Pfad nötig']);
+      ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      legend.forEach(([col, label], i) => {
+        const y = r.y + r.h - 12 - (legend.length - 1 - i) * 14;
+        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(r.x + 4, y - 7, 250, 14);
+        ctx.fillStyle = col; ctx.fillRect(r.x + 6, y - 4, 8, 8);
+        ctx.fillStyle = '#ddd'; ctx.fillText(label, r.x + 18, y);
+      });
+    }
     if (p.picture === 'gamut') {
       const legend: [string, string][] = [
         ['#ffe61a', `knapp außerhalb ${GAMUTS[p.gamutTarget ?? '709'].name} (≤ 5 %)`], ['#ff730d', 'außerhalb (≤ 20 %)'], ['#ff1abf', 'weit außerhalb (> 20 %)'],

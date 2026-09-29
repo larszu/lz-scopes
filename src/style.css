@@ -179,3 +179,19 @@ input.num.wide { width: 80px; }
 .selftest tr.bad td { color: var(--err); }
 .src .audio-el audio { width: 100%; height: 30px; }
 .src .audio-row .lbl { flex: 1; }
+
+/* CST / LUT chain (chain.ts) */
+.src details.chain { margin-top: 4px; }
+.src details.chain > summary { cursor: pointer; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.src details.chain[open] > summary { color: var(--accent); }
+.src details.chain .row { margin-top: 4px; }
+.src details.chain input.num { width: 72px; }
+.src .lutslot { display: flex; flex: 1; min-width: 0; }
+.src .lutslot select { flex: 1; min-width: 0; }
+.src.drop { outline: 1px dashed var(--accent); outline-offset: 2px; }
+.stagechip { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: #1d3324; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+.stagechip.warn { background: #3a2a10; color: var(--warn); }
+dialog.lutlib { background: #14161a; color: #ddd; border: 1px solid #333; border-radius: 6px; max-width: 760px; }
+dialog.lutlib table { border-collapse: collapse; font-size: 12px; margin: 8px 0; }
+dialog.lutlib td { padding: 3px 8px; border-top: 1px solid #262a30; vertical-align: top; }
+dialog.lutlib a { color: var(--accent); }

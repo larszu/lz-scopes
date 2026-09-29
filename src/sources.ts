@@ -1,5 +1,6 @@
-import { detectColorspace, detectTransfer, isLog, type Colorspace, type GamutId, type Transfer } from './color';
+import { LUMA, detectColorspace, detectTransfer, isLog, transferSignalled, type Colorspace, type GamutId, type Transfer } from './color';
 import { LOG_CURVES } from './camera';
+import type { ChainSettings, Compiled } from './chain';
 import { patternById, renderPattern } from './patterns';
 import { AudioAnalysis } from './audio/analysis';
 import { AudioTap, generator, measurementConstraints } from './audio/io';
@@ -18,6 +19,8 @@ export interface SourceSettings {
   gamut?: 'auto' | GamutId;
   /** Peak luminance of the assumed HLG display (BT.2100 system gamma, R 167 presets). */
   hlgLw?: number;
+  /** processing chain: CST and LUTs (chain.ts) */
+  chain?: ChainSettings;
   /** Analysis width in px for bridge streams (0 = native). */
   width: number;
   fps: number;
@@ -78,7 +81,21 @@ export class Source {
   /** audio file playing in an audio source (mode 'file') */
   audioEl: HTMLAudioElement | null = null;
   private audioTap: AudioTap | null = null;
-  private lastFrame: { px: ArrayLike<number>; w: number; h: number; step: number; scale: number } | null = null;
+  private lastFrame: { px: ArrayLike<number>; w: number; h: number; step: number; scale: number; roi: [number, number, number, number][] | null } | null = null;
+  private stageCache = new Map<string, { key: string; stats: Stats }>();
+
+  /** Statistics of the last analysed frame after the processing chain (stage views, chain.ts). */
+  stageStats(c: Compiled): Stats | null {
+    const f = this.lastFrame;
+    if (!f) return this.stats;
+    const key = `${this.statsVersion}:${c.sig}`;
+    const hit = this.stageCache.get(c.stage);
+    if (hit?.key === key) return hit.stats;
+    const { kr, kb } = LUMA[c.view.colorspace];
+    const stats = computeStats(f.px, f.w, f.h, f.step, f.scale, kr, kb, f.roi, c.apply);
+    this.stageCache.set(c.stage, { key, stats });
+    return stats;
+  }
 
   /**
    * Luma range of the skin-tone pixels inside the ROI (whole frame without ROI):
@@ -146,6 +163,19 @@ export class Source {
     if (this.settings.transfer !== 'auto') return this.settings.transfer;
     if (this.kind === 'pattern') return patternById(this.pattern.id).transfer ?? 'sdr';
     return detectTransfer(this.info?.transfer);
+  }
+  /** Where the transfer comes from – shown next to "auto" so the UI never pretends to know. */
+  get transferOrigin(): string {
+    if (this.settings.transfer !== 'auto') return 'manuell';
+    if (this.kind === 'pattern') return 'Testbild';
+    if (!this.info) return 'keine Metadaten, Annahme';
+    return transferSignalled(this.info.transfer) ? 'Metadaten' : 'nicht signalisiert, Annahme';
+  }
+  get colorspaceOrigin(): string {
+    if (this.settings.colorspace !== 'auto') return 'manuell';
+    if (!this.info) return this.kind === 'pattern' ? 'Testbild' : 'keine Metadaten, Annahme nach Bildhöhe';
+    const m = this.info.matrix, p = this.info.primaries;
+    return (m && m !== 'unknown') || (p && p !== 'unknown') ? 'Metadaten' : 'nicht signalisiert, Annahme nach Bildhöhe';
   }
   get colorspace(): Colorspace {
     if (this.settings.colorspace !== 'auto') return this.settings.colorspace;
@@ -597,13 +627,13 @@ export class Source {
     const sx = w / this.width, sy = h / this.height;
     const rois = this.activeRois().map((r) => [Math.floor(r[0] * sx), Math.floor(r[1] * sy), Math.ceil(r[2] * sx), Math.ceil(r[3] * sy)] as [number, number, number, number]);
     const roi = rois.length ? rois : null;
-    this.lastFrame = { px, w, h, step, scale };
+    this.lastFrame = { px, w, h, step, scale, roi };
     this.stats = computeStats(px, w, h, step, scale, kr, kb, roi);
     this.statsVersion++;
   }
 }
 
-export function computeStats(px: ArrayLike<number>, w: number, h: number, step: number, scale: number, kr: number, kb: number, rois: [number, number, number, number] | [number, number, number, number][] | null = null): Stats {
+export function computeStats(px: ArrayLike<number>, w: number, h: number, step: number, scale: number, kr: number, kb: number, rois: [number, number, number, number] | [number, number, number, number][] | null = null, map?: (rgb: number[]) => number[]): Stats {
   // one rectangle or several (union); the bounding box limits the scan
   const list = !rois ? null : (typeof rois[0] === 'number' ? [rois as [number, number, number, number]] : rois as [number, number, number, number][]);
   const x0 = list ? Math.min(...list.map((r) => r[0])) : 0, y0 = list ? Math.min(...list.map((r) => r[1])) : 0;
@@ -618,12 +648,13 @@ export function computeStats(px: ArrayLike<number>, w: number, h: number, step: 
     for (let x = Math.max(0, x0); x < Math.min(w, x1); x += step) {
       if (!inside(x, y)) continue;
       const i = (y * w + x) * 4;
-      const r = px[i] / scale, g = px[i + 1] / scale, b = px[i + 2] / scale;
+      let r = px[i] / scale, g = px[i + 1] / scale, b = px[i + 2] / scale;
+      if (map) [r, g, b] = map([r, g, b]);
       const Y = kr * r + kg * g + kb * b;
-      hist[0][Math.min(255, (r * 255 + 0.5) | 0)]++;
-      hist[1][Math.min(255, (g * 255 + 0.5) | 0)]++;
-      hist[2][Math.min(255, (b * 255 + 0.5) | 0)]++;
-      hist[3][Math.min(255, (Y * 255 + 0.5) | 0)]++;
+      hist[0][Math.max(0, Math.min(255, (r * 255 + 0.5) | 0))]++;
+      hist[1][Math.max(0, Math.min(255, (g * 255 + 0.5) | 0))]++;
+      hist[2][Math.max(0, Math.min(255, (b * 255 + 0.5) | 0))]++;
+      hist[3][Math.max(0, Math.min(255, (Y * 255 + 0.5) | 0))]++;
       if (r <= lo) clipLow[0]++; else if (r >= hi) clipHigh[0]++;
       if (g <= lo) clipLow[1]++; else if (g >= hi) clipHigh[1]++;
       if (b <= lo) clipLow[2]++; else if (b >= hi) clipHigh[2]++;

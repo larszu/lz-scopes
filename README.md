@@ -43,6 +43,9 @@
 - **Streams, not just files.** RTSP, RTMP, SRT, UDP, RTP, HLS and HTTP via an ffmpeg bridge; capture cards through the bridge (`device:`); DaVinci Resolve in 16 bit through its scripting API; camera / USB capture with device picker, screen or window with crop, watch folder, video and image files directly in the browser.
 - **HDR aware.** 8 or 16 bit analysis, PQ and HLG (display peak Lw 500-10 000 cd/m², system gamma applied to luminance per BT.2100, EBU R 167 presets), BT.709 / 2020 / 601 with 525- and 625-line primaries, waveform scale in cd/m² with BT.2408 reference marks (75 % HLG, 58 % PQ, 38 % grey card) and optional EBU R 103 limits (-5 / 105 %).
 - **Camera log.** ARRI LogC3 / LogC4, Sony S-Log3, Panasonic V-Log, Blackmagic Film Gen 5, Canon Log 2 / 3, RED Log3G10, Fujifilm F-Log2, DJI D-Log, Nikon N-Log and Apple Log with their camera gamuts (Bradford-adapted where the white differs). Log acts on the scene-referred waveform scale (reflectance, 18 % grey), the CIE diagram, the picture view and the vectorscope targets.
+- **CST and LUTs per source.** Colour space transform to Rec.709 / Rec.2020 PQ / HLG (or any gamut and transfer) with Bradford adaptation and tone mapping (ACES 2.0 tonescale, BT.2390 EETF, extended Reinhard, clip), camera presets (log → Rec.709), then up to two LUTs (`.cube`, `.3dl`, `.spi3d`, `.spi1d`, `.csp`, tetrahedral, by drag and drop). Each panel measures the signal, after the CST or after the LUTs (gear menu, key `C`), shown in the panel head. Manufacturer look LUTs are not bundled; the app links their official download pages ([docs/research/lut-cst.md](docs/research/lut-cst.md)).
+- **Honest about what it knows.** Transfer (BT.1886, gamma 2.2 / 2.6 / 2.8, sRGB, linear, PQ, HLG) and matrix come from the stream metadata; when nothing is signalled the source card says so and names the assumption.
+- **Waveform zoom and channels.** Black and highlight magnifier for black balance, parade / YRGB / RGB channels can be hidden, labels switchable.
 - **Built-in test patterns.** About 40 generated patterns from PLUGE (ITU-R BT.814-4, SDR and HDR) and SMPTE bars to PQ wedges and EBU R 95 safe areas, plus 20 LZ display test images. Open any of them full screen on a monitor, projector or capture.
 - **Your layout.** Dock, stack and resize panels by drag and drop, keep layout configurations as JSON.
 - **Face tracking.** Skin-tone waveform that follows a detected face; pick which face to track (MediaPipe BlazeFace, runs locally).
@@ -85,7 +88,7 @@ The desktop app contains the bridge and ffmpeg, so RTSP and other network source
 4. Drag a rectangle in the picture to measure only that area. Click sets a measurement point that is marked in waveform and vectorscope.
 5. Arrange the windows with drag and drop, store the result under *Layouts*.
 
-Keys: `1`-`6` layout, `Space` freeze or play, `Left` / `Right` frame, `J` `K` `L` shuttle, `F` full screen, `S` PNG, `B` sidebar, `Esc` leave zoom, `E` edit overlay in an output window.
+Keys: `1`-`6` layout, `C` measuring stage (signal / after CST / after LUT), `Space` freeze or play, `Left` / `Right` frame, `J` `K` `L` shuttle, `F` full screen, `S` PNG, `B` sidebar, `Esc` leave zoom, `E` edit overlay in an output window.
 
 ## Build from source
 

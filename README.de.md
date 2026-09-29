@@ -177,6 +177,17 @@ Lautheit nach ITU-R BS.1770-5 und EBU Tech 3341: K-Filter für jede Abtastrate, 
 
 Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Zyklus 3 s), Polaritätstest (positiver Halbsinus-Puls, 1 ms alle 20 ms), Rauschen mit dem Effektivwert eines Sinus gleichen Spitzenpegels, Korrelationsfenster Standard 600 ms. GLITS-Zeitplan nur nach Sekundärquelle.
 
+## Display-Kalibrierung und Verifikation
+
+⚙ → *Kalibrierung / Verifikation …*. Die Abläufe folgen DisplayCAL, der Code ist eigen. Details: [docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md).
+
+- **Messfeld-Sequenzer**: Das Testbild-Ausgabefenster (`?out=`) zeigt die Messfelder. Einstellbar sind Feldgröße, konstanter APL-Hintergrund und Vollbild-Einschub gegen ABL. Der Sequenzer (`src/patchSequencer.ts`) ist auch für die LED-Wand-Werkzeuge gedacht.
+- **Messgerät**: ArgyllCMS `spotread` läuft als eigener Prozess über die Bridge (Desktop-App oder `npm start`), mit CCMX/CCSS-Korrektur und Displaytyp. ArgyllCMS wird nicht mitgeliefert. Fehlt es, meldet der Dialog „ArgyllCMS nicht gefunden“ und nimmt XYZ oder xyY von Hand an. *Mit echtem Messgerät noch nicht geprüft.*
+- **Eigene Testfeldsätze**: Graukeil 21, Video 47, Video 81, HDR PQ bis zur gewählten Spitze. Untethered-Modus für externe Generatoren: neues Feld bei ΔE00 > 1,5, zweimal bestätigt.
+- **Bericht**: ΔE00 und ΔITP (Mittel, Median, 95. Perzentil, Max) gegen BT.1886 mit gemessenem Schwarz, Gamma, sRGB oder PQ. Dazu Graukurve mit effektivem Gamma, CCT und Duv, Kontrast. Export als CSV und HTML, Druck als PDF.
+- **Uniformität** 3×3 bis 9×9 in 100/75/50/25 %: ΔE00 zum Mittelfeld (≤ 4 / ≤ 2, ISO 14861 wie von DisplayCAL zitiert) und Kontrastabweichung.
+- **3D-LUT** `.cube` 33/65 aus einem Matrix/Shaper-Modell der Messungen. Sie entsteht nur, wenn das Modell die gemessenen Felder gut genug vorhersagt, und nur für SDR.
+
 ## Einbetten
 
 `src/index.ts` exportiert `ScopeView`: ein WebGL-Canvas mit wählbaren Scopes, ohne Framework.

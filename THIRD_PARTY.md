@@ -22,6 +22,7 @@ Die Komponenten unten behalten ihre eigenen Lizenzen.
 | [alwan](https://github.com/soufianekhiat/alwan) (Copyright (c) 2025 Soufiane KHIAT) | MIT, text in [licenses/alwan-LICENSE.txt](licenses/alwan-LICENSE.txt) | `src/camera.ts`, `src/color.ts` | camera log curves and camera primaries, CIE 1976 u′v′, CIEDE2000, ΔE ITP; file and line references in the code |
 | [aces-core](https://github.com/aces-aswf/aces-core) (Copyright Contributors to the ACES Project) | Apache-2.0, text in [licenses/aces-core-LICENSE.txt](licenses/aces-core-LICENSE.txt) | `src/color.ts` (`bradford`), `src/chain.ts` (`acesParams`, `acesTonescale`) | Bradford cone response matrix and von-Kries adaptation from `lib/Lib.Academy.ColorSpaces.ctl`; ACES 2.0 tonescale from `lib/Lib.Academy.Tonescale.ctl`; changed: column-vector convention, ported to TypeScript/GLSL, tonescale applied to luminance and limited to the peak |
 | [alwan](https://github.com/soufianekhiat/alwan) (see above) | MIT | `src/color.ts` (`bt2390Eetf`), `src/chain.ts` (shader) | BT.2390 EETF from `core/alwan_hdr_core.inc` |
+| [alwan](https://github.com/soufianekhiat/alwan) (see above) | MIT | `src/calib/colorimetry.ts` (`planckUv`) | Krystek 1985 Planckian-locus coefficients from `src/alwan/data/planckian_locus_krystek_{u,v}.csv`; the CCT/Duv search is our own |
 | [prism](https://github.com/djieff/prism) (Copyright (c) 2026 Jean-Francois Bouchard) | MIT, text in [licenses/prism-LICENSE.txt](licenses/prism-LICENSE.txt) | `src/lut.ts` | structure of the LUT parsers (`.cube`, `.3dl`, `.spi3d`, `.csp`) after `src/prism/io/lut/loader.py`, written anew in TypeScript |
 
 Manufacturer look LUTs (Sony, Panasonic, Canon, ARRI, Blackmagic, RED) are **not** bundled: their terms forbid redistribution or could not be read. The app links their official download pages ([docs/research/lut-cst.md](docs/research/lut-cst.md)).
@@ -35,6 +36,10 @@ The desktop installers bundle a static **ffmpeg binary** (via `ffmpeg-static`) a
 - ffmpeg source code and licence texts: <https://ffmpeg.org/download.html>, <https://ffmpeg.org/legal.html>
 - Build used by `ffmpeg-static`: <https://github.com/eugeneware/ffmpeg-static/releases>
 - The web build does not contain ffmpeg. `npm start` uses an ffmpeg from your `PATH`.
+
+## ArgyllCMS (optional, not shipped)
+
+Display calibration (`server/meter.mjs`) can use **ArgyllCMS `spotread`** if the user has installed it. ArgyllCMS is licensed under the AGPL-3 (some drivers GPL-2+, <https://www.argyllcms.com/doc/ArgyllDoc.html>). LZ Scopes does not bundle, link or modify it: it starts the separately installed program and reads its text output, the way DisplayCAL does. Procedures from DisplayCAL (GPL-3) were read as reference only; no code was taken ([docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md)).
 
 ## Development only (not shipped)
 

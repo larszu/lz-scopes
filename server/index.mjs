@@ -22,6 +22,7 @@ import { basename, delimiter, dirname, extname, join, normalize, resolve, sep } 
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { COMMANDS, controlAccess, validateCommand } from './control.mjs';
+import { handleMeterSocket, meterInfo } from './meter.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -530,6 +531,13 @@ const server = createServer((req, res) => {
     return;
   }
   if (path === '/api/control' || path === '/api/control/commands') return handleControlHttp(req, res, path);
+  if (path === '/api/meter') {
+    // colour meter (ArgyllCMS spotread, server/meter.mjs): local app only
+    const problem = controlAccess({ remote: req.socket.remoteAddress, origin: req.headers.origin, host: req.headers.host });
+    if (problem) { res.writeHead(problem.status, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ error: problem.error })); }
+    meterInfo().then((info) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(info)); });
+    return;
+  }
   if (path === '/api/outputs') {
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
     return res.end(JSON.stringify([...outputs.entries()].map(([name, o]) => ({ name, url: `/out/${name}.mjpeg`, viewers: o.clients.size, target: o.target || null }))));
@@ -620,6 +628,7 @@ const controlClients = new Set();
 /** @type {Map<string, (reply: { ok: boolean, error?: string, result?: unknown }) => void>} */
 const pending = new Map();
 let appState = null, seq = 0;
+const meterWss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 4 * 1024 * 1024 });
 const ctlWss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 256 * 1024 });
 
 const presentedToken = (req) => {
@@ -715,6 +724,12 @@ server.on('upgrade', (req, socket, head) => {
       return;
     }
     return ctlWss.handleUpgrade(req, socket, head, (ws) => ctlWss.emit('connection', ws, req));
+  }
+  if (path === '/meter') {
+    // spotread drives measuring hardware: only the local app (same origin, loopback)
+    const problem = controlAccess({ remote: req.socket.remoteAddress, origin: req.headers.origin, host: req.headers.host });
+    if (problem) { socket.end(`HTTP/1.1 ${problem.status} Forbidden\r\n\r\n`); return; }
+    return meterWss.handleUpgrade(req, socket, head, (ws) => handleMeterSocket(ws));
   }
   const target = path === '/stream' ? wss : path === '/out' ? outWss : null;
   if (!target) return socket.destroy();

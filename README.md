@@ -117,6 +117,17 @@ Tone generator and loudness/level analyser, measured with an own DSP core (`src/
 - **Audio scopes** in the panel menu, docking layout and saved layouts: level & loudness (sample peak, true peak after ITU-R BS.1770-5 Annex 2, M/S/I on the EBU +9 / +18 scale in LUFS or LU, LRA after Tech 3342, Max M/S/TP, PLR, targets EBU R 128, R 128 s1, s2), loudness history, spectrum (log frequency axis, slope 0/3/4.5 dB/oct, third-octave bands) and goniometer with correlation meter.
 - **Tone generator**: sine, square, triangle, saw, white and pink noise (also 500–2000 Hz for Tech 3343), log and stepped sweep, EBU stereo ident, GLITS, L/R ident, polarity test and an A/V-sync beep that matches the flashing test pattern “A/V-Sync”. Level in dBFS with −18 dBFS (EBU R 68) preset, per-channel routing and polarity, output device selectable, self-test of the measuring core.
 
+## Display calibration and verification
+
+⚙ → *Kalibrierung / Verifikation …* (procedures after DisplayCAL, own code; [docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md)).
+
+- **Patch sequencer**: the pattern output window (`?out=`) shows the measuring patches (size, constant APL background, optional full-field insertion against ABL). The sequencer (`src/patchSequencer.ts`) is shared with the LED-wall tools.
+- **Meter**: ArgyllCMS `spotread`, started by the bridge as a separate program (desktop app or `npm start`), with CCMX/CCSS correction and display type. ArgyllCMS is not bundled; without it the dialog says “ArgyllCMS nicht gefunden” and takes XYZ or xyY by hand. *Untested with real hardware.*
+- **Own patch sets**: grey 21, Video 47, Video 81, HDR PQ (up to the chosen peak). Untethered mode for external generators (new patch when ΔE00 > 1.5, confirmed twice).
+- **Report**: ΔE00 and ΔITP (mean, median, 95th percentile, max) against BT.1886 with measured black / gamma / sRGB / PQ, grey curve with effective gamma, CCT and Duv, contrast; CSV, HTML, print to PDF.
+- **Uniformity** 3×3 to 9×9 at 100/75/50/25 %, ΔE00 to the centre (≤ 4 / ≤ 2 as quoted by DisplayCAL for ISO 14861) and contrast deviation.
+- **3D LUT** `.cube` 33/65 from a matrix/shaper model of the measurements, only if the model predicts the measured patches well enough (SDR only).
+
 ## Architecture
 
 - **Bridge** (`server/index.mjs`): ffprobe for resolution and colour metadata, then ffmpeg scales to the analysis width and writes raw `rgba` / `rgba64le` frames over a WebSocket. Slow browsers get frames dropped, no queue builds up. The Y'CbCr matrix is passed to ffmpeg explicitly, the transfer function is left untouched. It listens on `127.0.0.1` only and accepts network URLs and test patterns, never local files, ffmpeg options or a shell.

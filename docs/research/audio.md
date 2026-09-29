@@ -12,7 +12,7 @@ Beide Seiten sind per JS obfuskiert (der Seiteninhalt wird zur Laufzeit geschrie
 
 ### A.1 Audio Test Tone Generator (`audiogenerator.htm`)
 
-![VMA Generator, Dual-Tone läuft](img/vma-audiogenerator.png)
+_(Screenshot der Fremdsoftware entfernt – Urheberrecht; Beschreibung siehe Text.)_
 
 | Bereich | Bedienelemente und Werte (wörtlich) |
 |---|---|
@@ -34,7 +34,7 @@ Schwächen:
 
 ### A.2 Audio Analyser (`audioanalyser.htm`)
 
-![VMA Analyser mit künstlichem Mikrofon](img/vma-audioanalyser.png)
+_(Screenshot der Fremdsoftware entfernt – Urheberrecht; Beschreibung siehe Text.)_
 
 | Bereich | Inhalt |
 |---|---|

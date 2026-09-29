@@ -1,5 +1,7 @@
 import './vendor/dockview.css';
 import './style.css';
+// Signet "lz." of Lars Zumpe Medienproduktion, unchanged file from the brand kit (own trademark).
+import signetUrl from './brand/lzm_signet_offwhite_1c.svg';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, HLG_PEAKS, LUMA, detectDisplay, transferLabel, type DisplaySpace, type GamutId } from './color';
 import { CAMERA_GAMUTS, LOG_CURVES } from './camera';
 import {
@@ -108,7 +110,7 @@ const groupedSelect = (value: string, groups: [string, [string, string][]][], on
 const app = $('#app');
 app.innerHTML = `
   <header class="bar">
-    <div class="brand"><span class="mark">LZ</span> Scopes</div>
+    <div class="brand" title="LZ Scopes · Lars Zumpe Medienproduktion"><img class="signet" src="${signetUrl}" alt="Lars Zumpe Medienproduktion" width="33" height="20" /><span class="product">Scopes</span></div>
     <button class="icon" id="toggle-side" title="Quellen ein/aus (B)">☰</button>
     <div class="group" id="layouts"></div>
     <div class="group" id="globals"></div>

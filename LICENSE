@@ -58,6 +58,13 @@ DEUTSCH
 9. ANWENDBARES RECHT
    Es gilt das Recht der Bundesrepublik Deutschland.
 
+10. MARKE UND LOGO
+   Name, Logo, Signet, Monogramm und App-Icon der Lars Zumpe
+   Medienproduktion (u. a. docs/brand/, src/brand/, build/icon.png,
+   public/icons/) sind Marken- und Gestaltungseigentum von Lars Zumpe.
+   Sie sind von keiner Nutzungserlaubnis umfasst und dürfen nicht frei
+   verwendet, verändert oder für andere Produkte genutzt werden.
+
 --------------------------------------------------------------------------
 ENGLISH (convenience translation; the German text prevails)
 --------------------------------------------------------------------------
@@ -99,6 +106,12 @@ ENGLISH (convenience translation; the German text prevails)
    remains unaffected.
 
 9. GOVERNING LAW is the law of the Federal Republic of Germany.
+
+10. TRADEMARK AND LOGO. The name, logo, signet, monogram and app icon of
+   Lars Zumpe Medienproduktion (including docs/brand/, src/brand/,
+   build/icon.png, public/icons/) are the property of Lars Zumpe. They are
+   not covered by any permission of use and may not be used, altered or
+   applied to other products.
 
 --------------------------------------------------------------------------
 Kontakt / Contact: Lars Zumpe — lars@zumpe.dev

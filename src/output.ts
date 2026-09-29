@@ -16,7 +16,7 @@ export function runOutputWindow() {
   document.body.replaceChildren(canvas);
   const ctx = canvas.getContext('2d')!;
   const hud = document.createElement('div');
-  hud.style.cssText = 'position:fixed;left:12px;bottom:12px;font:12px system-ui;color:#fff;background:rgba(0,0,0,.7);padding:4px 8px;border-radius:4px;transition:opacity .4s';
+  hud.style.cssText = 'position:fixed;left:12px;bottom:12px;font:12px system-ui;color:#F6F5F0;background:rgba(19,32,64,.85);padding:4px 8px;transition:opacity .4s';
   document.body.append(hud);
   let hudTimer = 0;
   const showHud = () => {

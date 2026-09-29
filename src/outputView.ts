@@ -152,7 +152,7 @@ export function runOutputView() {
   requestAnimationFrame(frame);
 
   const hud = document.createElement('div');
-  hud.style.cssText = 'position:fixed;left:10px;bottom:10px;background:rgba(0,0,0,.75);padding:4px 8px;border-radius:4px;transition:opacity .5s;pointer-events:none';
+  hud.style.cssText = 'position:fixed;left:10px;bottom:10px;background:rgba(19,32,64,.85);color:#F6F5F0;padding:4px 8px;transition:opacity .5s;pointer-events:none';
   document.body.append(hud);
   let hudT = 0, streamMsg = '';
   const showHud = () => {

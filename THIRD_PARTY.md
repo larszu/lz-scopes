@@ -12,6 +12,7 @@ Die Komponenten unten behalten ihre eigenen Lizenzen.
 | BlazeFace short-range model (`public/models/blaze_face_short_range.tflite`) | – | Apache-2.0 | web + desktop | Google MediaPipe model, used unchanged |
 | [ws](https://github.com/websockets/ws) | 8.22.0 | MIT | bridge (desktop / `npm start`) | WebSocket server |
 | [ffmpeg-static](https://github.com/eugeneware/ffmpeg-static) | 5.3.0 | GPL-3.0-or-later (wrapper) | desktop app only | see below |
+| [Public Sans](https://github.com/uswds/public-sans) via [@fontsource-variable/public-sans](https://fontsource.org/fonts/public-sans) | 5.3.0 | SIL OFL 1.1, text in [licenses/public-sans-OFL.txt](licenses/public-sans-OFL.txt) | web + desktop | UI typeface; `src/fonts/` holds the unchanged variable WOFF2 files (latin, latin-ext) so the desktop app works offline |
 | [Electron](https://www.electronjs.org/) | 44.4.5 | MIT | desktop app | Chromium and Node.js inside it carry their own notices (`LICENSES.chromium.html` in the app bundle) |
 
 ## Ported formulas and constants
@@ -41,6 +42,7 @@ TypeScript, Vite, Vitest, electron-builder, concurrently, `@types/*`: MIT or Apa
 
 ## Own works
 
+- **Logo and trademark of Lars Zumpe Medienproduktion** (`docs/brand/`, `src/brand/`, `build/icon.png`, `public/icons/`): signet, logo and app icon, unchanged files from the Brand Kit 2.0. Own trademark of Lars Zumpe, **not free to use**: no permission of the licence covers them (see [LICENSE](LICENSE), section 10).
 - **LZ display test images** (`public/patterns/lz-display/`, 20 images, 1920 x 1080): own work of Lars Zumpe Medienproduktion.
 - **Test patterns** generated in code (`src/patterns.ts`): own work. Standards such as SMPTE RP 219 / EBU R 95 / ITU-R BT.709 are referenced by name only.
 - Research notes in `docs/research/` cite third-party projects and standards by link and summary.

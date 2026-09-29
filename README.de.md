@@ -83,15 +83,19 @@ Voraussetzung für Netzwerkquellen ohne Desktop-App: `ffmpeg` und `ffprobe` im `
 | Testbild-Generator (siehe unten) | direkt im Browser, auch als Ausgabefenster |
 | Kamera, Bildschirm, Video-/Bilddatei | direkt im Browser |
 
-Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einstellbar sind Analyseauflösung, Bildrate, 8 oder 16 bit (für 10-bit/HDR), RTSP über TCP oder UDP, Transfer (SDR/PQ/HLG) und Farbraum (709/2020/601). „auto“ übernimmt die Stream-Metadaten.
+Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einstellbar sind Analyseauflösung, Bildrate, 8 oder 16 bit (für 10-bit/HDR), RTSP über TCP oder UDP, Transfer, Matrix (709, 2020, 601 525 Zeilen/SMPTE-C, 601 625 Zeilen/EBU) und Gamut. „auto“ übernimmt die Stream-Metadaten (`bt470bg` → 625, `smpte170m` → 525).
+
+- **Transfer**: SDR (BT.1886), PQ, HLG mit wählbarem Display-Spitzenwert Lw (500–10 000 cd/m², Presets nach EBU R 167; Systemgamma nach BT.2100 auf die Luminanz angewandt) und die **Kamera-Log-Kurven** ARRI LogC3/LogC4, Sony S-Log3, Panasonic V-Log, Blackmagic Film Gen 5, Canon Log 2/3, RED Log3G10, Fujifilm F-Log2, DJI D-Log, Nikon N-Log und Apple Log. Log wird nicht signalisiert und muss gewählt werden.
+- **Gamut**: auto nimmt das Kamera-Gamut der Log-Kurve (AWG3/4, S-Gamut3.Cine, V-Gamut, BMD WG Gen5, Cinema Gamut, REDWideGamutRGB, D-Gamut, BT.2020 für F-/N-/Apple Log), sonst die Primaries der Matrix. S-Gamut3, DaVinci WG, ACES AP0/AP1 und P3 sind wählbar. Unterschiedliche Weißpunkte (ACES) werden per Bradford angepasst.
+- Log wirkt in der Waveform-Skala „cd/m² / Szene“ (Szene-Reflexion in %, 18 % = Graukarte, Blendenschritte), im CIE-Diagramm, in der Bildansicht und bei den Vectorscope-Zielen (Rec.709-Balken in Kurve und Gamut der Quelle). Die Kurvenwerte gelten als 10-bit-Code/1023 im Narrow-Range-Signal, wie die Hersteller sie angeben.
 
 ## Scopes
 
-- **Waveform** Luma, RGB-Overlay, RGB-, YRGB- und YCbCr-Parade. Skala in %, 8 bit, 10 bit (Legal-Range-Codes) oder cd/m² (PQ absolut, HLG bezogen auf ein 1000-cd/m²-Display, SDR nach BT.1886 mit 100 cd/m²)
-- **Vectorscope** mit 75-%- und 100-%-Zielen passend zur Matrix, Hautton-Linie, Zoom ×1/×2/×5, Spur optional in Bildfarbe
-- **CIE 1931 xy** mit Spektralzug, Rec.709, P3-D65, Rec.2020 und D65
+- **Waveform** Luma, RGB-Overlay, RGB-, YRGB- und YCbCr-Parade, Bereich −7 … 110 %. Skala in %, 8 bit, 10 bit (Legal-Range-Codes) oder cd/m² (PQ absolut, HLG bezogen auf das eingestellte Lw, SDR nach BT.1886 mit 100 cd/m², Log als Szene-Reflexion). Marken nach BT.2408 bei HDR (75 % HLG bzw. 58 % PQ Referenzweiß, 38 % Graukarte) und 18 % Grau bei Log; die Grenzen −5/105 % nach EBU R 103 v3.0 lassen sich im ⚙ einblenden
+- **Vectorscope** mit 75-%- und 100-%-Zielen passend zur Matrix (bei Log: 709-Balken in Kurve und Gamut der Quelle), Hautton-Linie, Zoom ×1/×2/×5, Spur optional in Bildfarbe
+- **CIE-Diagramm** 1931 xy oder 1976 u′v′ (⚙) mit Spektralzug, Rec.709, P3-D65, Rec.2020, D65 und dem Gamut der Quelle
 - **Histogramm** RGB, Luma, getrennt, linear oder log, mit Clipping-Anteil
-- **Bild** mit Falschfarben (ARRI-Schema), Zebra, Clipping-Anzeige und Luma. Ein Klick setzt einen Messpunkt, der zusätzlich in Waveform und Vectorscope markiert wird
+- **Bild** mit Falschfarben (ARRI-Schema), Zebra, Clipping-Anzeige, Luma und **Gamut-Warnung** (Pixel mit negativen Anteilen im Zielgamut 709/P3/2020, abgestuft nach der Distanz (max − c)/max). Ein Klick setzt einen Messpunkt, der zusätzlich in Waveform und Vectorscope markiert wird
 - **Messwerte**: Quelle, Codec, Metadaten, Y' min/max/Mittel (bei HDR in cd/m²), Clipping je Kanal, verworfene Frames
 
 **Anordnung:** Panels per Drag-and-drop am Tab verschieben, andocken, als Tabs stapeln und mit den Trennern skalieren (dockview, wie das Raster im multicam-planner). Die Vorlagen 1 bis 3×3 und „+ Panel“ dienen als Start. Ein Doppelklick vergrößert ein Panel, `Esc` holt es zurück.
@@ -125,19 +129,19 @@ Einfrieren, PNG-Export, Vollbild.
 
 Die Quelle *Testbild* erzeugt die Muster selbst, in 720p bis 2160p. Rampen und Zonenplatte werden pixelgenau geschrieben, damit der Browser sie nicht dithert.
 
-- **Vollfeld** Rot, Grün, Blau, Weiß, Grau 50 %, Grau 18 %, Schwarz
-- **Grau** Verlauf, Verläufe W/R/G/B, 11 Graustufen, Graukeil in TE-165-Anordnung (lineare 10-%-Stufen), wandernder Verlauf, PLUGE
-- **Geometrie** Schachbrett, Konvergenzgitter, Fadenkreuz, Kreisraster, Zonenplatte (auch bewegt), sichere Bereiche nach EBU R 95
-- **Farbe** SMPTE 75 % und 100 % mit PLUGE, EBU 100/0/75/0 und 100/0/100/0, Sättigungsverläufe, Farbkreis, ColorChecker (Näherung)
+- **Vollfeld** Rot, Grün, Blau, Weiß, Grau 50 %, Grau 18 % (BT.709-OETF: 40,9 %), Schwarz
+- **Grau** Verlauf, Verläufe W/R/G/B, 11 Graustufen, Graukeil in TE-165-Anordnung (lineare 10-%-Stufen), wandernder Verlauf, PLUGE nach ITU-R BT.814-4 (Streifen ±2 % = Codes 80/48, Positionen nach Tab. 4/5)
+- **Geometrie** Schachbrett, Konvergenzgitter, Fadenkreuz, Kreisraster, Zonenplatte (auch bewegt), sichere Bereiche nach EBU R 95 (Action 3,5 %, Graphics 5 %, 4:3-Caption-Safe)
+- **Farbe** SMPTE 75 % und 100 % mit PLUGE −2/0/+2/0/+4 % wie in BT.2111, EBU 100/0/75/0 und 100/0/100/0, Sättigungsverläufe, Farbkreis, ColorChecker (Näherung)
 - **Animiert** Farbwechsel, Farbwechsel-Verlauf, dreigeteilt, bewegte Diagonalen, Regenbogenfluss, Chroma-Crawl
 - **Testbild** mit Kreis, Balken, Frequenzgittern und Uhr
-- **HDR** PQ-Graukeil 0–10 000 cd/m², HLG-Graukeil, PQ-Verlauf mit Referenzweiß 203; die Scopes schalten dabei automatisch auf PQ bzw. HLG
+- **HDR** PQ-Graukeil 0–10 000 cd/m², HLG-Graukeil, PQ-Verlauf mit Referenzweiß 203, PLUGE nach BT.814-4 (Higher level 38,2 %) und Graukarte 38 % (BT.2408) jeweils für HLG und PQ; die Scopes schalten dabei automatisch auf PQ bzw. HLG
 - **LZ Displaytest** die 20 Displaytestbilder (1920×1080) aus `Broadcast/displaytest`
 - **Eigene Bilder** über *+ Bilder*, gelten für die laufende Sitzung
 
 Optional lässt sich eine Kennung einblenden. *⧉ Ausgeben* öffnet das Muster in einem eigenen Fenster (`?out=<id>&w=&h=&label=`) für Monitor, Beamer oder Capture: `←`/`→` wechseln, `F` Vollbild, `L` Label. In nativer Auflösung und im Vollbild wird 1:1 ausgegeben.
 
-Grenze: Canvas arbeitet in Full-Range-RGB, deshalb gibt es keine Pegel unter 0 %. Die PLUGE-Stufe −4 % liegt dadurch auf 0 %.
+Grenze: Canvas arbeitet in Full-Range-RGB, deshalb gibt es keine Pegel unter 0 %. Die PLUGE-Stufen −2 % liegen dadurch auf 0 %.
 
 ## Einbetten
 

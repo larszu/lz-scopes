@@ -8,6 +8,7 @@ export default defineConfig({
     proxy: {
       '/stream': { target: 'ws://127.0.0.1:4190', ws: true },
       '/api': 'http://127.0.0.1:4190',
+      '/out': { target: 'http://127.0.0.1:4190', ws: true },
     },
   },
   build: { target: 'es2022' },

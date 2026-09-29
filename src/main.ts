@@ -106,7 +106,7 @@ app.innerHTML = `
       <div class="add" id="add"></div>
       <details class="bridge"><summary>Bridge</summary>
         <label>Adresse <input id="bridge" placeholder="leer = dieser Server"></label>
-        <p class="hint">RTSP & Co. dekodiert die lokale Bridge (<code>npm start</code>) mit ffmpeg.</p>
+        <p class="hint">RTSP, SRT, HLS und andere Netzwerkquellen dekodiert die Bridge mit ffmpeg: Desktop-App oder <code>npm start</code>. Im Browser allein gehen Testbilder, Kamera, Bildschirm und Dateien.</p>
       </details>
       <details class="help"><summary>Tastatur</summary>
         <p><kbd>1</kbd>–<kbd>6</kbd> Layout · <kbd>Leertaste</kbd> Einfrieren · <kbd>F</kbd> Vollbild · <kbd>S</kbd> PNG · <kbd>B</kbd> Seitenleiste ·

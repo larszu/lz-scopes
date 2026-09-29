@@ -27,6 +27,7 @@ import dgram from 'node:dgram';
 import { randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { performance } from 'node:perf_hooks';
+import { taiMinusUtc as leapTaiMinusUtc } from './leap.mjs';
 
 export const PTP_PRIMARY = '224.0.1.129';
 export const PTP_EVENT_PORT = 319;
@@ -138,7 +139,7 @@ const median = (a) => { if (!a.length) return NaN; const s = [...a].sort((x, y) 
  * the leap table for the local clock when the grandmaster does not signal a valid UTC offset.
  */
 export class PtpMonitor {
-  constructor({ iface = '', delayReq = false, taiMinusUtc = () => 37, now = nowUtcNs } = {}) {
+  constructor({ iface = '', delayReq = false, taiMinusUtc = leapTaiMinusUtc, now = nowUtcNs } = {}) {
     this.iface = iface; this.delayReq = delayReq; this.taiMinusUtc = taiMinusUtc; this.now = now;
     this.sockets = []; this.error = ''; this.started = 0; this.running = false;
     /** per domain: announce sources, sync state, sm */

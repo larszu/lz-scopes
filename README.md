@@ -40,12 +40,14 @@
 ## Why LZ Scopes
 
 - **Real scopes, in software.** Waveform (luma, RGB overlay, RGB / YRGB / YCbCr parade), vectorscope, CIE 1931 xy, histogram, false colour, zebra and numeric readout.
-- **Streams, not just files.** RTSP, RTMP, SRT, UDP, RTP, HLS and HTTP via an ffmpeg bridge; camera, screen, video and image files directly in the browser.
+- **Streams, not just files.** RTSP, RTMP, SRT, UDP, RTP, HLS and HTTP via an ffmpeg bridge; capture cards through the bridge (`device:`); DaVinci Resolve in 16 bit through its scripting API; camera / USB capture with device picker, screen or window with crop, watch folder, video and image files directly in the browser.
 - **HDR aware.** 8 or 16 bit analysis, PQ and HLG, BT.709 / 2020 / 601, waveform scale in cd/m².
 - **Built-in test patterns.** About 40 generated patterns from PLUGE and SMPTE bars to PQ wedges, plus 20 LZ display test images. Open any of them full screen on a monitor, projector or capture.
 - **Your layout.** Dock, stack and resize panels by drag and drop, keep layout configurations as JSON.
-- **Face tracking.** Skin-tone waveform that follows a detected face (MediaPipe BlazeFace, runs locally).
-- **Outputs.** Send a scope view or clean picture to another screen, as an MJPEG stream or by ffmpeg to RTMP / SRT / RTSP / UDP.
+- **Face tracking.** Skin-tone waveform that follows a detected face; pick which face to track (MediaPipe BlazeFace, runs locally).
+- **Vectorscope tools.** Zoom, gamut boundaries and colour-match targets; per-scope settings behind the gear icon.
+- **Outputs and overlay scenes.** Send a scope view or clean picture to another screen, as an MJPEG stream or by ffmpeg to RTMP / SRT / RTSP / UDP. Overlay scenes combine any number of scopes with position, size and opacity, editable in the output window (`E`).
+- **Remote control.** HTTP / WebSocket control API and a Bitfocus Companion module ([docs/control-api.md](docs/control-api.md), `companion/`).
 - **Embeddable.** `ScopeView` renders scopes in any page without a framework.
 
 ## Screenshots
@@ -82,7 +84,7 @@ The desktop app contains the bridge and ffmpeg, so RTSP and other network source
 4. Drag a rectangle in the picture to measure only that area. Click sets a measurement point that is marked in waveform and vectorscope.
 5. Arrange the windows with drag and drop, store the result under *Layouts*.
 
-Keys: `1`-`6` layout, `Space` freeze or play, `Left` / `Right` frame, `J` `K` `L` shuttle, `F` full screen, `S` PNG, `B` sidebar, `Esc` leave zoom.
+Keys: `1`-`6` layout, `Space` freeze or play, `Left` / `Right` frame, `J` `K` `L` shuttle, `F` full screen, `S` PNG, `B` sidebar, `Esc` leave zoom, `E` edit overlay in an output window.
 
 ## Build from source
 
@@ -90,8 +92,8 @@ Requires [Node.js](https://nodejs.org/) 20+ and, for network streams without the
 
 ```bash
 npm install
-npm run dev                  # UI http://localhost:4191, bridge on 4190
-npm run build && npm start   # production, everything on http://127.0.0.1:4190
+npm run dev                  # UI http://localhost:4191, bridge on 4192
+npm run build && npm start   # production, everything on http://127.0.0.1:4192
 npm test                     # colour maths, statistics, bridge input validation
 npm run typecheck
 npm run dist:mac             # or dist:win: desktop app with bridge and ffmpeg
@@ -106,7 +108,7 @@ Release: push a tag `v*`; `release.yml` builds Windows and macOS and attaches th
 - **UI**: plain TypeScript, [dockview](https://github.com/mathuo/dockview) for the docking layout, Vite for the build, Electron for the desktop shell.
 - **Web build**: asset paths are relative, so it runs at `/` and under `/lz-scopes/`.
 
-Details: [docs/frame-protocol.md](docs/frame-protocol.md) (frame protocol), [docs/cable-planner-integration.md](docs/cable-planner-integration.md) (use inside cable-planner), [docs/research](docs/research) (standards and market research), [docs/PUBLISHING.md](docs/PUBLISHING.md) (going public).
+Details: [docs/control-api.md](docs/control-api.md) (control API), [docs/frame-protocol.md](docs/frame-protocol.md) (frame protocol), [docs/cable-planner-integration.md](docs/cable-planner-integration.md) (use inside cable-planner), [docs/research](docs/research) (standards and market research), [docs/PUBLISHING.md](docs/PUBLISHING.md) (going public).
 
 Embedding:
 

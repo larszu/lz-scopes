@@ -35,9 +35,28 @@ Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einste
 - **Bild** mit Falschfarben (ARRI-Schema), Zebra, Clipping-Anzeige und Luma. Ein Klick setzt einen Messpunkt, der zusätzlich in Waveform und Vectorscope markiert wird
 - **Messwerte**: Quelle, Codec, Metadaten, Y' min/max/Mittel (bei HDR in cd/m²), Clipping je Kanal, verworfene Frames
 
-Layouts 1, 1+1, 2×2, Colorist, 3×2, 3×3. Doppelklick schaltet ein Panel solo. Einfrieren, PNG-Export, Vollbild. Die Einstellungen bleiben im Browser gespeichert.
+**Anordnung:** Panels per Drag-and-drop am Tab verschieben, andocken, als Tabs stapeln und mit den Trennern skalieren (dockview, wie das Raster im multicam-planner). Die Vorlagen 1 bis 3×3 und „+ Panel“ dienen als Start. Ein Doppelklick vergrößert ein Panel, `Esc` holt es zurück.
 
-**Tasten:** `1`–`6` Layout · `Leertaste` Einfrieren · `F` Vollbild · `S` PNG · `B` Seitenleiste · `Esc` Solo beenden bzw. Messpunkt löschen
+**Einstellungen je Messwerkzeug** über das ⚙ in der Panel-Kopfzeile. **Layout-Konfigurationen** (Anordnung plus Einstellungen aller Scopes) werden unter *▦ Layouts* gespeichert, geladen und als JSON exportiert oder importiert.
+
+**Quellen:** Wird die Quelle in einem Panel umgeschaltet, folgen alle Panels ohne 📌.
+
+**Messrahmen:** Im Bild einen Rahmen ziehen; dieser Bereich leuchtet in allen Scopes hervor, und die Statistik gilt nur für ihn.
+
+**Waveforms:**
+- *Waveform Farbe* zeigt die Pixelfarben.
+- *Waveform Hauttöne* zeigt Hauttöne in ihrer Quellfarbe, den Rest schwarz-weiß. Den Bereich stellt man ein, indem man die Linien zieht (Mausrad = Farbton-Toleranz) oder ihn „Aus Messrahmen“ übernimmt; das Vectorscope zeigt den Toleranzkeil.
+- Parade, YRGB und RGB-Overlay wahlweise mono, in Kanalfarben oder in Bildfarben.
+
+**Display-Farbraum** der Bildansicht wird automatisch erkannt (sRGB/P3, HDR-fähig) oder gewählt; die Scopes messen immer das Signal.
+
+**Videodateien** mit Playhead, Timecode, Start/Stopp, Frame ±1 und J/K/L wie in Resolve.
+
+**Ausgaben** (*⧉ Ausgabe*): Gesamtansicht, einzelnes Panel, sauberes Quellbild oder Bild mit Scope-Overlay (auch auf Schwarz für den Luma-Key) auf einem Bildschirm dieses Rechners, optional als MJPEG-Stream (`/out/<name>.mjpeg`) oder per ffmpeg an RTMP/SRT/RTSP/UDP.
+
+Einfrieren, PNG-Export, Vollbild.
+
+**Tasten:** `1`–`6` Layout-Vorlage · `Leertaste` Play/Pause (Videodatei) bzw. Einfrieren · `←`/`→` Frame · `J`/`K`/`L` Shuttle · `F` Vollbild · `S` PNG · `B` Seitenleiste · `Esc` Vergrößerung beenden bzw. Messpunkt/Rahmen löschen
 
 ## Testbilder
 
@@ -81,6 +100,14 @@ view.setSource(src);
 - Die Bridge lauscht standardmäßig nur auf `127.0.0.1` und akzeptiert ausschließlich Netzwerk-URLs und die Testbilder: keine lokalen Dateien, keine ffmpeg-Optionen, keine Shell. Für Zugriff aus dem Netz gibt es `--host 0.0.0.0`.
 
 Konfiguration: `--port`/`PORT` (4190), `--host`/`HOST`, `FFMPEG`, `FFPROBE`.
+
+## Desktop-App
+
+`npm run dist:mac` bzw. `npm run dist:win` baut die App mit eingebetteter Bridge und mitgeliefertem ffmpeg (Mac: Universal). Release: Tag `v*` → `release.yml` baut Windows und macOS und hängt die Installer ans Release.
+
+## Offene Punkte
+
+Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in [docs/research](docs/research).
 
 ## Grenzen
 

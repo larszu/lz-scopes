@@ -128,7 +128,7 @@ export function vectorPoint(r: Rect, cb: number, cr: number, zoom: number) {
   return [r.x + R + cb * 2 * 0.9 * zoom * R, r.y + R - cr * 2 * 0.9 * zoom * R] as const;
 }
 
-export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number) {
+export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, skinTol = 0) {
   const R = r.w / 2, cx = r.x + R, cy = r.y + R;
   ctx.save();
   ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
@@ -143,8 +143,13 @@ export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: 
     ctx.lineTo(cx + Math.cos(rad) * R * (0.9 - l), cy - Math.sin(rad) * R * (0.9 - l));
     ctx.stroke();
   }
-  // skin-tone line
+  // skin-tone line (and the tolerance wedge used by the skin-tone waveform)
   const s = (SKIN_LINE_DEG * Math.PI) / 180;
+  if (skinTol > 0) {
+    const t = (skinTol * Math.PI) / 180;
+    ctx.fillStyle = 'rgba(255, 170, 120, 0.08)';
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, R * 0.9, -(s + t), -(s - t)); ctx.closePath(); ctx.fill();
+  }
   ctx.strokeStyle = 'rgba(255, 170, 120, 0.5)'; ctx.setLineDash([5, 4]);
   ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(s) * R, cy - Math.sin(s) * R); ctx.stroke();
   ctx.setLineDash([]);

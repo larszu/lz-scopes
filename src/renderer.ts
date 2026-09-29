@@ -79,6 +79,8 @@ void main() {
   int ch = gl_InstanceID;
   vec3 unit[3] = vec3[3](vec3(1.0, 0.18, 0.18), vec3(0.2, 1.0, 0.25), vec3(0.3, 0.45, 1.0));
   vec3 mono = uTint;
+  // the pixel's own colour, brightness normalised so dark pixels stay visible
+  vec3 srcCol = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
   vec2 pos; vec3 col = mono;
 
   if (uMode == 7) {
@@ -86,9 +88,7 @@ void main() {
     bool inRange = Y >= uSkin.x && Y <= uSkin.y;
     // skin tones in their own colour, everything else black & white
     bool skin = isSkin(cb, cr, uSkin.z) && inRange;
-    vec3 hue = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
-    hue = clamp(mix(vec3(dot(hue, vec3(0.3333))), hue, 2.5), 0.0, 1.0); // same hue, saturated for thin traces
-    col = skin ? hue : vec3(0.6);
+    col = skin ? srcCol : vec3(0.6); // skin in its source colour (hue and saturation unchanged)
   } else if (uMode == 0) {
     pos = vec2(x * 2.0 - 1.0, waveY(Y));
     if (uColorize == 1) col = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
@@ -96,11 +96,11 @@ void main() {
     float v = ch == 0 ? rgb.r : ch == 1 ? rgb.g : rgb.b;
     float px = uMode == 2 ? (float(ch) + x) / 3.0 : x;
     pos = vec2(px * 2.0 - 1.0, waveY(v));
-    col = uColorize == 1 || uMode == 1 ? unit[ch] : mono;
+    col = uColorize == 2 ? srcCol : uColorize == 1 || uMode == 1 ? unit[ch] : mono;
   } else if (uMode == 3) {
     float v = ch == 0 ? Y : ch == 1 ? rgb.r : ch == 2 ? rgb.g : rgb.b;
     pos = vec2((float(ch) + x) / 4.0 * 2.0 - 1.0, waveY(v));
-    col = ch == 0 || uColorize == 0 ? mono : unit[ch - 1];
+    col = uColorize == 2 ? srcCol : ch == 0 || uColorize == 0 ? mono : unit[ch - 1];
   } else if (uMode == 4) {
     float v = ch == 0 ? Y : ch == 1 ? cb + 0.5 : cr + 0.5;
     pos = vec2((float(ch) + x) / 3.0 * 2.0 - 1.0, waveY(v));
@@ -119,7 +119,7 @@ void main() {
   }
   if (uRoiOn == 1) {
     bool inside = p.x >= uRoi.x && p.y >= uRoi.y && p.x < uRoi.z && p.y < uRoi.w;
-    bool colored = uColorize == 1 || uMode == 1 || uMode == 7;
+    bool colored = uColorize >= 1 || uMode == 1 || uMode == 7;
     col = inside ? (colored ? col : vec3(1.0, 0.72, 0.25)) : col * 0.25;
   }
   vColor = col * uIntensity;
@@ -237,7 +237,8 @@ interface SrcTex { tex: WebGLTexture; w: number; h: number; u16: boolean; seq: n
 interface Accum { tex: WebGLTexture; fbo: WebGLFramebuffer; w: number; h: number }
 
 export interface ScatterParams {
-  mode: ScatterMode; gain: number; colorize: boolean; zoom: number; tint: [number, number, number]; maxSamples: number;
+  /** colorize: false/0 mono, true/1 channel colours (or source colours for luma/vector), 2 source colours in parades */
+  mode: ScatterMode; gain: number; colorize: boolean | 0 | 1 | 2; zoom: number; tint: [number, number, number]; maxSamples: number;
   roi: Roi; skin: SkinRange;
 }
 /** How the picture view maps the signal to the screen. */
@@ -431,7 +432,7 @@ export class Renderer {
     gl.uniform1i(this.u(prog, 'uCols'), cols);
     gl.uniform1i(this.u(prog, 'uMode'), mode);
     gl.uniform1i(this.u(prog, 'uTransfer'), TRANSFER_ID[src.transfer]);
-    gl.uniform1i(this.u(prog, 'uColorize'), p.colorize ? 1 : 0);
+    gl.uniform1i(this.u(prog, 'uColorize'), Number(p.colorize));
     gl.uniform2f(this.u(prog, 'uK'), kr, kb);
     gl.uniform1f(this.u(prog, 'uZoom'), p.zoom);
     gl.uniform1f(this.u(prog, 'uIntensity'), intensity);

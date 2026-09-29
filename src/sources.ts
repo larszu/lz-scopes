@@ -53,6 +53,32 @@ export class Source {
   frozen = false;
   stats: Stats | null = null;
   statsVersion = 0;
+  private lastFrame: { px: ArrayLike<number>; w: number; h: number; step: number; scale: number } | null = null;
+
+  /**
+   * Luma range of the skin-tone pixels inside the ROI (whole frame without ROI):
+   * 5th and 95th percentile – used to set the skin target range from a face.
+   */
+  skinLumaRange(kr: number, kb: number, tolDeg: number): { lo: number; hi: number; n: number } | null {
+    const f = this.lastFrame;
+    if (!f) return null;
+    const kg = 1 - kr - kb;
+    const sx = f.w / this.width, sy = f.h / this.height;
+    const [x0, y0, x1, y1] = this.roi ? [this.roi[0] * sx, this.roi[1] * sy, this.roi[2] * sx, this.roi[3] * sy] : [0, 0, f.w, f.h];
+    const ys: number[] = [];
+    for (let y = Math.floor(y0); y < Math.min(f.h, y1); y += f.step) {
+      for (let x = Math.floor(x0); x < Math.min(f.w, x1); x += f.step) {
+        const i = (y * f.w + x) * 4;
+        const r = f.px[i] / f.scale, g = f.px[i + 1] / f.scale, b = f.px[i + 2] / f.scale;
+        const Y = kr * r + kg * g + kb * b, cb = (b - Y) / (2 * (1 - kb)), cr = (r - Y) / (2 * (1 - kr));
+        const ang = (Math.atan2(cr, cb) * 180) / Math.PI;
+        if (Math.hypot(cb, cr) > 0.012 && Math.abs(ang - 123) <= tolDeg) ys.push(Y);
+      }
+    }
+    if (ys.length < 20) return null;
+    ys.sort((a, b) => a - b);
+    return { lo: ys[Math.floor(ys.length * 0.05)], hi: ys[Math.floor(ys.length * 0.95)], n: ys.length };
+  }
   probe: { x: number; y: number } | null = null;
   /** Region of interest in source pixels [x0, y0, x1, y1). */
   roi: [number, number, number, number] | null = null;
@@ -365,6 +391,7 @@ export class Source {
       const sx = w / this.width, sy = h / this.height;
       roi = [Math.floor(this.roi[0] * sx), Math.floor(this.roi[1] * sy), Math.ceil(this.roi[2] * sx), Math.ceil(this.roi[3] * sy)];
     }
+    this.lastFrame = { px, w, h, step, scale };
     this.stats = computeStats(px, w, h, step, scale, kr, kb, roi);
     this.statsVersion++;
   }

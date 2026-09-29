@@ -147,3 +147,9 @@ details.menu[open] > summary { border-color: #3f6b4a; color: var(--accent); }
 .dock-content { width: 100%; height: 100%; }
 .dock-content > .panel { width: 100%; height: 100%; border: 0; border-radius: 0; }
 .body canvas.blit, .body canvas.overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+.psettings > summary { padding: 1px 6px; min-height: 22px; background: transparent; border-color: transparent; color: var(--muted); }
+.psettings > summary:hover, .psettings[open] > summary { border-color: var(--line-2); color: var(--text); }
+.psettings .menu-body { min-width: 300px; z-index: 50; }
+.menu-body .mtitle { font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.dock-content, .dv-content-container { overflow: visible; }
+.mrow.lay .lname { flex: 1; text-align: left; }

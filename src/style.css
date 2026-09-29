@@ -156,3 +156,4 @@ details.menu[open] > summary { border-color: #3f6b4a; color: var(--accent); }
 button.roichip { background: #3a2a10; border-color: #6b4f1f; color: #ffb840; }
 .swatch { width: 14px; height: 14px; border-radius: 3px; flex: none; border: 1px solid var(--line-2); }
 input.num.wide { width: 80px; }
+.body .ask { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 5; display: flex; gap: 6px; align-items: center; background: rgba(17,19,22,.95); border: 1px solid #6b4f1f; border-radius: 6px; padding: 6px 8px; color: #ffb840; }

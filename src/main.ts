@@ -350,7 +350,7 @@ function panelElement(idx: number): HTMLElement {
     body.addEventListener('dblclick', () => toggleSolo(idx));
     attachPointer(p(), body);
     attachSkinDrag(p(), body);
-    body.addEventListener('contextmenu', (e) => { e.preventDefault(); const s = panelSource(p()); if (s) { s.probe = null; s.roi = null; s.faceTrack = false; refreshHeads(); } });
+    body.addEventListener('contextmenu', (e) => { e.preventDefault(); const s = panelSource(p()); if (s) { s.probe = null; s.roi = null; s.faceMode = 'off'; refreshHeads(); } });
     v = { idx, el, head, body, blit, overlay };
     views.set(idx, v);
     fillHead(v);
@@ -454,6 +454,15 @@ function panelSettings(p: PanelState): Node[] {
       rows.push(h('p', { class: 'hint' }, 'Im Waveform: Linien ziehen = Bereich, Mausrad = Farbton-Toleranz.'));
     }
   }
+  if (p.scope === 'picture' || p.scope === 'wf-skin' || isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'hist') {
+    const s = panelSource(p);
+    if (s) {
+      row('Gesichter', select(s.faceMode, [['off', 'Aus'], ['detect', 'Erkennen – anklicken zum Verfolgen'], ['all', 'Alle verfolgen']], (v) => {
+        s.faceMode = v as Source['faceMode'];
+        if (s.faceMode === 'off') { s.faces = []; s.faceSel.clear(); }
+        refreshHeads();      }, 'Erkannte Gesichter erscheinen grau; ein Klick aufs Gesicht im Bild verfolgt es (erneut klicken hebt auf)'));
+    }
+  }
   if (p.scope === 'picture') {
     row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
     if (p.picture === 'false') row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); }));
@@ -475,11 +484,10 @@ function refreshHeads() { views.forEach(fillHead); }
 function roiChip(p: PanelState): Node | string {
   const s = panelSource(p);
   if (!s) return '';
-  const off = h('button', { class: 'mini roichip', title: 'Messrahmen ausschalten (auch: ✕ am Rahmen, Rechtsklick, Esc)', onclick: () => { s.roi = null; s.faceTrack = false; refreshHeads(); } }, s.faceTrack ? '☺ Gesicht ✕' : '▭ Rahmen ✕');
-  const face = h('button', { class: 'mini', title: 'Gesicht automatisch verfolgen: der Messrahmen folgt dem größten Gesicht', onclick: () => { s.faceTrack = true; refreshHeads(); } }, '☺');
-  const tools = p.scope === 'picture' || p.scope === 'wf-skin';
-  if (s.faceTrack || s.roi) return off;
-  return tools ? face : '';
+  const n = s.activeRois().length;
+  const label = s.faceTrack ? `☺ ${s.faceMode === 'all' ? 'alle Gesichter' : n ? `${n} Gesicht${n > 1 ? 'er' : ''}` : 'Gesicht anklicken'} ✕` : '▭ Rahmen ✕';
+  if (!s.faceTrack && !s.roi) return '';
+  return h('button', { class: 'mini roichip', title: 'Messrahmen/Gesichtsverfolgung ausschalten (auch: ✕ am Rahmen, Rechtsklick, Esc)', onclick: () => { s.roi = null; s.faceMode = 'off'; s.faces = []; s.faceSel.clear(); refreshHeads(); } }, label);
 }
 
 // face tracking (MediaPipe is only loaded once someone switches it on)
@@ -513,6 +521,24 @@ function skinFromRoi(p: PanelState) {
 function alertHud(msg: string) {
   const el = $('#fps');
   el.textContent = msg;
+}
+
+/** A hand-drawn rectangle around a face: ask once whether that face should be tracked. */
+async function offerFaceTracking(s: Source, body: HTMLElement) {
+  const rect = s.roi;
+  if (!rect) return;
+  let face: [number, number, number, number] | null = null;
+  try { face = await (await import('./face')).faceInRect(s, rect); } catch { return; }
+  if (!face || s.roi !== rect) return;
+  body.querySelector('.ask')?.remove();
+  const ask = h('div', { class: 'ask' }, h('span', {}, 'Gesicht im Rahmen – verfolgen?'),
+    h('button', { class: 'primary', onclick: () => {
+      ask.remove();
+      s.faces = [{ id: -1, box: face! }]; s.faceSel = new Set([-1]); s.faceMode = 'detect'; s.roi = null; refreshHeads();
+    } }, 'Verfolgen'),
+    h('button', { onclick: () => ask.remove() }, 'Nur Rahmen'));
+  body.append(ask);
+  setTimeout(() => ask.remove(), 8000);
 }
 
 function hitRoiClose(e: PointerEvent, s: Source, body: HTMLElement) {
@@ -568,8 +594,16 @@ function attachPointer(p: PanelState, body: HTMLElement) {
   body.addEventListener('pointerdown', (e) => {
     const s = panelSource(p);
     if (p.scope !== 'picture' || !s?.width || e.button !== 0) return;
-    if (s.roi && hitRoiClose(e, s, body)) { s.roi = null; s.faceTrack = false; refreshHeads(); return; }
+    if (s.roi && !s.faceTrack && hitRoiClose(e, s, body)) { s.roi = null; refreshHeads(); return; }
     const pt = toSrc(e, s, false);
+    if (pt && s.faceTrack) {
+      const hit = s.faces.find(({ box: f }) => pt.x >= f[0] && pt.x < f[2] && pt.y >= f[1] && pt.y < f[3]);
+      if (hit) {
+        if (s.faceMode === 'all') { s.faceMode = 'detect'; s.faceSel = new Set([hit.id]); }
+        else if (s.faceSel.has(hit.id)) s.faceSel.delete(hit.id); else s.faceSel.add(hit.id);
+        refreshHeads(); return;
+      }
+    }
     if (!pt) return;
     start = { ...pt, cx: e.clientX, cy: e.clientY };
     try { body.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
@@ -579,12 +613,13 @@ function attachPointer(p: PanelState, body: HTMLElement) {
     if (!start || !s) return;
     if (Math.hypot(e.clientX - start.cx, e.clientY - start.cy) < 5) return;
     const pt = toSrc(e, s, true)!;
+    if (s.faceTrack) { s.faceMode = 'off'; s.faces = []; s.faceSel.clear(); }
     s.roi = [Math.min(start.x, pt.x), Math.min(start.y, pt.y), Math.max(start.x, pt.x) + 1, Math.max(start.y, pt.y) + 1];
   });
   body.addEventListener('pointerup', (e) => {
     const s = panelSource(p);
     if (start && s && Math.hypot(e.clientX - start.cx, e.clientY - start.cy) < 5) s.probe = { x: start.x, y: start.y };
-    else if (start && s?.roi) { s.faceTrack = false; refreshHeads(); }
+    else if (start && s?.roi) { s.faceMode = 'off'; s.faces = []; s.faceSel.clear(); refreshHeads(); offerFaceTracking(s, body); }
     start = null;
   });
 }
@@ -847,7 +882,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'f' || e.key === 'F') $('#full').click();
   else if (e.key === 's' || e.key === 'S') snapshot();
   else if (e.key === 'b' || e.key === 'B') $('#toggle-side').click();
-  else if (e.key === 'Escape') { if (dock.api.hasMaximizedGroup()) dock.exitMaximized(); else { sources.forEach((s) => { s.probe = null; s.roi = null; s.faceTrack = false; }); refreshHeads(); } }
+  else if (e.key === 'Escape') { if (dock.api.hasMaximizedGroup()) dock.exitMaximized(); else { sources.forEach((s) => { s.probe = null; s.roi = null; s.faceMode = 'off'; }); refreshHeads(); } }
 });
 
 for (const saved of state.sources) {

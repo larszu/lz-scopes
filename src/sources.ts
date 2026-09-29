@@ -66,9 +66,9 @@ export class Source {
     if (!f) return null;
     const kg = 1 - kr - kb;
     const sx = f.w / this.width, sy = f.h / this.height;
-    const [x0, y0, x1, y1] = this.roi ? [this.roi[0] * sx, this.roi[1] * sy, this.roi[2] * sx, this.roi[3] * sy] : [0, 0, f.w, f.h];
+    const rects = this.activeRois().length ? this.activeRois().map((r) => [r[0] * sx, r[1] * sy, r[2] * sx, r[3] * sy]) : [[0, 0, f.w, f.h]];
     const ys: number[] = [];
-    for (let y = Math.floor(y0); y < Math.min(f.h, y1); y += f.step) {
+    for (const [x0, y0, x1, y1] of rects) for (let y = Math.floor(y0); y < Math.min(f.h, y1); y += f.step) {
       for (let x = Math.floor(x0); x < Math.min(f.w, x1); x += f.step) {
         const i = (y * f.w + x) * 4;
         const r = f.px[i] / f.scale, g = f.px[i + 1] / f.scale, b = f.px[i + 2] / f.scale;
@@ -84,8 +84,21 @@ export class Source {
   probe: { x: number; y: number } | null = null;
   /** Region of interest in source pixels [x0, y0, x1, y1). */
   roi: [number, number, number, number] | null = null;
-  /** ROI follows the largest detected face (src/face.ts). */
-  faceTrack = false;
+  /**
+   * Face tracking (src/face.ts): 'detect' shows all faces grey, the clicked ones
+   * (faceSel, by id) are tracked; 'all' tracks every face.
+   */
+  faces: { id: number; box: [number, number, number, number] }[] = [];
+  faceMode: 'off' | 'detect' | 'all' = 'off';
+  faceSel = new Set<number>();
+  get faceTrack() { return this.faceMode !== 'off'; }
+
+  /** Regions of interest in effect: tracked faces, else the manual rectangle. */
+  activeRois(): [number, number, number, number][] {
+    if (this.faceMode === 'all') return this.faces.map((f) => f.box);
+    if (this.faceMode === 'detect') return this.faces.filter((f) => this.faceSel.has(f.id)).map((f) => f.box);
+    return this.roi ? [this.roi] : [];
+  }
   /** Estimated frame duration of a video file (from presented frames). */
   frameDuration = 1 / 25;
   private probeCache = { key: '', rgb: null as [number, number, number] | null };
@@ -376,7 +389,7 @@ export class Source {
 
   /** Histogram and clipping statistics on a subsampled frame (CPU, ~130 k samples). */
   updateStats(kr: number, kb: number) {
-    const seqKey = `${this.frameSeq}:${this.roi?.join(',') ?? ''}`;
+    const seqKey = `${this.frameSeq}:${this.activeRois().flat().join(',')}`;
     if (!this.ready || this.statsSeq === seqKey) return;
     this.statsSeq = seqKey;
     let px: Uint8Array | Uint8ClampedArray | Uint16Array, w: number, h: number, step: number, scale: number;
@@ -390,19 +403,21 @@ export class Source {
       px = ctx.getImageData(0, 0, w, h).data; scale = 255; step = 1;
     }
     // restrict to the region of interest, scaled to the analysed buffer
-    let roi: [number, number, number, number] | null = null;
-    if (this.roi) {
-      const sx = w / this.width, sy = h / this.height;
-      roi = [Math.floor(this.roi[0] * sx), Math.floor(this.roi[1] * sy), Math.ceil(this.roi[2] * sx), Math.ceil(this.roi[3] * sy)];
-    }
+    const sx = w / this.width, sy = h / this.height;
+    const rois = this.activeRois().map((r) => [Math.floor(r[0] * sx), Math.floor(r[1] * sy), Math.ceil(r[2] * sx), Math.ceil(r[3] * sy)] as [number, number, number, number]);
+    const roi = rois.length ? rois : null;
     this.lastFrame = { px, w, h, step, scale };
     this.stats = computeStats(px, w, h, step, scale, kr, kb, roi);
     this.statsVersion++;
   }
 }
 
-export function computeStats(px: ArrayLike<number>, w: number, h: number, step: number, scale: number, kr: number, kb: number, roi: [number, number, number, number] | null = null): Stats {
-  const [x0, y0, x1, y1] = roi ?? [0, 0, w, h];
+export function computeStats(px: ArrayLike<number>, w: number, h: number, step: number, scale: number, kr: number, kb: number, rois: [number, number, number, number] | [number, number, number, number][] | null = null): Stats {
+  // one rectangle or several (union); the bounding box limits the scan
+  const list = !rois ? null : (typeof rois[0] === 'number' ? [rois as [number, number, number, number]] : rois as [number, number, number, number][]);
+  const x0 = list ? Math.min(...list.map((r) => r[0])) : 0, y0 = list ? Math.min(...list.map((r) => r[1])) : 0;
+  const x1 = list ? Math.max(...list.map((r) => r[2])) : w, y1 = list ? Math.max(...list.map((r) => r[3])) : h;
+  const inside = (x: number, y: number) => !list || list.length === 1 || list.some((r) => x >= r[0] && y >= r[1] && x < r[2] && y < r[3]);
   const hist = [0, 1, 2, 3].map(() => new Float32Array(256));
   const kg = 1 - kr - kb;
   const lo = 0.5 / 255, hi = 254.5 / 255;
@@ -410,6 +425,7 @@ export function computeStats(px: ArrayLike<number>, w: number, h: number, step: 
   let yMin = 1, yMax = 0, ySum = 0, n = 0, rS = 0, gS = 0, bS = 0;
   for (let y = Math.max(0, y0); y < Math.min(h, y1); y += step) {
     for (let x = Math.max(0, x0); x < Math.min(w, x1); x += step) {
+      if (!inside(x, y)) continue;
       const i = (y * w + x) * 4;
       const r = px[i] / scale, g = px[i + 1] / scale, b = px[i + 2] / scale;
       const Y = kr * r + kg * g + kb * b;

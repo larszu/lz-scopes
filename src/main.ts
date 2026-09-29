@@ -1,7 +1,7 @@
 import './vendor/dockview.css';
 import './style.css';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, LUMA, detectDisplay, type DisplaySpace } from './color';
-import { SCOPE_LABELS, isWaveform, plotRect, type ScopeType, type Unit } from './graticule';
+import { SCOPE_LABELS, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget } from './graticule';
 import { DEFAULT_SKIN, ROI_CLOSE, defaultPanel as panel, drawPanel, panelSignature, roiCloseBox, type DrawOptions, type PanelState, type Tint } from './panel';
 import type { OutputHost } from './outputView';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
@@ -16,6 +16,7 @@ interface Persisted {
   layout: string; panels: PanelState[]; unit: Unit; tint: Tint; falsePreset: string;
   zebra: number; zebraLow: number; maxSamples: number; bridge: string; sidebar: boolean;
   skin: SkinRange; display: 'auto' | DisplaySpace;
+  targets: VectorTarget[];
   /** dockview layout (toJSON) */
   dock?: unknown;
   sources: { kind: SourceKind; name: string; url: string; settings: SourceSettings; pattern?: PatternState }[];
@@ -27,7 +28,7 @@ const STORE_KEY = 'lz-scopes.v1';
 function load(): Persisted {
   const base: Persisted = {
     layout: 'lc', panels: DEFAULT_SCOPES.map(panel), unit: 'percent', tint: 'green', falsePreset: 'ARRI', zebra: 0.95, zebraLow: 0,
-    maxSamples: 1_000_000, bridge: '', sidebar: true, skin: { ...DEFAULT_SKIN }, display: 'auto',
+    maxSamples: 1_000_000, bridge: '', sidebar: true, skin: { ...DEFAULT_SKIN }, display: 'auto', targets: [],
     sources: [{ kind: 'pattern', name: 'Testbild', url: '', settings: { transfer: 'auto', colorspace: 'auto', width: 960, fps: 0, depth: 8, transport: 'tcp' }, pattern: { id: 'smpte75', width: 1920, height: 1080, label: '' } }],
   };
   try {
@@ -415,6 +416,33 @@ function panelSettings(p: PanelState): Node[] {
   if (scatter) row('Spurfarbe (Mono)', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); }));
   if (p.scope === 'vector') {
     row('Zoom', select(String(p.zoom), [['1', '×1'], ['2', '×2'], ['5', '×5']], (v) => { p.zoom = Number(v); save(); }));
+    const gbox = (g: '709' | 'p3' | '2020', label: string) => {
+      const c = h('input', { type: 'checkbox', checked: (p.gamuts ?? []).includes(g) }) as HTMLInputElement;
+      c.onchange = () => { const set = new Set(p.gamuts ?? []); if (c.checked) set.add(g); else set.delete(g); p.gamuts = [...set]; save(); };
+      return h('label', { class: 'inline' }, c, label);
+    };
+    row('Gamut-Grenzen', gbox('709', '709'), gbox('p3', 'P3'), gbox('2020', '2020'));
+    rows.push(h('div', { class: 'mtitle' }, 'Zielfarben (Color Matching)'));
+    state.targets.forEach((t, i) => {
+      const css = `rgb(${t.rgb.map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255)).join(',')})`;
+      const name = h('input', { value: t.name }) as HTMLInputElement;
+      name.onchange = () => { t.name = name.value; save(); };
+      rows.push(h('div', { class: 'mrow' }, h('span', { class: 'swatch', style: `background:${css}` }), name,
+        h('button', { class: 'mini', title: 'Entfernen', onclick: () => { state.targets.splice(i, 1); save(); refreshHeads(); } }, '✕')));
+    });
+    const add = (name: string, rgb: [number, number, number] | null) => {
+      if (!rgb) { alertHud('Kein Wert – erst Messpunkt setzen bzw. Messrahmen ziehen'); return; }
+      state.targets.push({ name, rgb }); save(); refreshHeads();
+    };
+    const src = panelSource(p);
+    const hex = h('input', { placeholder: '#c89478', class: 'num wide' }) as HTMLInputElement;
+    rows.push(h('div', { class: 'mrow' },
+      h('button', { title: 'Farbe des Messpunkts (Klick ins Bild) als Ziel', onclick: () => add(`Ziel ${state.targets.length + 1}`, src?.probe ? src.readPixel(src.probe.x, src.probe.y) : null) }, '+ Messpunkt'),
+      h('button', { title: 'Mittelwert des Messrahmens als Ziel – z. B. Referenzkamera', onclick: () => add(`Ziel ${state.targets.length + 1}`, src?.roi && src.stats ? src.stats.rgbAvg : null) }, '+ Messrahmen'),
+      hex, h('button', { title: 'Hex-Farbe (Signalwerte) als Ziel', onclick: () => {
+        const m = /^#?([0-9a-f]{6})$/i.exec(hex.value.trim());
+        add(hex.value.trim(), m ? [0, 2, 4].map((k) => parseInt(m[1].slice(k, k + 2), 16) / 255) as [number, number, number] : null);
+      } }, '+')));
   }
   if (p.scope === 'wf-skin' || p.scope === 'vector' || (p.scope === 'picture' && p.picture === 'skin')) {
     row('Hautton Luma',
@@ -654,7 +682,7 @@ function drawOptions(): DrawOptions {
   const displaySpace = state.display === 'auto' ? detected.space : state.display;
   return {
     unit: state.unit, tint: state.tint, maxSamples: state.maxSamples, falsePreset: state.falsePreset,
-    zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps, skin: state.skin, display: displaySpace,
+    zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps, skin: state.skin, display: displaySpace, targets: state.targets,
   };
 }
 
@@ -663,7 +691,7 @@ function drawOptions(): DrawOptions {
 const LAYOUTS_KEY = 'lz-scopes.layouts';
 interface LayoutConfig {
   dock: unknown; panels: PanelState[];
-  settings: Pick<Persisted, 'unit' | 'tint' | 'skin' | 'falsePreset' | 'zebra' | 'zebraLow' | 'display' | 'maxSamples'>;
+  settings: Pick<Persisted, 'unit' | 'tint' | 'skin' | 'falsePreset' | 'zebra' | 'zebraLow' | 'display' | 'maxSamples' | 'targets'>;
   saved: string;
 }
 function loadLayouts(): Record<string, LayoutConfig> {
@@ -673,8 +701,8 @@ function storeLayouts(l: Record<string, LayoutConfig>) {
   try { localStorage.setItem(LAYOUTS_KEY, JSON.stringify(l)); } catch { /* ignore */ }
 }
 function currentLayout(): LayoutConfig {
-  const { unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples } = state;
-  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), settings: structuredClone({ unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples }), saved: new Date().toISOString() };
+  const { unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets } = state;
+  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), settings: structuredClone({ unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets }), saved: new Date().toISOString() };
 }
 function applyLayout(c: LayoutConfig) {
   // mutate in place: panel views hold references to their state objects

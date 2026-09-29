@@ -84,7 +84,11 @@ void main() {
   if (uMode == 7) {
     pos = vec2(x * 2.0 - 1.0, waveY(Y));
     bool inRange = Y >= uSkin.x && Y <= uSkin.y;
-    col = isSkin(cb, cr, uSkin.z) ? (inRange ? vec3(1.0, 0.62, 0.36) : vec3(1.0, 0.12, 0.08)) : vec3(0.22);
+    // skin tones in their own colour, everything else black & white
+    bool skin = isSkin(cb, cr, uSkin.z) && inRange;
+    vec3 hue = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
+    hue = clamp(mix(vec3(dot(hue, vec3(0.3333))), hue, 2.5), 0.0, 1.0); // same hue, saturated for thin traces
+    col = skin ? hue : vec3(0.6);
   } else if (uMode == 0) {
     pos = vec2(x * 2.0 - 1.0, waveY(Y));
     if (uColorize == 1) col = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
@@ -199,8 +203,7 @@ void main() {
   if (uMode == 5) {
     float cb = (rgb.b - Y) / (2.0 * (1.0 - kb)), cr = (rgb.r - Y) / (2.0 * (1.0 - kr));
     bool inRange = Y >= uSkin.x && Y <= uSkin.y;
-    if (!isSkin(cb, cr, uSkin.z)) c = vec3(dot(c, vec3(0.3333)) * 0.45);
-    else if (!inRange) c = mix(c, vec3(1.0, 0.1, 0.08), 0.6);
+    if (!(isSkin(cb, cr, uSkin.z) && inRange)) c = vec3(dot(c, vec3(0.2126, 0.7152, 0.0722)));
   } else if (uMode == 1) {
     c = vec3(Y * 0.8);
     for (int i = 0; i < 8; i++) {

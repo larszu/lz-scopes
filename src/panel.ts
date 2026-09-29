@@ -4,11 +4,12 @@
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId } from './color';
 import {
   drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
-  isAudio, isWaveform, plotRect, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
+  WAVE_ZOOMS, channelLayout, isAudio, isWaveform, plotRect, type WaveChannels, type WaveOpts, type WaveZoom, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
 import { drawAudioPanel, type AudioPanelOptions } from './audio/panels';
 import type { DisplayParams, PictureMode, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
 import type { Source } from './sources';
+import { chainOf, stageView, type Stage } from './chain';
 
 export interface PanelState {
   scope: ScopeType; sourceId: string; gain: number; colorize: boolean; zoom: number;
@@ -27,7 +28,18 @@ export interface PanelState {
   gamutTarget?: '709' | 'p3' | '2020';
   /** settings of the audio panels */
   audio?: AudioPanelOptions;
+  /** where this panel measures in the source's chain; unset = global default */
+  stage?: Stage;
+  /** skin-tone waveform: show the luma window band and lines (default on) */
+  skinBand?: boolean;
+  /** waveforms: zoom into blacks/highlights, visible channels (parade/YRGB/RGB), channel names and unit */
+  waveZoom?: WaveZoom; channels?: WaveChannels; names?: boolean;
 }
+
+/** Graticule options of a waveform panel. */
+export const waveOpts = (p: PanelState, src: Source | null): WaveOpts => ({
+  lw: src?.hlgLw, r103: p.r103, marks: p.marks, range: WAVE_ZOOMS[p.waveZoom ?? 'full'], channels: p.channels, names: p.names,
+});
 
 export const TINTS = { white: [1, 1, 1], green: [0.55, 1, 0.62], amber: [1, 0.82, 0.45] } as const;
 export type Tint = keyof typeof TINTS;
@@ -38,6 +50,8 @@ export interface DrawOptions {
   skin: SkinRange; display: DisplaySpace;
   /** user colour-match targets (vectorscope) */
   targets?: VectorTarget[];
+  /** default measuring stage of panels without their own */
+  stage?: Stage;
   emptyText?: string;
 }
 
@@ -72,7 +86,8 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
     const a = src?.audio;
     return `A|${src?.id}:${a ? `${a.version}:${a.paused}:${a.stale}` : `${src?.status}:${src?.message}`}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}`;
   }
-  const s = src ? `${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${src.faceMode}:${src.faces.map((f) => f.id + '/' + f.box.join(',')).join(';')}:${[...src.faceSel].join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}` : '-';
+  if (src) src = stageView(src, p.stage ?? o.stage ?? 'signal');
+  const s = src ? `${chainOf(src)?.sig ?? ''}:${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${src.faceMode}:${src.faces.map((f) => f.id + '/' + f.box.join(',')).join(';')}:${[...src.faceSel].join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}` : '-';
   const { displayFps, ...rest } = o;
   return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}`;
 }
@@ -98,6 +113,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     drawAudioPanel(ctx, p.scope, src?.audio ?? null, body.w, body.h, p.audio, empty, p);
     return;
   }
+  if (src) src = stageView(src, p.stage ?? o.stage ?? 'signal');
   const aspect = src && src.width ? src.width / src.height : 16 / 9;
   const r = plotRect(p.scope, body.w, body.h, aspect);
   const abs = { x: body.x + r.x, y: body.y + r.y, w: r.w, h: r.h };
@@ -106,7 +122,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   if (!src || !src.ready) {
     ctx.fillStyle = '#6b7078'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(src ? (src.message || 'Keine Daten – Quelle starten') : (o.emptyText ?? 'Links eine Quelle hinzufügen'), body.w / 2, body.h / 2);
-    if (isWaveform(p.scope)) drawWaveGraticule(ctx, p.scope, r, o.unit, src?.transfer ?? 'sdr', { lw: src?.hlgLw, r103: p.r103, marks: p.marks });
+    if (isWaveform(p.scope)) drawWaveGraticule(ctx, p.scope, r, o.unit, src?.transfer ?? 'sdr', waveOpts(p, src));
     return;
   }
   const probeRgb = src.probe ? src.readPixel(src.probe.x, src.probe.y) : null;
@@ -115,12 +131,14 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     renderer.drawScatter(key, src, abs, {
       mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: [...TINTS[o.tint]] as [number, number, number],
       maxSamples: o.maxSamples, roi: src.activeRois(), skin: o.skin, cieUv: p.scope === 'cie' && !!p.cieUv,
+      ...(isWaveform(p.scope) ? { range: WAVE_ZOOMS[p.waveZoom ?? 'full'], ...(({ sec, n }) => ({ sec, secN: n }))(channelLayout(p.scope, p.channels)) } : {}),
     });
   }
   if (isWaveform(p.scope)) {
-    drawWaveGraticule(ctx, p.scope, r, o.unit, src.transfer, { lw: src.hlgLw, r103: p.r103, marks: p.marks });
-    if (p.scope === 'wf-skin') drawSkinRange(ctx, r, o.skin);
-    if (probeRgb) drawWaveProbe(ctx, p.scope, r, src, probeRgb);
+    const wo = waveOpts(p, src);
+    drawWaveGraticule(ctx, p.scope, r, o.unit, src.transfer, wo);
+    if (p.scope === 'wf-skin' && p.skinBand !== false) drawSkinRange(ctx, r, o.skin, wo.range);
+    if (probeRgb) drawWaveProbe(ctx, p.scope, r, src, probeRgb, wo);
   } else if (p.scope === 'vector') {
     drawVectorGraticule(ctx, r, src.colorspace, p.zoom, o.skin.tol, vectorTargets(src));
     drawVectorExtras(ctx, r, src.colorspace, p.zoom, p.gamuts ?? [], o.targets ?? [], src.transfer, src.gamut);

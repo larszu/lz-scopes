@@ -1,7 +1,7 @@
 // 2D overlays per panel: graticules, labels, histogram, statistics, probe read-outs.
 
 import {
-  GAMUTS, SKIN_LINE_DEG, SPECTRAL_LOCUS, barTargets, codeValue, gamutConvert, hlgFromNits, isLog, levelText, nitsToSignal, pqEncode,
+  GAMUTS, SKIN_LINE_DEG, isGamma, SPECTRAL_LOCUS, barTargets, codeValue, gamutConvert, hlgFromNits, isLog, levelText, nitsToSignal, pqEncode,
   sceneToSignal, transferLabel, xyToUv, ycbcr,
   type Colorspace, type GamutId, type Transfer,
 } from './color';
@@ -48,12 +48,60 @@ export function plotRect(scope: ScopeType, w: number, h: number, aspect = 16 / 9
   return { x: 0, y: 0, w, h };
 }
 
-export function waveTicks(unit: Unit, transfer: Transfer, lw = 1000): { level: number; label: string; major: boolean }[] {
+/** Vertical range of a waveform: full, or zoomed into the blacks / the highlights. */
+export type WaveRange = [number, number];
+export type WaveZoom = 'full' | 'black' | 'white';
+export const WAVE_ZOOMS: Record<WaveZoom, WaveRange> = { full: [WAVE_MIN, WAVE_MAX], black: [-0.05, 0.15], white: [0.85, 1.1] };
+export const WAVE_ZOOM_LABELS: Record<WaveZoom, string> = { full: 'voll (−7 … 110 %)', black: 'Schwarz-Lupe (−5 … 15 %)', white: 'Lichter-Lupe (85 … 110 %)' };
+
+/** Channels of the multi-trace waveforms, with the instance index the renderer uses. */
+export interface WaveChannels { y?: boolean; r?: boolean; g?: boolean; b?: boolean }
+const CHANNELS: Partial<Record<ScopeType, { name: string; key: keyof WaveChannels }[]>> = {
+  parade: [{ name: 'R', key: 'r' }, { name: 'G', key: 'g' }, { name: 'B', key: 'b' }],
+  'wf-rgb': [{ name: 'R', key: 'r' }, { name: 'G', key: 'g' }, { name: 'B', key: 'b' }],
+  yrgb: [{ name: 'Y', key: 'y' }, { name: 'R', key: 'r' }, { name: 'G', key: 'g' }, { name: 'B', key: 'b' }],
+};
+export const channelsOf = (scope: ScopeType) => CHANNELS[scope] ?? [];
+/**
+ * Section index per trace instance (−1 = hidden) and the number of sections for a scope.
+ * Parade/YRGB close up when channels are hidden; the RGB overlay keeps one section.
+ */
+export function channelLayout(scope: ScopeType, ch: WaveChannels = {}): { sec: number[]; n: number; names: string[] } {
+  const list = CHANNELS[scope];
+  if (!list) {
+    const n = sections(scope);
+    return { sec: [0, 1, 2, 3].map((i) => (n === 1 ? 0 : i)), n, names: scope === 'ycbcr' ? ['Y', 'Cb', 'Cr'] : [] };
+  }
+  const vis = list.map((c) => ch[c.key] !== false);
+  if (!vis.some(Boolean)) vis.fill(true);
+  if (scope === 'wf-rgb') return { sec: [...vis.map((v) => (v ? 0 : -1)), -1], n: 1, names: [] };
+  let k = 0;
+  const sec = vis.map((v) => (v ? k++ : -1));
+  while (sec.length < 4) sec.push(-1);
+  return { sec, n: k, names: list.filter((_, i) => vis[i]).map((c) => c.name) };
+}
+
+export function waveTicks(unit: Unit, transfer: Transfer, lw = 1000, range: WaveRange = WAVE_ZOOMS.full): { level: number; label: string; major: boolean }[] {
+  const [lo, hi] = range, inRange = (t: { level: number }) => t.level >= lo - 1e-9 && t.level <= hi + 1e-9;
+  if (hi - lo < 0.5) {
+    // zoomed: fine ticks
+    if (unit === 'nits') {
+      const cands = isLog(transfer) ? [0, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.18, 0.5, 1, 2, 5, 10, 20].map((x) => ({ level: sceneToSignal(x, transfer), label: String(Math.round(x * 1000) / 10), major: x === 0 || x === 1 }))
+        : [0, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 203, 500, 1000, 2000, 4000, 10000].map((n) => ({ level: nitsToSignal(n, transfer, lw), label: n >= 1000 ? `${n / 1000}k` : String(n), major: n === 0 || n === 100 || n === 203 }));
+      return cands.filter(inRange);
+    }
+    const out = [];
+    for (let k = Math.ceil(lo * 100 - 1e-9); k <= Math.floor(hi * 100 + 1e-9); k++) {
+      const level = k / 100;
+      out.push({ level, label: unit === 'percent' ? String(k) : String(Math.round(codeValue(level, unit === 'bit8' ? 8 : 10))), major: k % 5 === 0 });
+    }
+    return out;
+  }
   if (unit === 'nits' && isLog(transfer)) {
     // scene-referred: reflectance in %, in stops around the 18 % grey card
     return [0, 0.0225, 0.045, 0.09, 0.18, 0.36, 0.72, 1.44, 2.88, 5.76, 11.52]
       .map((x) => ({ level: sceneToSignal(x, transfer), label: String(Math.round(x * 1000) / 10), major: x === 0 || x === 0.18 || x === 1.44 }))
-      .filter((t) => t.level >= WAVE_MIN && t.level <= WAVE_MAX);
+      .filter(inRange);
   }
   if (unit === 'nits') {
     const list = transfer === 'pq' ? [0, 1, 10, 100, 203, 400, 1000, 2000, 4000, 10000]
@@ -70,7 +118,12 @@ export function waveTicks(unit: Unit, transfer: Transfer, lw = 1000): { level: n
   return out;
 }
 
-export const waveY = (r: Rect, level: number) => r.y + r.h - ((level - WAVE_MIN) / (WAVE_MAX - WAVE_MIN)) * r.h;
+export const waveY = (r: Rect, level: number, range: WaveRange = WAVE_ZOOMS.full) => r.y + r.h - ((level - range[0]) / (range[1] - range[0])) * r.h;
+/** Signal level at a y position (inverse of waveY). */
+export const waveLevel = (r: Rect, y: number, range: WaveRange = WAVE_ZOOMS.full) => range[0] + ((r.y + r.h - y) / r.h) * (range[1] - range[0]);
+
+/** Options of the waveform graticule. */
+export interface WaveOpts { lw?: number; r103?: boolean; marks?: boolean; range?: WaveRange; channels?: WaveChannels; names?: boolean }
 
 export interface WaveMark { level: number; label: string; color: string }
 
@@ -95,12 +148,13 @@ export function waveMarks(transfer: Transfer, o: { r103?: boolean; marks?: boole
   return out;
 }
 
-export function drawWaveGraticule(ctx: CanvasRenderingContext2D, scope: ScopeType, r: Rect, unit: Unit, transfer: Transfer, o: { lw?: number; r103?: boolean; marks?: boolean } = {}) {
+export function drawWaveGraticule(ctx: CanvasRenderingContext2D, scope: ScopeType, r: Rect, unit: Unit, transfer: Transfer, o: WaveOpts = {}) {
+  const range = o.range ?? WAVE_ZOOMS.full;
   ctx.font = FONT; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   ctx.lineWidth = 1;
   let lastLabel = Infinity;
-  for (const t of waveTicks(unit, transfer, o.lw)) {
-    const y = Math.round(waveY(r, t.level)) + 0.5;
+  for (const t of waveTicks(unit, transfer, o.lw, range)) {
+    const y = Math.round(waveY(r, t.level, range)) + 0.5;
     ctx.strokeStyle = t.major ? GRID : GRID_DIM;
     ctx.setLineDash(t.major ? [] : [3, 3]);
     ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke();
@@ -110,30 +164,36 @@ export function drawWaveGraticule(ctx: CanvasRenderingContext2D, scope: ScopeTyp
   ctx.setLineDash([]);
   ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
   for (const m of waveMarks(transfer, o)) {
-    const y = Math.round(waveY(r, m.level)) + 0.5;
+    if (m.level < range[0] || m.level > range[1]) continue;
+    const y = Math.round(waveY(r, m.level, range)) + 0.5;
     ctx.strokeStyle = m.color; ctx.setLineDash([8, 3]);
     ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke();
     ctx.fillStyle = m.color; ctx.fillText(m.label, r.x + r.w * 0.55, m.level < 0 ? y + 11 : y - 1);
   }
   ctx.setLineDash([]);
-  const n = sections(scope);
+  const { n, names } = channelLayout(scope, o.channels);
   ctx.strokeStyle = GRID;
   for (let i = 1; i < n; i++) {
     const x = Math.round(r.x + (r.w * i) / n) + 0.5;
     ctx.beginPath(); ctx.moveTo(x, r.y); ctx.lineTo(x, r.y + r.h); ctx.stroke();
   }
-  const names = scope === 'parade' ? ['R', 'G', 'B'] : scope === 'yrgb' ? ['Y', 'R', 'G', 'B'] : scope === 'ycbcr' ? ['Y', 'Cb', 'Cr'] : [];
+  if (o.names === false) return;
   const colors: Record<string, string> = { R: '#ff6b6b', G: '#6bff7a', B: '#7b9bff', Y: '#ddd', Cb: '#7b9bff', Cr: '#ff6b6b' };
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   names.forEach((nm, i) => { ctx.fillStyle = colors[nm]; ctx.fillText(nm, r.x + (r.w * i) / n + 4, r.y + 2); });
+  if (range !== WAVE_ZOOMS.full && (range[0] !== WAVE_MIN || range[1] !== WAVE_MAX)) {
+    ctx.fillStyle = 'rgba(255, 184, 64, 0.95)'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText(`LUPE ${Math.round(range[0] * 100)} … ${Math.round(range[1] * 100)} %`, r.x + 4, r.y + r.h - 2);
+    ctx.textBaseline = 'top';
+  }
   ctx.fillStyle = LABEL; ctx.textAlign = 'right';
   const nits = isLog(transfer) ? `Szene %` : `cd/m² ${transferLabel(transfer)}${transfer === 'hlg' && (o.lw ?? 1000) !== 1000 ? ` ${o.lw}` : ''}`;
   ctx.fillText(unit === 'nits' ? nits : unit === 'percent' ? '%' : unit === 'bit8' ? '8 bit' : '10 bit', r.x + r.w - 4, r.y + 2);
 }
 
 /** Skin-tone luma window of the skin waveform. */
-export function drawSkinRange(ctx: CanvasRenderingContext2D, r: Rect, skin: { lo: number; hi: number; tol: number }) {
-  const y0 = waveY(r, skin.hi), y1 = waveY(r, skin.lo);
+export function drawSkinRange(ctx: CanvasRenderingContext2D, r: Rect, skin: { lo: number; hi: number; tol: number }, range: WaveRange = WAVE_ZOOMS.full) {
+  const y0 = waveY(r, skin.hi, range), y1 = waveY(r, skin.lo, range);
   ctx.fillStyle = 'rgba(255, 170, 110, 0.07)'; ctx.fillRect(r.x, y0, r.w, y1 - y0);
   ctx.strokeStyle = 'rgba(255, 170, 110, 0.8)'; ctx.setLineDash([6, 4]);
   for (const y of [y0, y1]) { ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke(); }
@@ -142,9 +202,10 @@ export function drawSkinRange(ctx: CanvasRenderingContext2D, r: Rect, skin: { lo
   ctx.fillText(`Hautton ${Math.round(skin.lo * 100)}–${Math.round(skin.hi * 100)} %  ±${skin.tol}°`, r.x + 4, y0 - 2);
 }
 
-export function drawWaveProbe(ctx: CanvasRenderingContext2D, scope: ScopeType, r: Rect, src: Source, rgb: [number, number, number]) {
+export function drawWaveProbe(ctx: CanvasRenderingContext2D, scope: ScopeType, r: Rect, src: Source, rgb: [number, number, number], o: WaveOpts = {}) {
   if (!src.probe) return;
-  const n = sections(scope);
+  const range = o.range ?? WAVE_ZOOMS.full;
+  const { n, sec } = channelLayout(scope, o.channels);
   const fx = src.probe.x / src.width;
   const { y, cb, cr } = ycbcr(rgb[0], rgb[1], rgb[2], src.colorspace);
   const vals: [number, string][] = scope === 'wf-luma' || scope === 'wf-color' || scope === 'wf-skin' ? [[y, '#fff']]
@@ -159,8 +220,9 @@ export function drawWaveProbe(ctx: CanvasRenderingContext2D, scope: ScopeType, r
   }
   ctx.setLineDash([]);
   vals.forEach(([v, c], i) => {
-    const sec = n === 1 ? 0 : i;
-    const x = r.x + (r.w * (sec + fx)) / n, yy = waveY(r, v);
+    const k = sec[i] ?? i;
+    if (k < 0) return;
+    const x = r.x + (r.w * ((n === 1 ? 0 : k) + fx)) / n, yy = waveY(r, v, range);
     ctx.strokeStyle = c; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(x - 7, yy); ctx.lineTo(x + 7, yy); ctx.stroke();
   });
@@ -401,7 +463,7 @@ export function probeLines(src: Source, rgb: [number, number, number], unit: Uni
     `R ${fmt(rgb[0])}  G ${fmt(rgb[1])}  B ${fmt(rgb[2])}`,
     `Y' ${pct(y)}  Cb ${cb >= 0 ? '+' : ''}${(cb * 100).toFixed(1)}  Cr ${cr >= 0 ? '+' : ''}${(cr * 100).toFixed(1)}`,
   ];
-  if (src.transfer !== 'sdr' || unit === 'nits') lines.push(`≈ ${levelText(y, src.transfer, src.hlgLw)}`);
+  if (!isGamma(src.transfer) || unit === 'nits') lines.push(`≈ ${levelText(y, src.transfer, src.hlgLw)}`);
   return lines;
 }
 
@@ -428,7 +490,7 @@ export function statsLines(src: Source, displayFps: number): string[] {
   lines.push(`Auswertung Rec.${src.colorspace}  ${transferLabel(src.transfer)}${src.transfer === 'hlg' ? ` (Lw ${src.hlgLw})` : ''}  ${GAMUTS[src.gamut].name}`);
   lines.push(`Frames     ${src.fps} fps Eingang  ${displayFps} fps Anzeige${src.dropped ? `  ${src.dropped} verworfen` : ''}`);
   if (st) {
-    const n = (v: number) => (src.transfer === 'sdr' ? '' : `  (${levelText(v, src.transfer, src.hlgLw)})`);
+    const n = (v: number) => (isGamma(src.transfer) ? '' : `  (${levelText(v, src.transfer, src.hlgLw)})`);
     lines.push('');
     lines.push(`Y' min     ${pct(st.yMin)}${n(st.yMin)}`);
     lines.push(`Y' max     ${pct(st.yMax)}${n(st.yMax)}`);

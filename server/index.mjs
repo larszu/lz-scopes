@@ -10,9 +10,13 @@
 
 import { spawn } from 'node:child_process';
 import { createReadStream, existsSync, statSync } from 'node:fs';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { createInterface } from 'node:readline';
+import { readTiff, toRgba } from './tiff.mjs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
-import { basename, delimiter, dirname, extname, join, normalize, resolve } from 'node:path';
+import { basename, delimiter, dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 
@@ -67,9 +71,9 @@ const TEST_PATTERNS = {
 
 export function validateInput(url) {
   if (typeof url !== 'string' || url.length === 0 || url.length > 2048) return 'Keine Quelle angegeben';
-  if (url in TEST_PATTERNS) return null;
+  if (url in TEST_PATTERNS || url === 'resolve:') return null;
   if (url.startsWith('-')) return 'Ungültige Quelle';
-  if (!ALLOWED.test(url)) return 'Nur rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s):// oder test:*';
+  if (!ALLOWED.test(url)) return 'Nur rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s)://, resolve: oder test:*';
   return null;
 }
 
@@ -188,6 +192,7 @@ async function startStream(ws, params) {
   const url = params.get('url') ?? '';
   const problem = validateInput(url);
   if (problem) return fail(ws, problem);
+  if (url === 'resolve:') return startResolve(ws, params);
   const transport = params.get('transport') ?? 'tcp';
   const depth = params.get('depth') === '16' ? 16 : 8;
   const maxWidth = Math.min(3840, Math.max(0, Number(params.get('width') ?? 960) || 0));
@@ -241,6 +246,60 @@ async function startStream(ws, params) {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped }));
   }, 1000);
   ws.on('close', () => { clearInterval(stats); ff.kill('SIGKILL'); });
+}
+
+/**
+ * DaVinci Resolve as input: server/resolve_helper.py exports the current (graded)
+ * frame as 16-bit TIFF through Resolve's scripting API; we read it and send frames.
+ */
+function pythonCandidates() {
+  const list = [process.env.LZ_PYTHON, process.platform === 'win32' ? 'python' : '/usr/bin/python3', 'python3'].filter(Boolean);
+  return [...new Set(list)];
+}
+
+async function startResolve(ws, params) {
+  const depth = params.get('depth') === '8' ? 8 : 16;
+  const maxWidth = Math.min(3840, Math.max(0, Number(params.get('width') ?? 960) || 0));
+  const fps = Math.min(30, Math.max(1, Number(params.get('fps')) || 10));
+  const dir = await mkdtemp(join(tmpdir(), 'lz-scopes-resolve-'));
+  const helper = fileURLToPath(new URL('./resolve_helper.py', import.meta.url)).replace(`app.asar${sep}`, `app.asar.unpacked${sep}`);
+  let py = null;
+  for (const bin of pythonCandidates()) {
+    py = spawn(bin, ['-u', helper, dir, String(fps)], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const ok = await new Promise((r) => { py.once('error', () => r(false)); py.once('spawn', () => r(true)); });
+    if (ok) break;
+    py = null;
+  }
+  if (!py) return fail(ws, 'Python 3 nicht gefunden (für die Resolve-Anbindung nötig)');
+  let sentInfo = false, busy = false, sent = 0, lastWait = '', stderr = '';
+  py.stderr.on('data', (d) => { stderr = (stderr + d).slice(-1500); });
+  const lines = createInterface({ input: py.stdout });
+  lines.on('line', async (line) => {
+    let msg;
+    try { msg = JSON.parse(line); } catch { return; }
+    if (msg.error) return fail(ws, msg.error);
+    if (msg.wait) { if (msg.wait !== lastWait && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: 0, message: msg.wait })); lastWait = msg.wait; return; }
+    if (busy || ws.readyState !== ws.OPEN || ws.bufferedAmount > 32 * 1024 * 1024) return;
+    busy = true;
+    try {
+      const img = readTiff(await readFile(msg.path));
+      const out = toRgba(img, maxWidth, depth);
+      if (!sentInfo) {
+        ws.send(JSON.stringify({
+          type: 'info', width: out.width, height: out.height, depth, fps, codec: `Resolve · ${msg.project} / ${msg.timeline}`,
+          pixFmt: `tiff ${img.bits} bit`, sourceWidth: img.width, sourceHeight: img.height,
+          transfer: 'unknown', primaries: 'unknown', matrix: 'unknown', range: 'pc', decodeMatrix: img.height > 576 ? 'bt709' : 'bt601',
+        }));
+        sentInfo = true;
+      }
+      ws.send(Buffer.from(out.data.buffer, out.data.byteOffset, out.data.byteLength), { binary: true });
+      sent++;
+    } catch (e) {
+      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: 0, message: e.message }));
+    } finally { busy = false; }
+  });
+  py.on('close', (code) => { if (ws.readyState === ws.OPEN) fail(ws, stderr.trim().split('\n').pop() || `Resolve-Anbindung beendet (${code})`); rm(dir, { recursive: true, force: true }).catch(() => {}); });
+  ws.on('close', () => { py.kill(); });
 }
 
 function fail(ws, message) {

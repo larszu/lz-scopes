@@ -28,14 +28,14 @@ All parts use wall clocks and are only meaningful on one computer (or with NTP).
 
 ## Measurements (MacBook, Electron, 1280×720 → 960×540, 25 fps; e2e/latency.spec.ts)
 
-Three runs on the same machine while other jobs were running – the spread between runs is
+Four runs on the same machine while other jobs were running – the spread between runs is
 larger than the differences between the paths:
 
-| Path | Run 1 | Run 2 | Run 3 (stamp → drawn, mean ms) |
-|---|---|---|---|
-| raw, main thread (before #16) | 118 | 181 | 118 |
-| raw, worker | 113 | 136 | 118 |
-| H.264, worker | 66 | 71 | 102 |
+| Path | Run 1 | Run 2 | Run 3 | Run 4 (stamp → drawn, mean ms) |
+|---|---|---|---|---|
+| raw, main thread (before #16) | 118 | 181 | 118 | 164 |
+| raw, worker | 113 | 136 | 118 | 120 |
+| H.264, worker | 66 | 71 | 102 | 64 |
 
 Split (run 3): source → bridge 107 / 106 / 89 ms, bridge → app 6–8 ms, H.264 decode 8 ms.
 Most of the latency sits before the bridge: x264 encode of the test source, RTSP via
@@ -46,7 +46,7 @@ Statistics of a 1920×1080 video file (e2e/gpustats.spec.ts), main-thread time p
 
 | Path | Median | Max |
 |---|---|---|
-| CPU, 480-px readback (before) | 6.9–7.1 ms | 10–12 ms |
+| CPU, 480-px readback (before) | 6.9–7.6 ms | 10–12 ms |
 | GPU reduction, full resolution | 0.5 ms | 0.6–0.8 ms |
 
 ## Conclusions
@@ -55,7 +55,10 @@ Statistics of a 1920×1080 video file (e2e/gpustats.spec.ts), main-thread time p
   with an idle main thread the latency is the same, its benefit is that a busy main thread
   (many panels, software WebGL) no longer queues stale frames.
 - H.264 transport lowers the data rate by roughly 50× (useful for remote bridges); its
-  latency was not worse than raw in these runs. It is 8 bit 4:2:0 and lossy, so it is
+  latency was lower than raw in all four runs (64–102 vs 118–181 ms), mostly in the
+  source → bridge part. Likely cause, not proven: 2 MB raw frames through the ffmpeg pipe
+  into the Electron main process versus ~5 KB per H.264 frame; a bare ffmpeg pull without
+  Electron did not show the difference. It is 8 bit 4:2:0 and lossy, so it is
   labelled as such in the source card and the Messwerte panel.
 - The GPU statistics remove the synchronous readback for browser-decoded video (camera,
   capture, files) – about 6 ms less main-thread work every 100 ms, at full resolution.

@@ -161,21 +161,25 @@ Messkern in `src/audio/dsp` (reines TypeScript, ohne DOM, in vitest gegen die No
 **Quellen mit Ton**
 - *RTSP / Netz*: Die Bridge liefert den Ton des Streams mit (Auswahl „Ton“ an der Quelle, [Protokoll 2](docs/frame-protocol.md)). Bild und Ton kommen aus demselben ffmpeg-Prozess, ohne Umrechnung von Abtastrate und Kanälen. Die Testbilder `test:*` bringen einen 1-kHz-Ton mit −18 dBFS mit.
 - *Datei* (Video): Der Ton der Datei wird mitgemessen und ist nur mit 🎧 hörbar.
-- *Audio*: Audiogerät (Echounterdrückung, Rauschunterdrückung und automatische Pegelregelung des Browsers aus, Gerät wählbar), Audiodatei (mit „Ganze Datei messen“, schneller als Echtzeit) oder der Generator als Rückweg.
+- *Audio*: Audiogerät im Browser (Echounterdrückung, Rauschunterdrückung und automatische Pegelregelung aus, Gerät wählbar: HDMI-Ton einer USB-Capture-Karte, Laptop-Mikrofon, USB-Interface, Dante Virtual Soundcard/Dante Via als Systemgerät – Chromium liefert höchstens 2 Kanäle), Audiogerät über die Bridge (ffmpeg liest alle Kanäle: `audio:avfoundation|dshow|alsa:<Name>`), Audiodatei (mit „Ganze Datei messen“, schneller als Echtzeit) oder der Generator als Rückweg.
+- *Gerät…* an einer Netz-Quelle: Capture-Gerät über die Bridge, auf Wunsch mit Ton (`device:…#audio=<Name>`), Bild und Ton dann aus einem ffmpeg-Prozess.
+- *Dante*: kein eigenes Dante-Protokoll (proprietär). Dante Virtual Soundcard oder Dante Via stellen Dante-Kanäle als normales Audiogerät bereit; Mehrkanal über den Bridge-Eingang. Mit echter Dante-Hardware ungeprüft.
 
-Jede Quelle mit Ton zeigt eine ♪-Zeile: Abtastrate, Kanäle, I/LRA anhalten und zurücksetzen (gemeinsam mit Max M, Max S und Max TP, wie Tech 3341 verlangt), Mithören.
+Jede Quelle mit Ton zeigt eine ♪-Zeile: Abtastrate, Kanäle, I/LRA anhalten und zurücksetzen (gemeinsam mit Max M, Max S und Max TP, wie Tech 3341 verlangt), Protokoll als CSV oder PNG, Mithören. Bridge-Ton wird über einen Ringpuffer mit Taktausgleich (AudioWorklet) abgehört, Ausgabegerät und Kanalpaar wählbar. Steuer-API/Companion: `audio.reset`, `audio.pause`, `generator`.
 
 **Audio-Scopes** (im Panel-Menü, im Dock und in Layout-Konfigurationen wie alle anderen, Einstellungen über ⚙)
-- *Audio Pegel & Lautheit*: Sample-Peak je Kanal (Balken über 100 ms), True Peak (weiße Marke, 4-fach überabgetastet mit dem FIR aus BS.1770-5 Annex 2), Peak-Hold 3 s, Übersteuerungszähler, Marken bei −18 dBFS (R 68) und −1 dBTP (R 128). Dazu M, S und I auf der Skala EBU +9 oder EBU +18, absolut in LUFS oder relativ in LU, und die Kennwerte I, LRA (in den ersten 60 s als „unstabil“ markiert), Max M, Max S, Max TP, PLR. Zielwerte R 128, R 128 s1 (Max S ≤ −18 LUFS) und R 128 s2.
-- *Audio Lautheitsverlauf*: M und S der letzten 1 bis 60 min mit Zielband ±1 LU.
+- *Audio Pegel & Lautheit*: Sample-Peak je Kanal (Balken über 100 ms), True Peak (weiße Marke, 4-fach überabgetastet mit dem FIR aus BS.1770-5 Annex 2), Peak-Hold 3 s, Übersteuerungszähler, Marken bei −18 dBFS (R 68) und −1 dBTP (R 128). Dazu M, S und I auf der Skala EBU +9 oder EBU +18, absolut in LUFS oder relativ in LU, und die Kennwerte I, LRA (in den ersten 60 s als „unstabil“ markiert), Max M, Max S, Max TP, PLR, PSR. Zielwerte R 128, R 128 s1 (Max S ≤ −18 LUFS) und R 128 s2.
+- *Audio Lautheitsverlauf*: M und S der letzten 1 bis 60 min mit Zielband ±1 LU, True-Peak-Marken (> −1 dBTP).
+- *Audio Ident & A/V-Versatz*: erkennt EBU-Stereo-Ident (R 49), GLITS, BLITS, EBU-Mehrkanal-Ident (Tech 3304) und den eigenen Kanal-Ident; meldet „L/R vertauscht“, „Polarität invertiert“, „Kanal fehlt“, falsche Kanalfolge und den Pegel gegen −18 dBFS. Misst den A/V-Versatz zwischen Blitz und Piep mit den Zeitstempeln der Bridge und bewertet ihn nach ITU-R BT.1359-1.
+- *Bild*: kompakter Pegelbalken am rechten Rand, wenn die Quelle Ton hat (⚙ → Ton).
 - *Audio Spektrum*: FFT 1024 bis 32768, logarithmische Frequenzachse, Neigung 0/3/4,5 dB/Okt., Linie oder Terzbänder, L/R, Mitte oder einzeln.
 - *Audio Goniometer*: M/S-Darstellung (Mono senkrecht, L links oben, R rechts oben), Korrelationsgradmesser mit wählbarem Fenster, Polaritätsanzeige beim Polaritätstest.
 
-Lautheit nach ITU-R BS.1770-5 und EBU Tech 3341: K-Filter für jede Abtastrate, M (0,4 s) und S (3 s) in 10-ms-Schritten, I mit absolutem (−70 LUFS) und relativem Gate (−10 LU), LRA nach Tech 3342. Kanalgewichte nach BS.1770-5 Tabelle 3 (LFE wird nicht gemessen).
+Lautheit nach ITU-R BS.1770-5 und EBU Tech 3341: K-Filter für jede Abtastrate, M (0,4 s) und S (3 s) in 10-ms-Schritten, I mit absolutem (−70 LUFS) und relativem Gate (−10 LU), LRA nach Tech 3342. Kanalgewichte nach BS.1770-5 Tabelle 3, über 5.1 nach Annex 3 Tabelle 4/5 (LFE wird nicht gemessen); unbekannte Layouts mit Gewicht 1,0 und Hinweis.
 
-**Tongenerator** (Seitenleiste): Sinus, Rechteck, Dreieck, Sägezahn (bandbegrenzt), weißes und rosa Rauschen (auch 500–2000 Hz für Tech 3343), Log-Sweep, Stufen-Sweep auf Terzmitten, EBU-Stereo-Ident, GLITS, Kanal-Ident L/R, Polaritätstest und A/V-Sync-Piep. Pegel als Spitzenpegel in dBFS mit Schnellwahl −18 (R 68), −20, −23, −9, 0; über −6 dBFS nur nach Rückfrage. Je Kanal an/aus, Polarität und Pegel, Schnellwahl L, R, L+R, L−R. Ein- und Ausblenden in 10 ms. Ausgabegerät per `AudioContext.setSinkId`. Beim Sinus zeigt er an, was ein Messgerät anzeigen muss (dBTP und LUFS). „→ als Messquelle“ schleift den Generator ohne Soundkarte in den Analyser.
+**Tongenerator** (Seitenleiste): Sinus, Rechteck, Dreieck, Sägezahn (bandbegrenzt), weißes und rosa Rauschen (auch 500–2000 Hz für Tech 3343), Log-Sweep, Stufen-Sweep auf Terzmitten, EBU-Stereo-Ident, GLITS, BLITS und EBU-Mehrkanal-Ident (Tech 3304), Kanal-Ident L/R, Polaritätstest und A/V-Sync-Piep. Stereo, 5.1 oder 7.1. Pegel als Spitzenpegel in dBFS mit Schnellwahl −18 (R 68), −20, −23, −9, 0; über −6 dBFS nur nach Rückfrage. Je Kanal an/aus, Polarität und Pegel, Schnellwahl L, R, L+R, L−R. Ein- und Ausblenden in 10 ms. Ausgabegerät per `AudioContext.setSinkId`. Beim Sinus zeigt er an, was ein Messgerät anzeigen muss (dBTP und LUFS). „→ als Messquelle“ schleift den Generator ohne Soundkarte in den Analyser.
 
-**A/V-Sync**: Das Testbild „A/V-Sync“ blitzt zu jeder vollen Sekunde 80 ms weiß, der Generator piept mit „A/V-Sync-Piep“ zu denselben Zeitpunkten (gemeinsame Uhr aller Fenster, die Ausgabelatenz der Soundkarte ist über `getOutputTimestamp` verrechnet, die Verzögerung der Bildausgabe nicht).
+**A/V-Sync**: Das Testbild „A/V-Sync“ blitzt zu jeder vollen Sekunde 80 ms weiß, der Generator piept mit „A/V-Sync-Piep“ zu denselben Zeitpunkten (gemeinsame Uhr aller Fenster). Den Piep legt der Browser mit seiner eigenen Schätzung der Ausgabelatenz (`getOutputTimestamp`/`outputLatency`) auf die volle Sekunde; für das Bild gibt es keinen solchen Wert. Deshalb ist die Bildausgabe **ohne Kalibrierung nicht garantiert synchron**: einmal über dieselbe Strecke messen (z. B. HDMI dieses Rechners → Capture-Karte → Bridge) und im Generator „Messwert übernehmen“. Danach bleiben etwa ±½ Bildwechsel der Anzeige und ±½ Bild der Capture. Details: [docs/research/audio.md](docs/research/audio.md), Abschnitt h.
 
 **Selbsttest** (im Generator): schickt die erzeugbaren Testsignale aus EBU Tech 3341 (#1–#6, #9–#23) und Tech 3342 (#1–#4) durch den Messkern und zeigt Soll und Ist.
 
@@ -228,7 +232,7 @@ view.setSource(src);
 
 - Die **Bridge** (`server/index.mjs`) ermittelt mit ffprobe Auflösung und Farbmetadaten und startet dann ffmpeg: Skalierung auf die Analysebreite, Ausgabe `rgba` oder `rgba64le` als Rohdaten. Hinkt der Browser hinterher, verwirft sie Frames, statt eine Warteschlange aufzubauen. Die Y'CbCr-Matrix gibt sie ffmpeg explizit vor, weil swscale bei ungetaggten Streams sonst BT.601 annimmt und HD-Kameras verfälscht. Die Transferfunktion bleibt unangetastet, PQ- und HLG-Codewerte kommen also unverändert an.
 - Der **Renderer** (`src/renderer.ts`) ist ein einziger WebGL2-Kontext hinter allen Panels. Jeder abgetastete Pixel wird als Punkt additiv in ein Float-Target gestreut (bis 4 Mio. Punkte pro Scope und Frame) und danach per `1 − e^(−k·x)` dargestellt. 16-bit-Frames liegen als `RGBA16UI`-Textur vor.
-- Die Bridge lauscht standardmäßig nur auf `127.0.0.1` und akzeptiert ausschließlich Netzwerk-URLs und die Testbilder: keine lokalen Dateien, keine ffmpeg-Optionen, keine Shell. Für Zugriff aus dem Netz gibt es `--host 0.0.0.0`.
+- Die Bridge lauscht standardmäßig nur auf `127.0.0.1` und akzeptiert ausschließlich Netzwerk-URLs, die Testbilder und lokale Capture-/Audiogeräte: keine lokalen Dateien, keine ffmpeg-Optionen, keine Shell. Für Zugriff aus dem Netz gibt es `--host 0.0.0.0`.
 
 Konfiguration: `--port`/`PORT` (4192; nicht 4190 – steht auf der Sperrliste des Fetch-Standards), `--host`/`HOST`, `--control-token`/`LZS_CONTROL_TOKEN`, `FFMPEG`, `FFPROBE`. Die Desktop-App nimmt Port 4192, wenn er frei ist (feste Adresse für Companion), sonst einen freien; `LZS_PORT`, `LZS_HOST` und `LZS_CONTROL_TOKEN` überschreiben das.
 
@@ -244,7 +248,7 @@ Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in
 
 - Die Werte sind Full-Range-R'G'B' nach der Wandlung. Sub-Black und Super-White außerhalb 16–235 werden abgeschnitten, eine Legal/Illegal-Prüfung auf Y'CbCr-Ebene gibt es noch nicht.
 - Kein AJA. NDI nur mit installierter NDI-Runtime, ohne Ton, mit echten Quellen im Netz ungeprüft. DeckLink nur über den selbst zu bauenden Helfer (ffmpegs eigener DeckLink-Weg ist „nonfree“ und nicht weitergebbar) und noch nie mit Hardware gelaufen.
-- Audio: Browser liefern über `getUserMedia` höchstens 2 Kanäle; Mehrkanal kommt nur über die Bridge. Bridge-Ton lässt sich noch nicht abhören, und der A/V-Versatz wird noch nicht gemessen (siehe Issues).
+- Audio: Browser liefern über `getUserMedia` höchstens 2 Kanäle; Mehrkanal kommt nur über die Bridge. Ungeprüft: Mehrkanal-Interfaces und Dante mit echter Hardware, die Bridge unter Windows (Ersatzweg für `pipe:3`, DirectShow-Ton), der A/V-Versatz gegen eine echte Kamera.
 - Browser-Quellen (Kamera, Datei) liefern immer 8 bit und durchlaufen das Farbmanagement des Browsers.
 
 ## Tests

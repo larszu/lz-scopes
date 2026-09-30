@@ -3,6 +3,7 @@
 
 import { PATTERNS, patternById, renderPattern } from './patterns';
 import { drawPatch, listenPatches, type PatchFrame } from './patchSequencer';
+import { avCalibration } from './audio/avcal';
 import { HUD_STYLE, onThemeChange, storedTheme } from './theme';
 
 export function runOutputWindow() {
@@ -30,7 +31,9 @@ export function runOutputWindow() {
   const showHud = () => {
     if (patch) return;
     const p = PATTERNS[idx];
-    hud.textContent = `${p.group} · ${p.name} · ${w}×${h}   ← → wechseln · F Vollbild · L Label`;
+    const r = refreshMs();
+    const av = p.id === 'avsync' ? `   Bildwechsel ${r ? `${r.toFixed(1).replace('.', ',')} ms (${Math.round(1000 / r)} Hz)` : '–'} · Blitz-Raster ±${(r / 2).toFixed(1).replace('.', ',')} ms · Bild-Vorlauf ${Math.round(avCalibration().videoLeadMs)} ms${avCalibration().note ? '' : ' (unkalibriert)'}` : '';
+    hud.textContent = `${p.group} · ${p.name} · ${w}×${h}${av}   ← → wechseln · F Vollbild · L Label`;
     hud.style.opacity = '1';
     clearTimeout(hudTimer); hudTimer = window.setTimeout(() => (hud.style.opacity = '0'), 2500);
   };
@@ -44,7 +47,16 @@ export function runOutputWindow() {
     await renderPattern(ctx, patternById(PATTERNS[idx].id), w, h, (performance.now() - t0) / 1000, showLabel ? label : '');
     busy = false;
   };
-  const loop = () => { if (!patch && PATTERNS[idx].animated) draw(); requestAnimationFrame(loop); };
+  // refresh interval of this display (median of rAF deltas): the flash of “A/V-Sync” can
+  // only change at these instants, so ±½ interval stays as jitter after calibration
+  const deltas: number[] = [];
+  let lastTs = 0;
+  const loop = (ts?: number) => {
+    if (ts !== undefined) { if (lastTs) { deltas.push(ts - lastTs); if (deltas.length > 120) deltas.shift(); } lastTs = ts; }
+    if (!patch && PATTERNS[idx].animated) draw();
+    requestAnimationFrame(loop);
+  };
+  const refreshMs = () => { const d = [...deltas].sort((a, b) => a - b); return d.length ? d[d.length >> 1] : 0; };
   document.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight' || e.key === ' ') idx = (idx + 1) % PATTERNS.length;
     else if (e.key === 'ArrowLeft') idx = (idx - 1 + PATTERNS.length) % PATTERNS.length;

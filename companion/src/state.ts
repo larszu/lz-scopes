@@ -23,12 +23,18 @@ export interface ScopesState {
   pattern: { id: string; name: string } | null
   patterns?: { id: string; name: string }[]
   playing: boolean | null
+  /** loudness of the active source with sound (null = no source with sound) */
+  audio?: {
+    source: string; momentary: number | null; shortTerm: number | null; integrated: number | null; lra: number | null
+    maxTP: number | null; paused: boolean; seconds: number; avOffsetMs: number | null; ident: string; identProblems: string[]
+  } | null
+  generator?: { running: boolean; signal: string; level: number; freq: number; channels: number } | null
 }
 
 export const EMPTY_STATE: ScopesState = {
   source: null, sources: [], frozen: false, clip: null, clipHigh: null, clipLow: null, yMin: null, yMax: null,
   layoutName: '', preset: '', layouts: [], presets: [], panels: [], maximized: null, scene: null, scenes: [],
-  outputs: [], pattern: null, patterns: [], playing: null,
+  outputs: [], pattern: null, patterns: [], playing: null, audio: null, generator: null,
 }
 
 /** Merge a (possibly partial or malformed) state from the bridge onto the defaults. */
@@ -44,6 +50,12 @@ export function normalizeState(raw: unknown): ScopesState {
     frozen: r.frozen === true,
     clip: numOrNull(r.clip), clipHigh: numOrNull(r.clipHigh), clipLow: numOrNull(r.clipLow),
     yMin: numOrNull(r.yMin), yMax: numOrNull(r.yMax),
+    audio: r.audio && typeof r.audio === 'object' ? {
+      ...r.audio, momentary: numOrNull(r.audio.momentary), shortTerm: numOrNull(r.audio.shortTerm), integrated: numOrNull(r.audio.integrated),
+      lra: numOrNull(r.audio.lra), maxTP: numOrNull(r.audio.maxTP), avOffsetMs: numOrNull(r.audio.avOffsetMs),
+      paused: r.audio.paused === true, identProblems: arr(r.audio.identProblems),
+    } : null,
+    generator: r.generator && typeof r.generator === 'object' ? { ...r.generator, running: r.generator.running === true } : null,
   }
 }
 
@@ -68,6 +80,17 @@ export function variableValues(s: ScopesState, connected: boolean): Record<strin
     pattern: s.pattern?.name ?? '',
     maximized: s.maximized === null ? '' : String(s.maximized),
     playing: s.playing === null ? '' : s.playing ? 'true' : 'false',
+    loudness_source: s.audio?.source ?? '',
+    loudness_m: pct(s.audio?.momentary ?? null),
+    loudness_s: pct(s.audio?.shortTerm ?? null),
+    loudness_i: pct(s.audio?.integrated ?? null),
+    loudness_lra: pct(s.audio?.lra ?? null),
+    true_peak: pct(s.audio?.maxTP ?? null),
+    loudness_paused: s.audio ? (s.audio.paused ? 'true' : 'false') : '',
+    av_offset: pct(s.audio?.avOffsetMs ?? null),
+    ident: s.audio?.ident ?? '',
+    ident_problems: (s.audio?.identProblems ?? []).join(' · '),
+    generator: s.generator ? (s.generator.running ? s.generator.signal : 'aus') : '',
   }
 }
 
@@ -88,6 +111,17 @@ export const VARIABLES: { variableId: string; name: string }[] = [
   { variableId: 'pattern', name: 'Testbild' },
   { variableId: 'maximized', name: 'Vergrößertes Panel' },
   { variableId: 'playing', name: 'Videodatei läuft' },
+  { variableId: 'loudness_source', name: 'Lautheit: Quelle' },
+  { variableId: 'loudness_m', name: 'Lautheit M (LUFS)' },
+  { variableId: 'loudness_s', name: 'Lautheit S (LUFS)' },
+  { variableId: 'loudness_i', name: 'Lautheit I (LUFS)' },
+  { variableId: 'loudness_lra', name: 'Loudness Range (LU)' },
+  { variableId: 'true_peak', name: 'Max True Peak (dBTP)' },
+  { variableId: 'loudness_paused', name: 'I/LRA angehalten' },
+  { variableId: 'av_offset', name: 'A/V-Versatz ms (+ = Ton vor Bild, BT.1359)' },
+  { variableId: 'ident', name: 'Erkannter Ident' },
+  { variableId: 'ident_problems', name: 'Ident-Befunde (vertauscht, fehlt, Polarität)' },
+  { variableId: 'generator', name: 'Tongenerator (Signal oder aus)' },
 ]
 
 const same = (a: string, b: unknown) => a.toLowerCase() === String(b ?? '').trim().toLowerCase()
@@ -108,6 +142,10 @@ export const checks = {
     s.outputs.some((x) => x.stream && (!o.stream || same(x.stream, o.stream))),
   maximized: (s: ScopesState, o: Record<string, unknown>) => s.maximized !== null && s.maximized === Number(o.panel),
   playing: (s: ScopesState) => s.playing === true,
+  generator_running: (s: ScopesState) => s.generator?.running === true,
+  loudness_paused: (s: ScopesState) => s.audio?.paused === true,
+  true_peak_above: (s: ScopesState, o: Record<string, unknown>) => s.audio?.maxTP != null && s.audio.maxTP > Number(o.threshold ?? -1),
+  ident_problem: (s: ScopesState) => (s.audio?.identProblems.length ?? 0) > 0,
 }
 
 /** Lists that feed dropdown choices; when this key changes the definitions are rebuilt. */

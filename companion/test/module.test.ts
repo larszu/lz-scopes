@@ -91,6 +91,9 @@ test('commands pass the bridge validation', async (t) => {
     ['roi_clear', {}], ['pattern_select', { pattern: 'smpte75' }], ['pattern_next', {}], ['pattern_prev', {}],
     ['output_open', { name: 'key', view: 'overlay', bg: 'black', stream: 'scopes', target: 'srt://1.2.3.4:9000' }], ['output_close', { name: '' }],
     ['scene_select', { scene: 'Studio' }], ['stream_start', { stream: 'scopes' }], ['stream_stop', {}], ['transport', { op: 'toggle' }],
+    ['audio_reset', { source: '' }], ['audio_pause', { mode: 'on', source: '2' }],
+    ['generator', { mode: 'on', signal: 'ebu-ident', freq: 0, level: '-18' }], ['generator', { mode: 'off', signal: '', level: '' }],
+    ['generator', { mode: 'on', level: '-3', force: true }],
   ] as [string, Record<string, unknown>][]) {
     const r = validateCommand(buildCommand(id, o))
     assert.ok(r.ok, `${id}: ${r.error}`)

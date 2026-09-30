@@ -7,6 +7,7 @@ Ein WebSocket liefert unkomprimierte Einzelbilder an den Browser. Die Bridge die
 | Server → Client | Text | `{"type":"info","width":960,"height":540,"depth":8\|16,"fps":25,"sourceWidth":1920,"sourceHeight":1080,"codec":"h264","transfer":"smpte2084","primaries":"bt2020","matrix":"bt2020nc","range":"tv","decodeMatrix":"bt2020"}` vor dem ersten Bild |
 | Server → Client | Binär | ein Bild: `width × height × 4` Samples R, G, B, A, zeilenweise von oben; `depth` 8 → Uint8, 16 → Uint16 LE |
 | Server → Client | Text | `{"type":"stats","sent":n,"dropped":n}` (optional, 1 Hz) |
+| Server → Client | Text | `{"type":"tc","tc":"10:00:07:05","tcPts":7.2,"pts":7.4,"first":0.96,"kind":"gop"\|"s12m"}` (optional, höchstens 25/s): letzter Timecode aus den Bild-Seitendaten und die PTS des neuesten decodierten Bildes; Resolve: `{"type":"tc","tc":…,"kind":"resolve","fps":25,"df":false}` vor jedem Bild |
 | Server → Client | Text | `{"type":"error"\|"end","message":"…"}`, danach schließt der Server |
 
 Die Werte sind Full-Range-R'G'B' (0 = 0 %, Maximum = 100 %). Die Transferfunktion bleibt unverändert, PQ und HLG kommen als Codewerte an. `transfer`, `matrix` und `primaries` entsprechen den ffprobe-Namen; fehlen sie, setzt der Client SDR und BT.709 bei HD beziehungsweise BT.601 bei SD an.
@@ -72,7 +73,7 @@ Zusätzlich zu `url`, `width`, `fps`, `depth`, `transport`, `audio`:
 | `matrix` | `bt709`, `bt601`, `bt2020`, `smpte240m` | alle – feste Matrix für Y′CbCr → R′G′B′ statt Kennzeichnung/Größenregel |
 | `range` | `tv`, `pc` | alle – fester Wertebereich |
 
-`GET /api/devices/formats?url=device:…` liefert `{modes:[{width,height,fpsMin,fpsMax,pixfmt?}], pixfmts:[…], preferred, defaultSize}`, `GET /api/decklink` den Zustand des DeckLink-Helfers `{available, helper, devices, error}`.
+`GET /api/devices/formats?url=device:…` liefert `{modes:[{width,height,fpsMin,fpsMax,pixfmt?}], pixfmts:[…], preferred, defaultSize}`, `GET /api/decklink` den Zustand des DeckLink-Helfers `{available, helper, devices, error}`, `GET /api/ndi` die NDI-Quellen `{available, runtime, version, sources:[{name,url}], error}`; eine NDI-Quelle heißt `ndi:<Name>`.
 
 ## Helfer-Protokoll (native Aufnahme-Helfer → Bridge)
 
@@ -90,3 +91,11 @@ Geräte ohne freien ffmpeg-Weg (DeckLink, NDI) laufen über einen eigenen Helfer
 - `ERR `: Fehlertext; der Helfer beendet sich danach.
 
 `--list` gibt stattdessen eine JSON-Zeile `{"ok":true,"devices":[…]}` bzw. `{"ok":false,"error":"…"}` aus. Die Bridge leitet die Bilder durch ffmpeg (`-f v210` bzw. `-f rawvideo -pix_fmt …` von stdin) und dieselbe Skalierung wie bei Streams; Richtung Browser gilt Protokoll 1. Zum Testen ohne Hardware: `test/fixtures/fake-helper.mjs`.
+
+## Timecode (optional)
+
+`info` kann `timecode` (Start-Timecode des Containers, ffprobe-Tag, z. B. MOV tmcd), `startTime` (s), `frameRate` (`"30000/1001"`) und `sourceFps` enthalten. Die Bridge hängt `showinfo=checksum=0` vor den Skalierer und liest daraus je Quellbild `pts_time` und die Seitendaten „GOP timecode“ (MPEG-2) bzw. „SMPTE 12-1 timecode“ (SEI). Der Client rechnet den aktuellen Timecode als `tc + (pts − tcPts) × fps`, ohne Seitendaten als `timecode + (pts − startTime) × fps`. Abschalten mit `&tc=0`. Hosts, die kein `tc` senden, bleiben kompatibel.
+
+## Uhr: `/clock`
+
+WebSocket nur für die lokale UI (gleiche Herkunft, 127.0.0.1). Server → Client 4 Hz `{"type":"ptp", state, domain, gm, rates, offsetNs, meanPathDelayNs, pathDelayIncluded, sm, history, ifaces, rtp}`; Client → Server `{"type":"config","iface":"","delayReq":false}` und `{"type":"rtp","group":"239.1.1.1","port":5004,"rateNum":25,"rateDen":1}` bzw. `{"type":"rtp","off":true}`. Siehe `server/ptp.mjs` und `docs/research/clock-ptp.md`.

@@ -84,6 +84,7 @@ Voraussetzung für Netzwerkquellen ohne Desktop-App: `ffmpeg` und `ffprobe` im `
 | Kamera, Bildschirm, Video-/Bilddatei | direkt im Browser |
 | `device:` – Capture-Karten, die sich als Systemgerät melden (AVFoundation/DirectShow/V4L2) | Bridge: ffmpeg mit festem Modus, Rohformat (10 bit, wenn angeboten) und wählbarer Matrix; auch am entfernten Bridge-Rechner |
 | `decklink:<n>` – Blackmagic DeckLink/UltraStudio | Bridge + eigener Helfer (DeckLink SDK, [helpers/decklink](helpers/decklink/README.md)); nur wenn gebaut und Desktop Video installiert, **mit Hardware ungeprüft** |
+| `ndi:<Quelle>` – NDI® | Bridge + NDI-Helfer ([helpers/ndi](helpers/ndi/README.md)), lädt die vom Nutzer installierte NDI-Runtime ([ndi.video](https://ndi.video/)); UYVY bzw. 16 bit P216; nur im Loopback mit eigenem Testsender geprüft |
 
 Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einstellbar sind Analyseauflösung, Bildrate, 8 oder 16 bit (für 10-bit/HDR), RTSP über TCP oder UDP, Transfer, Matrix (709, 2020, 601 525 Zeilen/SMPTE-C, 601 625 Zeilen/EBU) und Gamut. „auto“ übernimmt die Stream-Metadaten (`bt470bg` → 625, `smpte170m` → 525).
 
@@ -194,6 +195,16 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 
 *Lichtmesser (Opple)* in der Seitenleiste verbindet einen Opple Light Master 3 oder 4 per Web Bluetooth (Chrome/Edge oder Desktop-App) und zeigt Beleuchtungsstärke, CCT (McCamy), Duv (Ohno) und xy, mit Verlauf und CSV-Export. Die Werte rechnet LZ Scopes aus den Rohkanälen des Filtersensors; für LED-Primärfarben nur ein Trendmesser. **Ungeprüft:** Ohne Gerät getestet sind nur Protokoll und Umrechnung (mit aufgezeichneten Paketen aus [sunday-light-meter](https://github.com/natmart-in/sunday-light-meter), MIT), nicht die Bluetooth-Verbindung. Details: [docs/research/opple-light-master.md](docs/research/opple-light-master.md).
 
+## Uhr und Timecode
+
+Panel-Typ **Uhr / Timecode**, dazu wahlweise eine Einblendung im Bild-Panel (⚙ → Uhr). Quellen und Befunde: [docs/research/clock-ptp.md](docs/research/clock-ptp.md).
+
+- **Tageszeit** nach SMPTE ST 2059-1: Systemzeit → TAI (IERS Bulletin C 72, TAI − UTC = 37 s) → Timecode mit Daily Jam, 23,98 … 60 fps, DF/NDF, Frame-Phase zur SMPTE-Epoche. Gekennzeichnet als „Systemuhr – keine Referenz“, solange kein PTP die Uhr korrigiert.
+- **Quell-Timecode**: Start-Timecode des Containers (ffprobe-Tag), GOP-/SEI-Timecode je Bild (ffmpeg `showinfo`), Timeline-Timecode aus DaVinci Resolve, Videodateien im Browser aus `currentTime`; Differenz zur Tageszeit in Frames.
+- **LTC** aus dem Ton jeder Quelle: eigener Biphase-Mark-Leser (24–30 fps, vorwärts und rückwärts).
+- **PTP-Monitor** in der Bridge (eigener Code, UDP 319/320, 224.0.1.129): Grandmaster, Domain, clockClass, Nachrichtenraten, SMPTE-SM-TLV (Lock, Lokal-Offset, nächster Jam), Offset und auf Wunsch Mean Path Delay – als Schätzung mit Software-Zeitstempeln. Ohne PTP im Netz: „kein PTP empfangen“. Nur mit der UI aus Bridge oder Desktop-App, nicht von GitHub Pages.
+- **ST-2110-RTP-Prüfung**: RTP-Zeitstempel (90 kHz, Offset 0 zur Epoche) gegen Ankunftszeit und Frame-Raster.
+
 ## Einbetten
 
 `src/index.ts` exportiert `ScopeView`: ein WebGL-Canvas mit wählbaren Scopes, ohne Framework.
@@ -230,7 +241,7 @@ Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in
 ## Grenzen
 
 - Die Werte sind Full-Range-R'G'B' nach der Wandlung. Sub-Black und Super-White außerhalb 16–235 werden abgeschnitten, eine Legal/Illegal-Prüfung auf Y'CbCr-Ebene gibt es noch nicht.
-- Kein NDI, kein AJA. DeckLink nur über den selbst zu bauenden Helfer (ffmpegs eigener DeckLink-Weg ist „nonfree“ und nicht weitergebbar) und noch nie mit Hardware gelaufen.
+- Kein AJA. NDI nur mit installierter NDI-Runtime, ohne Ton, mit echten Quellen im Netz ungeprüft. DeckLink nur über den selbst zu bauenden Helfer (ffmpegs eigener DeckLink-Weg ist „nonfree“ und nicht weitergebbar) und noch nie mit Hardware gelaufen.
 - Audio: Browser liefern über `getUserMedia` höchstens 2 Kanäle; Mehrkanal kommt nur über die Bridge. Bridge-Ton lässt sich noch nicht abhören, und der A/V-Versatz wird noch nicht gemessen (siehe Issues).
 - Browser-Quellen (Kamera, Datei) liefern immer 8 bit und durchlaufen das Farbmanagement des Browsers.
 
@@ -257,3 +268,5 @@ Von **Lars Zumpe**, Lars Zumpe Medienproduktion.
 Proprietär, © 2026 Lars Zumpe, alle Rechte vorbehalten. Nutzung der veröffentlichten Builds ist kostenlos; Weiterverbreitung und abgeleitete Werke sind es nicht. Siehe [LICENSE](LICENSE). Kein Open Source: Der Code ist öffentlich zum Lesen. Fremdkomponenten behalten ihre Lizenzen: [THIRD_PARTY.md](THIRD_PARTY.md).
 
 Logo, Signet und App-Icon der Lars Zumpe Medienproduktion sind eigene Marke und nicht frei verwendbar (LICENSE, Abschnitt 10). Die Oberfläche hat drei Varianten (⚙ → Oberfläche): *Neutral* (unbunte Grautöne für farbkritische Arbeit, Standard), *LZM* (Brand Guide 2.0, Navy) und *Original* (fast schwarz). Scope-Spuren und Messfarben sind in allen gleich. Begründung: [docs/research/ui-farben.md](docs/research/ui-farben.md).
+
+NDI® is a registered trademark of Vizrt NDI AB.

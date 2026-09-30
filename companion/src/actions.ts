@@ -9,6 +9,7 @@ export const SCOPES: { id: string; label: string }[] = [
   { id: 'cie', label: 'CIE 1931' }, { id: 'hist', label: 'Histogramm' }, { id: 'stats', label: 'Messwerte' },
   { id: 'audio-meter', label: 'Audio Pegel & Lautheit' }, { id: 'audio-loudness', label: 'Audio Lautheitsverlauf' },
   { id: 'audio-spectrum', label: 'Audio Spektrum' }, { id: 'audio-phase', label: 'Audio Goniometer' },
+  { id: 'clock', label: 'Uhr / Timecode' },
 ]
 const MODES = [{ id: 'toggle', label: 'Umschalten' }, { id: 'on', label: 'An' }, { id: 'off', label: 'Aus' }]
 const VIEWS = [

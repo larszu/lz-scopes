@@ -107,3 +107,30 @@ export function deckLinkRow(s: Source, ui: BridgeUi): Node | null {
     sel(String(s.settings.deckLinkBits ?? 10), [['10', 'DeckLink 10 bit (v210)'], ['8', 'DeckLink 8 bit (UYVY)']], (v) => ui.upd({ deckLinkBits: Number(v) as 8 | 10, ...(v === '10' ? { depth: 16 as const } : {}) }, true), 'Aufnahmeformat der Karte; RGB-4:4:4-Signale kommen immer als 10-bit-RGB'),
     el('span', { class: 'hint' }, 'ungeprüft mit Hardware'));
 }
+
+interface NdiStatus { available: boolean; helper: boolean; runtime: boolean; version?: string; sources: { name: string; url: string }[]; error?: string }
+
+/** NDI SDK licence: link to ndi.video close to where NDI is selected, trademark notice. */
+export const NDI_NOTICE = 'NDI® is a registered trademark of Vizrt NDI AB.';
+const ndiLink = () => el('a', { href: 'https://ndi.video/', target: '_blank', rel: 'noopener', title: NDI_NOTICE }, 'ndi.video');
+
+/** NDI® sources found by the helper on the bridge's machine; says plainly when the runtime is missing. */
+export function ndiButton(ui: BridgeUi): HTMLElement {
+  return el('button', { class: 'mini', title: `NDI®-Quellen im Netz über den NDI-Helfer der Bridge (8 bit UYVY bzw. 16 bit P216). Braucht die NDI-Runtime (NDI Tools, ndi.video). ${NDI_NOTICE}`, onclick: async (e: Event) => {
+    const btn = e.currentTarget as HTMLElement;
+    btn.textContent = 'NDI® …';
+    let st: NdiStatus | null = null;
+    try { st = await (await fetch(`${ui.http()}/api/ndi`)).json(); } catch { /* bridge missing */ }
+    btn.textContent = 'NDI®…';
+    if (!st) { ui.hud('Bridge nicht erreichbar'); return; }
+    if (!st.available) { ui.hud(`NDI nicht verfügbar – ${st.error ?? 'NDI-Runtime nötig (ndi.video)'}`); return; }
+    if (!st.sources.length) { ui.hud('Keine NDI-Quellen gefunden'); return; }
+    btn.replaceWith(sel('', [['', 'NDI-Quelle wählen …'], ...st.sources.map((s) => [`ndi:${s.name}`, s.name] as [string, string])], (v) => { if (v) ui.connect(v, v.slice(4).replace(/^.*\((.*)\)$/, '$1').slice(0, 40)); }));
+  } }, 'NDI®…');
+}
+
+/** Link and trademark notice on NDI sources (NDI SDK licence). */
+export function ndiRow(s: Source): Node | null {
+  if (!s.url.startsWith('ndi:')) return null;
+  return el('div', { class: 'row hint' }, 'NDI® über die NDI-Runtime · ', ndiLink(), ` · ${NDI_NOTICE}`);
+}

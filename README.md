@@ -40,7 +40,7 @@
 ## Why LZ Scopes
 
 - **Real scopes, in software.** Waveform (luma, RGB overlay, RGB / YRGB / YCbCr parade), vectorscope, CIE 1931 xy or 1976 u′v′, histogram, false colour, zebra, gamut warning and numeric readout.
-- **Streams, not just files.** RTSP, RTMP, SRT, UDP, RTP, HLS and HTTP via an ffmpeg bridge; capture cards through the bridge (`device:`, explicit mode, raw 10-bit formats and decode matrix, also on remote bridges); Blackmagic DeckLink / UltraStudio through a native helper built against the DeckLink SDK (`decklink:`, see [helpers/decklink](helpers/decklink/README.md), untested with hardware); DaVinci Resolve in 16 bit through its scripting API; camera / USB capture with device picker, screen or window with crop, watch folder, video and image files directly in the browser.
+- **Streams, not just files.** RTSP, RTMP, SRT, UDP, RTP, HLS and HTTP via an ffmpeg bridge; capture cards through the bridge (`device:`, explicit mode, raw 10-bit formats and decode matrix, also on remote bridges); Blackmagic DeckLink / UltraStudio through a native helper built against the DeckLink SDK (`decklink:`, see [helpers/decklink](helpers/decklink/README.md), untested with hardware); NDI® sources through a helper that loads the user-installed NDI runtime (`ndi:`, [ndi.video](https://ndi.video/), 8-bit UYVY or 16-bit P216, tested only in loopback); DaVinci Resolve in 16 bit through its scripting API; camera / USB capture with device picker, screen or window with crop, watch folder, video and image files directly in the browser.
 - **HDR aware.** 8 or 16 bit analysis, PQ and HLG (display peak Lw 500-10 000 cd/m², system gamma applied to luminance per BT.2100, EBU R 167 presets), BT.709 / 2020 / 601 with 525- and 625-line primaries, waveform scale in cd/m² with BT.2408 reference marks (75 % HLG, 58 % PQ, 38 % grey card) and optional EBU R 103 limits (-5 / 105 %).
 - **Camera log.** ARRI LogC3 / LogC4, Sony S-Log3, Panasonic V-Log, Blackmagic Film Gen 5, Canon Log 2 / 3, RED Log3G10, Fujifilm F-Log2, DJI D-Log, Nikon N-Log and Apple Log with their camera gamuts (Bradford-adapted where the white differs). Log acts on the scene-referred waveform scale (reflectance, 18 % grey), the CIE diagram, the picture view and the vectorscope targets.
 - **CST and LUTs per source.** Colour space transform to Rec.709 / Rec.2020 PQ / HLG (or any gamut and transfer) with Bradford adaptation and tone mapping (ACES 2.0 tonescale, BT.2390 EETF, extended Reinhard, clip), camera presets (log → Rec.709), then up to two LUTs (`.cube`, `.3dl`, `.spi3d`, `.spi1d`, `.csp`, tetrahedral, by drag and drop). Each panel measures the signal, after the CST or after the LUTs (gear menu, key `C`), shown in the panel head. Manufacturer look LUTs are not bundled; the app links their official download pages ([docs/research/lut-cst.md](docs/research/lut-cst.md)).
@@ -129,6 +129,16 @@ Tone generator and loudness/level analyser, measured with an own DSP core (`src/
 - **Uniformity** 3×3 to 9×9 at 100/75/50/25 %, ΔE00 to the centre (≤ 4 / ≤ 2 as quoted by DisplayCAL for ISO 14861) and contrast deviation.
 - **3D LUT** `.cube` 33/65 from a matrix/shaper model of the measurements, only if the model predicts the measured patches well enough (SDR only).
 
+## Clock and time code
+
+Panel type **Clock / time code** (and an optional corner read-out in the picture panel). Sources and findings: [docs/research/clock-ptp.md](docs/research/clock-ptp.md).
+
+- **Time of day** after SMPTE ST 2059-1: system time → TAI (IERS Bulletin C 72, TAI − UTC = 37 s) → time address with Daily Jam, 23.98 … 60 fps, DF/NDF, frame phase to the SMPTE epoch. Labelled “system clock – no reference” unless PTP corrects it.
+- **Source time code**: container start time code (ffprobe tag), GOP/SEI time code per frame (ffmpeg `showinfo`), DaVinci Resolve timeline time code, browser video files from `currentTime`; difference to the time of day in frames.
+- **LTC** from any source with sound: own biphase-mark reader (24–30 fps, forward and reverse).
+- **PTP monitor** in the bridge (own code, UDP 319/320 on 224.0.1.129): grandmaster, domain, clockClass, rates, SMPTE SM TLV (lock, local offset, next jam), offset and optional mean path delay as software-timestamp estimates. No PTP on the network → “no PTP received”.
+- **ST 2110 RTP check**: RTP timestamp (90 kHz, zero offset at the epoch) against arrival time and frame grid.
+
 ## Architecture
 
 - **Bridge** (`server/index.mjs`): ffprobe for resolution and colour metadata, then ffmpeg scales to the analysis width and writes raw `rgba` / `rgba64le` frames over a WebSocket. Slow browsers get frames dropped, no queue builds up. The Y'CbCr matrix is passed to ffmpeg explicitly, the transfer function is left untouched. It listens on `127.0.0.1` only and accepts network URLs and test patterns, never local files, ffmpeg options or a shell.
@@ -151,7 +161,7 @@ view.setSource(src);
 ## Limits
 
 - Values are full-range R'G'B' after conversion. Sub-black and super-white outside 16-235 are clipped; there is no legal / illegal check at Y'CbCr level yet.
-- No NDI or AJA input. DeckLink only through the helper you build yourself (ffmpeg's own DeckLink device is "nonfree" and cannot be redistributed); never run with hardware yet. Audio from the browser is limited to 2 channels (more only through the bridge); bridge audio cannot be monitored yet.
+- No AJA input. NDI only with the NDI runtime installed, no sound, untested with real network sources. DeckLink only through the helper you build yourself (ffmpeg's own DeckLink device is "nonfree" and cannot be redistributed); never run with hardware yet. Audio from the browser is limited to 2 channels (more only through the bridge); bridge audio cannot be monitored yet.
 - Browser sources (camera, file) are always 8 bit and pass through the browser's colour management.
 
 ## Author
@@ -164,3 +174,5 @@ Proprietary, &copy; 2026 Lars Zumpe, all rights reserved. Using the published bu
 Bundled third-party components keep their own licences: [THIRD_PARTY.md](THIRD_PARTY.md) (including the GPL ffmpeg binary in the desktop app).
 
 The logo, signet and app icon of Lars Zumpe Medienproduktion are its own trademark and not free to use (LICENSE, section 10). The interface has three skins (⚙ → Oberfläche): *Neutral* (achromatic greys for colour-critical work, default), *LZM* (Brand Guide 2.0, navy) and *Original* (near black). Scope traces and measurement colours are the same in every skin. Reasoning: [docs/research/ui-farben.md](docs/research/ui-farben.md).
+
+NDI® is a registered trademark of Vizrt NDI AB.

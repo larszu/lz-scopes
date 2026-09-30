@@ -43,7 +43,18 @@ export interface StreamInfo {
   /** protocol 2 (audio=1): header on every binary message */
   proto?: number;
   audio?: AudioStreamInfo | null;
+  /** start time code of the container (ffprobe tag, e.g. MOV tmcd) and the stream's start time in s */
+  timecode?: string; startTime?: number;
+  /** "30000/1001" (ffprobe r_frame_rate) and the source frame rate before any fps limit */
+  frameRate?: string; sourceFps?: number;
 }
+
+/**
+ * Latest time code message of the bridge (docs/frame-protocol.md): `tc` is the last time code
+ * found in the frame side data (GOP / SEI) at `tcPts`, `pts` the newest decoded frame; Resolve
+ * sends its timeline time code with `fps`/`df`.
+ */
+export interface SourceTc { tc: string | null; tcPts?: number | null; pts?: number | null; first?: number | null; kind: 'gop' | 's12m' | 'resolve' | null; fps?: number | null; df?: boolean; at: number }
 
 export interface Stats {
   hist: Float32Array[]; // R, G, B, Y — 256 bins each
@@ -81,6 +92,8 @@ export class Source {
   status: 'idle' | 'connecting' | 'live' | 'error' | 'ended' = 'idle';
   message = '';
   info: StreamInfo | null = null;
+  /** time code of the source (bridge showinfo / Resolve), see src/clock/source.ts */
+  tc: SourceTc | null = null;
   width = 0;
   height = 0;
   depth: 8 | 16 = 8;
@@ -254,6 +267,8 @@ export class Source {
           if (this.audio && a) this.audio.label = `Bridge · ${a.codec ?? ''} ${a.sampleRate / 1000} kHz`.replace('  ', ' ');
           const pic = msg.width ? `${msg.sourceWidth}×${msg.sourceHeight} ${msg.codec ?? ''}`.trim() : 'nur Ton';
           this.set('live', a ? `${pic} · Ton ${a.codec ?? ''} ${a.sampleRate / 1000} kHz ${a.channels} Kan.` : msg.proto === 2 ? `${pic} · kein Ton` : pic);
+        } else if (msg.type === 'tc') {
+          this.tc = { ...msg, at: performance.now() };
         } else if (msg.type === 'stats') {
           this.dropped = msg.dropped;
           if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', msg.message);
@@ -548,7 +563,7 @@ export class Source {
     this.audio = null;
     if (this.videoEl) { this.videoEl.pause(); this.videoEl.srcObject = null; this.videoEl = null; }
     if (this.objectUrl) { URL.revokeObjectURL(this.objectUrl); this.objectUrl = null; }
-    this.element = null; this.data = null; this.info = null; this.width = 0; this.height = 0; this.stats = null;
+    this.element = null; this.data = null; this.info = null; this.tc = null; this.width = 0; this.height = 0; this.stats = null;
     this.fps = 0; this.dropped = 0;
     if (this.status !== 'idle') this.set('idle');
   }

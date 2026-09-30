@@ -25,6 +25,8 @@ import { COMMANDS, controlAccess, validateCommand } from './control.mjs';
 import { applyDecodeOverride, deviceInputArgs, deviceOptions, formatListArgs, parseDeviceUrl, parseFormatList, pickPixfmt } from './devices.mjs';
 import { helperList, helperPath, startHelperStream } from './helper-input.mjs';
 import { handleMeterSocket, meterInfo } from './meter.mjs';
+import { PtpMonitor, RtpMonitor, ipv4Interfaces, isMulticastV4, nowUtcNs } from './ptp.mjs';
+import { taiMinusUtc } from './leap.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -85,6 +87,7 @@ export function validateInput(url) {
   if (url in TEST_PATTERNS || url === 'resolve:') return null;
   if (/^device:(avfoundation|dshow|v4l2):[^\n\r]{1,200}$/.test(url)) return null;
   if (/^decklink:\d{1,2}$/.test(url)) return null;
+  if (/^ndi:[^\n\r\0]{1,200}$/.test(url) && !url.slice(4).startsWith('-')) return null;
   if (url.startsWith('-')) return 'Ungültige Quelle';
   if (!ALLOWED.test(url)) return 'Nur rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s)://, resolve: oder test:*';
   return null;
@@ -200,7 +203,7 @@ async function probe(url, transport, device = {}) {
   }
   const FFPROBE = probes[0];
   const a = ['-v', 'error', '-analyzeduration', '1000000', '-probesize', '2000000', '-show_entries',
-    'stream=codec_type,width,height,codec_name,avg_frame_rate,r_frame_rate,color_transfer,color_primaries,color_space,color_range,pix_fmt,sample_rate,channels,channel_layout',
+    'stream=codec_type,width,height,codec_name,avg_frame_rate,r_frame_rate,color_transfer,color_primaries,color_space,color_range,pix_fmt,sample_rate,channels,channel_layout,start_time:stream_tags=timecode:format_tags=timecode',
     '-of', 'json'];
   if (/^rtsps?:/i.test(url)) a.push('-rtsp_transport', transport === 'udp' ? 'udp' : 'tcp');
   a.push('-i', url);
@@ -214,14 +217,18 @@ async function probe(url, transport, device = {}) {
     p.on('close', (code) => {
       clearTimeout(timer);
       try {
-        const streams = JSON.parse(out).streams ?? [];
+        const json = JSON.parse(out);
+        const streams = json.streams ?? [];
         const s = streams.find((x) => x.codec_type === 'video');
         const au = streams.find((x) => x.codec_type === 'audio' && Number(x.channels) > 0);
         if (!s && !au) throw new Error(err.trim() || `ffprobe beendet mit ${code}`);
         const audio = au ? { codec: au.codec_name, sampleRate: Number(au.sample_rate), channels: Number(au.channels), layout: au.channel_layout ?? '' } : null;
         if (!s) return ok({ width: 0, height: 0, fps: 0, audio });
         const rate = (r) => { const [n, d] = String(r ?? '0/1').split('/').map(Number); return d ? n / d : 0; };
+        // start time code of the container (MOV tmcd, MXF …): stream tag of the video, any stream, or the format
+        const timecode = s.tags?.timecode ?? streams.find((x) => x.tags?.timecode)?.tags?.timecode ?? json.format?.tags?.timecode;
         ok({
+          ...(timecode ? { timecode, startTime: Number(s.start_time) } : {}), frameRate: s.r_frame_rate,
           width: s.width, height: s.height, codec: s.codec_name, pixFmt: s.pix_fmt,
           fps: Math.round((rate(s.avg_frame_rate) || rate(s.r_frame_rate)) * 100) / 100,
           transfer: s.color_transfer ?? 'unknown', primaries: s.color_primaries ?? 'unknown',
@@ -261,9 +268,9 @@ export function outputSize(w, h, maxWidth) {
  * process + separate audio process on pipe:1, fallback for Windows) or 'none'.
  * `video: false` = audio only (PCM on pipe:1).
  */
-export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', device = {} }) {
+export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', device = {}, log = 'error' }) {
   const test = url in TEST_PATTERNS;
-  const head = ['-hide_banner', '-loglevel', 'error', '-nostdin'];
+  const head = ['-hide_banner', '-loglevel', log, '-nostdin', ...(log === 'error' ? [] : ['-nostats'])];
   const pcm = (map, target) => ['-map', map, '-vn', '-sn', '-dn', '-c:a', 'pcm_f32le', '-f', 'f32le', target];
   const vid = ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vf, '-fps_mode', 'passthrough', '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-f', 'rawvideo', 'pipe:1'];
   if (!video) return { main: [...head, ...inputArgs(url, transport, { audio: true, video: false }), ...pcm('0:a:0', 'pipe:1')], audio: null };
@@ -275,6 +282,57 @@ export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video =
     };
   }
   return { main: [...head, ...inputArgs(url, transport, { device }), ...vid], audio: null };
+}
+
+/**
+ * Per-frame time code from ffmpeg's showinfo filter (`showinfo=checksum=0`, log level
+ * `level+info`). Frame lines carry `n:` and `pts_time:`, side-data lines the time code of the
+ * frame: "GOP timecode" (MPEG-2 GOP header) or "SMPTE 12-1 timecode" (H.264/HEVC SEI,
+ * AV_FRAME_DATA_S12M_TIMECODE). Returns the parsed item or null.
+ */
+export function parseShowinfo(line) {
+  if (!/Parsed_showinfo_\d+/.test(line)) return null;
+  const f = /\bn:\s*(\d+)\s+pts:\s*(\S+)\s+pts_time:(\S+)/.exec(line);
+  if (f) return { frame: Number(f[1]), pts: f[3] === 'NOPTS' ? NaN : Number(f[3]) };
+  const sd = /side data - ([^:]*timecode[^:]*):\s*(.*)$/i.exec(line);
+  if (sd) {
+    const tc = /(\d{2}:\d{2}:\d{2}[:;.,]\d{2})/.exec(sd[2])?.[1];
+    if (tc) return { timecode: tc, kind: /gop/i.test(sd[1]) ? 'gop' : 's12m' };
+  }
+  return null;
+}
+
+/**
+ * Routes stderr of an ffmpeg with showinfo: showinfo lines → time code messages
+ * ({type:"tc", tc, tcPts, pts, kind}, at most every `minMs`), errors → `onError` (warnings dropped).
+ */
+export class ShowinfoTracker {
+  constructor(send, onError, minMs = 40) {
+    this.send = send; this.onError = onError; this.minMs = minMs;
+    this.rest = ''; this.pts = NaN; this.tc = null; this.tcPts = NaN; this.kind = ''; this.first = NaN; this.lastSent = 0;
+  }
+  push(chunk) {
+    const lines = (this.rest + chunk).split(/\r?\n/);
+    this.rest = lines.pop() ?? '';
+    for (const l of lines) this.line(l);
+  }
+  line(l) {
+    const r = parseShowinfo(l);
+    if (!r) {
+      const m = /\[(error|fatal|panic)\]\s*(.*)$/.exec(l);
+      if (m) this.onError(m[2]);
+      return;
+    }
+    if ('frame' in r) {
+      this.pts = r.pts;
+      if (!Number.isFinite(this.first)) this.first = r.pts;
+      const now = Date.now();
+      if (now - this.lastSent >= this.minMs) { this.lastSent = now; this.send({ type: 'tc', tc: this.tc, tcPts: this.tcPts, pts: this.pts, first: this.first, kind: this.kind || null }); }
+    } else {
+      // side data follows its frame line
+      this.tc = r.timecode; this.tcPts = this.pts; this.kind = r.kind;
+    }
+  }
 }
 
 /** 16-byte header of proto 2: 4 ASCII bytes, uint32, float64 (little endian). */
@@ -313,6 +371,7 @@ async function startStream(ws, params) {
   if (problem) return fail(ws, problem);
   if (url === 'resolve:') return startResolve(ws, params);
   if (url.startsWith('decklink:')) return startDeckLink(ws, params, url);
+  if (url.startsWith('ndi:')) return startNdi(ws, params, url);
   const transport = params.get('transport') ?? 'tcp';
   const depth = params.get('depth') === '16' ? 16 : 8;
   const maxWidth = Math.min(3840, Math.max(0, Number(params.get('width') ?? 960) || 0));
@@ -341,12 +400,15 @@ async function startStream(ws, params) {
   const { decodeMatrix, decodeRange } = applyDecodeOverride(decodeParams(info), device);
   const vf = [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}`];
   if (fpsLimit) vf.push(`fps=${fpsLimit}`);
+  // time code of every source frame (before scale/fps): showinfo side data, see ShowinfoTracker
+  const wantTc = video && params.get('tc') !== '0';
+  if (wantTc) vf.unshift('showinfo=checksum=0');
   const ffmpeg = ffmpegCandidates()[0];
   if (!ffmpeg) return fail(ws, 'ffmpeg nicht gefunden – installieren (brew install ffmpeg) oder FFMPEG setzen');
 
   const proto = wantAudio ? 2 : 1;
   const { audio: _probed, ...videoInfo } = info;
-  const msg = { type: 'info', ...videoInfo, decodeMatrix, sourceWidth: info.width, sourceHeight: info.height, width, height, depth, fps: video ? (fpsLimit || info.fps) : 0 };
+  const msg = { type: 'info', ...videoInfo, decodeMatrix, sourceWidth: info.width, sourceHeight: info.height, sourceFps: info.fps, width, height, depth, fps: video ? (fpsLimit || info.fps) : 0 };
   if (proto === 2) {
     Object.assign(msg, {
       proto: 2,
@@ -391,7 +453,7 @@ async function startStream(ws, params) {
   };
 
   const launch = (mode) => {
-    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: audioInfo ? mode : 'none', device });
+    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: audioInfo ? mode : 'none', device, log: wantTc ? 'level+info' : 'error' });
     const fd3 = mode === 'fd3' && video && !!audioInfo;
     const t0 = Date.now();
     let audioBytes = 0;
@@ -399,7 +461,10 @@ async function startStream(ws, params) {
     const spawnOne = (a, withFd3) => {
       const p = spawn(ffmpeg, a, { stdio: withFd3 ? ['ignore', 'pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'], windowsHide: true });
       procs.add(p);
-      p.stderr.on('data', (d) => { stderr = (stderr + d).slice(-2000); });
+      if (wantTc) {
+        const tr = new ShowinfoTracker((m) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); }, (e) => { stderr = (stderr + '\n' + e).slice(-2000); });
+        p.stderr.on('data', (d) => tr.push(String(d)));
+      } else p.stderr.on('data', (d) => { stderr = (stderr + d).slice(-2000); });
       return p;
     };
     const main = spawnOne(args.main, fd3);
@@ -479,6 +544,8 @@ async function startResolve(ws, params) {
         }));
         sentInfo = true;
       }
+      // timeline time code of this still (Timeline.GetCurrentTimecode), before the frame
+      if (msg.tc) ws.send(JSON.stringify({ type: 'tc', tc: msg.tc, kind: 'resolve', fps: msg.fps ?? null, df: !!msg.df }));
       ws.send(Buffer.from(out.data.buffer, out.data.byteOffset, out.data.byteLength), { binary: true });
       sent++;
     } catch (e) {
@@ -574,6 +641,29 @@ function startDeckLink(ws, params, url) {
   });
 }
 
+/**
+ * NDI(R) through the native helper (helpers/ndi). The NDI runtime is installed by the
+ * user and loaded by the helper at run time; lz-scopes ships nothing of NDI.
+ * NDI(R) is a registered trademark of Vizrt NDI AB.
+ */
+export async function ndiStatus() {
+  const bin = helperPath('lz-ndi');
+  if (!bin) return { available: false, helper: false, runtime: false, sources: [], error: 'NDI-Helfer nicht gebaut (npm run build:helpers)' };
+  const r = await helperList(bin, ['--wait', '1500']);
+  return { available: !!r.ok, helper: true, runtime: !!r.runtime, version: r.version, sources: r.sources ?? [], error: r.ok ? undefined : r.error };
+}
+
+function startNdi(ws, params, url) {
+  const bin = helperPath('lz-ndi');
+  if (!bin) return fail(ws, 'NDI nicht verfügbar – Helfer nicht gebaut (npm run build:helpers)');
+  const ffmpeg = ffmpegCandidates()[0];
+  if (!ffmpeg) return fail(ws, 'ffmpeg nicht gefunden');
+  startHelperStream(ws, {
+    bin, args: ['--capture', url.slice('ndi:'.length)], label: 'NDI', params,
+    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions },
+  });
+}
+
 function fail(ws, message) {
   if (ws.readyState === ws.OPEN) { ws.send(JSON.stringify({ type: 'error', message })); ws.close(); }
 }
@@ -593,6 +683,10 @@ const server = createServer((req, res) => {
     const json = (code, body) => { res.writeHead(code, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(body)); };
     if (!parseDeviceUrl(url) || validateInput(url)) return json(400, { error: 'device:-URL erwartet' });
     deviceFormats(url).then((f) => json(200, { ...f, preferred: pickPixfmt(f.pixfmts), defaultSize: defaultMode(f.modes) }));
+    return;
+  }
+  if (path === '/api/ndi') {
+    ndiStatus().then((st) => { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(st)); });
     return;
   }
   if (path === '/api/decklink') {
@@ -690,6 +784,67 @@ function serveMjpeg(name, res) {
   out.clients.add(res);
   res.on('close', () => out.clients.delete(res));
 }
+
+// ---- clock: passive PTP monitor and ST 2110 RTP check (server/ptp.mjs), WebSocket /clock
+//   → {type:'ptp', …status, ifaces, rtp}  4 Hz
+//   ← {type:'config', iface, delayReq}   {type:'rtp', group, port, rateNum, rateDen} | {type:'rtp', off:true}
+const clockClients = new Set();
+let ptpMon = null, ptpKey = '', rtpMon = null, clockStopTimer = null;
+const clockWss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 16 * 1024 });
+
+async function ensurePtp(iface, delayReq) {
+  const key = `${iface}|${delayReq}`;
+  if (ptpMon && ptpKey === key) return;
+  ptpMon?.stop();
+  ptpKey = key;
+  ptpMon = new PtpMonitor({ iface, delayReq });
+  await ptpMon.start();
+}
+
+/** GM time in PTP seconds from the local clock and the PTP estimate; `ref` says which. */
+function clockNow() {
+  const st = ptpMon?.status();
+  const utcNs = nowUtcNs();
+  const utcMs = Number(utcNs / 1_000_000n);
+  const tai = st?.gm?.utcOffsetValid ? st.gm.currentUtcOffset : taiMinusUtc(utcMs);
+  const off = st?.state === 'receiving' && st.offsetNs !== null ? st.offsetNs : null;
+  return { seconds: Number(utcNs) / 1e9 + tai - (off ?? 0) / 1e9, ref: off === null ? 'system' : 'ptp' };
+}
+
+clockWss.on('connection', (ws) => {
+  clockClients.add(ws);
+  if (clockStopTimer) { clearTimeout(clockStopTimer); clockStopTimer = null; }
+  let cfg = { iface: '', delayReq: false };
+  ensurePtp(cfg.iface, cfg.delayReq).catch(() => {});
+  const tick = setInterval(() => {
+    if (ws.readyState !== ws.OPEN || !ptpMon) return;
+    ws.send(JSON.stringify({
+      type: 'ptp', ...ptpMon.status(), ifaces: ipv4Interfaces(), serverUtcMs: Date.now(),
+      rtp: rtpMon ? { ...rtpMon.status(), ref: clockNow().ref } : null,
+    }));
+  }, 250);
+  ws.on('message', (data, isBinary) => {
+    if (isBinary) return;
+    let m;
+    try { m = JSON.parse(String(data)); } catch { return; }
+    if (m.type === 'config') {
+      const iface = typeof m.iface === 'string' && ipv4Interfaces().some((i) => i.address === m.iface) ? m.iface : '';
+      cfg = { iface, delayReq: m.delayReq === true };
+      ensurePtp(cfg.iface, cfg.delayReq).catch(() => {});
+    } else if (m.type === 'rtp') {
+      rtpMon?.stop(); rtpMon = null;
+      const port = Number(m.port), num = Number(m.rateNum) || 25, den = Number(m.rateDen) || 1;
+      if (!m.off && isMulticastV4(m.group) && port >= 1024 && port <= 65535) {
+        rtpMon = new RtpMonitor({ group: m.group, port, iface: cfg.iface, rateNum: num, rateDen: den, ptpNow: () => clockNow().seconds }).start();
+      }
+    }
+  });
+  ws.on('close', () => {
+    clearInterval(tick);
+    clockClients.delete(ws);
+    if (!clockClients.size) clockStopTimer = setTimeout(() => { ptpMon?.stop(); ptpMon = null; ptpKey = ''; rtpMon?.stop(); rtpMon = null; }, 5000);
+  });
+});
 
 // ---- control API: HTTP POST /api/control and WebSocket /control (Companion, curl).
 // The main window of the UI connects as /control?role=app, executes the commands and
@@ -803,6 +958,12 @@ server.on('upgrade', (req, socket, head) => {
     const problem = controlAccess({ remote: req.socket.remoteAddress, origin: req.headers.origin, host: req.headers.host });
     if (problem) { socket.end(`HTTP/1.1 ${problem.status} Forbidden\r\n\r\n`); return; }
     return meterWss.handleUpgrade(req, socket, head, (ws) => handleMeterSocket(ws));
+  }
+  if (path === '/clock') {
+    // network details (interfaces, grandmaster) only for the local UI of the same origin
+    const problem = controlAccess({ remote: req.socket.remoteAddress, origin: req.headers.origin, host: req.headers.host });
+    if (problem) { socket.end(`HTTP/1.1 ${problem.status} Forbidden\r\n\r\n`); return; }
+    return clockWss.handleUpgrade(req, socket, head, (ws) => clockWss.emit('connection', ws, req));
   }
   const target = path === '/stream' ? wss : path === '/out' ? outWss : null;
   if (!target) return socket.destroy();

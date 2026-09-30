@@ -303,7 +303,7 @@ export function parseShowinfo(line) {
 
 /**
  * Routes stderr of an ffmpeg with showinfo: showinfo lines → time code messages
- * ({type:'tc', tc, tcPts, pts, kind}, at most every `minMs`), warnings/errors → `onError`.
+ * ({type:"tc", tc, tcPts, pts, kind}, at most every `minMs`), errors → `onError` (warnings dropped).
  */
 export class ShowinfoTracker {
   constructor(send, onError, minMs = 40) {
@@ -318,7 +318,7 @@ export class ShowinfoTracker {
   line(l) {
     const r = parseShowinfo(l);
     if (!r) {
-      const m = /\[(error|fatal|panic|warning)\]\s*(.*)$/.exec(l);
+      const m = /\[(error|fatal|panic)\]\s*(.*)$/.exec(l);
       if (m) this.onError(m[2]);
       return;
     }

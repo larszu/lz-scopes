@@ -16,7 +16,7 @@ describe('time code from showinfo', () => {
     expect(parseShowinfo('[Parsed_showinfo_0 @ 0x1] [info]   side data - SMPTE 12-1 timecode: timecode - 01:00:00;02')).toEqual({ timecode: '01:00:00;02', kind: 's12m' });
     expect(parseShowinfo('[info] Input #0, mpegts')).toBeNull();
   });
-  it('tracker sends the time code with its pts and forwards errors', () => {
+  it('tracker sends the time code with its pts and forwards errors (not warnings)', () => {
     const sent: Record<string, unknown>[] = [], errors: string[] = [];
     const tr = new ShowinfoTracker((m: Record<string, unknown>) => sent.push(m), (e: string) => errors.push(e), 0);
     tr.push(`${FRAME0}\n${GOP}\n${FRAME1}\n[error] Connection refused\n`);

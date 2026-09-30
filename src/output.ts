@@ -3,6 +3,7 @@
 
 import { PATTERNS, patternById, renderPattern } from './patterns';
 import { drawPatch, listenPatches, type PatchFrame } from './patchSequencer';
+import { HUD_STYLE, onThemeChange, storedTheme } from './theme';
 
 export function runOutputWindow() {
   const q = new URLSearchParams(location.search);
@@ -18,7 +19,10 @@ export function runOutputWindow() {
   document.body.replaceChildren(canvas);
   const ctx = canvas.getContext('2d')!;
   const hud = document.createElement('div');
-  hud.style.cssText = 'position:fixed;left:12px;bottom:12px;font:12px system-ui;color:#F6F5F0;background:rgba(19,32,64,.85);padding:4px 8px;transition:opacity .4s';
+  // chrome follows the UI skin; the pattern and the black surround never do
+  const skinHud = () => { const t = HUD_STYLE[storedTheme()]; Object.assign(hud.style, { font: t.font, color: t.fg, background: t.bg, borderRadius: t.radius }); };
+  hud.style.cssText = 'position:fixed;left:12px;bottom:12px;padding:4px 8px;transition:opacity .4s';
+  skinHud(); onThemeChange(skinHud);
   document.body.append(hud);
   let hudTimer = 0;
   // Measurement patches from the main window (calibration, LED wall) replace the pattern.

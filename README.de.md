@@ -104,6 +104,7 @@ Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einste
 - **CIE-Diagramm** 1931 xy oder 1976 u′v′ (⚙) mit Spektralzug, Rec.709, P3-D65, Rec.2020, D65 und dem Gamut der Quelle
 - **Histogramm** RGB, Luma, getrennt, linear oder log, mit Clipping-Anteil
 - **Diamond (Gamut)** nach Tektronix: oben B′+G′ über B′−G′, unten −(R′+G′) über R′−G′; alles Legale liegt in beiden Rauten, ein Überschreiten zeigt sofort, welcher Kanal (Blau nur oben, Rot nur unten, Grün in beiden). Ohne den Tiefpass der Hardware-Geräte, kurze Überschwinger zählen also mit. Auch als CRT-Strahl
+- **A/B-Vergleich und Gamut-Kompression** im Bild-Panel: Split, Wipe oder Differenz gegen einen anderen Messpunkt derselben Quelle (Signal / nach CST / nach LUT) oder eine andere Quelle; ACES-1.3-Reference-Gamut-Compression als Vorschau für Bild und Gamut-Warnung
 - **Bild** mit Falschfarben (ARRI-Schema, RED „Video Mode“ nach docs.red.com, Sony-Paletten SDR und S-Log3 aus Monitor & Control; bis 12 Bänder), Zebra, Clipping-Anzeige, Luma und **Gamut-Warnung** (Pixel mit negativen Anteilen im Zielgamut 709/P3/2020, abgestuft nach der Distanz (max − c)/max). Ein Klick setzt einen Messpunkt, der zusätzlich in Waveform und Vectorscope markiert wird
 - **Messwerte**: Quelle, Codec, Metadaten, Y' min/max/Mittel (bei HDR in cd/m²), Clipping je Kanal, verworfene Frames; bei PQ Content Light Level des Frames sowie **MaxCLL/MaxFALL** nach CTA-861.3 (max(R,G,B) je Pixel, auf den Analysepunkten, nur ganze Bilder, ⚙ setzt zurück)
 

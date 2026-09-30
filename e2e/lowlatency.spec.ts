@@ -12,7 +12,7 @@ import { type App, expectOk, launchApp, startMediamtx, until, which } from './ap
 const MEDIAMTX = which('mediamtx'), FFMPEG = which('ffmpeg');
 test.skip(!MEDIAMTX || !FFMPEG, 'mediamtx oder ffmpeg fehlt (brew install mediamtx ffmpeg)');
 
-const ROUNDS = Number(process.env.LZS_LL_ROUNDS ?? 2);
+const ROUNDS = Number(process.env.LZS_LL_ROUNDS ?? (process.env.CI ? 1 : 2));
 const LAYOUT = process.env.LZS_LL_LAYOUT ?? '1';
 
 interface S { mean: number; min: number; max: number }

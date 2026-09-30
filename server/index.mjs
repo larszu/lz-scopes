@@ -29,6 +29,7 @@ import { handleMeterSocket, meterInfo } from './meter.mjs';
 import { PtpMonitor, RtpMonitor, ipv4Interfaces, isMulticastV4, nowUtcNs } from './ptp.mjs';
 import { taiMinusUtc } from './leap.mjs';
 import { FlvH264Demuxer } from './flv.mjs';
+import { handleOut10 } from './out10.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -986,16 +987,18 @@ wss.on('connection', (ws, req) => {
 // ---- outputs: the UI sends JPEG frames of an output window; served as MJPEG and optionally pushed
 /** @type {Map<string, { frame: Buffer | null, clients: Set<import('node:http').ServerResponse>, ff: import('node:child_process').ChildProcess | null, target: string }>} */
 const outputs = new Map();
-const outWss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 16 * 1024 * 1024 });
+const outWss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 40 * 1024 * 1024 }); // 10-bit UHD: 3840·2160·4 B
 
 /** Container format for a push target, or null if the URL is not allowed. */
 export function pushFormat(target) {
-  if (!/^(rtmps?|srt|rtsp|udp):\/\//i.test(target) || target.length > 2048) return null;
+  if (!/^(rtmps?|srt|rtsp|udp|tcp):\/\//i.test(target) || target.length > 2048) return null;
   return /^rtmp/i.test(target) ? 'flv' : /^rtsp/i.test(target) ? 'rtsp' : 'mpegts';
 }
 
 outWss.on('connection', (ws, req) => {
   const q = new URL(req.url ?? '', 'http://x').searchParams;
+  // 10-bit frames (yuv422p10le) → ffmpeg push, no MJPEG (server/out10.mjs)
+  if (q.get('depth') === '10') return handleOut10(ws, q, ffmpegCandidates());
   const name = (q.get('name') ?? '').replace(/[^\w-]/g, '').slice(0, 40) || 'out';
   const fps = Math.min(60, Math.max(1, Number(q.get('fps')) || 25));
   const target = q.get('target') ?? '';

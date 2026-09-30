@@ -1257,7 +1257,7 @@ interface DesktopApi {
 }
 const desktop = (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop;
 
-interface OutputOptions { name: string; view: string; idx: string; src: string; scene: string; bg: string; display: string; fs: boolean; stream: string; target: string }
+interface OutputOptions { name: string; view: string; idx: string; src: string; scene: string; bg: string; display: string; fs: boolean; stream: string; target: string; codec?: string }
 /** Open output windows by name (control API: output.close, scene.select, stream.*). */
 const outWins = new Map<string, { win: Window; view: string; scene: string }>();
 const liveOutputs = () => { for (const [n, o] of outWins) if (o.win.closed) outWins.delete(n); return outWins; };
@@ -1315,7 +1315,7 @@ function openOutputView(o: OutputOptions): string {
   if (o.view === 'panel') q.set('idx', o.idx);
   if (o.view === 'clean' || o.view === 'overlay') q.set('src', o.src);
   if (o.view === 'overlay') { q.set('scene', o.scene); q.set('bg', o.bg); }
-  if (o.stream) { q.set('stream', o.stream.replace(/[^\w-]/g, '')); if (o.target) q.set('target', o.target); }
+  if (o.stream) { q.set('stream', o.stream.replace(/[^\w-]/g, '')); if (o.target) q.set('target', o.target); if (o.codec) q.set('codec', o.codec); }
   if (o.display) q.set('display', o.display);
   if (o.fs) q.set('fs', '1');
   const win = window.open(`${location.pathname}?${q}`, `lzs-out-${name}`, 'popup,width=1280,height=720');
@@ -1427,7 +1427,7 @@ function execute(c: Command): unknown {
       const name = openOutputView({
         name: String(c.name ?? ''), view: String(c.view), idx: String(c.panel !== undefined ? panelIndex(c.panel) : dock.openIdx()[0] ?? 0),
         src: src?.id ?? '', scene: sc?.id ?? '', bg: String(c.bg), display: String(c.display ?? ''), fs: c.fullscreen !== false,
-        stream: String(c.stream ?? ''), target: String(c.target ?? ''),
+        stream: String(c.stream ?? ''), target: String(c.target ?? ''), codec: String(c.codec ?? ''),
       });
       return { output: name };
     }
@@ -1453,10 +1453,10 @@ function execute(c: Command): unknown {
       if (c.output !== undefined && !outs.has(name)) throw new Error(`Ausgabe ${name} ist nicht offen`);
       if (!name) {
         // nothing open yet: open the overlay output with the stream running
-        name = openOutputView({ name: '', view: 'overlay', idx: '0', src: activeSource()?.id ?? '', scene: activeSceneObj()?.id ?? '', bg: 'picture', display: '', fs: false, stream: String(c.stream), target: String(c.target ?? '') });
+        name = openOutputView({ name: '', view: 'overlay', idx: '0', src: activeSource()?.id ?? '', scene: activeSceneObj()?.id ?? '', bg: 'picture', display: '', fs: false, stream: String(c.stream), target: String(c.target ?? ''), codec: String(c.codec ?? '') });
         return { output: name, stream: c.stream };
       }
-      need(outApi(outs.get(name)!.win), `Ausgabe ${name} lädt noch`).startStream(String(c.stream), String(c.target ?? ''));
+      need(outApi(outs.get(name)!.win), `Ausgabe ${name} lädt noch`).startStream(String(c.stream), String(c.target ?? ''), String(c.codec ?? ''));
       return { output: name, stream: c.stream };
     }
     case 'stream.stop': {

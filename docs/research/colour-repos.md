@@ -264,3 +264,14 @@ GPL-3 heißt für LZ Scopes: Solange LZ Scopes nicht selbst unter GPL-3 steht (i
 6. Die ΔICtCp-Grenzwerte in DisplayCAL scheinen falsch indiziert. Welche Toleranzen gelten für HDR-Verifikation (Quelle: BT.2124, ggf. Netflix/EBU-Vorgaben)?
 7. PixelManager: Die S-Gamut3.Cine-Matrix gleicht der Venice-Variante. Vor Nutzung gegen Sony-Primaries prüfen (alwan: 0,766/0,275, 0,225/0,800, 0,089/−0,087).
 8. Braucht es einen vollständigen ACES-2.0-ODT live, oder reichen gebackene LUTs aus Resolve/OCIO?
+
+---
+
+## Umsetzung A/B und Gamut-Compression (Issue #8, 30.09.2026)
+
+| Punkt | Quelle (geöffnet) | Umsetzung |
+|---|---|---|
+| ACES 1.3 RGC | alwan @ 8fc3044 (MIT): `src/alwan/api/alwan_aces_ff.c` Z. 426–434 (Standardwerte), 470–484 (je Kanal, Achromat = max(R,G,B)); `src/alwan/core/alwan_aces_ff_core.inc` Z. 216–282 (compress_dist, gamut_comp_channel, calc_gamut_comp_scale). Werte wie oben in Tabelle 2 | `src/rgc.ts`: Bild-Panel ⚙ „Gamut-Kompression“. Quelle linear → ACEScg (AP1) → RGC → zurück, danach wie gehabt (Display, HDR→SDR-Vorschau, Gamut-Warnung). Die Scopes messen weiter das unkomprimierte Signal |
+| A/B-Vergleich | prism README (Idee Split/Wipe/Full/Diff) | Bild-Panel ⚙ „Vergleich A/B“: Split 50 %, Wipe (Position), Differenz max |A − B| der angezeigten Bilder × 1/4/16/64; B = anderer Messpunkt derselben Quelle (Signal / nach CST / nach LUT) oder andere Quelle. Beide Seiten mit denselben Panel-Einstellungen (Overlay, RGC) |
+| ACES-2.0-Ansicht | aces-core Tonescale (in chain.ts vorhanden) | keine eigene Ansicht: CST mit Tone-Mapping „ACES-2.0-Tonescale“ ist die Ansicht über die vorhandene Kette. Vollständiger ODT (JMh, Cusp-Tabellen) nicht, besser als gebackene LUT |
+| 3D-RGB-Würfel | – | nicht umgesetzt |

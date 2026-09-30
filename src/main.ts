@@ -803,6 +803,29 @@ function panelSettings(p: PanelState): Node[] {
   }
   if (p.scope === 'picture') {
     row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung'], ['r103', 'EBU R 103']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
+    const ab = p.ab ?? { mode: 'off' as const, b: 'stage:cst', pos: 0.5, gain: 4 };
+    const setAb = (patch: Partial<NonNullable<PanelState['ab']>>, rebuild = false) => {
+      p.ab = { ...ab, ...patch }; Object.assign(ab, patch); save(); refreshHeads();
+      if (rebuild) { const v = [...views.values()].find((x) => state.panels[x.idx] === p); if (v) { fillHead(v); v.head.querySelector('details.psettings')?.setAttribute('open', ''); } }
+    };
+    row('Vergleich A/B', select(ab.mode, [['off', 'aus'], ['split', 'Split 50 %'], ['wipe', 'Wipe'], ['diff', 'Differenz']], (v) => setAb({ mode: v as 'off' }, true),
+      'A = dieses Panel (Quelle und Messpunkt), B = anderer Messpunkt derselben Quelle oder eine andere Quelle'));
+    if (ab.mode !== 'off') {
+      const own = panelSource(p);
+      row('B', select(ab.b, [
+        ...STAGES.map((st) => [`stage:${st}`, `${own?.name ?? 'Quelle'} · ${STAGE_LABELS[st]}`] as [string, string]),
+        ...sources.filter((s) => s !== own && s.kind !== 'audio').map((s) => [`src:${s.id}`, s.name] as [string, string]),
+      ], (v) => setAb({ b: v })));
+      if (ab.mode === 'wipe') {
+        const pos = h('input', { type: 'range', min: 0, max: 1, step: 0.01, value: ab.pos ?? 0.5 }) as HTMLInputElement;
+        pos.oninput = () => setAb({ pos: Number(pos.value) });
+        row('Wipe-Position', pos);
+      }
+      if (ab.mode === 'diff') row('Verstärkung', select(String(ab.gain ?? 4), [['1', '×1'], ['4', '×4'], ['16', '×16'], ['64', '×64']], (v) => setAb({ gain: Number(v) }), 'Differenz der angezeigten Bilder (nach Display-Wandlung), max. über R, G, B'));
+    }
+    const rgcBox = h('input', { type: 'checkbox', checked: !!p.rgc }) as HTMLInputElement;
+    rgcBox.onchange = () => { p.rgc = rgcBox.checked; save(); refreshHeads(); };
+    row('Gamut-Kompression', h('label', { class: 'inline', title: 'Vorschau der ACES-1.3-Reference-Gamut-Compression (in ACEScg). Wirkt auf Bild und Gamut-Warnung, nicht auf die Scopes.' }, rgcBox, 'ACES 1.3 (Vorschau)'));
     if (p.picture === 'gamut') row('Zielgamut', select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, 'Markiert Pixel, die im Zielgamut negative Anteile hätten'));
     if (p.picture === 'false') row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); }));
     if (p.picture === 'zebra') row('Zebra ab', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%');
@@ -1068,6 +1091,7 @@ function drawOptions(): DrawOptions {
     unit: state.unit, tint: state.tint, maxSamples: state.maxSamples, falsePreset: state.falsePreset,
     zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps, skin: state.skin, display: displaySpace, hdrPreview: state.hdrPreview, targets: state.targets,
     stage: state.stage ?? 'signal',
+    sourceById: (id) => sources.find((s) => s.id === id) ?? null,
   };
 }
 

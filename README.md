@@ -56,7 +56,7 @@
 - **Vectorscope tools.** Zoom, gamut boundaries and colour-match targets; per-scope settings behind the gear icon.
 - **3D colour volume and ΔE.** Point cloud in the R′G′B′ cube, CIELAB or ICtCp, rotatable by dragging, with the target gamut as wire frame; ΔE 2000 (SDR) or ΔE ITP (HDR) of the probe point against the nearest colour bar or an own target. Extra curves: Sony S-Log2, ACEScct, ARRI LogC3 for EI 160–1600 (ARRI white paper).
 - **A/B comparison and gamut compression.** Picture panel: split, wipe or difference against another stage of the same source (signal / after CST / after LUT) or another source; ACES 1.3 reference gamut compression as a preview for picture and gamut warning.
-- **Outputs and overlay scenes.** Send a scope view or clean picture to another screen, as an MJPEG stream or by ffmpeg to RTMP / SRT / RTSP / UDP. Overlay scenes combine any number of scopes with position, size and opacity, editable in the output window (`E`).
+- **Outputs and overlay scenes.** Send a scope view or clean picture to another screen, as an MJPEG stream or by ffmpeg to RTMP / SRT / RTSP / UDP / TCP, or as a 10-bit stream (HEVC Main 10, v210, ProRes). Overlay scenes combine any number of scopes with position, size and opacity, editable in the output window (`E`).
 - **Remote control.** HTTP / WebSocket control API and a Bitfocus Companion module ([docs/control-api.md](docs/control-api.md), `companion/`).
 - **Embeddable.** `ScopeView` renders scopes in any page without a framework.
 
@@ -169,7 +169,7 @@ view.setSource(src);
 
 - Only bridge streams in *16 bit Y′CbCr* mode and the 16-bit patterns keep sub-black and super-white; 8 / 16 bit R′G′B′ streams and browser sources are clipped to 0-100 %, the R 103 check then says so.
 - The R 103 check runs on the analysis picture; with a scaled analysis width it is not normative (set width to native).
-- The pattern output window is 8-bit full-range: −7 %, −2 % and 109 % are clipped there. Chrome offers float16 canvases, but whether a display link really carries more than 8 bit is not verified.
+- Output windows render above 8 bit where the browser allows it (pattern window: float16 canvas with exact 10-bit codes, `R` switches levels 0–100 % / codes 1:1 for a legal-range monitor; scope windows: RGBA16F WebGL buffer). The window shows what the pipeline delivers; whether the display link carries 10 bit is not known – use the *10-bit ramp* banding test or a capture. A 10-bit stream (`codec=hevc10|hevc422|v210|prores`, v210 bit-exact) goes through the bridge. See [docs/research/10bit-ausgabe.md](docs/research/10bit-ausgabe.md).
 - No AJA input. NDI only with the NDI runtime installed, no sound, untested with real network sources. DeckLink only through the helper you build yourself (ffmpeg's own DeckLink device is "nonfree" and cannot be redistributed); never run with hardware yet. Audio from the browser is limited to 2 channels (more only through the bridge). Not tested yet: multichannel interfaces and Dante on real hardware, the bridge on Windows, the A/V offset against a real camera.
 - Browser sources (camera, file) are always 8 bit and pass through the browser's colour management.
 

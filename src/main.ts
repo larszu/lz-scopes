@@ -30,7 +30,9 @@ import { mountOpple } from './opple/ui';
 import { ledSettings, pictureSize } from './led/wall';
 import { Renderer, type PictureMode, type SkinRange } from './renderer';
 import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
-import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
+import { LatencyMeter } from './latency';
+import { debugFlags } from './frameLink';
+import { LOW_LATENCY_WIDTH, lowLatencyWidth, Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 
 // ---------------------------------------------------------------- state
 
@@ -58,6 +60,8 @@ interface Persisted {
   genSink?: string;
   /** ΔE reference at the probe point (panel.ts deLines) */
   deRef?: string;
+  /** low-latency mode for all bridge streams without their own setting (docs/research/low-latency.md) */
+  lowLatency?: boolean;
 }
 
 const DEFAULT_SCOPES: ScopeType[] = ['picture', 'wf-luma', 'vector', 'parade', 'hist', 'cie', 'stats', 'yrgb', 'ycbcr'];
@@ -77,6 +81,9 @@ function load(): Persisted {
 }
 
 const state = load();
+Source.globalLowLatency = !!state.lowLatency;
+// the render loop reports its draws to the latency meters (stamp → drawn, src/latency.ts)
+LatencyMeter.drawHook = true;
 if (!isTheme(state.theme)) state.theme = DEFAULT_THEME;
 applyTheme(state.theme);
 const detected = detectDisplay();
@@ -197,6 +204,7 @@ function settingsItems(): Node[] {
       (v) => setDisplaySpace(v as Persisted['display']), 'Display-Farbraum der Bildansicht; die Scopes messen immer das Signal')),
     row('', h('button', { class: 'mini', title: 'Messfelder ausgeben, Display mit Messgerät (ArgyllCMS) oder manuell prüfen, Uniformität, Bericht, 3D-LUT', onclick: openCalibrationDialog }, 'Kalibrierung / Verifikation …')),
     ...(sysProfileAvailable() ? [sysProfileSection(h, () => (state.display === 'auto' ? null : state.display))] : []),
+    row('Low Latency', select(state.lowLatency ? '1' : '0', [['0', 'aus'], ['1', 'an (alle Bridge-Quellen ohne eigene Wahl)']], (v) => setGlobalLowLatency(v === '1'), LOW_LATENCY_HINT)),
     row('Spurfarbe', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); })),
     row('Präzision', select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }, 'Abtastpunkte je Scope')),
     row('ΔE am Messpunkt', select(state.deRef ?? 'off', [['off', 'aus'], ['bars', 'nächster Farbbalken'], ['targets', 'nächstes eigenes Ziel'], ...state.targets.map((t) => [`target:${t.name}`, `Ziel ${t.name}`] as [string, string])],
@@ -331,12 +339,15 @@ function renderSources() {
       card.append(
         h('div', { class: 'row' }, urlIn),
         h('div', { class: 'row' },
-          select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', 'nativ']], (v) => upd({ width: Number(v) }, true), 'Analyseauflösung'),
+          select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', 'nativ']], (v) => upd({ width: Number(v) }, true), s.lowLatency && lowLatencyWidth(set.width, true) !== set.width ? `Analyseauflösung – Low Latency begrenzt auf ${LOW_LATENCY_WIDTH} px` : 'Analyseauflösung'),
           select(String(set.fps), [['0', 'alle fps'], ['10', '10 fps'], ['25', '25 fps'], ['30', '30 fps']], (v) => upd({ fps: Number(v) }, true), 'Bildrate begrenzen'),
           select(set.yuv ? 'yuv' : String(set.depth), [['8', '8 bit'], ['16', '16 bit'], ['yuv', '16 bit Y′CbCr']], (v) => upd(v === 'yuv' ? { depth: 16, yuv: true } : { depth: Number(v) as 8 | 16, yuv: false }, true), 'Bittiefe. 16 bit für 10-bit/HDR-Quellen; Y′CbCr = unbeschnitten ohne Range-Wandlung (Sub-Black, Super-White, R 103)'),
           select(set.transport, [['tcp', 'TCP'], ['udp', 'UDP']], (v) => upd({ transport: v as 'tcp' | 'udp' }, true), 'RTSP-Transport'),
           select(set.audio === false ? '0' : '1', [['1', 'Ton'], ['0', 'ohne Ton']], (v) => upd({ audio: v === '1' }, true), 'Ton des Streams mitmessen (Bridge-Protokoll 2)'),
           select(set.codec ?? 'raw', [['raw', 'roh'], ['h264', 'H.264 · 8 bit']], (v) => upd({ codec: v as 'raw' | 'h264' }, true), 'Übertragung Bridge → Browser: roh = unkomprimiert, exakt (8/16 bit); H.264 = für entfernte Bridges, ca. 1/50 der Datenrate, aber 8 bit 4:2:0 und verlustbehaftet')),
+        h('div', { class: 'row' },
+          select(set.lowLatency === undefined ? '' : set.lowLatency ? '1' : '0', [['', `Latenz: global (${state.lowLatency ? 'Low Latency' : 'normal'})`], ['1', `Low Latency (≤ ${LOW_LATENCY_WIDTH} px)`], ['0', 'Latenz normal']],
+            (v) => { upd({ lowLatency: v === '' ? undefined : v === '1' }, true); refreshHeads(); }, LOW_LATENCY_HINT)),
         h('div', { class: 'row' },
           running ? h('button', { onclick: () => s.stop() }, '■ Trennen') : h('button', { class: 'primary', onclick: connect }, '▶ Verbinden'),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
@@ -657,6 +668,7 @@ function fillHead(v: PanelView) {
     stageChip(p),
     sources.length > 1 ? h('button', { class: `icon pin ${p.pin ? 'on' : ''}`, title: p.pin ? 'Angeheftet: behält seine Quelle' : 'Anheften: Panel behält seine Quelle, wenn andere umschalten', onclick: () => { p.pin = !p.pin; save(); fillHead(v); } }, '📌') : '',
     h('div', { class: 'opts' },
+      latencyChip(p),
       roiChip(p),
       h('details', { class: 'menu psettings' },
         h('summary', { title: `Einstellungen ${SCOPE_LABELS[p.scope]}` }, '⚙'),
@@ -1074,6 +1086,26 @@ const panelSigs = new Map<number, string>();
 
 function frame(now: number) {
   requestAnimationFrame(frame);
+  drawAll(now);
+  fpsFrames++;
+  if (now - fpsT >= 1000) {
+    displayFps = Math.round((fpsFrames * 1000) / (now - fpsT)); fpsFrames = 0; fpsT = now;
+    $('#fps').textContent = `${displayFps} fps`;
+    updateLatencyChips();
+  }
+}
+
+/**
+ * Low-latency mode: draw a bridge frame when it arrives instead of at the next animation
+ * frame (measured in docs/research/low-latency.md). The next animation frame then finds
+ * the panels unchanged and skips them. Debug switch: {"drawOnArrive":false}.
+ */
+Source.onArrive = (s) => {
+  if (!s.lowLatency || debugFlags().drawOnArrive === false || document.hidden) return;
+  drawAll(performance.now());
+};
+
+function drawAll(now: number) {
   const g = grid.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const displaySpace = state.display === 'auto' ? detected.space : state.display;
@@ -1102,6 +1134,7 @@ function frame(now: number) {
     const sig = panelSignature(p, src, bodyRect, opts) + dpr;
     if (panelSigs.get(v.idx) === sig) continue;
     panelSigs.set(v.idx, sig);
+    if (src?.latency.waiting && !drawnSources.has(src)) drawnSources.set(src, Date.now());
     const W = Math.round(b.width * dpr), H = Math.round(b.height * dpr);
     for (const c of [v.overlay, v.blit]) if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
     const ctx = v.overlay.getContext('2d')!;
@@ -1112,12 +1145,41 @@ function frame(now: number) {
     // The WebGL canvas is off-screen; copy this panel's region into its own canvas.
     v.blit.getContext('2d')!.drawImage(glCanvas, Math.round(bodyRect.x * dpr), Math.round(bodyRect.y * dpr), W, H, 0, 0, W, H);
   }
-
-  fpsFrames++;
-  if (now - fpsT >= 1000) {
-    displayFps = Math.round((fpsFrames * 1000) / (now - fpsT)); fpsFrames = 0; fpsT = now;
-    $('#fps').textContent = `${displayFps} fps`;
+  // latency: a stamped frame counts as drawn once all its panels were issued (src/latency.ts)
+  if (drawnSources.size) {
+    const end = Date.now();
+    drawnSources.forEach((start, s) => s.latency.drawn(start, end));
+    drawnSources.clear();
   }
+}
+const drawnSources = new Map<Source, number>();
+
+/** Panel-head chip "Low Latency · 104 ms": mode plus the measured latency (stamped test pictures only). */
+function latencyChip(p: PanelState): Node | string {
+  const s = panelSource(p);
+  if (!s || s.kind !== 'stream' || !s.lowLatency) return '';
+  return h('span', { class: 'llchip', 'data-src': s.id, title: LOW_LATENCY_HINT }, latencyChipText(s));
+}
+function latencyChipText(s: Source) {
+  const l = s.latency.summary();
+  return l ? `Low Latency · ${Math.round(l.total.mean)} ms` : 'Low Latency';
+}
+function updateLatencyChips() {
+  document.querySelectorAll<HTMLElement>('.llchip').forEach((el) => {
+    const s = sources.find((x) => x.id === el.dataset.src);
+    if (s) el.textContent = latencyChipText(s);
+  });
+}
+
+const LOW_LATENCY_HINT = `Low Latency (Bridge-Quellen): Analysebreite höchstens ${LOW_LATENCY_WIDTH} px und jedes Bild wird bei Ankunft gezeichnet statt im nächsten Bildschirmtakt. `
+  + `Nachteile: weniger Abtastpunkte (${LOW_LATENCY_WIDTH}×360 statt 960×540 bei 16:9), mehr Zeichenarbeit bei mehreren Quellen. `
+  + 'Gemessen wird nur bis „Zeichnung abgeschickt“ (Compositor und Monitor kommen dazu) und nur mit gestempeltem Testbild (scripts/latency-source.mjs). '
+  + 'Details und Messwerte: docs/research/low-latency.md.';
+
+function setGlobalLowLatency(on: boolean) {
+  state.lowLatency = on; Source.globalLowLatency = on; save();
+  for (const s of sources) if (s.kind === 'stream' && s.settings.lowLatency === undefined && s.status !== 'idle') s.connectStream(s.url, bridgeUrl());
+  renderSources(); refreshHeads();
 }
 
 function drawOptions(): DrawOptions {

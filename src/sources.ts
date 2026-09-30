@@ -50,6 +50,8 @@ export interface SourceSettings {
   deckLinkBits?: 8 | 10;
   /** bridge streams: 'h264' = compressed 8-bit transport for remote bridges, decoded in the browser (#16) */
   codec?: 'raw' | 'h264';
+  /** low-latency mode (docs/research/low-latency.md): undefined = follow the global switch */
+  lowLatency?: boolean;
 }
 
 export interface StreamInfo {
@@ -108,6 +110,12 @@ export function bridgeInputParams(url: string, set: SourceSettings): Record<stri
   if (set.decodeMatrix && set.decodeMatrix !== 'auto') q.matrix = set.decodeMatrix;
   if (set.decodeRange && set.decodeRange !== 'auto') q.range = set.decodeRange;
   return q;
+}
+
+/** Low-latency mode caps the analysis width (measured: 960 → 640 px ≈ −19 ms, docs/research/low-latency.md). */
+export const LOW_LATENCY_WIDTH = 640;
+export function lowLatencyWidth(width: number, low: boolean): number {
+  return low && (width === 0 || width > LOW_LATENCY_WIDTH) ? LOW_LATENCY_WIDTH : width;
 }
 
 export const DEFAULT_SETTINGS: SourceSettings = { transfer: 'auto', colorspace: 'auto', gamut: 'auto', hlgLw: 1000, width: 960, fps: 0, depth: 8, transport: 'tcp', audio: true };
@@ -247,6 +255,11 @@ export class Source {
   private ws: FrameSocket | null = null;
   /** latency of stamped test pictures (#16) */
   readonly latency = new LatencyMeter();
+  /** global low-latency switch (main.ts); a source's own setting overrides it */
+  static globalLowLatency = false;
+  /** a bridge frame arrived (main.ts draws at once in low-latency mode) */
+  static onArrive: ((s: Source) => void) | null = null;
+  get lowLatency(): boolean { return this.settings.lowLatency ?? Source.globalLowLatency; }
   private patternTimer: ReturnType<typeof setInterval> | null = null;
   private media: MediaStream | null = null;
   private objectUrl: string | null = null;
@@ -310,7 +323,8 @@ export class Source {
     this.stop();
     this.url = url;
     this.set('connecting', 'Verbinde …');
-    const { width, fps, depth, transport } = this.settings;
+    const { fps, depth, transport } = this.settings;
+    const width = lowLatencyWidth(this.settings.width, this.lowLatency);
     const q = new URLSearchParams({ url, width: String(width), fps: String(fps), depth: String(depth), transport });
     if (this.settings.audio !== false) q.set('audio', '1');
     for (const [k, v] of Object.entries(bridgeInputParams(url, this.settings))) q.set(k, v);
@@ -347,6 +361,7 @@ export class Source {
           this.audioAnchor = { index: msg.index, pts: msg.pts };
         } else if (msg.type === 'stats') {
           this.dropped = msg.dropped;
+          this.latency.onBridgeStats(msg.stampAge);
           if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', msg.message);
         } else if (msg.type === 'error' || msg.type === 'end') {
           this.set(msg.type === 'end' ? 'ended' : 'error', msg.message);
@@ -383,12 +398,14 @@ export class Source {
         this.data = px;
         this.tick();
         this.latency.onFrame(ev.meta);
+        Source.onArrive?.(this);
         return;
       }
       if (this.frozen) return;
       this.data = this.depth === 16 ? new Uint16Array(buf) : new Uint8Array(buf);
       this.tick();
       this.latency.onFrame(ev.meta);
+      Source.onArrive?.(this);
     };
     ws.onerror = () => this.set('error', 'Bridge nicht erreichbar – läuft `npm run dev` bzw. `npm start`?');
     ws.onclose = () => { if (this.ws === ws && this.status === 'live') this.set('ended', 'Verbindung beendet'); };

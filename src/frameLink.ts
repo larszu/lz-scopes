@@ -17,7 +17,7 @@ export interface FrameSocket {
   readonly worker: boolean;
 }
 
-export function debugFlags(): { worker?: boolean; stats?: 'cpu' | 'gpu' } {
+export function debugFlags(): { worker?: boolean; stats?: 'cpu' | 'gpu'; drawOnArrive?: boolean } {
   try { return JSON.parse(localStorage.getItem('lz-scopes.debug') ?? '{}') ?? {}; } catch { return {}; }
 }
 

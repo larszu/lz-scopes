@@ -125,9 +125,16 @@ export function tsBytes(ns) {
 
 // ---- time helpers
 
-/** Local wall clock (POSIX UTC) in BigInt ns from the performance clock. */
+/**
+ * Local wall clock (POSIX UTC) in BigInt ns: Date.now() for the absolute value (follows NTP and
+ * sleep), the monotonic performance clock for sub-millisecond resolution. The anchor is renewed
+ * when both disagree by more than 2 ms (the monotonic clock stops during system sleep).
+ */
+let anchor = { wall: 0, perf: 0 };
 export function nowUtcNs() {
-  const ms = performance.timeOrigin + performance.now();
+  const perf = performance.now(), wall = Date.now();
+  let ms = anchor.wall + (perf - anchor.perf);
+  if (!anchor.wall || Math.abs(ms - wall) > 2) { anchor = { wall, perf }; ms = wall; }
   const whole = Math.floor(ms);
   return BigInt(whole) * 1_000_000n + BigInt(Math.round((ms - whole) * 1e6));
 }

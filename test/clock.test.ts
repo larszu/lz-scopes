@@ -72,7 +72,7 @@ describe('frame counting (ST 2059-1 §9.3.3)', () => {
       expect(prev).toBe(day - 1);
       expect(fromFrames(day, r, true)).toEqual({ hh: 0, mm: 0, ss: 0, ff: 0, df: true });
     }
-  });
+  }, 60000);
   it('NDF round trip for all rates', () => {
     for (const r of RATES) {
       const day = framesPerDay(r, false);

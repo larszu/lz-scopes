@@ -37,6 +37,8 @@ export default {
       NSCameraUsageDescription: 'LZ Scopes misst das Bild einer angeschlossenen Kamera oder Capture-Karte.',
       // required when the app uses Bluetooth (Apple: NSBluetoothAlwaysUsageDescription, macOS 11+)
       NSBluetoothAlwaysUsageDescription: 'LZ Scopes verbindet sich per Bluetooth mit einem Lichtmesser (Opple Light Master).',
+      // audio devices (getUserMedia and the bridge's ffmpeg avfoundation input)
+      NSMicrophoneUsageDescription: 'LZ Scopes misst den Ton eines Audiogeräts, einer Capture-Karte oder eines Mikrofons.',
     },
   },
   win: {

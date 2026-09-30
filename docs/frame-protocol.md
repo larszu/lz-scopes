@@ -22,6 +22,30 @@ ffmpeg -rtsp_transport tcp -i <url> -an -map 0:v:0 \
 
 `in_color_matrix` immer explizit setzen, sonst wandelt swscale ungetaggte HD-Streams mit BT.601. Kommt der Browser nicht hinterher, Bilder verwerfen statt puffern (`ws.bufferedAmount`).
 
+## Y′CbCr unbeschnitten (`format=yuv`)
+
+Opt-in über `/stream?url=…&format=yuv` (setzt `depth` auf 16). Die Bridge wandelt dann nicht nach R′G′B′, sondern skaliert Y′CbCr 4:4:4 ohne Range- und Matrixwandlung. Codes unter Schwarz und über Weiß (Sub-Black, Super-White, BT.2111 −7 %/109 %) kommen unverändert an; die Umrechnung nach R′G′B′ macht der Client (Shader), ohne zu begrenzen.
+
+`info` bekommt drei Felder:
+
+```json
+{"type":"info", "...":"wie oben", "depth":16, "format":"yuv", "yuvRange":"limited"|"full", "bits":10}
+```
+
+- Jedes Pixel: 4 × Uint16 LE in der Reihenfolge **A, Y′, Cb, Cr** (ffmpeg `ayuv64le`), A = 65535.
+- n-bit-Codes linksbündig: Wert · 2^(16−n), in beiden Ranges (ffmpeg 9.0.1 geprüft: 10 bit 943 → 60352, 8 bit full 255 → 65280). `bits` ist n der Quelle, aus `pix_fmt`.
+- Narrow: Y′ = (D − 4096)/56064, Cb/Cr = (D − 32768)/57344. Full: Y′ = D/((2^n − 1)·2^(16−n)), Cb/Cr = (D − 2^(n−1)·2^(16−n))/((2^n − 1)·2^(16−n)) (BT.2100-3 Tab. 9).
+- Matrix: `decodeMatrix` bzw. `matrix` wie oben; der Client nimmt die Matrix der Quelle (manuell überschreibbar).
+- Ist die Quelle R′G′B′ (`gbrp`, `rgb24` …), antwortet die Bridge mit `"format":"rgb"`, 16 bit R′G′B′ und einem `note`.
+
+```
+ffmpeg … -i <url> -map 0:v:0 -an \
+  -vf scale=960:540:flags=area:in_color_matrix=bt709:out_color_matrix=bt709:in_range=limited:out_range=limited \
+  -pix_fmt ayuv64le -f rawvideo pipe:1
+```
+
+Andere Hosts dürfen statt `ayuv64le` planar `yuv444p16le` erzeugen, müssen dann aber vor dem Senden in A, Y′, Cb, Cr umsortieren.
+
 ## Protokoll 2: Bild und Ton (`audio=1`)
 
 Opt-in über die Anfrage: `/stream?url=…&audio=1` (optional `&video=0` für reine Tonquellen). Ohne `audio=1` bleibt alles wie oben; Hosts, die nur Protokoll 1 sprechen, funktionieren unverändert weiter (der Client erkennt Protokoll 2 an `info.proto`).
@@ -42,9 +66,10 @@ Jede Binärnachricht beginnt bei `proto: 2` mit einem 16-Byte-Kopf (Little Endia
 |---|---|---|---|
 | 0 | 4 × ASCII | `LZV1` | `LZA1` |
 | 4 | uint32 | Bildnummer seit Start | Anzahl Sample-Frames n im Paket |
-| 8 | float64 | Bridge-Uhr in ms (Unix-Zeit, `Date.now()`) beim Verlassen von ffmpeg; NaN = unbekannt | Index des ersten Samples seit Start (lückenlos; ein Sprung = Lücke) |
+| 8 | float64 | PTS in s (NaN, wenn unbekannt) | Index des ersten Samples seit Start (lückenlos; ein Sprung = Lücke) |
 | 16 | … | RGBA wie oben | n × channels float32, verschachtelt |
 
+- **Zeitstempel (PTS)**: Liefert ein Stream Bild und Ton aus einem ffmpeg-Prozess, trägt jedes Bild seinen PTS (Sekunden, Zeitbasis der Quelle nach ffmpegs Startversatz). Der Ton bekommt Anker als Textnachricht `{"type":"apts","index":n,"pts":t}`: Sample `index` hat die Zeit `t`, spätere Samples zählen mit `1/sampleRate` weiter. Ein neuer Anker kommt beim ersten Paket, bei einem Sprung über 5 ms und spätestens alle 5 s. Bild-PTS und Ton-PTS sind vergleichbar (A/V-Versatz). Im Ersatzweg mit zwei Prozessen (unten) gibt es keine PTS, weil zwei Sitzungen verschiedene Zeitachsen haben. Die Bridge liest sie aus ffmpegs `showinfo`/`ashowinfo` (Log-Stufe `info`); ein Bild wartet höchstens 150 ms auf seine Zeile, sonst geht es mit NaN hinaus. Mit Bildraten-Begrenzung (`fps=`) stehen die PTS auf dem Raster des `fps`-Filters.
 - Tonpakete zu 20 ms (960 Frames bei 48 kHz). Keine Abtastraten- oder Kanalwandlung: Rate und Layout wie in der Quelle.
 - **Ton wird nie verworfen.** Die Drop-Regel über `bufferedAmount` gilt nur für Bilder.
 - `stats` enthält zusätzlich `audioSent`, `audioDropped` (immer 0), `audioGaps` und `audioSplit` (Ersatzweg aktiv, siehe unten).
@@ -104,7 +129,7 @@ WebSocket nur für die lokale UI (gleiche Herkunft, 127.0.0.1). Server → Clien
 
 Für entfernte Bridges mit wenig Bandbreite: `/stream?url=…&codec=h264` (erzwingt Protokoll 2). Die Bridge skaliert wie oben, bleibt aber in Y′CbCr (Matrix der Quelle, schmaler Bereich, 4:2:0) und kodiert mit libx264 (`ultrafast`, `zerolatency`, keine B-Frames, GOP 2 s) in FLV auf der Pipe; `server/flv.mjs` zerlegt das in Access Units.
 
-- `info` bekommt `"transport":"h264"`, `depth` ist immer 8.
+- `info` bekommt `"transport":"h264"`, `depth` ist immer 8. `format=yuv` wird ignoriert, PTS und `apts`-Anker entfallen (kein A/V-Versatz).
 - Text `{"type":"video","codec":"avc1.42c01f","format":"annexb"}` vor dem ersten Bild (Codec-String nach RFC 6381 aus dem AVCDecoderConfigurationRecord).
 - Binär mit dem 16-Byte-Kopf: `LZHK` (Keyframe, SPS/PPS vorangestellt) oder `LZHD` (abhängiges Bild), uint32 Bildnummer, float64 Bridge-Uhr in ms; danach eine Access Unit im Annex-B-Format (Startcodes).
 - Kommt der Browser nicht hinterher, verwirft die Bridge bis zum nächsten Keyframe.
@@ -112,4 +137,13 @@ Für entfernte Bridges mit wenig Bandbreite: `/stream?url=…&codec=h264` (erzwi
 
 ## Latenz-Stempel
 
-`scripts/latency-source.mjs` schreibt Uhrzeit (ms, mod 2³²) und Bildzähler als Schwarz-Weiß-Blöcke in die obersten zwei Zeilen des Bildes (Aufbau in `server/stamp.mjs`). Die App liest sie in jedem Bild und zeigt im Panel Messwerte: Stempel → Anzeige, Quelle → Bridge und Bridge → App (Kopf-Zeitstempel). Alle Werte setzen dieselbe Uhr voraus (ein Rechner oder NTP); die Verzögerung des Monitors ist nicht enthalten.
+`scripts/latency-source.mjs` schreibt Uhrzeit (ms, mod 2³²) und Bildzähler als Schwarz-Weiß-Blöcke in die obersten zwei Zeilen des Bildes (Aufbau in `server/stamp.mjs`). Die App liest sie in jedem Bild und zeigt im Panel Messwerte: Stempel → Anzeige, bei H.264 zusätzlich Quelle → Bridge und Bridge → App (Bridge-Uhr im Kopf von `LZHK`/`LZHD`; im rohen Weg trägt der `LZV1`-Kopf die PTS, dort gibt es keine Aufteilung). Alle Werte setzen dieselbe Uhr voraus (ein Rechner oder NTP); die Verzögerung des Monitors ist nicht enthalten.
+
+## Lokale Geräte
+
+Die Bridge liest Capture- und Audiogeräte dieses Rechners über ffmpeg (Liste: `GET /api/devices` → `[{name, url, kind: "video"|"audio"}]`):
+
+- `device:avfoundation|dshow|v4l2:<Videogerät>` – Bild; mit `#audio=<Audiogerät>` zusätzlich der Ton im selben ffmpeg-Prozess (macOS `"<Video>:<Audio>"`, Windows `video=…:audio=…`, Linux zweiter Eingang ALSA, z. B. `#audio=hw:1,0`).
+- `audio:avfoundation|dshow|alsa:<Audiogerät>` – nur Ton, mit allen Kanälen, die der Treiber liefert. `#ch=<n>` fordert bei DirectShow/ALSA `n` Kanäle an.
+
+Namen gehen als ein Argument an ffmpeg, nie über eine Shell. Bei AVFoundation darf kein `:` im Namen stehen (Trennzeichen zwischen Bild und Ton). Geprüft auf macOS mit Kamera und Mikrofon eines MacBook; DirectShow, ALSA, Mehrkanal-Interfaces und Dante Virtual Soundcard sind ungeprüft.

@@ -60,14 +60,15 @@ function plainSocket(url: string): FrameSocket {
       return;
     }
     const buf = ev.data as ArrayBuffer, arrive = Date.now();
-    let meta: FrameMeta | undefined, off = 0, bridge = NaN;
+    let meta: FrameMeta | undefined, off = 0;
     if (info?.proto === 2) {
+      // LZV1 carries the PTS in its header (#24), no bridge clock: no latency split here
       const dv = new DataView(buf, 0, 16);
-      if (dv.getUint8(3) === 49 && dv.getUint8(2) === 86) { off = 16; bridge = dv.getFloat64(8, true); } else off = -1; // not LZV1
+      off = dv.getUint8(3) === 49 && dv.getUint8(2) === 86 ? 16 : -1; // not LZV1
     }
     if (info && off >= 0) {
       const px = info.depth === 16 ? new Uint16Array(buf, off) : new Uint8Array(buf, off);
-      meta = { arrive, bridge, stamp: readStamp(px, info.width, info.height, info.depth === 16 ? 65535 : 255)?.ms ?? null, replaced: 0 };
+      meta = { arrive, bridge: NaN, stamp: readStamp(px, info.width, info.height, info.depth === 16 ? 65535 : 255)?.ms ?? null, replaced: 0 };
     }
     sock.onmessage?.({ data: buf, meta });
   };

@@ -18,8 +18,9 @@ chain is measured from the moment a frame is created to the moment it is drawn:
 1. `scripts/latency-source.mjs` renders frames with the wall clock and a counter as
    black/white blocks (`server/stamp.mjs`: sync word, 16-bit counter, check byte, 32-bit
    ms), encodes with x264 zero-latency and publishes to mediamtx (RTSP).
-2. The bridge pulls with ffmpeg and stamps each frame with its own clock when the frame
-   leaves ffmpeg (header value of `LZV1`/`LZHK`/`LZHD`).
+2. The bridge pulls with ffmpeg; on the H.264 path it stamps each access unit with its own
+   clock when it leaves ffmpeg (header value of `LZHK`/`LZHD`). Raw frames (`LZV1`) carry
+   the PTS there since #24, so the raw path shows only stamp → drawn.
 3. The app reads the stamp from the pixels on arrival and closes the measurement at the
    next animation frame (the frame is drawn in that frame).
 
@@ -38,6 +39,8 @@ larger than the differences between the paths:
 | H.264, worker | 66 | 71 | 102 | 64 |
 
 Split (run 3): source → bridge 107 / 106 / 89 ms, bridge → app 6–8 ms, H.264 decode 8 ms.
+The raw split was measured with an interim version whose `LZV1` header carried the bridge
+clock; since #24 that value is the PTS and only the H.264 path shows the split.
 Most of the latency sits before the bridge: x264 encode of the test source, RTSP via
 mediamtx, ffmpeg decode. A bare ffmpeg pull of the same stream (no app) gave 93–134 ms
 with a minimum of ~90 ms, so the app itself adds little (bridge → drawn ≈ 10–15 ms).

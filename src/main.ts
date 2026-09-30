@@ -19,6 +19,7 @@ import type { GenConfig } from './audio/dsp/signals';
 import { audioPanelSettings, audioRow, audioSourceControls, mountGenerator } from './audio/ui';
 import { setClockHooks } from './clock/panel';
 import { clockPanelSettings } from './clock/ui';
+import { generator } from './audio/io';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
@@ -322,7 +323,7 @@ function renderSources() {
         h('div', { class: 'row' },
           select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', 'nativ']], (v) => upd({ width: Number(v) }, true), 'Analyseauflösung'),
           select(String(set.fps), [['0', 'alle fps'], ['10', '10 fps'], ['25', '25 fps'], ['30', '30 fps']], (v) => upd({ fps: Number(v) }, true), 'Bildrate begrenzen'),
-          select(String(set.depth), [['8', '8 bit'], ['16', '16 bit']], (v) => upd({ depth: Number(v) as 8 | 16 }, true), 'Bittiefe (16 bit für 10-bit/HDR-Quellen)'),
+          select(set.yuv ? 'yuv' : String(set.depth), [['8', '8 bit'], ['16', '16 bit'], ['yuv', '16 bit Y′CbCr']], (v) => upd(v === 'yuv' ? { depth: 16, yuv: true } : { depth: Number(v) as 8 | 16, yuv: false }, true), 'Bittiefe. 16 bit für 10-bit/HDR-Quellen; Y′CbCr = unbeschnitten ohne Range-Wandlung (Sub-Black, Super-White, R 103)'),
           select(set.transport, [['tcp', 'TCP'], ['udp', 'UDP']], (v) => upd({ transport: v as 'tcp' | 'udp' }, true), 'RTSP-Transport'),
           select(set.audio === false ? '0' : '1', [['1', 'Ton'], ['0', 'ohne Ton']], (v) => upd({ audio: v === '1' }, true), 'Ton des Streams mitmessen (Bridge-Protokoll 2)'),
           select(set.codec ?? 'raw', [['raw', 'roh'], ['h264', 'H.264 · 8 bit']], (v) => upd({ codec: v as 'raw' | 'h264' }, true), 'Übertragung Bridge → Browser: roh = unkomprimiert, exakt (8/16 bit); H.264 = für entfernte Bridges, ca. 1/50 der Datenrate, aber 8 bit 4:2:0 und verlustbehaftet')),
@@ -336,7 +337,7 @@ function renderSources() {
     } else if (s.kind === 'pattern') {
       card.append(...patternControls(s));
     } else if (s.kind === 'audio') {
-      card.append(...audioSourceControls(s, save, renderSources));
+      card.append(...audioSourceControls(s, save, renderSources, bridgeUrl));
     } else {
       if (s.isVideoFile) card.append(...transportControls(s));
       if (s.kind === 'webcam') card.append(deviceRow(s));
@@ -503,6 +504,7 @@ function patternControls(s: Source): Node[] {
     h('div', { class: 'row' },
       resolutionControls(pt, apply),
       label),
+    ...(patternById(pt.id).note ? [h('p', { class: 'hint' }, patternById(pt.id).note!)] : []),
     h('div', { class: 'row' },
       h('button', { class: 'primary', title: 'Testbild im eigenen Fenster ausgeben (für Monitor, Beamer, Capture)', onclick: () => openOutput(pt) }, '⧉ Ausgeben'),
       h('button', { title: 'Eigene Bilder als Testbilder laden', onclick: () => imgs.click() }, '+ Bilder'), imgs),
@@ -773,7 +775,7 @@ function panelSettings(p: PanelState): Node[] {
     }
   }
   if (p.scope === 'picture') {
-    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
+    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung'], ['r103', 'EBU R 103']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
     if (p.picture === 'gamut') row('Zielgamut', select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, 'Markiert Pixel, die im Zielgamut negative Anteile hätten'));
     if (p.picture === 'false') row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); }));
     if (p.picture === 'zebra') row('Zebra ab', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%');
@@ -781,6 +783,9 @@ function panelSettings(p: PanelState): Node[] {
     clk.onchange = () => { p.clockOverlay = clk.checked; save(); };
     row('Uhr', h('label', { class: 'inline', title: 'Tageszeit-Timecode (Systemuhr) und Quell-Timecode mit Differenz einblenden; Rate und PTP wie im Uhr-Panel' }, clk, 'Timecode einblenden'));
     row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])], (v) => setDisplaySpace(v as Persisted['display'])));
+    const bar = h('input', { type: 'checkbox', checked: p.audioBar !== false }) as HTMLInputElement;
+    bar.onchange = () => { p.audioBar = bar.checked; save(); refreshHeads(); };
+    row('Ton', h('label', { class: 'inline', title: 'Pegel je Kanal (−60 … 0 dBFS, Marken −18 und −1) und Short-term-Lautheit am rechten Bildrand, wenn die Quelle Ton hat' }, bar, 'Kompakter Pegelbalken'));
     rows.push(h('p', { class: 'hint' }, 'Klick = Messpunkt, Ziehen = Messrahmen, Rechtsklick löscht.'));
   }
   if (p.scope === 'hist') {
@@ -1389,8 +1394,46 @@ function execute(c: Command): unknown {
       }
       return { source: s.name };
     }
+    case 'audio.reset': case 'audio.pause': {
+      const list = c.source !== undefined ? [need(findSource(c.source), `Quelle ${c.source} nicht gefunden`)] : sources.filter((x) => x.audio);
+      const withAudio = list.filter((x) => x.audio);
+      if (!withAudio.length) throw new Error(c.source !== undefined ? `${list[0].name} hat keinen Ton` : 'Keine Quelle mit Ton');
+      for (const x of withAudio) {
+        if (c.cmd === 'audio.reset') x.audio!.reset(); else x.audio!.paused = mode(x.audio!.paused);
+      }
+      renderSources();
+      return { sources: withAudio.map((x) => ({ name: x.name, paused: x.audio!.paused })) };
+    }
+    case 'generator': {
+      const patch: Partial<GenConfig> = {};
+      if (c.signal !== undefined) patch.signal = c.signal as GenConfig['signal'];
+      if (c.freq !== undefined) patch.freq = Number(c.freq);
+      if (c.level !== undefined) patch.level = Number(c.level);
+      patch.running = mode(generator.cfg.running);
+      generator.update(patch).catch(() => {});
+      state.gen = { ...generator.cfg, running: false }; save();
+      return { running: patch.running, signal: generator.cfg.signal, level: generator.cfg.level, freq: generator.cfg.freq };
+    }
   }
   throw new Error(`Befehl ${c.cmd} nicht umgesetzt`);
+}
+
+/** Loudness of the active source with sound (else the first one); values rounded to 0.1, null = unknown. */
+function audioState() {
+  const act = activeSource();
+  const s = act?.audio ? act : sources.find((x) => x.audio);
+  const a = s?.audio;
+  if (!s || !a) return null;
+  const r1 = (v: number | null) => (v === null || !Number.isFinite(v) ? null : Math.round(v * 10) / 10);
+  const tp = 20 * Math.log10(Math.max(...a.level.maxTP));
+  const av = a.av.result();
+  const id = a.identReport();
+  return {
+    source: s.name, momentary: r1(a.loud.momentary), shortTerm: r1(a.loud.shortTerm), integrated: r1(a.loud.integrated),
+    lra: r1(a.loud.lra), maxTP: r1(tp), paused: a.paused, seconds: Math.round(a.loud.measuredSeconds),
+    avOffsetMs: r1(av.medianMs), ident: id.kind && id.kind !== 'tone' ? id.label : '',
+    identProblems: id.findings.filter((f) => f.level === 'bad').map((f) => f.text),
+  };
 }
 
 /** State for the control API: Companion feedbacks and variables. Percent values rounded to 0.1. */
@@ -1425,6 +1468,8 @@ function controlState() {
     latency: act?.latency.summary() ?? null,
     /** where the statistics come from and their main-thread cost in ms */
     statsPerf: act ? { ...act.statsPerf } : null,
+    audio: audioState(),
+    generator: { running: generator.running, signal: generator.cfg.signal, level: generator.cfg.level, freq: generator.cfg.freq, channels: generator.cfg.channels ?? 2 },
   };
 }
 
@@ -1463,9 +1508,17 @@ for (const saved of state.sources) {
   if (saved.audioIn) Object.assign(s.audioIn, saved.audioIn);
   if (s.kind === 'pattern') s.startPattern();
   if (s.kind === 'audio' && s.audioIn.mode === 'generator') s.startAudio();
+  if (s.kind === 'audio' && s.audioIn.mode === 'bridge' && s.audioIn.bridgeUrl) s.startAudio(undefined, bridgeUrl());
 }
 mountOpple($('#opple'));
-mountGenerator($('#gen'), state.gen, state.genSink ?? '', (cfg, sink) => { state.gen = cfg; state.genSink = sink; save(); }, () => addAudioSource('generator'));
+mountGenerator($('#gen'), state.gen, state.genSink ?? '', (cfg, sink) => { state.gen = cfg; state.genSink = sink; save(); }, () => addAudioSource('generator'), () => {
+  // A/V offset measured at a bridge source (median), for the calibration of the outputs
+  for (const s of sources) {
+    const r = s.audio?.av.result();
+    if (r && r.medianMs !== null && r.pairs.length >= 3) return { ms: r.medianMs, source: s.name };
+  }
+  return null;
+});
 applySidebar();
 renderHeader();
 const dock = createDock($('#dock'), {

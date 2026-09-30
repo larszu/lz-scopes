@@ -10,6 +10,13 @@ export const SCOPES: { id: string; label: string }[] = [
   { id: 'audio-meter', label: 'Audio Pegel & Lautheit' }, { id: 'audio-loudness', label: 'Audio Lautheitsverlauf' },
   { id: 'audio-spectrum', label: 'Audio Spektrum' }, { id: 'audio-phase', label: 'Audio Goniometer' },
   { id: 'clock', label: 'Uhr / Timecode' },
+  { id: 'audio-check', label: 'Audio Ident & A/V-Versatz' },
+]
+const SIGNALS = [
+  { id: '', label: 'unverändert' }, { id: 'sine', label: 'Sinus' }, { id: 'ebu-ident', label: 'EBU-Stereo-Ident' }, { id: 'glits', label: 'GLITS' },
+  { id: 'blits', label: 'BLITS (5.1)' }, { id: 'ebu-multi', label: 'EBU-Mehrkanal-Ident' }, { id: 'ident-lr', label: 'Kanal-Ident L/R' },
+  { id: 'pink', label: 'Rosa Rauschen' }, { id: 'pink-band', label: 'Rosa Rauschen 500–2000 Hz' }, { id: 'white', label: 'Weißes Rauschen' },
+  { id: 'sweep', label: 'Log-Sweep' }, { id: 'steps', label: 'Stufen-Sweep' }, { id: 'polarity', label: 'Polaritätstest' }, { id: 'avsync', label: 'A/V-Sync-Piep' },
 ]
 const MODES = [{ id: 'toggle', label: 'Umschalten' }, { id: 'on', label: 'An' }, { id: 'off', label: 'Aus' }]
 const VIEWS = [
@@ -117,6 +124,19 @@ export function updateActions(self: ModuleInstance): void {
       callback: run('stream_start'),
     },
     stream_stop: { name: 'Stream stoppen', options: [text('stream', 'Stream-Name (leer = alle)'), text('output', 'Ausgabe (optional)')], callback: run('stream_stop') },
+    audio_reset: { name: 'Lautheit zurücksetzen (I, LRA, Max, Protokoll)', options: [sourceOption(self, true)], callback: run('audio_reset') },
+    audio_pause: { name: 'I/LRA anhalten/fortsetzen', options: [{ type: 'dropdown', id: 'mode', label: 'Modus', default: 'toggle', choices: MODES }, sourceOption(self, true)], callback: run('audio_pause') },
+    generator: {
+      name: 'Tongenerator',
+      options: [
+        { type: 'dropdown', id: 'mode', label: 'Modus', default: 'toggle', choices: MODES },
+        { type: 'dropdown', id: 'signal', label: 'Signal', default: '', choices: SIGNALS },
+        { type: 'number', id: 'freq', label: 'Frequenz Hz (0 = unverändert)', default: 0, min: 0, max: 20000 },
+        text('level', 'Pegel dBFS (leer = unverändert)', '', 'z. B. -18 (EBU R 68)'),
+        { type: 'checkbox', id: 'force', label: 'Pegel über −6 dBFS erlauben (laut!)', default: false },
+      ],
+      callback: run('generator'),
+    },
     transport: { name: 'Transport (Videodatei)', options: [{ type: 'dropdown', id: 'op', label: 'Aktion', default: 'toggle', choices: OPS }, sourceOption(self, true)], callback: run('transport') },
   }
   self.setActionDefinitions(defs)

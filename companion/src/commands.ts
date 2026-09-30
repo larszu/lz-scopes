@@ -41,6 +41,13 @@ export function buildCommand(actionId: string, o: Options): Command {
     case 'stream_start': return clean({ cmd: 'stream.start', output: text(o.output), stream: text(o.stream) ?? 'scopes', target: text(o.target) })
     case 'stream_stop': return clean({ cmd: 'stream.stop', output: text(o.output), stream: text(o.stream) })
     case 'transport': return clean({ cmd: 'transport', op: o.op ?? 'toggle', source: ref(o.source) })
+    case 'audio_reset': return clean({ cmd: 'audio.reset', source: ref(o.source) })
+    case 'audio_pause': return clean({ cmd: 'audio.pause', mode: o.mode ?? 'toggle', source: ref(o.source) })
+    case 'generator': {
+      const level = o.level === undefined || o.level === '' ? undefined : Number(o.level)
+      const freq = o.freq === undefined || o.freq === '' || Number(o.freq) === 0 ? undefined : Number(o.freq)
+      return clean({ cmd: 'generator', mode: o.mode ?? 'toggle', signal: text(o.signal), freq, level, force: level !== undefined && level > -6 ? o.force === true || undefined : undefined })
+    }
   }
   throw new Error(`Unbekannte Aktion ${actionId}`)
 }

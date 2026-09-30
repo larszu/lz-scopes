@@ -4,15 +4,18 @@
 // previous one, a newer frame replaces the waiting one instead of queueing up. Sound
 // packets always pass. H.264 access units (LZHK/LZHD) are decoded with WebCodecs and
 // converted to R′G′B′ with the bridge's matrix (src/yuv.ts), so the main thread sees the
-// same LZV1 frames as with raw transport. Latency stamps (server/stamp.mjs) are read here.
+// same LZV1 frames as with raw transport. Latency stamps (server/stamp.mjs) are read here,
+// and with sound the mean luma of every frame for the A/V offset (#24), so replaced frames
+// still count there.
 
 import { readStamp } from '../server/stamp.mjs';
+import { meanLuma } from './luma';
 import { yuv420ToRgba } from './yuv';
 
 export interface FrameMeta {
   /** Date.now() when the frame arrived here (raw) or left the decoder (H.264) */
   arrive: number;
-  /** bridge wall clock when the frame left ffmpeg (header value), NaN = unknown */
+  /** bridge wall clock when the frame left ffmpeg (LZHK/LZHD header value, H.264 only), NaN = unknown */
   bridge: number;
   /** time stamp read from the picture (server/stamp.mjs), Date.now() mod 2^32 at the source */
   stamp: number | null;
@@ -20,6 +23,8 @@ export interface FrameMeta {
   decodeMs?: number;
   /** frames replaced in this worker because the main thread was busy (running total) */
   replaced: number;
+  /** [PTS s, mean luma] of every raw frame since the last handover, this one included (only with sound, A/V offset #24) */
+  av?: [number, number][];
 }
 
 type In = { type: 'open'; url: string } | { type: 'ack' } | { type: 'close' };
@@ -31,14 +36,17 @@ export type Out =
 const post = (m: Out, transfer: Transferable[] = []) => (self as unknown as DedicatedWorkerGlobalScope).postMessage(m, transfer);
 
 let ws: WebSocket | null = null;
-let info: { width: number; height: number; depth: number; proto?: number; decodeMatrix?: string; range?: string; transport?: string } | null = null;
+let info: { width: number; height: number; depth: number; proto?: number; decodeMatrix?: string; range?: string; transport?: string; format?: string; audio?: unknown } | null = null;
 let waiting: { data: ArrayBuffer; meta: FrameMeta } | null = null;
 let inflight = false, replaced = 0;
+/** A/V samples not yet handed over (kept across replaced frames) */
+let av: [number, number][] = [];
 
 function flush() {
   if (inflight || !waiting) return;
   const w = waiting;
   waiting = null; inflight = true;
+  if (av.length) { w.meta.av = av; av = []; }
   post({ type: 'bin', data: w.data, meta: w.meta }, [w.data]);
 }
 function queue(data: ArrayBuffer, meta: Omit<FrameMeta, 'replaced'>) {
@@ -76,7 +84,7 @@ async function onDecodedAsync(frame: VideoFrame, t: { bridge: number; t0: number
   // LZV1 header like the raw transport, so src/sources.ts needs no second path
   const dv = new DataView(rgba.buffer);
   [76, 90, 86, 49].forEach((c, i) => dv.setUint8(i, c));
-  dv.setUint32(4, 0, true); dv.setFloat64(8, t?.bridge ?? NaN, true);
+  dv.setUint32(4, 0, true); dv.setFloat64(8, NaN, true); // no PTS on the H.264 path
   const now = Date.now();
   const stamp = readStamp(rgba.subarray(16), Math.min(w, vw), Math.min(h, vh), 255);
   queue(rgba.buffer as ArrayBuffer, { arrive: now, bridge: t?.bridge ?? NaN, stamp: stamp?.ms ?? null, decodeMs: t ? performance.now() - t.t0 : undefined });
@@ -127,12 +135,15 @@ function open(url: string) {
       const head = new DataView(buf, 0, 16);
       const magic = String.fromCharCode(head.getUint8(0), head.getUint8(1), head.getUint8(2), head.getUint8(3));
       if (magic === 'LZA1') { post({ type: 'bin', data: buf }, [buf]); return; }
-      const n = head.getUint32(4, true), bridge = head.getFloat64(8, true);
-      if (magic === 'LZHK' || magic === 'LZHD') { decode(buf, magic === 'LZHK', n, bridge); return; }
+      const n = head.getUint32(4, true), hv = head.getFloat64(8, true); // H.264: bridge clock (ms), LZV1: PTS (s)
+      if (magic === 'LZHK' || magic === 'LZHD') { decode(buf, magic === 'LZHK', n, hv); return; }
       if (magic !== 'LZV1' || !info) return;
+      const max = info.depth === 16 ? 65535 : 255;
       const px = info.depth === 16 ? new Uint16Array(buf, 16) : new Uint8Array(buf, 16);
-      const st = readStamp(px, info.width, info.height, info.depth === 16 ? 65535 : 255);
-      queue(buf, { arrive: now, bridge, stamp: st?.ms ?? null });
+      const st = readStamp(px, info.width, info.height, max);
+      // LZV1 header value = PTS in s (#24), not a bridge clock
+      if (info.audio && info.width) { av.push([hv, meanLuma(px, info.width, info.height, max, info.format === 'yuv')]); if (av.length > 250) av.shift(); }
+      queue(buf, { arrive: now, bridge: NaN, stamp: st?.ms ?? null });
       return;
     }
     if (!info) return;

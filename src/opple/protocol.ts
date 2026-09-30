@@ -110,3 +110,102 @@ export function parseCalibration(msg: Uint8Array | null): Calibration | null {
   const kSensor = Array.from({ length: count }, (_, i) => { const v = view.getFloat32(1 + 4 * i, true); return Number.isFinite(v) ? v : 1; });
   return { model: count === 9 ? 'lm4' : 'lm3', kSensor };
 }
+
+// ---------------------------------------------------------------- flicker (LM4)
+//
+// Layout and constants from gabrielebaudo/opple-bridge @ 5bba264 `opple_bridge/ble/parser.py`
+// and `science/flicker.py` (MIT, Copyright (c) 2026 Gabriele Baudo, licenses/opple-bridge-
+// LICENSE.txt; there transcribed from the decompiled OPPLE Smart app). Ported to TypeScript.
+// Request body [0, period hi, period lo]; the answer is 4 messages (opcode 0x0A0B), payload
+// [?, page 0…3, data_type, 22 bytes meta, packed 12-bit samples: 6 bytes → 4 samples];
+// pages 0–2 carry 260 samples, page 3 carries 244 (1024 in total). Only the LM4 is known.
+
+export const FLICKER_SAMPLES = 1024;
+/** Sampling modes: period byte → time factor; fs = 1024² / factor (≈ 40.3 kHz, 7.0 kHz, 85.4 kHz). */
+export const FLICKER_PERIODS = { 25: 26.0, 146: 150.0, 11: 12.285 } as const;
+export type FlickerPeriod = keyof typeof FLICKER_PERIODS;
+export const flickerSampleRate = (p: FlickerPeriod) => (FLICKER_SAMPLES * FLICKER_SAMPLES) / FLICKER_PERIODS[p];
+export const flickerRequestBody = (p: FlickerPeriod) => Uint8Array.from([0, (p >> 8) & 0xff, p & 0xff]);
+
+const WAVE_OFFSET = 25, FULL_GROUPS = 65, LAST_GROUPS = 61, LAST_PAGE = 3;
+
+export interface FlickerChunk { page: number; dataType: number; samples: number[] }
+
+export function parseFlickerChunk(msg: Uint8Array | null): FlickerChunk | null {
+  if (!msg || msg.length < HEADER_LEN + WAVE_OFFSET) return null;
+  const p = msg.subarray(HEADER_LEN), page = p[1], dataType = p[2];
+  if (page > LAST_PAGE) return null;
+  const groups = page === LAST_PAGE ? LAST_GROUPS : FULL_GROUPS, w = p.subarray(WAVE_OFFSET);
+  if (w.length < groups * 6) return null;
+  const samples: number[] = [];
+  for (let i = 0; i < groups; i++) {
+    const o = 6 * i, a = (w[o] << 8) | w[o + 1], b = (w[o + 2] << 8) | w[o + 3], c = (w[o + 4] << 8) | w[o + 5];
+    samples.push(a >> 4, ((a & 0x0f) << 8) | (b >> 8), ((b & 0xff) << 4) | (c >> 12), c & 0xfff);
+  }
+  return { page, dataType, samples };
+}
+
+/** Pack samples into a chunk message (inverse of parseFlickerChunk; for tests and simulation). */
+export function buildFlickerChunk(page: number, dataType: number, samples: number[], seq = 1) {
+  const groups = page === LAST_PAGE ? LAST_GROUPS : FULL_GROUPS, body = new Uint8Array(WAVE_OFFSET + groups * 6);
+  body[1] = page; body[2] = dataType;
+  for (let i = 0; i < groups; i++) {
+    const [s0, s1, s2, s3] = [0, 1, 2, 3].map((k) => (samples[i * 4 + k] ?? 0) & 0xfff);
+    const a = (s0 << 4) | (s1 >> 8), b = ((s1 & 0xff) << 8) | (s2 >> 4), c = ((s2 & 0x0f) << 12) | s3, o = WAVE_OFFSET + 6 * i;
+    body.set([a >> 8, a & 0xff, b >> 8, b & 0xff, c >> 8, c & 0xff], o);
+  }
+  const out = new Uint8Array(HEADER_LEN + body.length);
+  out.set([0x00, 0x13, 0x00, 0x00, seq & 0xff, 0x00, body.length & 0xff, 0x00, 0x00, 0x0a, 0x0b]);
+  out.set(body, HEADER_LEN);
+  return out;
+}
+
+/** Collects the 4 pages into one 1024-sample waveform. */
+export class FlickerAssembler {
+  private buf = new Array<number>(FLICKER_SAMPLES).fill(0);
+  private pages = new Set<number>();
+  dataType = 2;
+  feed(c: FlickerChunk): number[] | null {
+    const start = c.page * FULL_GROUPS * 4;
+    c.samples.forEach((s, i) => { if (start + i < FLICKER_SAMPLES) this.buf[start + i] = s; });
+    this.pages.add(c.page); this.dataType = c.dataType;
+    return this.pages.size === LAST_PAGE + 1 ? this.buf.slice() : null;
+  }
+}
+
+/** ADC baseline per data_type (opple-bridge `science/flicker.py` `_DC_OFFSETS`). */
+const DC_OFFSETS: Record<number, number> = { 0: 29.7412109375, 1: 15.8720703125 };
+const DC_DEFAULT = 13.8447265625;
+
+export interface FlickerResult {
+  /** ENERGY STAR MoM (draft) Eq. 1: (max − min)/(max + min) · 100 % */
+  percent: number;
+  /** ENERGY STAR MoM (draft) Eq. 2: Σ max(Φi − Φ̄, 0) / Σ Φi */
+  index: number;
+  /** strongest spectral line without DC, Hz */
+  frequency: number;
+  sampleRate: number; period: FlickerPeriod; mean: number;
+}
+
+/**
+ * Flicker figures of a waveform. The baseline is subtracted first (negative → 0, as opple-bridge);
+ * percent flicker and flicker index after ENERGY STAR Method of Measurement for Light Source
+ * Flicker (draft), section 8; frequency = DFT peak bin · fs / N (no window, as opple-bridge).
+ * The meter samples far below the 5 MSa/s that method asks for: guide values only.
+ */
+export function flickerMetrics(wave: number[], dataType: number, period: FlickerPeriod): FlickerResult {
+  const dc = DC_OFFSETS[dataType] ?? DC_DEFAULT;
+  const s = wave.map((v) => (v > dc ? v - dc : 0)), n = s.length, fs = flickerSampleRate(period);
+  const sum = s.reduce((a, b) => a + b, 0), mean = sum / n;
+  const max = Math.max(...s), min = Math.min(...s);
+  const percent = max + min > 0 ? ((max - min) / (max + min)) * 100 : 0;
+  const index = sum > 0 ? s.reduce((a, v) => a + Math.max(0, v - mean), 0) / sum : 0;
+  let best = 1, bestMag = -1;
+  for (let k = 1; k < n / 2; k++) {
+    let re = 0, im = 0;
+    for (let t = 0; t < n; t++) { const a = (-2 * Math.PI * k * t) / n; re += s[t] * Math.cos(a); im += s[t] * Math.sin(a); }
+    const m = re * re + im * im;
+    if (m > bestMag) { bestMag = m; best = k; }
+  }
+  return { percent, index, frequency: (best * fs) / n, sampleRate: fs, period, mean };
+}

@@ -30,3 +30,8 @@ Stand: 30.09.2026. Ergänzt Teil B von [led-wall-und-messgeraete.md](led-wall-un
 - **Modell:** LM3 oder LM4? Beides wird am Nutzdatenumfang erkannt.
 - **Koeffizienten:** Die Matrizen stammen aus der OPPLE-Smart-App (über MIT-Projekte veröffentlicht). Ob sie in einem öffentlichen, ggf. kommerziell genutzten Programm verwendet werden dürfen, ist nicht geklärt (Urheberrecht an Zahlen fraglich, App-AGB nicht gelesen) – Entscheidung von Lars.
 - Für LED-Wand-Primärfarben nur Trendmesser (Filtersensor, feste Matrizen).
+
+## Nachtrag 30.09.2026 – Flimmern und LED-Wand
+
+- Flicker-Protokoll (nur LM4) aus [gabrielebaudo/opple-bridge](https://github.com/gabrielebaudo/opple-bridge) @ 5bba264 (MIT, Lizenztext in `licenses/`) portiert: Anfrage 0x0A0A mit [0, Periode], Antwort 4 × 0x0A0B mit gepackten 12-bit-Werten, Abtastmodi 25/146/11, Grundlinie je Messbereich. Kennwerte Percent Flicker/Flicker Index nach ENERGY STAR (Entwurf), Abschnitt 8. Getestet nur mit synthetisch gepackten Seiten (keine aufgezeichneten Flicker-Rahmen unter freier Lizenz; die Aufnahmen im khromov-Repo sind ohne Lizenz).
+- Einsatz an der LED-Wand, Grenzen und Weißpunkt-Herleitung: [led-wall-und-messgeraete.md, Teil C](led-wall-und-messgeraete.md).

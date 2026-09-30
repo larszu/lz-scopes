@@ -32,10 +32,13 @@ function download(name: string, text: string) {
   document.body.append(a); a.click(); a.remove();
 }
 
+/** One meter per window: the sidebar panel and the LED-wall dialog share it. */
+export const oppleMeter = new OppleMeter();
+
 export function mountOpple(root: HTMLElement) {
   if (!document.getElementById('opple-css')) document.head.append(h('style', { id: 'opple-css' }, CSS));
   root.classList.add('opple');
-  const meter = new OppleMeter();
+  const meter = oppleMeter;
   const history: Reading[] = [];
   let last: Reading | null = null;
 

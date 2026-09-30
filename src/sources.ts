@@ -4,6 +4,9 @@ import type { ChainSettings, Compiled } from './chain';
 import { patternById, renderPattern } from './patterns';
 import { AudioAnalysis } from './audio/analysis';
 import { AudioTap, generator, measurementConstraints } from './audio/io';
+import { debugFlags, openFrameSocket, workerAvailable, type FrameSocket } from './frameLink';
+import { GpuStats } from './gpuStats';
+import { LatencyMeter } from './latency';
 
 export type SourceKind = 'stream' | 'webcam' | 'screen' | 'file' | 'pattern' | 'folder' | 'audio';
 
@@ -35,6 +38,8 @@ export interface SourceSettings {
   decodeRange?: 'auto' | 'tv' | 'pc';
   /** DeckLink helper: 10 bit (v210) or 8 bit (UYVY) capture */
   deckLinkBits?: 8 | 10;
+  /** bridge streams: 'h264' = compressed 8-bit transport for remote bridges, decoded in the browser (#16) */
+  codec?: 'raw' | 'h264';
 }
 
 export interface StreamInfo {
@@ -47,6 +52,8 @@ export interface StreamInfo {
   timecode?: string; startTime?: number;
   /** "30000/1001" (ffprobe r_frame_rate) and the source frame rate before any fps limit */
   frameRate?: string; sourceFps?: number;
+  /** 'h264' = compressed transport (8 bit, lossy), decoded by the browser */
+  transport?: string;
 }
 
 /**
@@ -120,7 +127,7 @@ export class Source {
 
   /** Statistics of the last analysed frame after the processing chain (stage views, chain.ts). */
   stageStats(c: Compiled): Stats | null {
-    const f = this.lastFrame;
+    const f = this.lastFrame ?? this.readbackFrame();
     if (!f) return this.stats;
     const key = `${this.statsVersion}:${c.sig}`;
     const hit = this.stageCache.get(c.stage);
@@ -136,7 +143,7 @@ export class Source {
    * 5th and 95th percentile – used to set the skin target range from a face.
    */
   skinLumaRange(kr: number, kb: number, tolDeg: number): { lo: number; hi: number; n: number } | null {
-    const f = this.lastFrame;
+    const f = this.lastFrame ?? this.readbackFrame();
     if (!f) return null;
     const kg = 1 - kr - kb;
     const sx = f.w / this.width, sy = f.h / this.height;
@@ -178,7 +185,9 @@ export class Source {
   private probeCache = { key: '', rgb: null as [number, number, number] | null };
   onChange: () => void = () => {};
 
-  private ws: WebSocket | null = null;
+  private ws: FrameSocket | null = null;
+  /** latency of stamped test pictures (#16) */
+  readonly latency = new LatencyMeter();
   private patternTimer: ReturnType<typeof setInterval> | null = null;
   private media: MediaStream | null = null;
   private objectUrl: string | null = null;
@@ -245,6 +254,7 @@ export class Source {
     const q = new URLSearchParams({ url, width: String(width), fps: String(fps), depth: String(depth), transport });
     if (this.settings.audio !== false) q.set('audio', '1');
     for (const [k, v] of Object.entries(bridgeInputParams(url, this.settings))) q.set(k, v);
+    if (this.settings.codec === 'h264' && workerAvailable()) q.set('codec', 'h264');
     this.connectFrames(`${bridge}/stream?${q}`, false);
   }
 
@@ -254,8 +264,7 @@ export class Source {
    */
   connectFrames(wsUrl: string, reset = true) {
     if (reset) { this.stop(); this.url = wsUrl; this.set('connecting', 'Verbinde …'); }
-    const ws = new WebSocket(wsUrl);
-    ws.binaryType = 'arraybuffer';
+    const ws = openFrameSocket(wsUrl);
     this.ws = ws;
     ws.onmessage = (ev) => {
       if (typeof ev.data === 'string') {
@@ -291,11 +300,13 @@ export class Source {
         if (this.frozen || magic !== 'LZV1') return;
         this.data = this.depth === 16 ? new Uint16Array(buf, 16) : new Uint8Array(buf, 16);
         this.tick();
+        this.latency.onFrame(ev.meta);
         return;
       }
       if (this.frozen) return;
       this.data = this.depth === 16 ? new Uint16Array(buf) : new Uint8Array(buf);
       this.tick();
+      this.latency.onFrame(ev.meta);
     };
     ws.onerror = () => this.set('error', 'Bridge nicht erreichbar – läuft `npm run dev` bzw. `npm start`?');
     ws.onclose = () => { if (this.ws === ws && this.status === 'live') this.set('ended', 'Verbindung beendet'); };
@@ -645,11 +656,49 @@ export class Source {
     return this.statsCanvas;
   }
 
-  /** Histogram and clipping statistics on a subsampled frame (CPU, ~130 k samples). */
+  /** Where the last statistics came from and what they cost the main thread (ms, #16). */
+  statsPerf: { path: 'cpu' | 'gpu'; ms: number } = { path: 'cpu', ms: 0 };
+  private gpuStats: GpuStats | null | undefined;
+
+  /**
+   * Histogram and clipping statistics. Browser-decoded video (camera, capture, video
+   * files) goes through the GPU (src/gpuStats.ts, full resolution, result one tick later);
+   * bridge frames and still pictures on the CPU (subsampled, ~130 k samples).
+   */
   updateStats(kr: number, kb: number) {
     const seqKey = `${this.frameSeq}:${this.activeRois().flat().join(',')}`;
-    if (!this.ready || this.statsSeq === seqKey) return;
+    if (!this.ready) return;
+    const t0 = performance.now();
+    if (!this.data && this.videoEl && debugFlags().stats !== 'cpu') {
+      if (this.gpuStats === undefined) this.gpuStats = GpuStats.create();
+      const g = this.gpuStats;
+      if (g) {
+        const res = g.poll();
+        if (res) { this.stats = res; this.lastFrame = null; this.statsVersion++; }
+        let queued = true;
+        if (!g.busy && this.statsSeq !== seqKey) {
+          const rois = this.activeRois();
+          queued = g.submit(this.element as TexImageSource, this.width, this.height, kr, kb, rois.length ? rois : null);
+          if (queued) this.statsSeq = seqKey;
+        }
+        if (queued) {
+          if (res || this.statsSeq === seqKey) this.statsPerf = { path: 'gpu', ms: performance.now() - t0 };
+          return;
+        }
+      }
+    }
+    if (this.statsSeq === seqKey) return;
     this.statsSeq = seqKey;
+    const f = this.readbackFrame();
+    if (!f) return;
+    this.stats = computeStats(f.px, f.w, f.h, f.step, f.scale, kr, kb, f.roi);
+    this.statsVersion++;
+    this.statsPerf = { path: 'cpu', ms: performance.now() - t0 };
+  }
+
+  /** The current frame as CPU pixels (bridge data, or a 480-px readback of the element). */
+  private readbackFrame() {
+    if (!this.ready) return null;
     let px: Uint8Array | Uint8ClampedArray | Uint16Array, w: number, h: number, step: number, scale: number;
     if (this.data) {
       px = this.data; w = this.width; h = this.height; scale = this.depth === 16 ? 65535 : 255;
@@ -663,10 +712,8 @@ export class Source {
     // restrict to the region of interest, scaled to the analysed buffer
     const sx = w / this.width, sy = h / this.height;
     const rois = this.activeRois().map((r) => [Math.floor(r[0] * sx), Math.floor(r[1] * sy), Math.ceil(r[2] * sx), Math.ceil(r[3] * sy)] as [number, number, number, number]);
-    const roi = rois.length ? rois : null;
-    this.lastFrame = { px, w, h, step, scale, roi };
-    this.stats = computeStats(px, w, h, step, scale, kr, kb, roi);
-    this.statsVersion++;
+    this.lastFrame = { px, w, h, step, scale, roi: rois.length ? rois : null };
+    return this.lastFrame;
   }
 }
 

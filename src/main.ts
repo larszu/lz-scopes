@@ -147,7 +147,7 @@ app.innerHTML = `
       <div id="source-list"></div>
       <div class="add" id="add"></div>
       <details class="gen" id="gen-wrap"><summary>Tongenerator</summary><div id="gen"></div></details>
-      <details class="gen" id="opple-wrap"><summary>Lichtmesser (Opple, ungeprüft)</summary><div id="opple"></div></details>
+      <details class="gen" id="opple-wrap"><summary>Lichtmesser (Opple)</summary><div id="opple"></div></details>
       <details class="bridge"><summary>Bridge</summary>
         <label>Adresse <input id="bridge" placeholder="leer = dieser Server"></label>
         <p class="hint">RTSP, SRT, HLS und andere Netzwerkquellen dekodiert die Bridge mit ffmpeg: Desktop-App oder <code>npm start</code>. Im Browser allein gehen Testbilder, Kamera, Bildschirm und Dateien.</p>

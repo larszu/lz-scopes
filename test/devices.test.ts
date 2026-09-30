@@ -83,6 +83,8 @@ describe('capture devices (ffmpeg avfoundation/dshow/v4l2)', () => {
   it('validates DeckLink URLs', () => {
     expect(validateInput('decklink:0')).toBeNull();
     expect(validateInput('decklink:../x')).not.toBeNull();
+    expect(validateInput('ndi:STUDIO-PC (Cam 1)')).toBeNull();
+    expect(validateInput('ndi:-f lavfi')).not.toBeNull();
   });
 });
 

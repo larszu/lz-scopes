@@ -6,7 +6,7 @@ import {
   drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
   WAVE_ZOOMS, channelLayout, isAudio, isWaveform, plotRect, type WaveChannels, type WaveOpts, type WaveZoom, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
-import { drawAudioPanel, type AudioPanelOptions } from './audio/panels';
+import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/panels';
 import type { DisplayParams, PictureMode, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
 import type { Source } from './sources';
 import { chainOf, stageView, type Stage } from './chain';
@@ -29,6 +29,8 @@ export interface PanelState {
   gamutTarget?: '709' | 'p3' | '2020';
   /** settings of the audio panels */
   audio?: AudioPanelOptions;
+  /** picture: compact level bar of the source's sound (default on when there is sound) */
+  audioBar?: boolean;
   /** where this panel measures in the source's chain; unset = global default */
   stage?: Stage;
   /** skin-tone waveform: show the luma window band and lines (default on) */
@@ -97,7 +99,9 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
   if (src) src = stageView(src, p.stage ?? o.stage ?? 'signal');
   const s = src ? `${chainOf(src)?.sig ?? ''}:${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${src.faceMode}:${src.faces.map((f) => f.id + '/' + f.box.join(',')).join(';')}:${[...src.faceSel].join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}` : '-';
   const { displayFps, ...rest } = o;
-  return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}${tick}`;
+  // compact level bar on the picture: redraw at 20 Hz of audio time
+  const bar = p.scope === 'picture' && p.audioBar !== false && src?.audio ? `${Math.floor(src.audio.frames / (src.audio.fs / 20))}:${src.audio.stale}` : '';
+  return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}${tick}|${bar}`;
 }
 
 export const defaultPanel = (scope: ScopeType): PanelState => ({
@@ -228,6 +232,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     }
     if (o.frozen) drawTextBox(ctx, r.x + 6, r.y + 6, ['STANDBILD']);
     if (p.clockOverlay) drawClockOverlay(ctx, clockOpts(p.clock), src, r.x + r.w - 6, r.y + r.h - 6);
+    if (p.audioBar !== false && src.audio) drawAudioBar(ctx, src.audio, r);
   } else if (p.scope === 'stats') {
     const lines = statsLines(src, o.displayFps);
     if (probeRgb) lines.push('', 'Messpunkt', ...probeLines(src, probeRgb, o.unit));

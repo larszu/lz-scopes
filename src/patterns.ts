@@ -5,6 +5,7 @@
 
 import { bt709Oetf, hlgFromNits, pqEncode } from './color';
 import { LED_PATTERNS } from './led/patterns';
+import { avCalibration } from './audio/avcal';
 
 export interface PatternDef {
   id: string;
@@ -232,7 +233,8 @@ export const AV_FLASH_MS = 80;
  * runs along a scale of ±500 ms so a delay can be read off a recording.
  */
 function avSync(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  const now = performance.timeOrigin + performance.now();
+  // calibrated lead of the picture (src/audio/avcal.ts; 0 = uncalibrated)
+  const now = performance.timeOrigin + performance.now() + avCalibration().videoLeadMs;
   const ph = now % 1000;
   if (ph < AV_FLASH_MS) { fill(ctx, gray(1), 0, 0, w, h); return; }
   fill(ctx, gray(0), 0, 0, w, h);
@@ -252,6 +254,8 @@ function avSync(ctx: CanvasRenderingContext2D, w: number, h: number) {
   ctx.fillRect(Math.round(mx) - 3, Math.round(y - h * 0.08), 6, Math.round(h * 0.16));
   text(ctx, 'A/V-Sync', w / 2, h * 0.22, h * 0.09);
   text(ctx, 'Blitz und Piep (Tongenerator „A/V-Sync-Piep“) zu jeder vollen Sekunde', w / 2, h * 0.34, h * 0.03, css(gray(0.75)));
+  const cal = avCalibration();
+  text(ctx, cal.note ? `Bild-Vorlauf ${Math.round(cal.videoLeadMs)} ms (${cal.note})` : 'Bildausgabe unkalibriert', w / 2, h * 0.4, h * 0.022, css(gray(0.55)));
 }
 
 export const PATTERNS: PatternDef[] = [

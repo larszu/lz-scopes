@@ -84,6 +84,8 @@ Voraussetzung für Netzwerkquellen ohne Desktop-App: `ffmpeg` und `ffprobe` im `
 | Kamera, Bildschirm, Video-/Bilddatei | direkt im Browser |
 | `device:` – Capture-Karten, die sich als Systemgerät melden (AVFoundation/DirectShow/V4L2) | Bridge: ffmpeg mit festem Modus, Rohformat (10 bit, wenn angeboten) und wählbarer Matrix; auch am entfernten Bridge-Rechner |
 | `decklink:<n>` – Blackmagic DeckLink/UltraStudio | Bridge + eigener Helfer (DeckLink SDK, [helpers/decklink](helpers/decklink/README.md)); nur wenn gebaut und Desktop Video installiert, **mit Hardware ungeprüft** |
+| `ndi:<Quelle>` – NDI® | Bridge + NDI-Helfer ([helpers/ndi](helpers/ndi/README.md)), lädt die vom Nutzer installierte NDI-Runtime ([ndi.video](https://ndi.video/)); UYVY bzw. 16 bit P216; nur im Loopback mit eigenem Testsender geprüft |
+| `folder:<Name>` – Watch-Ordner auf dem Bridge-Rechner (Exporte aus Lightroom, Capture One, Resolve) | Bridge: neuestes TIFF/DPX/PNG/JPEG/WebP/EXR in voller Tiefe; Ordner nur ausdrücklich freigegeben (`--watch-dir`, `LZS_WATCH_DIRS`, Desktop-App per Dialog) |
 
 Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einstellbar sind Analyseauflösung, Bildrate, 8 oder 16 bit (für 10-bit/HDR), RTSP über TCP oder UDP, Transfer, Matrix (709, 2020, 601 525 Zeilen/SMPTE-C, 601 625 Zeilen/EBU) und Gamut. „auto“ übernimmt die Stream-Metadaten (`bt470bg` → 625, `smpte170m` → 525).
 
@@ -190,6 +192,7 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 - **Bericht**: ΔE00 und ΔITP (Mittel, Median, 95. Perzentil, Max) gegen BT.1886 mit gemessenem Schwarz, Gamma, sRGB oder PQ. Dazu Graukurve mit effektivem Gamma, CCT und Duv, Kontrast. Export als CSV und HTML, Druck als PDF.
 - **Uniformität** 3×3 bis 9×9 in 100/75/50/25 %: ΔE00 zum Mittelfeld (≤ 4 / ≤ 2, ISO 14861 wie von DisplayCAL zitiert) und Kontrastabweichung.
 - **3D-LUT** `.cube` 33/65 aus einem Matrix/Shaper-Modell der Messungen. Sie entsteht nur, wenn das Modell die gemessenen Felder gut genug vorhersagt, und nur für SDR.
+- **Systemprofil (Desktop-App)**: ⚙ → *Systemprofil mitschalten* setzt das Display-Profil des Betriebssystems passend zum gewählten Display-Farbraum (sRGB, Display P3 oder Rec.709, das Profil je Farbraum ist wählbar). Das vorherige Profil wird vorher gesichert und zurückgesetzt: beim Beenden, mit *Zurücksetzen* und nach einem Absturz beim nächsten Start. Unter macOS läuft das über einen kleinen Swift-Helfer auf der öffentlichen ColorSync-API (`npm run build:helpers`, am eingebauten Display geprüft). Unter Windows läuft es über mscms (ungeprüft). Monitor-Preset und Helligkeit per DDC/CI (VCP 0x14 / 0x10) gehen, wo ein Werkzeug vorhanden ist, ebenfalls ungeprüft. Im Browser nicht verfügbar ([docs/research/systemprofil.md](docs/research/systemprofil.md)).
 
 ## Lichtmesser
 
@@ -243,7 +246,7 @@ Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in
 - Sub-Black und Super-White bleiben nur im Bridge-Modus *16 bit Y′CbCr* und bei den 16-bit-Testbildern erhalten. R′G′B′-Streams (8/16 bit) und Browser-Quellen sind auf 0–100 % beschnitten; die R-103-Prüfung weist dann darauf hin.
 - Die R-103-Prüfung misst am Analysebild. Bei skalierter Analysebreite ist sie nicht normgerecht (Breite „nativ“ wählen).
 - Das Ausgabefenster der Testbilder ist 8 bit Full Range: −7 %, −2 % und 109 % werden dort abgeschnitten. Chrome bietet float16-Canvas an; ob die Verbindung zum Monitor wirklich mehr als 8 bit trägt, ist ungeprüft.
-- Kein NDI, kein AJA. DeckLink nur über den selbst zu bauenden Helfer (ffmpegs eigener DeckLink-Weg ist „nonfree“ und nicht weitergebbar) und noch nie mit Hardware gelaufen.
+- Kein AJA. NDI nur mit installierter NDI-Runtime, ohne Ton, mit echten Quellen im Netz ungeprüft. DeckLink nur über den selbst zu bauenden Helfer (ffmpegs eigener DeckLink-Weg ist „nonfree“ und nicht weitergebbar) und noch nie mit Hardware gelaufen.
 - Audio: Browser liefern über `getUserMedia` höchstens 2 Kanäle; Mehrkanal kommt nur über die Bridge. Bridge-Ton lässt sich noch nicht abhören, und der A/V-Versatz wird noch nicht gemessen (siehe Issues).
 - Browser-Quellen (Kamera, Datei) liefern immer 8 bit und durchlaufen das Farbmanagement des Browsers.
 
@@ -269,4 +272,6 @@ Von **Lars Zumpe**, Lars Zumpe Medienproduktion.
 
 Proprietär, © 2026 Lars Zumpe, alle Rechte vorbehalten. Nutzung der veröffentlichten Builds ist kostenlos; Weiterverbreitung und abgeleitete Werke sind es nicht. Siehe [LICENSE](LICENSE). Kein Open Source: Der Code ist öffentlich zum Lesen. Fremdkomponenten behalten ihre Lizenzen: [THIRD_PARTY.md](THIRD_PARTY.md).
 
-Logo, Signet und App-Icon der Lars Zumpe Medienproduktion sind eigene Marke und nicht frei verwendbar (LICENSE, Abschnitt 10). Die Oberfläche folgt dem Brand Guide 2.0 (Public Sans, Navy-Palette); Scope-Spuren und Messfarben sind keine Markenfarben und bleiben unverändert.
+Logo, Signet und App-Icon der Lars Zumpe Medienproduktion sind eigene Marke und nicht frei verwendbar (LICENSE, Abschnitt 10). Die Oberfläche hat drei Varianten (⚙ → Oberfläche): *Neutral* (unbunte Grautöne für farbkritische Arbeit, Standard), *LZM* (Brand Guide 2.0, Navy) und *Original* (fast schwarz). Scope-Spuren und Messfarben sind in allen gleich. Begründung: [docs/research/ui-farben.md](docs/research/ui-farben.md).
+
+NDI® is a registered trademark of Vizrt NDI AB.

@@ -97,7 +97,7 @@ Zusätzlich zu `url`, `width`, `fps`, `depth`, `transport`, `audio`:
 | `matrix` | `bt709`, `bt601`, `bt2020`, `smpte240m` | alle – feste Matrix für Y′CbCr → R′G′B′ statt Kennzeichnung/Größenregel |
 | `range` | `tv`, `pc` | alle – fester Wertebereich |
 
-`GET /api/devices/formats?url=device:…` liefert `{modes:[{width,height,fpsMin,fpsMax,pixfmt?}], pixfmts:[…], preferred, defaultSize}`, `GET /api/decklink` den Zustand des DeckLink-Helfers `{available, helper, devices, error}`.
+`GET /api/devices/formats?url=device:…` liefert `{modes:[{width,height,fpsMin,fpsMax,pixfmt?}], pixfmts:[…], preferred, defaultSize}`, `GET /api/decklink` den Zustand des DeckLink-Helfers `{available, helper, devices, error}`, `GET /api/ndi` die NDI-Quellen `{available, runtime, version, sources:[{name,url}], error}`; eine NDI-Quelle heißt `ndi:<Name>`. `GET /api/folders` listet die freigegebenen Watch-Ordner `[{name,url}]` (`folder:<Name>`, freigegeben mit `--watch-dir`).
 
 ## Helfer-Protokoll (native Aufnahme-Helfer → Bridge)
 

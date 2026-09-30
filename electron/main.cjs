@@ -4,6 +4,7 @@
 const { app, BrowserWindow, desktopCapturer, ipcMain, screen, session, shell } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { setupDisplayProfiles } = require('./displayProfile.cjs');
 
 // Own profile (localStorage, single-instance lock) for automated tests: LZS_USER_DATA.
 if (process.env.LZS_USER_DATA) app.setPath('userData', process.env.LZS_USER_DATA);
@@ -13,7 +14,7 @@ let mainWindow = null;
 let origin = '';
 
 async function createWindow() {
-  const { startBridge, ffmpegCandidates } = await import(pathToFileURL(path.join(__dirname, '..', 'server', 'index.mjs')).href);
+  const { startBridge, ffmpegCandidates, addWatchDir } = await import(pathToFileURL(path.join(__dirname, '..', 'server', 'index.mjs')).href);
   // Fixed port 4192 when free, so Bitfocus Companion finds the control API. Not 4190:
   // that is on the Fetch "bad ports" list (sieve), Chrome and Node's fetch refuse it.
   // (LZS_PORT, LZS_HOST, LZS_CONTROL_TOKEN override); otherwise any free port.
@@ -37,9 +38,17 @@ async function createWindow() {
     title: 'LZ Scopes', backgroundColor: '#0b0c0e', autoHideMenuBar: true,
     webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
   });
+  // System display profile / monitor mode (#17): restored on quit and after a crash.
+  setupDisplayProfiles(ipcMain, app);
   ipcMain.handle('lzs:displays', () => screen.getAllDisplays().map((d) => ({
     id: d.id, label: d.label, bounds: d.bounds, primary: d.id === screen.getPrimaryDisplay().id,
   })));
+  // watch folder in the bridge (16-bit TIFF/DPX/EXR exports of Lightroom, Capture One, Resolve)
+  ipcMain.handle('lzs:watch-folder', async () => {
+    const { dialog } = require('electron');
+    const r = await dialog.showOpenDialog(mainWindow, { title: 'Export-Ordner überwachen', properties: ['openDirectory'] });
+    return r.canceled || !r.filePaths[0] ? null : addWatchDir(r.filePaths[0]);
+  });
   ipcMain.handle('lzs:capture-sources', async () => {
     const list = await desktopCapturer.getSources({ types: ['window', 'screen'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: false });
     return list.map((s) => ({ id: s.id, name: s.name, thumb: s.thumbnail.toDataURL() }));
@@ -91,6 +100,9 @@ async function createWindow() {
 }
 
 app.on('second-instance', () => { if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); } });
+// About box: the NDI SDK licence asks for the trademark notice here (docs/research/geraete-eingaenge.md)
+app.setAboutPanelOptions({ applicationName: 'LZ Scopes', copyright: `© ${new Date().getFullYear()} Lars Zumpe`, credits: 'NDI® is a registered trademark of Vizrt NDI AB. https://ndi.video/' });
+
 app.whenReady().then(createWindow).catch((e) => {
   const { dialog } = require('electron');
   dialog.showErrorBox('LZ Scopes', `Start fehlgeschlagen:\n${e && e.stack ? e.stack : e}`);

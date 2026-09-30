@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { LUMA } from '../src/color';
 import { R103, decodeYuv, encodeYuv, r103Check, rgbDecoder, yuvDecoder, yuvScale } from '../src/ycbcr';
@@ -138,5 +139,24 @@ describe('bridge format=yuv', () => {
     expect(p.scale).toContain('in_range=limited:out_range=limited');
     expect(yuvParams({ pixFmt: 'yuvj420p' }, 'bt709', 'limited')).toMatchObject({ yuv: true, bits: 8, range: 'full' });
     expect(yuvParams({ pixFmt: 'gbrp10le' }, 'bt709', 'limited').yuv).toBe(false);
+  });
+});
+
+describe('bridge format=yuv with the real ffmpeg (skipped without ffmpeg)', () => {
+  const ff = spawnSync('ffmpeg', ['-version']).status === 0;
+  // the R′G′B′ path (rgba64le) turns 10-bit Y′ 940 into 65283 instead of 65535 (≈ −0.39 %);
+  // the raw Y′CbCr transport must keep the codes exact
+  it.skipIf(!ff)('10-bit Y′ 940 stays exactly 100 %, 64, 4 and 1019 survive', () => {
+    const p = yuvParams({ pixFmt: 'yuv444p10le' }, 'bt709', 'limited');
+    const run = (lum: number) => {
+      const r = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', `nullsrc=s=64x36,format=yuv444p10le,geq=lum=${lum}:cb=512:cr=512`,
+        '-frames:v', '1', '-vf', `scale=32:18:flags=area:${p.scale}`, '-pix_fmt', 'ayuv64le', '-f', 'rawvideo', 'pipe:1']);
+      const u = new Uint16Array(r.stdout.buffer, r.stdout.byteOffset, 4);
+      return decodeYuv(u[1], u[2], u[3], 0.2126, 0.0722, narrow)[1];
+    };
+    expect(run(940)).toBe(1);
+    expect(run(64)).toBe(0);
+    expect(run(4)).toBeCloseTo(-60 / 876, 12);
+    expect(run(1019)).toBeCloseTo(955 / 876, 12);
   });
 });

@@ -1,7 +1,7 @@
 // lz-scopes bridge: decodes network streams (RTSP, RTMP, UDP, RTP, HTTP/HLS …) with
 // ffmpeg and pushes raw RGBA frames to the browser over a WebSocket.
 //
-//   node server/index.mjs [--port 4192] [--host 127.0.0.1] [--dev]
+//   node server/index.mjs [--port 4192] [--host 127.0.0.1] [--dev] [--watch-dir <folder> …]
 //
 // WebSocket: ws://host:port/stream?url=<input>&width=960&fps=25&depth=8|16&transport=tcp|udp[&audio=1][&video=0][&format=yuv]
 //   text  {type:"info", width, height, depth, fps, codec, transfer, primaries, matrix, range[, proto:2, audio]}
@@ -24,6 +24,7 @@ import { WebSocketServer } from 'ws';
 import { COMMANDS, controlAccess, validateCommand } from './control.mjs';
 import { applyDecodeOverride, deviceInputArgs, deviceOptions, formatListArgs, parseDeviceUrl, parseFormatList, pickPixfmt } from './devices.mjs';
 import { helperList, helperPath, startHelperStream } from './helper-input.mjs';
+import { resolveFolder, startFolderStream, watchRoots } from './folder.mjs';
 import { handleMeterSocket, meterInfo } from './meter.mjs';
 import { PtpMonitor, RtpMonitor, ipv4Interfaces, isMulticastV4, nowUtcNs } from './ptp.mjs';
 import { taiMinusUtc } from './leap.mjs';
@@ -87,6 +88,8 @@ export function validateInput(url) {
   if (url in TEST_PATTERNS || url === 'resolve:') return null;
   if (/^device:(avfoundation|dshow|v4l2):[^\n\r]{1,200}$/.test(url)) return null;
   if (/^decklink:\d{1,2}$/.test(url)) return null;
+  if (/^ndi:[^\n\r\0]{1,200}$/.test(url) && !url.slice(4).startsWith('-')) return null;
+  if (/^folder:[\w .-]{1,80}$/.test(url)) return null;
   if (url.startsWith('-')) return 'Ungültige Quelle';
   if (!ALLOWED.test(url)) return 'Nur rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s)://, resolve: oder test:*';
   return null;
@@ -390,6 +393,8 @@ async function startStream(ws, params) {
   if (problem) return fail(ws, problem);
   if (url === 'resolve:') return startResolve(ws, params);
   if (url.startsWith('decklink:')) return startDeckLink(ws, params, url);
+  if (url.startsWith('ndi:')) return startNdi(ws, params, url);
+  if (url.startsWith('folder:')) return startFolder(ws, params, url);
   const transport = params.get('transport') ?? 'tcp';
   const wantYuv = params.get('format') === 'yuv';
   const depth = wantYuv || params.get('depth') === '16' ? 16 : 8;
@@ -663,6 +668,45 @@ function startDeckLink(ws, params, url) {
   });
 }
 
+/**
+ * NDI(R) through the native helper (helpers/ndi). The NDI runtime is installed by the
+ * user and loaded by the helper at run time; lz-scopes ships nothing of NDI.
+ * NDI(R) is a registered trademark of Vizrt NDI AB.
+ */
+export async function ndiStatus() {
+  const bin = helperPath('lz-ndi');
+  if (!bin) return { available: false, helper: false, runtime: false, sources: [], error: 'NDI-Helfer nicht gebaut (npm run build:helpers)' };
+  const r = await helperList(bin, ['--wait', '1500']);
+  return { available: !!r.ok, helper: true, runtime: !!r.runtime, version: r.version, sources: r.sources ?? [], error: r.ok ? undefined : r.error };
+}
+
+/** Watch folders released with --watch-dir / LZS_WATCH_DIRS (server/folder.mjs). */
+let WATCH_ROOTS = watchRoots();
+/** Release one more folder (desktop app: chosen by the user in a native dialog). */
+export function addWatchDir(dir) {
+  WATCH_ROOTS = watchRoots([...WATCH_ROOTS.flatMap((r) => ['--watch-dir', r.dir]), '--watch-dir', dir], {});
+  const root = WATCH_ROOTS.find((r) => r.dir === resolve(dir));
+  return { name: root.name, url: `folder:${root.name}` };
+}
+function startFolder(ws, params, url) {
+  const root = resolveFolder(url, WATCH_ROOTS);
+  if (!root) return fail(ws, 'Ordner nicht freigegeben – Bridge mit --watch-dir <Ordner> starten');
+  const ffmpeg = ffmpegCandidates()[0];
+  if (!ffmpeg) return fail(ws, 'ffmpeg nicht gefunden');
+  startFolderStream(ws, { root, params, ctx: { ffmpeg, outputSize, decodeParams, applyDecodeOverride, deviceOptions } });
+}
+
+function startNdi(ws, params, url) {
+  const bin = helperPath('lz-ndi');
+  if (!bin) return fail(ws, 'NDI nicht verfügbar – Helfer nicht gebaut (npm run build:helpers)');
+  const ffmpeg = ffmpegCandidates()[0];
+  if (!ffmpeg) return fail(ws, 'ffmpeg nicht gefunden');
+  startHelperStream(ws, {
+    bin, args: ['--capture', url.slice('ndi:'.length)], label: 'NDI', params,
+    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions },
+  });
+}
+
 function fail(ws, message) {
   if (ws.readyState === ws.OPEN) { ws.send(JSON.stringify({ type: 'error', message })); ws.close(); }
 }
@@ -682,6 +726,15 @@ const server = createServer((req, res) => {
     const json = (code, body) => { res.writeHead(code, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(body)); };
     if (!parseDeviceUrl(url) || validateInput(url)) return json(400, { error: 'device:-URL erwartet' });
     deviceFormats(url).then((f) => json(200, { ...f, preferred: pickPixfmt(f.pixfmts), defaultSize: defaultMode(f.modes) }));
+    return;
+  }
+  if (path === '/api/folders') {
+    // names only – the paths stay on the bridge machine
+    res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
+    return res.end(JSON.stringify(WATCH_ROOTS.map((r) => ({ name: r.name, url: `folder:${r.name}` }))));
+  }
+  if (path === '/api/ndi') {
+    ndiStatus().then((st) => { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(st)); });
     return;
   }
   if (path === '/api/decklink') {
@@ -969,8 +1022,9 @@ server.on('upgrade', (req, socket, head) => {
  * Start the bridge. Used by the CLI below and by the desktop app (electron/main.cjs),
  * which passes port 0 for a free port and its own dist folder.
  */
-export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false, controlToken } = {}) {
+export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false, controlToken, watchDirs } = {}) {
   if (dist) DIST = resolve(dist);
+  if (watchDirs) WATCH_ROOTS = watchRoots(watchDirs.flatMap((d) => ['--watch-dir', d]), {});
   if (controlToken !== undefined) CONTROL_TOKEN = controlToken;
   DEV = dev;
   return new Promise((ok, fail) => {

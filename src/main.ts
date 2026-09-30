@@ -1,7 +1,6 @@
 import './vendor/dockview.css';
 import './style.css';
-// Signet "lz." of Lars Zumpe Medienproduktion, unchanged file from the brand kit (own trademark).
-import signetUrl from './brand/lzm_signet_offwhite_1c.svg';
+import { DEFAULT_THEME, SIGNET, THEMES, applyTheme, isTheme, type UiTheme } from './theme';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, HLG_PEAKS, LUMA, detectDisplay, transferLabel, type DisplaySpace, type GamutId } from './color';
 import { CAMERA_GAMUTS, LOG_CURVES } from './camera';
 import {
@@ -22,11 +21,12 @@ import { setClockHooks } from './clock/panel';
 import { clockPanelSettings } from './clock/ui';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
+import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
 import { openLedTool } from './led/ui';
 import { mountOpple } from './opple/ui';
 import { ledSettings, pictureSize } from './led/wall';
 import { Renderer, type PictureMode, type SkinRange } from './renderer';
-import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, type BridgeUi } from './bridgeInputs';
+import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 
 // ---------------------------------------------------------------- state
@@ -36,6 +36,8 @@ interface Persisted {
   layout: string; panels: PanelState[]; unit: Unit; tint: Tint; falsePreset: string;
   zebra: number; zebraLow: number; maxSamples: number; bridge: string; sidebar: boolean;
   skin: SkinRange; display: 'auto' | DisplaySpace;
+  /** UI skin (Oberfläche); chrome only, never the measurement colours */
+  theme: UiTheme;
   targets: VectorTarget[];
   /** default measuring stage in the CST/LUT chain (panels can override) */
   stage?: Stage;
@@ -57,7 +59,7 @@ const STORE_KEY = 'lz-scopes.v1';
 function load(): Persisted {
   const base: Persisted = {
     layout: 'lc', panels: DEFAULT_SCOPES.map(panel), unit: 'percent', tint: 'green', falsePreset: 'ARRI', zebra: 0.95, zebraLow: 0,
-    maxSamples: 1_000_000, bridge: '', sidebar: true, skin: { ...DEFAULT_SKIN }, display: 'auto', targets: [], scenes: [defaultScene()], activeScene: '', layoutName: '',
+    maxSamples: 1_000_000, bridge: '', sidebar: true, skin: { ...DEFAULT_SKIN }, display: 'auto', theme: DEFAULT_THEME, targets: [], scenes: [defaultScene()], activeScene: '', layoutName: '',
     sources: [{ kind: 'pattern', name: 'Testbild', url: '', settings: { transfer: 'auto', colorspace: 'auto', width: 960, fps: 0, depth: 8, transport: 'tcp' }, pattern: { id: 'smpte75', width: 1920, height: 1080, label: '' } }],
   };
   try {
@@ -68,6 +70,8 @@ function load(): Persisted {
 }
 
 const state = load();
+if (!isTheme(state.theme)) state.theme = DEFAULT_THEME;
+applyTheme(state.theme);
 const detected = detectDisplay();
 const sources: Source[] = [];
 let frozen = false;
@@ -117,7 +121,7 @@ const groupedSelect = (value: string, groups: [string, [string, string][]][], on
 const app = $('#app');
 app.innerHTML = `
   <header class="bar">
-    <div class="brand" title="LZ Scopes · Lars Zumpe Medienproduktion"><img class="signet" src="${signetUrl}" alt="Lars Zumpe Medienproduktion" width="33" height="20" /><span class="product">Scopes</span></div>
+    <div class="brand" title="LZ Scopes · Lars Zumpe Medienproduktion"><img class="signet" src="${SIGNET[state.theme]}" alt="Lars Zumpe Medienproduktion" width="33" height="20" /><span class="product">Scopes</span></div>
     <button class="icon" id="toggle-side" title="Quellen ein/aus (B)">☰</button>
     <div class="group" id="layouts"></div>
     <div class="group" id="globals"></div>
@@ -178,10 +182,12 @@ function renderHeader() {
 function settingsItems(): Node[] {
   const row = (label: string, ...kids: (Node | string)[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
   return [
+    row('Oberfläche', select(state.theme, THEMES, (v) => { if (isTheme(v)) setTheme(v); }, 'Farben der Bedienoberfläche. Messdarstellungen (Spuren, Graticule, Falschfarben) bleiben in allen Varianten gleich.')),
     row('Messpunkt', select(state.stage ?? 'signal', STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string]), (v) => setStage(v as Stage), 'Standard für alle Panels ohne eigenen Messpunkt (Taste C)')),
     row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}${detected.hdr ? ' (HDR-fähig)' : ''}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])],
-      (v) => { state.display = v as Persisted['display']; save(); renderHeader(); }, 'Display-Farbraum der Bildansicht; die Scopes messen immer das Signal')),
+      (v) => setDisplaySpace(v as Persisted['display']), 'Display-Farbraum der Bildansicht; die Scopes messen immer das Signal')),
     row('', h('button', { class: 'mini', title: 'Messfelder ausgeben, Display mit Messgerät (ArgyllCMS) oder manuell prüfen, Uniformität, Bericht, 3D-LUT', onclick: openCalibrationDialog }, 'Kalibrierung / Verifikation …')),
+    ...(sysProfileAvailable() ? [sysProfileSection(h, () => (state.display === 'auto' ? null : state.display))] : []),
     row('Spurfarbe', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); })),
     row('Präzision', select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }, 'Abtastpunkte je Scope')),
     row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); })),
@@ -192,6 +198,14 @@ function settingsItems(): Node[] {
     row('Zebra', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%'),
   ];
 }
+
+/** Display colour space changed: re-render and, if switched on, switch the system profile (#17). */
+function setDisplaySpace(v: Persisted['display']) {
+  state.display = v; save(); renderHeader();
+  applySysProfile(v === 'auto' ? null : v).catch(() => {});
+}
+// The previous session restored the profile on quit; switch it again if the user left it on.
+if (state.display !== 'auto') applySysProfile(state.display).catch(() => {});
 
 function openCalibrationDialog() {
   document.querySelectorAll<HTMLDetailsElement>('#globals details.menu[open]').forEach((d) => (d.open = false));
@@ -204,6 +218,10 @@ function openCalibrationDialog() {
 
 function numIn(value: number, min: number, max: number, set: (v: number) => void) {
   return h('input', { type: 'number', class: 'num', min, max, step: 1, value, onchange: (e: Event) => { set(Number((e.target as HTMLInputElement).value)); save(); } });
+}
+
+function setTheme(t: UiTheme) {
+  state.theme = t; applyTheme(t); save();
 }
 
 function setLayout(k: string) {
@@ -297,7 +315,7 @@ function renderSources() {
       const connect = () => { s.url = urlIn.value.trim(); save(); s.connectStream(s.url, bridgeUrl()); };
       const bridgeUi: BridgeUi = {
         http: () => bridgeUrl().replace(/^ws/, 'http'), hud: alertHud, upd,
-        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (url.startsWith('decklink:')) s.settings.depth = 16; } connect(); renderSources(); },
+        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (/^(decklink|ndi|folder):/.test(url)) s.settings.depth = 16; } connect(); renderSources(); },
       };
       card.append(
         h('div', { class: 'row' }, urlIn),
@@ -311,8 +329,8 @@ function renderSources() {
           running ? h('button', { onclick: () => s.stop() }, '■ Trennen') : h('button', { class: 'primary', onclick: connect }, '▶ Verbinden'),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
             h('button', { class: 'mini', title: `Testbild ${p}`, onclick: () => { urlIn.value = `test:${p}`; connect(); } }, p)),
-            deviceButton(bridgeUi), deckLinkButton(bridgeUi))),
-        ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
+            deviceButton(bridgeUi), deckLinkButton(bridgeUi), ndiButton(bridgeUi), folderButton(bridgeUi, (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop?.watchFolder))),
+        ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
       );
     } else if (s.kind === 'pattern') {
       card.append(...patternControls(s));
@@ -329,6 +347,7 @@ function renderSources() {
       card.append(h('div', { class: 'row' },
         running ? h('button', { onclick: () => s.stop() }, '■ Stopp')
           : h('button', { class: 'primary', onclick: () => startLocal(s) }, s.kind === 'file' ? 'Datei wählen …' : s.kind === 'folder' ? 'Ordner wählen …' : '▶ Start')));
+      if (s.kind === 'folder') card.append(h('details', { class: 'hint' }, h('summary', {}, 'Lightroom, Capture One, Resolve'), STILL_WORKFLOW()));
     }
     const ar = audioRow(s, renderSources);
     if (ar) card.append(ar);
@@ -761,7 +780,7 @@ function panelSettings(p: PanelState): Node[] {
     const clk = h('input', { type: 'checkbox', checked: !!p.clockOverlay }) as HTMLInputElement;
     clk.onchange = () => { p.clockOverlay = clk.checked; save(); };
     row('Uhr', h('label', { class: 'inline', title: 'Tageszeit-Timecode (Systemuhr) und Quell-Timecode mit Differenz einblenden; Rate und PTP wie im Uhr-Panel' }, clk, 'Timecode einblenden'));
-    row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])], (v) => { state.display = v as Persisted['display']; save(); renderHeader(); }));
+    row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])], (v) => setDisplaySpace(v as Persisted['display'])));
     rows.push(h('p', { class: 'hint' }, 'Klick = Messpunkt, Ziehen = Messrahmen, Rechtsklick löscht.'));
   }
   if (p.scope === 'hist') {
@@ -1028,7 +1047,7 @@ interface LayoutConfig {
   dock: unknown; panels: PanelState[];
   /** overlay scenes (#1); older files have none */
   scenes?: OverlayScene[]; activeScene?: string;
-  settings: Pick<Persisted, 'unit' | 'tint' | 'skin' | 'falsePreset' | 'zebra' | 'zebraLow' | 'display' | 'maxSamples' | 'targets' | 'stage'>;
+  settings: Pick<Persisted, 'unit' | 'tint' | 'skin' | 'falsePreset' | 'zebra' | 'zebraLow' | 'display' | 'maxSamples' | 'targets' | 'stage'> & { theme?: UiTheme };
   /** CST/LUT chain per source, by source name (LUT files themselves stay in the browser's LUT store) */
   chains?: Record<string, ChainSettings>;
   saved: string;
@@ -1040,14 +1059,17 @@ function storeLayouts(l: Record<string, LayoutConfig>) {
   try { localStorage.setItem(LAYOUTS_KEY, JSON.stringify(l)); } catch { /* ignore */ }
 }
 function currentLayout(): LayoutConfig {
-  const { unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets, stage } = state;
+  const { unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets, stage, theme } = state;
   const chains = Object.fromEntries(sources.filter((s) => s.settings.chain).map((s) => [s.name, structuredClone(s.settings.chain!)]));
-  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), scenes: structuredClone(state.scenes), activeScene: state.activeScene, settings: structuredClone({ unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets, stage }), chains, saved: new Date().toISOString() };
+  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), scenes: structuredClone(state.scenes), activeScene: state.activeScene, settings: structuredClone({ unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets, stage, theme }), chains, saved: new Date().toISOString() };
 }
 function applyLayout(c: LayoutConfig) {
   // mutate in place: panel views hold references to their state objects
   c.panels.forEach((p, i) => { if (state.panels[i]) { delete state.panels[i].stage; Object.assign(state.panels[i], p); } else state.panels.push(p); });
   Object.assign(state, structuredClone(c.settings));
+  // older configurations have no skin: keep the current one
+  if (!isTheme(state.theme)) state.theme = DEFAULT_THEME;
+  applyTheme(state.theme);
   for (const [name, chain] of Object.entries(c.chains ?? {})) {
     const s = sources.find((x) => x.name === name);
     if (!s) continue;
@@ -1135,6 +1157,7 @@ let sceneSave = 0;
 interface DesktopApi {
   displays: () => Promise<{ id: number; label: string; bounds: { width: number; height: number }; primary: boolean }[]>;
   captureSources?: () => Promise<{ id: string; name: string; thumb: string }[]>;
+  watchFolder?: () => Promise<{ name: string; url: string } | null>;
 }
 const desktop = (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop;
 

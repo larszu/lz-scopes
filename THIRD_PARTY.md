@@ -41,10 +41,16 @@ The desktop installers bundle a static **ffmpeg binary** (via `ffmpeg-static`) a
 ## Capture helpers (optional, built locally)
 
 - **DeckLink helper** (`helpers/decklink/`): own code, built against the Blackmagic Desktop Video SDK, which is **not** in this repository (free download after registration). The SDK headers carry Blackmagic Design's permissive licence (use, reproduce, distribute; notice kept in source copies). The terms of the SDK download itself were not reviewed – check them before shipping a built helper. ffmpeg's own DeckLink device is `nonfree` and is not used.
+- **NDI® helper** (`helpers/ndi/`): own code; `ndi-min.h` takes over type and function declarations from the NDI SDK 6.3 headers, which are MIT-licensed file by file (text in [licenses/ndi-sdk-headers-MIT.txt](licenses/ndi-sdk-headers-MIT.txt)). The NDI runtime is **not** shipped; the helper loads the one the user installed. NDI® is a registered trademark of Vizrt NDI AB (<https://ndi.video/>).
 
 ## ArgyllCMS (optional, not shipped)
 
 Display calibration (`server/meter.mjs`) can use **ArgyllCMS `spotread`** if the user has installed it. ArgyllCMS is licensed under the AGPL-3 (some drivers GPL-2+, <https://www.argyllcms.com/doc/ArgyllDoc.html>). LZ Scopes does not bundle, link or modify it: it starts the separately installed program and reads its text output, the way DisplayCAL does. Procedures from DisplayCAL (GPL-3) were read as reference only; no code was taken ([docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md)).
+
+## Display profile helper and DDC tools (#17)
+
+- `helpers/colorsync/lzs-colorsync.swift`: own code on Apple's public ColorSync API, built into `helpers/bin/` and shipped with the macOS app.
+- DDC/CI uses tools only if the user installed them and only as separate programs: [m1ddc](https://github.com/waydabber/m1ddc) (MIT, macOS, brightness) and ddcutil (GPL-2.0-or-later, Linux). Neither is bundled. The VCP values follow ddcutil's feature table (read as facts, no code taken). Windows uses the system DLLs `mscms.dll` and `dxva2.dll` through PowerShell.
 
 ## Development only (not shipped)
 

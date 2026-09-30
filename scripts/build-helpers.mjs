@@ -8,7 +8,7 @@
 // clang++/g++; Windows needs MIDL (see helpers/decklink/README.md).
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -37,4 +37,14 @@ function buildDeckLink() {
   }
 }
 
+// ColorSync display-profile helper (#17): Swift, public ColorSync API, macOS only, universal.
+function buildColorSync() {
+  if (process.platform !== 'darwin') return console.log('colorsync: nur macOS');
+  const src = join(root, 'helpers', 'colorsync', 'lzs-colorsync.swift'), out = join(bin, 'lzs-colorsync');
+  const parts = ['arm64', 'x86_64'].map((a) => { const o = `${out}-${a}`; run('swiftc', ['-O', '-target', `${a}-apple-macos11`, src, '-o', o]); return o; });
+  run('lipo', ['-create', ...parts, '-output', out]);
+  for (const p of parts) rmSync(p);
+}
+
 if (want('decklink')) buildDeckLink();
+if (want('colorsync')) buildColorSync();

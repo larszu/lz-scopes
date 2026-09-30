@@ -22,6 +22,7 @@ import { setClockHooks } from './clock/panel';
 import { clockPanelSettings } from './clock/ui';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
+import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
 import { openLedTool } from './led/ui';
 import { mountOpple } from './opple/ui';
 import { ledSettings, pictureSize } from './led/wall';
@@ -180,8 +181,9 @@ function settingsItems(): Node[] {
   return [
     row('Messpunkt', select(state.stage ?? 'signal', STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string]), (v) => setStage(v as Stage), 'Standard für alle Panels ohne eigenen Messpunkt (Taste C)')),
     row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}${detected.hdr ? ' (HDR-fähig)' : ''}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])],
-      (v) => { state.display = v as Persisted['display']; save(); renderHeader(); }, 'Display-Farbraum der Bildansicht; die Scopes messen immer das Signal')),
+      (v) => setDisplaySpace(v as Persisted['display']), 'Display-Farbraum der Bildansicht; die Scopes messen immer das Signal')),
     row('', h('button', { class: 'mini', title: 'Messfelder ausgeben, Display mit Messgerät (ArgyllCMS) oder manuell prüfen, Uniformität, Bericht, 3D-LUT', onclick: openCalibrationDialog }, 'Kalibrierung / Verifikation …')),
+    ...(sysProfileAvailable() ? [sysProfileSection(h, () => (state.display === 'auto' ? null : state.display))] : []),
     row('Spurfarbe', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); })),
     row('Präzision', select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }, 'Abtastpunkte je Scope')),
     row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); })),
@@ -192,6 +194,14 @@ function settingsItems(): Node[] {
     row('Zebra', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%'),
   ];
 }
+
+/** Display colour space changed: re-render and, if switched on, switch the system profile (#17). */
+function setDisplaySpace(v: Persisted['display']) {
+  state.display = v; save(); renderHeader();
+  applySysProfile(v === 'auto' ? null : v).catch(() => {});
+}
+// The previous session restored the profile on quit; switch it again if the user left it on.
+if (state.display !== 'auto') applySysProfile(state.display).catch(() => {});
 
 function openCalibrationDialog() {
   document.querySelectorAll<HTMLDetailsElement>('#globals details.menu[open]').forEach((d) => (d.open = false));
@@ -760,7 +770,7 @@ function panelSettings(p: PanelState): Node[] {
     const clk = h('input', { type: 'checkbox', checked: !!p.clockOverlay }) as HTMLInputElement;
     clk.onchange = () => { p.clockOverlay = clk.checked; save(); };
     row('Uhr', h('label', { class: 'inline', title: 'Tageszeit-Timecode (Systemuhr) und Quell-Timecode mit Differenz einblenden; Rate und PTP wie im Uhr-Panel' }, clk, 'Timecode einblenden'));
-    row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])], (v) => { state.display = v as Persisted['display']; save(); renderHeader(); }));
+    row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])], (v) => setDisplaySpace(v as Persisted['display'])));
     rows.push(h('p', { class: 'hint' }, 'Klick = Messpunkt, Ziehen = Messrahmen, Rechtsklick löscht.'));
   }
   if (p.scope === 'hist') {

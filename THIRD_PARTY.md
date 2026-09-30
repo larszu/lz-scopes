@@ -46,6 +46,11 @@ The desktop installers bundle a static **ffmpeg binary** (via `ffmpeg-static`) a
 
 Display calibration (`server/meter.mjs`) can use **ArgyllCMS `spotread`** if the user has installed it. ArgyllCMS is licensed under the AGPL-3 (some drivers GPL-2+, <https://www.argyllcms.com/doc/ArgyllDoc.html>). LZ Scopes does not bundle, link or modify it: it starts the separately installed program and reads its text output, the way DisplayCAL does. Procedures from DisplayCAL (GPL-3) were read as reference only; no code was taken ([docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md)).
 
+## Display profile helper and DDC tools (#17)
+
+- `helpers/colorsync/lzs-colorsync.swift`: own code on Apple's public ColorSync API, built into `helpers/bin/` and shipped with the macOS app.
+- DDC/CI uses tools only if the user installed them and only as separate programs: [m1ddc](https://github.com/waydabber/m1ddc) (MIT, macOS, brightness) and ddcutil (GPL-2.0-or-later, Linux). Neither is bundled. The VCP values follow ddcutil's feature table (read as facts, no code taken). Windows uses the system DLLs `mscms.dll` and `dxva2.dll` through PowerShell.
+
 ## Development only (not shipped)
 
 TypeScript, Vite, Vitest, electron-builder, concurrently, `@types/*`: MIT or Apache-2.0, see `package-lock.json`.

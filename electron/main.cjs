@@ -4,6 +4,7 @@
 const { app, BrowserWindow, desktopCapturer, ipcMain, screen, session, shell } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { setupDisplayProfiles } = require('./displayProfile.cjs');
 
 // Own profile (localStorage, single-instance lock) for automated tests: LZS_USER_DATA.
 if (process.env.LZS_USER_DATA) app.setPath('userData', process.env.LZS_USER_DATA);
@@ -37,6 +38,8 @@ async function createWindow() {
     title: 'LZ Scopes', backgroundColor: '#0b0c0e', autoHideMenuBar: true,
     webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
   });
+  // System display profile / monitor mode (#17): restored on quit and after a crash.
+  setupDisplayProfiles(ipcMain, app);
   ipcMain.handle('lzs:displays', () => screen.getAllDisplays().map((d) => ({
     id: d.id, label: d.label, bounds: d.bounds, primary: d.id === screen.getPrimaryDisplay().id,
   })));

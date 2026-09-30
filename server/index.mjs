@@ -30,6 +30,7 @@ import { PtpMonitor, RtpMonitor, ipv4Interfaces, isMulticastV4, nowUtcNs } from 
 import { taiMinusUtc } from './leap.mjs';
 import { FlvH264Demuxer } from './flv.mjs';
 import { handleOut10 } from './out10.mjs';
+import { readStamp, stampAge } from './stamp.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -380,7 +381,10 @@ export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video =
   const vid = codec === 'h264'
     ? ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vfPts, '-fps_mode', 'passthrough', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
       '-bf', '0', '-g', String(gop), '-pix_fmt', 'yuv420p', '-flush_packets', '1', '-f', 'flv', 'pipe:1']
-    : ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vfPts, '-fps_mode', 'passthrough', '-pix_fmt', pixFmt || (depth === 16 ? 'rgba64le' : 'rgba'), '-f', 'rawvideo', 'pipe:1'];
+    // '-threads 1' (encoder): ffmpeg's rawvideo encoder is frame-threaded and then hands each
+    // frame out only when the next one comes in – one frame interval of latency for a memcpy
+    // (measured, docs/research/low-latency.md)
+    : ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vfPts, '-fps_mode', 'passthrough', '-pix_fmt', pixFmt || (depth === 16 ? 'rgba64le' : 'rgba'), '-threads', '1', '-f', 'rawvideo', 'pipe:1'];
   if (!video) return { main: [...head, ...inputArgs(url, transport, { audio: true, video: false, device }), ...pcm(test ? '0:a:0' : audioMap(url), 'pipe:1')], audio: null };
   if (audio === 'fd3') return { main: [...head, ...inputArgs(url, transport, { audio: true, device }), ...vid, ...pcm(audioMap(url), 'pipe:3')], audio: null };
   if (audio === 'split') {
@@ -612,10 +616,18 @@ async function startStream(ws, params) {
   let pts = null;
   /** frames waiting for their PTS line (at most 150 ms, then sent with NaN) */
   const waiting = [];
+  // latency stamps (server/stamp.mjs) read here on the raw 8-bit R′G′B′ path: stamp → out of
+  // ffmpeg, reported with the 1-s stats (the H.264 path carries the bridge clock per frame)
+  const stampAges = [];
+  const canStamp = video && !h264 && depth === 8 && !yp?.yuv;
   const sendFrame = (no, frame, t) => {
     // Drop instead of queueing when the browser falls behind: scopes want the newest frame.
     // This applies to video only – audio is never dropped.
     if (ws.readyState !== ws.OPEN) return;
+    if (canStamp && stampAges.length < 240) {
+      const st = readStamp(frame, width, height, 255);
+      if (st) stampAges.push(stampAge(st.ms, Date.now()));
+    }
     if (ws.bufferedAmount < bytesPerFrame * 2) {
       ws.send(proto === 2 ? Buffer.concat([packetHeader('LZV1', no, t), frame]) : frame, { binary: true });
       sent++;
@@ -710,10 +722,18 @@ async function startStream(ws, params) {
   const stats = setInterval(() => {
     if (ws.readyState !== ws.OPEN) return;
     const st = { type: 'stats', sent, dropped };
+    if (stampAges.length) { st.stampAge = ageStats(stampAges); stampAges.length = 0; }
     if (packetizer) Object.assign(st, { audioSent: packetizer.packets, audioDropped: 0, audioGaps: 0, audioSplit: split, pts: !!pts });
     ws.send(JSON.stringify(st));
   }, 1000);
   ws.on('close', () => { clearInterval(stats); clearInterval(ptsTimer); closed = true; for (const p of procs) p.kill('SIGKILL'); });
+}
+
+/** mean/min/max of stamp ages (ms) for the stats message */
+export function ageStats(v) {
+  let sum = 0, min = Infinity, max = -Infinity;
+  for (const x of v) { sum += x; min = Math.min(min, x); max = Math.max(max, x); }
+  return { mean: sum / v.length, min, max };
 }
 
 /** The line of ffmpeg's stderr that explains an exit (errors first, info lines skipped). */

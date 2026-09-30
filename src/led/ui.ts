@@ -13,6 +13,8 @@ import {
   type LedSettings, type WallConfig,
 } from './wall';
 import { bt709InverseOetf } from '../color';
+import { mountMeterCheck } from './oppleUi';
+import type { PointStat } from './oppleCheck';
 
 export interface LedHost {
   sources: () => Source[];
@@ -204,11 +206,12 @@ export function openLedTool(host: LedHost) {
   let hits: PixelHit[] = [];
   const series: { angle: number; result: WallResult }[] = [];
   const scans: { note: string; index: number }[] = [];
-  let transfer: CameraTransfer = 'code', margin = 15, captures = 4, srcId = '', camNote = '', heatMode: 'dev' | 'cb' | 'cr' | 'delta' = 'dev', range = 5, angle = 0;
+  let transfer: CameraTransfer = 'code', margin = 15, captures = 4, srcId = '', camNote = '', heatMode: 'dev' | 'cb' | 'cr' | 'delta' | 'o-dy' | 'o-duv' = 'dev', range = 5, angle = 0;
   const camCanvas = h('canvas', { class: 'cam', width: 960, height: 540 }) as HTMLCanvasElement;
   const heat = h('canvas', { class: 'heat', width: 960, height: 400 }) as HTMLCanvasElement;
   const camMsg = h('span', { class: 'hint' });
   const resBox = h('div');
+  let meterStats: PointStat[] = [];
   const camImg = h('canvas') as HTMLCanvasElement;
 
   const cams = () => host.sources().filter((x) => x.ready);
@@ -290,12 +293,13 @@ export function openLedTool(host: LedHost) {
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, heat.height);
     const d = delta(), cw = w.cabW * sc, ch = w.cabH * sc;
     for (const c of result.cabinets) {
-      const v = heatMode === 'dev' ? c.dev : heatMode === 'cb' ? c.dCb : heatMode === 'cr' ? c.dCr : d?.find((x) => x.label === c.label)?.delta ?? NaN;
+      const m = meterStats.find((x) => x.point === c.label);
+      const v = heatMode === 'dev' ? c.dev : heatMode === 'cb' ? c.dCb : heatMode === 'cr' ? c.dCr : heatMode === 'o-dy' ? m?.dY ?? NaN : heatMode === 'o-duv' ? (m ? m.duv * 1000 : NaN) : d?.find((x) => x.label === c.label)?.delta ?? NaN;
       ctx.fillStyle = heatColor(v, range); ctx.fillRect(c.c * cw, c.r * ch, cw, ch);
       ctx.strokeStyle = '#000'; ctx.strokeRect(c.c * cw + 0.5, c.r * ch + 0.5, cw - 1, ch - 1);
       ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       const fs = Math.max(8, Math.min(ch / 4.5, cw / 5.5));
-      ctx.font = `600 ${fs}px system-ui`; ctx.fillText(signed(v, heatMode === 'dev' || heatMode === 'delta' ? 1 : 2), c.c * cw + cw / 2, c.r * ch + ch / 2 + fs * 0.45);
+      ctx.font = `600 ${fs}px system-ui`; ctx.fillText(signed(v, heatMode === 'dev' || heatMode === 'delta' || heatMode.startsWith('o-') ? 1 : 2), c.c * cw + cw / 2, c.r * ch + ch / 2 + fs * 0.45);
       ctx.font = `${fs * 0.7}px system-ui`; ctx.fillStyle = '#ddd'; ctx.fillText(`${c.label} #${c.id}`, c.c * cw + cw / 2, c.r * ch + ch / 2 - fs * 0.6);
     }
     // seams: colour lines by their contrast
@@ -307,7 +311,7 @@ export function openLedTool(host: LedHost) {
       ctx.stroke();
     }
     ctx.fillStyle = '#aaa'; ctx.font = '12px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    const what = { dev: 'Helligkeit zum Wandmedian %', cb: 'ΔCb ×100', cr: 'ΔCr ×100', delta: 'Nachher − Vorher (Prozentpunkte)' }[heatMode];
+    const what = { dev: 'Helligkeit zum Wandmedian %', cb: 'ΔCb ×100', cr: 'ΔCr ×100', delta: 'Nachher − Vorher (Prozentpunkte)', 'o-dy': 'Opple: Helligkeit zum Referenz-Cabinet % (Trendmessung)', 'o-duv': 'Opple: Δu′v′ ×1000 zum Referenz-Cabinet (Trendmessung)' }[heatMode];
     ctx.fillText(`${w.name} · ${what} · Skala ±${range} · ${new Date(result.date).toLocaleString('de-DE')} · Nähte als Linien`, 6, Ht + 14);
   }
 
@@ -320,7 +324,7 @@ export function openLedTool(host: LedHost) {
     resBox.replaceChildren(
       h('div', { class: 'row' },
         h('b', {}, `Uniformität (min/max) ${fmt(r.uniformity)} % · Streuung ${fmt(r.spread, 2)} % · ${r.cabinets.length} Cabinets`),
-        lab('Karte', sel(heatMode, [['dev', 'Helligkeit'], ['cb', 'ΔCb'], ['cr', 'ΔCr'], ...(d ? [['delta', 'Vorher/Nachher'] as [string, string]] : [])], (v) => { heatMode = v as typeof heatMode; drawHeat(); })),
+        lab('Karte', sel(heatMode, [['dev', 'Helligkeit'], ['cb', 'ΔCb'], ['cr', 'ΔCr'], ...(d ? [['delta', 'Vorher/Nachher'] as [string, string]] : []), ...(meterStats.length ? [['o-dy', 'Opple: Helligkeit'], ['o-duv', 'Opple: Δu′v′']] as [string, string][] : [])], (v) => { heatMode = v as typeof heatMode; drawHeat(); })),
         lab('Skala ±', sel(String(range), ['1', '2', '5', '10', '20'].map((v) => [v, v] as [string, string]), (v) => { range = Number(v); drawHeat(); }))),
       heat,
       h('div', { class: 'row' },
@@ -444,6 +448,17 @@ export function openLedTool(host: LedHost) {
       msg ? h('p', { class: 'note' }, msg) : '', out);
   }
 
+  // ------------------------------------------------ light meter (Opple)
+  const meterBox = h('div');
+  const meterCheck = mountMeterCheck(meterBox, {
+    wall: () => s.wall,
+    openOutput: () => { const ps = pictureSize(s.wall); host.showPattern('led-flat', ps.w, ps.h); },
+    cameraCsv: () => (result ? reportCsv(result, { Kamera: camNote }, delta()) : null),
+    cameraHeat: () => (result ? heat : null),
+    onStats: (st) => { meterStats = st; if (result) renderResult(); },
+  });
+  dlg.addEventListener('close', () => meterCheck.stop());
+
   // ------------------------------------------------ assemble
   dlg.append(
     h('div', { class: 'row', style: 'justify-content:space-between;margin:0' },
@@ -453,6 +468,7 @@ export function openLedTool(host: LedHost) {
     h('details', { open: true }, h('summary', {}, 'Wand und Cabinets'), wallBox),
     h('details', { open: true }, h('summary', {}, 'Testbilder'), patBox),
     h('details', {}, h('summary', {}, 'Kamera-Prüfung: Heatmap, Nähte, Vorher/Nachher, Blickwinkel, Scan-Linien, tote Pixel'), camBox),
+    h('details', {}, h('summary', {}, 'Messung mit Opple Light Master: Uniformität, Weißpunkt, Flimmern (Trendmessung, ungeprüft)'), meterBox),
     h('details', {}, h('summary', {}, 'Kameramatrix (Unreal-Verfahren)'), matBox),
   );
   renderWall(); renderPatterns(); renderCam(); renderMatrix();

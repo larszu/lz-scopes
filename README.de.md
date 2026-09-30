@@ -190,6 +190,10 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 - **Uniformität** 3×3 bis 9×9 in 100/75/50/25 %: ΔE00 zum Mittelfeld (≤ 4 / ≤ 2, ISO 14861 wie von DisplayCAL zitiert) und Kontrastabweichung.
 - **3D-LUT** `.cube` 33/65 aus einem Matrix/Shaper-Modell der Messungen. Sie entsteht nur, wenn das Modell die gemessenen Felder gut genug vorhersagt, und nur für SDR.
 
+## Lichtmesser
+
+*Lichtmesser (Opple)* in der Seitenleiste verbindet einen Opple Light Master 3 oder 4 per Web Bluetooth (Chrome/Edge oder Desktop-App) und zeigt Beleuchtungsstärke, CCT (McCamy), Duv (Ohno) und xy, mit Verlauf und CSV-Export. Die Werte rechnet LZ Scopes aus den Rohkanälen des Filtersensors; für LED-Primärfarben nur ein Trendmesser. **Ungeprüft:** Ohne Gerät getestet sind nur Protokoll und Umrechnung (mit aufgezeichneten Paketen aus [sunday-light-meter](https://github.com/natmart-in/sunday-light-meter), MIT), nicht die Bluetooth-Verbindung. Details: [docs/research/opple-light-master.md](docs/research/opple-light-master.md).
+
 ## Einbetten
 
 `src/index.ts` exportiert `ScopeView`: ein WebGL-Canvas mit wählbaren Scopes, ohne Framework.

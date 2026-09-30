@@ -26,7 +26,7 @@ function receive(port: number, fmt: string, extra: string[] = []) {
     const out: Buffer[] = []; let log = '';
     p.stdout.on('data', (d) => out.push(d)); p.stderr.on('data', (d) => { log += d; });
     p.on('error', fail);
-    p.on('close', () => ok({ raw: Buffer.concat(out), log }));
+    p.on('close', (code, sig) => ok({ raw: Buffer.concat(out), log: log || `(kein Log, Ende ${code ?? sig})` }));
   });
 }
 
@@ -93,7 +93,7 @@ describe('10-bit output through ffmpeg-static', () => {
     ws.emit('message', Buffer.from(testFrame(w, h).buf), true);
     const { log } = await rx;
     ws.close();
-    expect(log).toMatch(/hevc \(Main 10\)/);
+    expect(log, `Empfänger: ${log}\nBridge: ${ws.sent.join(' | ')}`).toMatch(/hevc \(Main 10\)/);
     expect(log).toMatch(/yuv420p10le\(tv, bt709/);
   }, 30_000);
 });

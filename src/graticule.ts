@@ -8,14 +8,15 @@ import {
 import { CIE_VIEW, CIE_VIEW_UV, WAVE_MAX, WAVE_MIN, type Rect } from './renderer';
 import { latencyLines } from './latency';
 import type { Source } from './sources';
+import { CUBE_SPACE_LABELS, cubeProject, cubeRotation, cubeWireframe, qFromIctcp, qFromLab, qFromRgb, type CubeSettings } from './cube';
 
-export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'hist' | 'stats'
+export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'hist' | 'stats'
   | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits';
 
 export const SCOPE_LABELS: Record<ScopeType, string> = {
   picture: 'Bild', 'wf-luma': 'Waveform Luma', 'wf-color': 'Waveform Farbe', 'wf-skin': 'Waveform Hauttöne', 'wf-rgb': 'Waveform RGB', parade: 'RGB-Parade', yrgb: 'YRGB-Parade',
-  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', diamond: 'Diamond (Gamut)', hist: 'Histogramm', stats: 'Messwerte',
+  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', diamond: 'Diamond (Gamut)', cube: '3D-Farbvolumen', hist: 'Histogramm', stats: 'Messwerte',
   'audio-meter': 'Audio Pegel & Lautheit', 'audio-loudness': 'Audio Lautheitsverlauf', 'audio-spectrum': 'Audio Spektrum', 'audio-phase': 'Audio Goniometer', 'audio-check': 'Audio Ident & A/V-Versatz',
   clock: 'Uhr / Timecode',
 };
@@ -40,6 +41,10 @@ export function plotRect(scope: ScopeType, w: number, h: number, aspect = 16 / 9
   if (scope === 'cie') {
     const s = Math.max(10, Math.min(w - 36, h - 24));
     return { x: (w - s + 24) / 2, y: (h - s - 16) / 2, w: s, h: s };
+  }
+  if (scope === 'cube') {
+    const s = Math.max(10, Math.min(w, h) - 16);
+    return { x: (w - s) / 2, y: (h - s) / 2, w: s, h: s };
   }
   if (scope === 'diamond') {
     // two diamonds on top of each other: width : height = 1 : 2
@@ -583,4 +588,28 @@ export function r103Lines(src: Source): string[] {
   else if (src.yuv.full) out.push('           Quelle Full Range: R 103 ist für Narrow Range definiert, hier nur Prozentvergleich');
   if (src.info && src.info.sourceWidth > r.width) out.push(`           gemessen auf ${r.width}×${r.height} (skaliert; normgerecht bei Analysebreite „nativ“)`);
   return out;
+}
+
+/** 3D volume overlay: wire frame of the target, axis labels (cube.ts, same projection as the shader). */
+export function drawCubeGraticule(ctx: CanvasRenderingContext2D, r: Rect, c: CubeSettings, srcGamut: GamutId, nits: number, probe: number[] | null) {
+  const rot = cubeRotation(c.yaw, c.pitch);
+  const P = (q: number[]): [number, number] => { const [x, y] = cubeProject(rot, q); return [r.x + (x * 0.5 + 0.5) * r.w, r.y + (0.5 - y * 0.5) * r.h]; };
+  ctx.save();
+  ctx.lineWidth = 1; ctx.strokeStyle = GRID;
+  for (const line of cubeWireframe(c.space, c.space === 'rgb' ? srcGamut : c.gamut, srcGamut, nits)) {
+    ctx.beginPath(); line.forEach((q, i) => { const [x, y] = P(q); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }); ctx.stroke();
+  }
+  // neutral axis
+  ctx.strokeStyle = GRID_DIM; ctx.setLineDash([3, 3]);
+  const axis = c.space === 'rgb' ? [qFromRgb([0, 0, 0]), qFromRgb([1, 1, 1])] : c.space === 'lab' ? [qFromLab([0, 0, 0]), qFromLab([100, 0, 0])] : [qFromIctcp([0, 0, 0]), qFromIctcp([1, 0, 0])];
+  ctx.beginPath(); ctx.moveTo(...P(axis[0])); ctx.lineTo(...P(axis[1])); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = LABEL; ctx.font = FONT; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  const lab = (t: string, q: number[]) => { const [x, y] = P(q); ctx.fillText(t, x, y); };
+  if (c.space === 'rgb') { lab('R', qFromRgb([1.12, 0, 0])); lab('G', qFromRgb([0, 1.12, 0])); lab('B', qFromRgb([0, 0, 1.12])); lab('W', qFromRgb([1.08, 1.08, 1.08])); }
+  else if (c.space === 'lab') { lab('+a*', qFromLab([50, 140, 0])); lab('+b*', qFromLab([50, 0, 140])); lab('L* 100', qFromLab([108, 0, 0])); }
+  else { lab('+CT', qFromIctcp([0.5, 0.55, 0])); lab('+CP', qFromIctcp([0.5, 0, 0.55])); lab('I', qFromIctcp([1.05, 0, 0])); }
+  if (probe) { ctx.strokeStyle = '#00dcff'; ctx.lineWidth = 1.5; const [x, y] = P(probe); ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText(`${CUBE_SPACE_LABELS[c.space]}${c.space === 'rgb' ? '' : ` · Drahtgitter ${GAMUTS[c.gamut].name}`}`, r.x + 4, r.y + 4);
+  ctx.restore();
 }

@@ -7,15 +7,16 @@ import { CHAIN_GLSL, baseOf, chainOf, linearGlsl, setChainUniforms, setLinearUni
 import type { Lut } from './lut';
 import type { Source } from './sources';
 import { RGC, RGC_GLSL, rgcScale } from './rgc';
+import { CUBE_GLSL, CUBE_SCALE } from './cube';
 import { R103, R103_GLSL, YUV_FETCH_GLSL, yuvScale } from './ycbcr';
 import { BLUR_FS, CRT_DISPLAY_FS, CRT_FS, CRT_VS_MAIN, PERSIST_FS, PHOSPHORS, beamSigma, persistDecay, type CrtSettings } from './crt';
 
 /** Beam segments per CRT scope and frame (each is a quad, far more fill than a point). */
 const CRT_BUDGET = 150_000;
 
-export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'skin' | 'diamond';
-const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7, diamond: 8 };
-const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1, diamond: 2 };
+export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'skin' | 'diamond' | 'cube';
+const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7, diamond: 8, cube: 9 };
+const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1, diamond: 2, cube: 1 };
 
 export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'gamut' | 'r103';
 const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5, gamut: 6, r103: 7 };
@@ -92,6 +93,7 @@ out vec3 vColor;
 out float vW;
 ${SKIN_GLSL}
 ${LINEAR_GLSL}
+${CUBE_GLSL}
 
 float waveY(float v) { return (v - uWMin) / (uWMax - uWMin) * 2.0 - 1.0; }
 
@@ -142,6 +144,10 @@ bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
     // Tektronix diamond (graticule.ts DIAMOND_SCALE): upper B′+G′ over B′−G′, lower −(R′+G′) over R′−G′
     float a = ch == 0 ? rgb.b : rgb.r, s = a + rgb.g;
     pos = vec2(a - rgb.g, ch == 0 ? s : -s) * vec2(0.92, 0.46);
+    if (uColorize == 1) col = srcCol;
+  } else if (uMode == 9) {
+    // 3D colour volume (cube.ts): rotated, orthographic
+    pos = (uRot * cubeQ(rgb)).xy * ${CUBE_SCALE.toFixed(4)};
     if (uColorize == 1) col = srcCol;
   } else if (uMode == 5) {
     pos = vec2(cb, cr) * 2.0 * 0.9 * uZoom;
@@ -314,6 +320,8 @@ export interface ScatterParams {
   /** waveforms: vertical range (zoom) and trace sections (graticule.channelLayout) */
   range?: [number, number];
   sec?: number[]; secN?: number;
+  /** 3D volume (cube.ts): space id, row-major rotation, source → BT.2020, source white XYZ, cd/m² of 1.0 */
+  cube?: { space: number; rot: number[]; to2020: number[]; white: number[]; nits: number };
   /** analogue beam look (crt.ts) */
   crt?: CrtSettings;
 }
@@ -540,7 +548,7 @@ export class Renderer {
     const acc = this.accum(key, vp.w, vp.h);
     const kind = this.texKind(src, t);
     const crt = p.crt?.on ? p.crt : null;
-    const wave = p.mode !== 'vector' && p.mode !== 'cie' && p.mode !== 'diamond';
+    const wave = p.mode !== 'vector' && p.mode !== 'cie' && p.mode !== 'diamond' && p.mode !== 'cube';
     // Normalise so that the display brightness does not depend on source or panel size.
     const sections = p.mode === 'parade' || p.mode === 'yrgb' ? p.secN ?? (p.mode === 'yrgb' ? 4 : 3) : p.mode === 'ycbcr' ? 3 : 1;
     let stepX: number, stepY: number;
@@ -600,6 +608,13 @@ export class Renderer {
       this.setRois(prog, p.roi);
       gl.uniform3f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol);
       gl.uniform3fv(this.u(prog, 'uTint'), p.tint);
+      if (p.cube) {
+        gl.uniform1i(this.u(prog, 'uCube'), p.cube.space);
+        gl.uniformMatrix3fv(this.u(prog, 'uRot'), false, colMajor(p.cube.rot));
+        gl.uniformMatrix3fv(this.u(prog, 'uTo2020'), false, colMajor(p.cube.to2020));
+        gl.uniform3fv(this.u(prog, 'uWhiteXYZ'), p.cube.white);
+        gl.uniform1f(this.u(prog, 'uCubeNits'), p.cube.nits);
+      }
       gl.bindVertexArray(this.vao);
       if (crt) {
         const sigma = beamSigma(crt.beam, this.dpr);

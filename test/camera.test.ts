@@ -37,7 +37,7 @@ describe('camera log curves (alwan, MIT)', () => {
         prev = v;
       }
     }
-  });
+  }, 30_000); // 24 curves × 4000 steps
   it('matches the PixelManager OCIO LogCameraTransform parameters on the log segment', () => {
     for (const [c, o] of Object.entries(OCIO) as [LogCurve, NonNullable<(typeof OCIO)[LogCurve]>][]) {
       const base = o.base ?? 2;

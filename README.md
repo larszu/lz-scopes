@@ -54,6 +54,7 @@
 - **Your layout.** Dock, stack and resize panels by drag and drop, keep layout configurations as JSON.
 - **Face tracking.** Skin-tone waveform that follows a detected face; pick which face to track (MediaPipe BlazeFace, runs locally).
 - **Vectorscope tools.** Zoom, gamut boundaries and colour-match targets; per-scope settings behind the gear icon.
+- **3D colour volume and ΔE.** Point cloud in the R′G′B′ cube, CIELAB or ICtCp, rotatable by dragging, with the target gamut as wire frame; ΔE 2000 (SDR) or ΔE ITP (HDR) of the probe point against the nearest colour bar or an own target. Extra curves: Sony S-Log2, ACEScct, ARRI LogC3 for EI 160–1600 (ARRI white paper).
 - **A/B comparison and gamut compression.** Picture panel: split, wipe or difference against another stage of the same source (signal / after CST / after LUT) or another source; ACES 1.3 reference gamut compression as a preview for picture and gamut warning.
 - **Outputs and overlay scenes.** Send a scope view or clean picture to another screen, as an MJPEG stream or by ffmpeg to RTMP / SRT / RTSP / UDP. Overlay scenes combine any number of scopes with position, size and opacity, editable in the output window (`E`).
 - **Remote control.** HTTP / WebSocket control API and a Bitfocus Companion module ([docs/control-api.md](docs/control-api.md), `companion/`).

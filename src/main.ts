@@ -14,6 +14,7 @@ import { DEFAULT_SKIN, ROI_CLOSE, defaultPanel as panel, drawPanel, panelSignatu
 import type { OutputHost, OutputWindowApi } from './outputView';
 import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } from './scene';
 import { connectRemote } from './remote';
+import { CUBE_SPACE_LABELS, DEFAULT_CUBE, type CubeSettings, type CubeSpace } from './cube';
 import { DEFAULT_CRT, PERSIST_CHOICES, PHOSPHORS, type CrtSettings, type Phosphor } from './crt';
 import type { Command } from '../server/control.mjs';
 import type { GenConfig } from './audio/dsp/signals';
@@ -55,6 +56,8 @@ interface Persisted {
   /** tone generator settings (never saved as running) and output device */
   gen?: Partial<GenConfig>;
   genSink?: string;
+  /** ΔE reference at the probe point (panel.ts deLines) */
+  deRef?: string;
 }
 
 const DEFAULT_SCOPES: ScopeType[] = ['picture', 'wf-luma', 'vector', 'parade', 'hist', 'cie', 'stats', 'yrgb', 'ycbcr'];
@@ -196,6 +199,8 @@ function settingsItems(): Node[] {
     ...(sysProfileAvailable() ? [sysProfileSection(h, () => (state.display === 'auto' ? null : state.display))] : []),
     row('Spurfarbe', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); })),
     row('Präzision', select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }, 'Abtastpunkte je Scope')),
+    row('ΔE am Messpunkt', select(state.deRef ?? 'off', [['off', 'aus'], ['bars', 'nächster Farbbalken'], ['targets', 'nächstes eigenes Ziel'], ...state.targets.map((t) => [`target:${t.name}`, `Ziel ${t.name}`] as [string, string])],
+      (v) => { state.deRef = v; save(); }, 'ΔE 2000 (SDR, Log) bzw. ΔE ITP (PQ/HLG, BT.2124) des Messpunkts gegen den gewählten Sollwert; eigene Ziele im Vectorscope-⚙ anlegen')),
     row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); })),
     row('Hautton Luma',
       numIn(Math.round(state.skin.lo * 100), 0, 100, (v) => { state.skin.lo = v / 100; }), '–',
@@ -633,6 +638,7 @@ function panelElement(idx: number): HTMLElement {
     body.addEventListener('dblclick', () => toggleSolo(idx));
     attachPointer(p(), body);
     attachSkinDrag(p(), body);
+    attachCubeDrag(p(), body);
     body.addEventListener('contextmenu', (e) => { e.preventDefault(); const s = panelSource(p()); if (s) { s.probe = null; s.roi = null; s.faceMode = 'off'; refreshHeads(); } });
     v = { idx, el, head, body, blit, overlay };
     views.set(idx, v);
@@ -697,7 +703,7 @@ function panelSettings(p: PanelState): Node[] {
     c.onchange = () => { p[key] = c.checked; save(); refreshHeads(); };
     return h('label', { class: 'inline' }, c, label);
   };
-  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond';
+  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube';
   if (scatter) {
     const gain = h('input', { type: 'range', min: -3, max: 3, step: 0.1, value: Math.log2(p.gain), title: 'Doppelklick = Standard' }) as HTMLInputElement;
     gain.oninput = () => { p.gain = 2 ** Number(gain.value); save(); };
@@ -728,6 +734,14 @@ function panelSettings(p: PanelState): Node[] {
     row('Beschriftung', h('label', { class: 'inline' }, names, 'Kanalnamen und Einheit'));
   }
   if (p.scope === 'wf-skin') row('Hautton-Bereich', check('skinBand', 'Band und Linien einblenden (aus = nur farbige Hauttöne)', true));
+  if (p.scope === 'cube') {
+    const c = { ...DEFAULT_CUBE, ...p.cube };
+    const setCube = (patch: Partial<CubeSettings>) => { p.cube = { ...c, ...patch }; Object.assign(c, patch); save(); };
+    row('Raum', select(c.space, (Object.keys(CUBE_SPACE_LABELS) as CubeSpace[]).map((k) => [k, CUBE_SPACE_LABELS[k]] as [string, string]), (v) => setCube({ space: v as CubeSpace }),
+      'R′G′B′-Würfel des Signals, CIELAB (D65, L* nach oben) oder ICtCp (BT.2100, I nach oben). Drehen: im Panel ziehen, Doppelklick = Ausgangsansicht'));
+    row('Drahtgitter', select(c.gamut, [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => setCube({ gamut: v as CubeSettings['gamut'] }), 'Zielgamut als Drahtgitter (CIELAB und ICtCp; im R′G′B′-Würfel ist es der 0–100-%-Würfel)'));
+    row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
+  }
   if (p.scope === 'cie') row('Diagramm', check('cieUv', 'CIE 1976 u′v′ statt 1931 xy'));
   if (scatter) {
     const c = { ...DEFAULT_CRT, ...p.crt };
@@ -814,6 +828,7 @@ function panelSettings(p: PanelState): Node[] {
       const own = panelSource(p);
       row('B', select(ab.b, [
         ...STAGES.map((st) => [`stage:${st}`, `${own?.name ?? 'Quelle'} · ${STAGE_LABELS[st]}`] as [string, string]),
+        ['rgc', `gleiches Bild ${p.rgc ? 'ohne' : 'mit'} ACES-1.3-Gamut-Kompression`],
         ...sources.filter((s) => s !== own && s.kind !== 'audio').map((s) => [`src:${s.id}`, s.name] as [string, string]),
       ], (v) => setAb({ b: v })));
       if (ab.mode === 'wipe') {
@@ -921,6 +936,26 @@ function hitRoiClose(e: PointerEvent, s: Source, body: HTMLElement) {
 }
 
 /** Skin-tone waveform: drag the lo/hi lines, mouse wheel = hue tolerance. */
+/** 3D colour volume: drag = rotate (horizontal = yaw, vertical = pitch), double click = default view. */
+function attachCubeDrag(p: PanelState, body: HTMLElement) {
+  let last: { x: number; y: number } | null = null;
+  body.addEventListener('pointerdown', (e) => {
+    if (p.scope !== 'cube' || e.button !== 0) return;
+    last = { x: e.clientX, y: e.clientY };
+    try { body.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
+  });
+  body.addEventListener('pointermove', (e) => {
+    if (!last || p.scope !== 'cube') return;
+    const c = { ...DEFAULT_CUBE, ...p.cube };
+    const yaw = ((c.yaw + (e.clientX - last.x) * 0.5 + 540) % 360) - 180;
+    const pitch = Math.max(-90, Math.min(90, c.pitch + (e.clientY - last.y) * 0.5));
+    p.cube = { ...c, yaw, pitch };
+    last = { x: e.clientX, y: e.clientY };
+  });
+  body.addEventListener('pointerup', () => { if (last) { last = null; save(); } });
+  body.addEventListener('dblclick', () => { if (p.scope === 'cube') { const c = { ...DEFAULT_CUBE, ...p.cube }; p.cube = { ...c, yaw: DEFAULT_CUBE.yaw, pitch: DEFAULT_CUBE.pitch }; save(); } });
+}
+
 function attachSkinDrag(p: PanelState, body: HTMLElement) {
   const levelAt = (e: PointerEvent | WheelEvent) => {
     const b = body.getBoundingClientRect();
@@ -1092,6 +1127,7 @@ function drawOptions(): DrawOptions {
     zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps, skin: state.skin, display: displaySpace, hdrPreview: state.hdrPreview, targets: state.targets,
     stage: state.stage ?? 'signal',
     sourceById: (id) => sources.find((s) => s.id === id) ?? null,
+    deRef: state.deRef ?? 'off',
   };
 }
 

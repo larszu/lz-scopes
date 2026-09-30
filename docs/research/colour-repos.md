@@ -275,3 +275,15 @@ GPL-3 heißt für LZ Scopes: Solange LZ Scopes nicht selbst unter GPL-3 steht (i
 | A/B-Vergleich | prism README (Idee Split/Wipe/Full/Diff) | Bild-Panel ⚙ „Vergleich A/B“: Split 50 %, Wipe (Position), Differenz max |A − B| der angezeigten Bilder × 1/4/16/64; B = anderer Messpunkt derselben Quelle (Signal / nach CST / nach LUT) oder andere Quelle. Beide Seiten mit denselben Panel-Einstellungen (Overlay, RGC) |
 | ACES-2.0-Ansicht | aces-core Tonescale (in chain.ts vorhanden) | keine eigene Ansicht: CST mit Tone-Mapping „ACES-2.0-Tonescale“ ist die Ansicht über die vorhandene Kette. Vollständiger ODT (JMh, Cusp-Tabellen) nicht, besser als gebackene LUT |
 | 3D-RGB-Würfel | – | nicht umgesetzt |
+
+## Abschluss Issue #8 (30.09.2026)
+
+| Punkt | Quelle (geöffnet) | Umsetzung |
+|---|---|---|
+| 3D-Farbvolumen | Idee: DCTLs `Map_to_3D_Cube` / `sRGB_CIELab_Cube` (GPL, nur Idee), prism LUT-Volumen (MIT, nur Idee); eigener Code | Scope „3D-Farbvolumen“ (`src/cube.ts`): Punktwolke im R′G′B′-Würfel, in CIELAB (D65, L* oben) oder ICtCp (BT.2100, I oben; 1,0 = 203 cd/m² bei HDR, 100 cd/m² bei SDR); drehbar per Ziehen, Doppelklick = Ausgangsansicht; Zielgamut 709/P3/2020 als Drahtgitter (Kanten des linearen RGB-Würfels bis Referenzweiß) |
+| ΔE am Messpunkt | Formeln in color.ts (ΔE 2000 gegen Sharma/Wu/Dalal getestet, ΔE ITP nach BT.2124) | Einstellung „ΔE am Messpunkt“: nächster Farbbalken (75/100 %, PQ 58/100 %, Log: 709-Balken als Szenenlicht) oder eigenes Vectorscope-Ziel; SDR/Log ΔE00 auf Lab des Displaylichts (BT.1886) bzw. Szenenlichts, PQ/HLG ΔITP |
+| S-Log2 | alwan `src/alwan/core/alwan_rgb_core.inc` Z. 200–236 (MIT); Gegenprobe OCIO-LUT `luts/S-Log2_to_linear.spi1d` aus Joegenco/PixelManager (Werte nur im Test zitiert, Datei ohne Lizenz nicht übernommen) | Kurve mit S-Gamut (= S-Gamut3-Primaries, alwan `s-gamut.csv`) |
+| ACEScct | alwan `alwan_rgb_core.inc` Z. 174–196 (Academy S-2016-001) | Kurve mit AP1; ACEScct ist Full-Range: Signalpegel = ACEScct-Wert (anders als die Kamerakurven, die als 10-bit-Code/1023 im Narrow-Signal liegen) |
+| LogC3 andere EI | ARRI, H. Brendel, „ALEXA Log C Curve – Usage in VFX“ (PDF von arri.com, 8 S.), Anhang S. 8, Tabelle „Log C values and exposure values“ | EI 160, 200, 250, 320, 400, 500, 640, 1000, 1280, 1600 (EI 800 = bestehende LogC3). Über EI 1600 gibt es laut ARRI keine kompakte Formel → nicht angeboten |
+| A/B | – | zusätzlich B = „gleiches Bild mit/ohne ACES-1.3-RGC“; „Signal gegen nach CST/LUT“ gab es schon (B = Messpunkt) |
+| ACES-2.0-Ansicht | aces-core Tonescale | bewusst keine eigene Ansicht (siehe oben) |

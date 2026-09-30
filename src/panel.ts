@@ -1,14 +1,16 @@
 // Draws one scope panel (WebGL trace + 2D overlay). Shared by the full app and the
 // embeddable ScopeView (src/embed.ts).
 
-import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, bandRange, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId, type HdrPreview } from './color';
+import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, mul3, rgbToXyzMatrix, bandRange, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId, type HdrPreview } from './color';
 import {
-  drawDiamondGraticule, diamondPoint, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
+  drawCubeGraticule, drawDiamondGraticule, diamondPoint, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
   WAVE_ZOOMS, channelLayout, isAudio, isWaveform, plotRect, type WaveChannels, type WaveOpts, type WaveZoom, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
 import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/panels';
 import type { DisplayParams, PictureMode, PictureParams, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
 import type { Source } from './sources';
+import { barRefs, nearest, type DeRef } from './deltae';
+import { CUBE_SPACE_ID, DEFAULT_CUBE, cubeNits, cubeQOf, cubeRotation, type CubeSettings } from './cube';
 import { DEFAULT_CRT, PHOSPHORS, type CrtSettings } from './crt';
 import { STAGE_LABELS, autoPeaks, baseOf, chainOf, stageView, type Stage } from './chain';
 import { clockOpts, drawClockOverlay, drawClockPanel, type ClockOptions } from './clock/panel';
@@ -42,6 +44,8 @@ export interface PanelState {
   clock?: Partial<ClockOptions>;
   /** scatter scopes: analogue beam look (crt.ts) */
   crt?: Partial<CrtSettings>;
+  /** 3D colour volume: space, rotation, wire-frame gamut */
+  cube?: Partial<CubeSettings>;
   /**
    * picture: A/B comparison. `b` = 'stage:signal|cst|lut' (same source) or 'src:<id>';
    * split = divider at 50 %, wipe = divider at `pos`, diff = max |A − B| × `gain`.
@@ -75,6 +79,8 @@ export interface DrawOptions {
   /** default measuring stage of panels without their own */
   stage?: Stage;
   emptyText?: string;
+  /** ΔE at the probe point: 'off', 'bars' (nearest colour bar), 'targets' (nearest user target) or 'target:<name>' */
+  deRef?: string;
   /** resolves the B source of an A/B comparison */
   sourceById?: (id: string) => Source | null;
 }
@@ -113,14 +119,26 @@ export const ROI_CLOSE = 16;
 export const roiCloseBox = (rx: number, ry: number, rw: number) => [rx + rw - ROI_CLOSE / 2, ry - ROI_CLOSE / 2] as const;
 
 /** Everything a panel's pixels depend on; unchanged → the panel is not redrawn. */
+/** ΔE line of the probe values against the chosen reference (deltae.ts). */
+export function deLines(src: Source, rgb: [number, number, number], o: DrawOptions): string[] {
+  const r = o.deRef ?? 'off';
+  if (r === 'off') return [];
+  const refs: DeRef[] = r === 'bars' ? barRefs(src)
+    : (o.targets ?? []).filter((t) => r === 'targets' || r === `target:${t.name}`).map((t) => ({ name: t.name, rgb: t.rgb }));
+  const n = nearest(src, rgb, refs);
+  if (!n) return [`ΔE        – (kein Bezug „${r.replace('target:', '')}“)`];
+  return [`${n.metric.padEnd(9)} ${n.value.toFixed(2)} zu ${n.ref.name}`];
+}
+
 /** B side of an A/B comparison: another stage of the panel's source or another source. */
 export function abSource(b: string, a: Source, p: PanelState, o: DrawOptions): Source | null {
+  if (b === 'rgc') return a;
   if (b.startsWith('stage:')) return stageView(baseOf(a), b.slice(6) as Stage);
   if (b.startsWith('src:')) { const s = o.sourceById?.(b.slice(4)); return s ? stageView(s, p.stage ?? o.stage ?? 'signal') : null; }
   return null;
 }
 
-export const abLabel = (b: string, s: Source | null) => (b.startsWith('stage:') ? STAGE_LABELS[b.slice(6) as Stage] ?? b : s?.name ?? 'fehlt');
+export const abLabel = (b: string, s: Source | null) => (b === 'rgc' ? 'RGC umgeschaltet' : b.startsWith('stage:') ? STAGE_LABELS[b.slice(6) as Stage] ?? b : s?.name ?? 'fehlt');
 
 function drawAbLabels(ctx: CanvasRenderingContext2D, r: Rect, ab: NonNullable<PanelState['ab']>, a: Source, b: Source | null) {
   ctx.save();
@@ -162,13 +180,13 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
 }
 
 export const defaultPanel = (scope: ScopeType): PanelState => ({
-  scope, sourceId: '', gain: 1, colorize: scope === 'vector' || scope === 'cie', zoom: 1, picture: 'normal', hist: 'rgb', log: false,
+  scope, sourceId: '', gain: 1, colorize: scope === 'vector' || scope === 'cie' || scope === 'cube', zoom: 1, picture: 'normal', hist: 'rgb', log: false,
 });
 
 const PARADE: ScopeType[] = ['parade', 'yrgb', 'wf-rgb'];
 
 const SCATTER: Partial<Record<ScopeType, ScatterMode>> = {
-  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie', diamond: 'diamond',
+  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie', diamond: 'diamond', cube: 'cube',
 };
 
 /**
@@ -203,8 +221,13 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   const mode = SCATTER[p.scope];
   if (mode) {
     const crt = crtOf(p);
+    const cube = p.scope === 'cube' ? { ...DEFAULT_CUBE, ...p.cube } : null;
     renderer.drawScatter(key, src, abs, {
       ...(crt ? { crt } : {}),
+      ...(cube ? { cube: {
+        space: CUBE_SPACE_ID[cube.space], rot: cubeRotation(cube.yaw, cube.pitch), to2020: gamutConvert(GAMUTS[src.gamut], GAMUTS['2020']),
+        white: mul3(rgbToXyzMatrix(GAMUTS[src.gamut]), [1, 1, 1]), nits: cubeNits(src.transfer),
+      } } : {}),
       mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: crt ? [...PHOSPHORS[crt.phosphor].color] as [number, number, number] : [...TINTS[o.tint]] as [number, number, number],
       maxSamples: o.maxSamples, roi: src.activeRois(), skin: o.skin, cieUv: p.scope === 'cie' && !!p.cieUv,
       ...(isWaveform(p.scope) ? { range: WAVE_ZOOMS[p.waveZoom ?? 'full'], ...(({ sec, n }) => ({ sec, secN: n }))(channelLayout(p.scope, p.channels)) } : {}),
@@ -226,6 +249,9 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     }
   } else if (p.scope === 'cie') {
     drawCieGraticule(ctx, r, src.colorspace, { uv: p.cieUv, gamut: src.gamut });
+  } else if (p.scope === 'cube') {
+    const c = { ...DEFAULT_CUBE, ...p.cube };
+    drawCubeGraticule(ctx, r, c, src.gamut, cubeNits(src.transfer), probeRgb ? cubeQOf(c.space, probeRgb, src) : null);
   } else if (p.scope === 'diamond') {
     drawDiamondGraticule(ctx, r);
     if (probeRgb) {
@@ -238,20 +264,22 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   } else if (p.scope === 'hist') {
     drawHistogram(ctx, r, src, p.hist, p.log);
   } else if (p.scope === 'picture') {
-    const pic = (s: Source): PictureParams => ({
+    const pic = (s: Source, rgcOn = !!p.rgc): PictureParams => ({
       mode: p.picture, bands: FALSE_COLOR_PRESETS[o.falsePreset] ?? [], zebra: o.zebra, zebraLow: o.zebraLow,
       roi: s.activeRois(), skin: o.skin, display: displayParams(s, o.display, o.hdrPreview), warn: warnMatrix(s, p.gamutTarget),
-      ...(p.rgc ? { rgc: { toAp1: gamutConvert(GAMUTS[s.gamut], GAMUTS.ap1), fromAp1: gamutConvert(GAMUTS.ap1, GAMUTS[s.gamut]) } } : {}),
+      ...(rgcOn ? { rgc: { toAp1: gamutConvert(GAMUTS[s.gamut], GAMUTS.ap1), fromAp1: gamutConvert(GAMUTS.ap1, GAMUTS[s.gamut]) } } : {}),
     });
     const ab = p.ab && p.ab.mode !== 'off' ? p.ab : null;
     const bSrc = ab ? abSource(ab.b, src, p, o) : null;
+    // B 'rgc': the same picture with the gamut compression switched the other way
+    const picB = (s: Source) => pic(s, ab?.b === 'rgc' ? !p.rgc : !!p.rgc);
     if (ab && bSrc?.ready) {
       if (ab.mode === 'diff') {
-        if (!renderer.drawPictureDiff(key, src, pic(src), bSrc, pic(bSrc), abs, ab.gain ?? 4)) renderer.drawPicture(src, abs, pic(src));
+        if (!renderer.drawPictureDiff(key, src, pic(src), bSrc, picB(bSrc), abs, ab.gain ?? 4)) renderer.drawPicture(src, abs, pic(src));
       } else {
         const pos = ab.mode === 'split' ? 0.5 : Math.max(0, Math.min(1, ab.pos ?? 0.5));
         renderer.drawPicture(src, abs, pic(src), { x: abs.x, y: abs.y, w: abs.w * pos, h: abs.h });
-        renderer.drawPicture(bSrc, abs, pic(bSrc), { x: abs.x + abs.w * pos, y: abs.y, w: abs.w * (1 - pos), h: abs.h });
+        renderer.drawPicture(bSrc, abs, picB(bSrc), { x: abs.x + abs.w * pos, y: abs.y, w: abs.w * (1 - pos), h: abs.h });
       }
     } else renderer.drawPicture(src, abs, pic(src));
     if (ab) drawAbLabels(ctx, r, ab, src, bSrc);
@@ -326,14 +354,14 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       ctx.strokeStyle = '#00dcff'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(x - 10, y); ctx.lineTo(x - 3, y); ctx.moveTo(x + 3, y); ctx.lineTo(x + 10, y);
       ctx.moveTo(x, y - 10); ctx.lineTo(x, y - 3); ctx.moveTo(x, y + 3); ctx.lineTo(x, y + 10); ctx.stroke();
-      drawTextBox(ctx, r.x + r.w - 6, r.y + 6, probeLines(src, probeRgb, o.unit), 'right');
+      drawTextBox(ctx, r.x + r.w - 6, r.y + 6, [...probeLines(src, probeRgb, o.unit), ...deLines(src, probeRgb, o)], 'right');
     }
     if (o.frozen) drawTextBox(ctx, r.x + 6, r.y + 6, ['STANDBILD']);
     if (p.clockOverlay) drawClockOverlay(ctx, clockOpts(p.clock), src, r.x + r.w - 6, r.y + r.h - 6);
     if (p.audioBar !== false && src.audio) drawAudioBar(ctx, src.audio, r);
   } else if (p.scope === 'stats') {
     const lines = statsLines(src, o.displayFps);
-    if (probeRgb) lines.push('', 'Messpunkt', ...probeLines(src, probeRgb, o.unit));
+    if (probeRgb) lines.push('', 'Messpunkt', ...[...probeLines(src, probeRgb, o.unit), ...deLines(src, probeRgb, o)]);
     ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.fillStyle = '#d6d6d6'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     lines.forEach((l, i) => ctx.fillText(l, 12, 10 + i * 15));
   }

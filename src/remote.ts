@@ -16,14 +16,12 @@ export function connectRemote(bridgeUrl: () => string, execute: Executor, state:
       let m: { type?: string; id?: string; command?: unknown };
       try { m = JSON.parse(String(e.data)); } catch { return; }
       if (m.type !== 'command') return;
-      const dbgT = performance.now(); // DEBUG
       const v = validateCommand(m.command);
       let reply: { ok: boolean; error?: string; result?: unknown };
       if (!v.ok) reply = { ok: false, error: v.error };
       else {
         try { reply = { ok: true, result: await execute(v.command) }; } catch (err) { reply = { ok: false, error: (err as Error).message }; }
       }
-      if (v.ok) console.warn(`DEBUG cmd ${JSON.stringify(v.command)} ${Math.round(performance.now() - dbgT)} ms`);
       publish(); // state first: the bridge answers the HTTP request with the new state
       ws?.send(JSON.stringify({ type: 'result', id: m.id, ...reply }));
     };

@@ -963,8 +963,6 @@ const panelSigs = new Map<number, string>();
 
 function frame(now: number) {
   requestAnimationFrame(frame);
-  const dbgT0 = performance.now(), dbgDrawn: string[] = []; // DEBUG
-  setTimeout(() => { const d = performance.now() - dbgT0; if (d > 300) console.warn(`DEBUG frame ${Math.round(d)} ms`, dbgDrawn.join(' ')); }, 0);
   const g = grid.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const displaySpace = state.display === 'auto' ? detected.space : state.display;
@@ -977,9 +975,7 @@ function frame(now: number) {
   if (now - lastStats > 100) {
     lastStats = now;
     const used = new Set(openViews().map((v) => panelSource(state.panels[v.idx])).filter(Boolean) as Source[]);
-    const dbgS = performance.now(); // DEBUG
     used.forEach((s) => { const { kr, kb } = LUMA[s.colorspace]; s.updateStats(kr, kb); });
-    dbgDrawn.push(`stats:${Math.round(performance.now() - dbgS)}`);
   }
 
   for (const v of openViews()) {
@@ -999,9 +995,7 @@ function frame(now: number) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, b.width, b.height);
     renderer.clearRect(bodyRect, [0.043, 0.047, 0.055]);
-    const dbgP = performance.now(); // DEBUG
     drawPanel(renderer, ctx, `p${v.idx}`, p, src, bodyRect, opts);
-    dbgDrawn.push(`${p.scope}:${Math.round(performance.now() - dbgP)}`);
     // The WebGL canvas is off-screen; copy this panel's region into its own canvas.
     v.blit.getContext('2d')!.drawImage(glCanvas, Math.round(bodyRect.x * dpr), Math.round(bodyRect.y * dpr), W, H, 0, 0, W, H);
   }

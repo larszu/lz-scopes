@@ -194,6 +194,7 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 - **Bericht**: ΔE00 und ΔITP (Mittel, Median, 95. Perzentil, Max) gegen BT.1886 mit gemessenem Schwarz, Gamma, sRGB oder PQ. Dazu Graukurve mit effektivem Gamma, CCT und Duv, Kontrast. Export als CSV und HTML, Druck als PDF.
 - **Uniformität** 3×3 bis 9×9 in 100/75/50/25 %: ΔE00 zum Mittelfeld (≤ 4 / ≤ 2, ISO 14861 wie von DisplayCAL zitiert) und Kontrastabweichung.
 - **3D-LUT** `.cube` 33/65 aus einem Matrix/Shaper-Modell der Messungen. Sie entsteht nur, wenn das Modell die gemessenen Felder gut genug vorhersagt, und nur für SDR.
+- **Systemprofil (Desktop-App)**: ⚙ → *Systemprofil mitschalten* setzt das Display-Profil des Betriebssystems passend zum gewählten Display-Farbraum (sRGB, Display P3 oder Rec.709, das Profil je Farbraum ist wählbar). Das vorherige Profil wird vorher gesichert und zurückgesetzt: beim Beenden, mit *Zurücksetzen* und nach einem Absturz beim nächsten Start. Unter macOS läuft das über einen kleinen Swift-Helfer auf der öffentlichen ColorSync-API (`npm run build:helpers`, am eingebauten Display geprüft). Unter Windows läuft es über mscms (ungeprüft). Monitor-Preset und Helligkeit per DDC/CI (VCP 0x14 / 0x10) gehen, wo ein Werkzeug vorhanden ist, ebenfalls ungeprüft. Im Browser nicht verfügbar ([docs/research/systemprofil.md](docs/research/systemprofil.md)).
 
 ## Lichtmesser
 
@@ -271,6 +272,6 @@ Von **Lars Zumpe**, Lars Zumpe Medienproduktion.
 
 Proprietär, © 2026 Lars Zumpe, alle Rechte vorbehalten. Nutzung der veröffentlichten Builds ist kostenlos; Weiterverbreitung und abgeleitete Werke sind es nicht. Siehe [LICENSE](LICENSE). Kein Open Source: Der Code ist öffentlich zum Lesen. Fremdkomponenten behalten ihre Lizenzen: [THIRD_PARTY.md](THIRD_PARTY.md).
 
-Logo, Signet und App-Icon der Lars Zumpe Medienproduktion sind eigene Marke und nicht frei verwendbar (LICENSE, Abschnitt 10). Die Oberfläche folgt dem Brand Guide 2.0 (Public Sans, Navy-Palette); Scope-Spuren und Messfarben sind keine Markenfarben und bleiben unverändert.
+Logo, Signet und App-Icon der Lars Zumpe Medienproduktion sind eigene Marke und nicht frei verwendbar (LICENSE, Abschnitt 10). Die Oberfläche hat drei Varianten (⚙ → Oberfläche): *Neutral* (unbunte Grautöne für farbkritische Arbeit, Standard), *LZM* (Brand Guide 2.0, Navy) und *Original* (fast schwarz). Scope-Spuren und Messfarben sind in allen gleich. Begründung: [docs/research/ui-farben.md](docs/research/ui-farben.md).
 
 NDI® is a registered trademark of Vizrt NDI AB.

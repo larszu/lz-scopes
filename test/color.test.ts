@@ -108,7 +108,10 @@ describe('bridge capture devices', () => {
     // @ts-expect-error plain JS module
     const { parseDeviceList, deviceArgs, validateInput } = await import('../server/index.mjs');
     const av = `[AVFoundation indev @ 0x1] AVFoundation video devices:\n[AVFoundation indev @ 0x1] [0] MEI USB3.0 CAPTURE DEVICE\n[AVFoundation indev @ 0x1] [1] Capture screen 0\n[AVFoundation indev @ 0x1] AVFoundation audio devices:\n[AVFoundation indev @ 0x1] [0] Mic`;
-    expect(parseDeviceList(av, 'avfoundation')).toEqual([{ name: 'MEI USB3.0 CAPTURE DEVICE', url: 'device:avfoundation:MEI USB3.0 CAPTURE DEVICE' }]);
+    expect(parseDeviceList(av, 'avfoundation')).toEqual([
+      { name: 'MEI USB3.0 CAPTURE DEVICE', url: 'device:avfoundation:MEI USB3.0 CAPTURE DEVICE', kind: 'video' },
+      { name: 'Mic', url: 'audio:avfoundation:Mic', kind: 'audio' },
+    ]);
     const ds = `[dshow @ 0x1] "Blackmagic WDM Capture" (video)\n[dshow @ 0x1] "Mikrofon" (audio)`;
     expect(parseDeviceList(ds, 'dshow')[0].url).toBe('device:dshow:Blackmagic WDM Capture');
     expect(deviceArgs('device:avfoundation:X', '50')).toEqual(['-f', 'avfoundation', '-framerate', '50', '-pixel_format', 'uyvy422', '-i', 'X:none']);

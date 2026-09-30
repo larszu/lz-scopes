@@ -83,22 +83,81 @@ const TEST_TONE = 'sine=frequency=1000:sample_rate=48000,pan=stereo|c0=c0|c1=c0'
 export function validateInput(url) {
   if (typeof url !== 'string' || url.length === 0 || url.length > 2048) return 'Keine Quelle angegeben';
   if (url in TEST_PATTERNS || url === 'resolve:') return null;
-  if (/^device:(avfoundation|dshow|v4l2):[^\n\r]{1,200}$/.test(url)) return null;
+  if (/^(device|audio):/.test(url)) return parseDevice(url) ? null : 'Ungültige Geräteangabe (device:<api>:<Name>[#audio=<Name>] oder audio:<api>:<Name>[#ch=<n>])';
   if (/^decklink:\d{1,2}$/.test(url)) return null;
   if (url.startsWith('-')) return 'Ungültige Quelle';
   if (!ALLOWED.test(url)) return 'Nur rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s)://, resolve: oder test:*';
   return null;
 }
 
-/** Local capture devices through ffmpeg (cards that show up as system video devices). */
+/**
+ * Local capture devices through ffmpeg (cards that show up as system devices):
+ *   device:<avfoundation|dshow|v4l2>:<video name>[#audio=<audio name>][#ch=<n>]
+ *   audio:<avfoundation|dshow|alsa>:<audio name>[#ch=<n>]
+ * The audio API follows the video API (v4l2 → alsa). Names are passed as one argv element,
+ * never through a shell; #ch only takes a number (dshow/alsa `-channels`).
+ * Dante: Dante Virtual Soundcard / Dante Via appear as normal system audio devices and
+ * are picked up here like any other interface (no Dante protocol of our own).
+ */
+export function parseDevice(url) {
+  const m = /^(device|audio):(avfoundation|dshow|v4l2|alsa):([^\n\r]{1,400})$/.exec(url ?? '');
+  if (!m) return null;
+  const [, kind, api, rest] = m;
+  if (kind === 'device' && api === 'alsa') return null;
+  if (kind === 'audio' && api === 'v4l2') return null;
+  const parts = rest.split('#');
+  const name = parts[0];
+  let audio = null, ch = 0;
+  for (const p of parts.slice(1)) {
+    const a = /^audio=(.{1,200})$/.exec(p), c = /^ch=(\d{1,2})$/.exec(p);
+    if (a) audio = a[1]; else if (c) ch = Number(c[1]); else return null;
+  }
+  if (kind === 'audio') { if (audio !== null || !name) return null; audio = name; }
+  else if (!name) return null;
+  if (ch && (ch < 1 || ch > 64)) return null;
+  // avfoundation separates video and audio with ':' in one argument
+  if (api === 'avfoundation' && audio !== null && (audio.includes(':') || (kind === 'device' && name.includes(':')))) return null;
+  const audioApi = api === 'v4l2' ? 'alsa' : api;
+  return { kind, api, video: kind === 'device' ? name : null, audio, audioApi, ch };
+}
+
 /** Capture rate that worked for each device (probed once, see probe()). */
 const deviceRates = new Map();
 export const DEVICE_RATES = ['60', '50', '30', '25', '59.94', '29.97', '24'];
 
+/**
+ * ffmpeg input arguments of a device URL. `opts` = mode/pixel format (server/devices.mjs)
+ * plus `audio: false` to leave the sound of a `device:…#audio=` URL out.
+ */
 export function deviceArgs(url, rateOverride, opts = {}) {
+  const d = parseDevice(url);
+  if (!d) return null;
+  const withAudio = opts.audio !== false && d.audio !== null;
+  const chArgs = d.ch && d.audioApi !== 'avfoundation' ? ['-channels', String(d.ch)] : [];
+  if (d.kind === 'audio') {
+    if (d.api === 'avfoundation') return ['-f', 'avfoundation', '-i', `:${d.audio}`];
+    if (d.api === 'dshow') return ['-f', 'dshow', ...chArgs, '-i', `audio=${d.audio}`];
+    return ['-f', 'alsa', ...chArgs, '-i', d.audio];
+  }
   // the device's own capture rate; the analysis rate is limited later by the fps filter
   // explicit mode/pixel format: see server/devices.mjs
-  return deviceInputArgs(url, rateOverride ?? deviceRates.get(url) ?? '30', opts);
+  const v = deviceInputArgs(`device:${d.api}:${d.video}`, rateOverride ?? deviceRates.get(deviceKey(url)) ?? '30', opts);
+  if (!withAudio || !v) return v;
+  // sound of the same device in the same ffmpeg input (avfoundation, dshow) or as a second input (v4l2 + ALSA)
+  if (d.api === 'avfoundation') return [...v.slice(0, -1), `${d.video}:${d.audio}`];
+  if (d.api === 'dshow') return [...v.slice(0, -2), ...chArgs, '-i', `video=${d.video}:audio=${d.audio}`];
+  return [...v, '-f', 'alsa', ...chArgs, '-i', d.audio];
+}
+
+/** Device URL without the #audio/#ch suffix (key of the rate and format caches). */
+const deviceKey = (url) => url.split('#')[0];
+
+/** Stream specifier of the sound for an input URL (second input for test patterns and v4l2+alsa). */
+export function audioMap(url) {
+  if (url in TEST_PATTERNS) return '1:a:0';
+  const d = parseDevice(url);
+  if (d?.kind === 'device' && d.api === 'v4l2' && d.audio !== null) return '1:a:0';
+  return '0:a:0';
 }
 
 function inputArgs(url, transport, { audio = false, video = true, device = {} } = {}) {
@@ -108,7 +167,7 @@ function inputArgs(url, transport, { audio = false, video = true, device = {} } 
     if (audio) a.push('-re', '-f', 'lavfi', '-i', TEST_TONE);
     return a;
   }
-  const dev = deviceArgs(url, undefined, device);
+  const dev = deviceArgs(url, undefined, { ...device, audio });
   if (dev) return dev;
   const a = ['-fflags', 'nobuffer', '-flags', 'low_delay', '-analyzeduration', '1000000', '-probesize', '2000000'];
   // low latency: no reorder queue, no demuxer delay (the probe already ran separately)
@@ -164,18 +223,29 @@ function run(binary, a, timeoutMs) {
 }
 
 async function probe(url, transport, device = {}) {
-  if (url.startsWith('device:')) {
-    // devices: find a capture rate the device accepts, read size/format from the banner
+  const dev = parseDevice(url);
+  if (dev?.kind === 'audio') {
+    // audio device: open it for a moment and read rate/channels from the banner
     const ffmpeg = ffmpegCandidates()[0];
     if (!ffmpeg) throw new Error('ffmpeg nicht gefunden');
+    const r = await run(ffmpeg, ['-hide_banner', ...deviceArgs(url), '-t', '0.3', '-f', 'null', '-'], 15000);
+    const audio = r && r.code === 0 ? parseAudioBanner(r.err) : null;
+    if (audio) return { width: 0, height: 0, fps: 0, audio };
+    throw new Error((r && lastProblem(r.err)) || 'Audiogerät nicht verfügbar');
+  }
+  if (dev) {
+    // devices: find a capture rate the device accepts, read size/format (and sound) from the banner
+    const ffmpeg = ffmpegCandidates()[0];
+    if (!ffmpeg) throw new Error('ffmpeg nicht gefunden');
+    const key = url.split('#')[0];
     let last = '';
-    const rates = device.rate ? [device.rate] : [deviceRates.get(url), ...DEVICE_RATES].filter(Boolean);
+    const rates = device.rate ? [device.rate] : [deviceRates.get(key), ...DEVICE_RATES].filter(Boolean);
     for (const rate of rates) {
       const r = await run(ffmpeg, ['-hide_banner', ...deviceArgs(url, rate, device), '-frames:v', '1', '-f', 'null', '-'], 15000);
       if (!r) continue;
       const info = r.code === 0 ? parseFfmpegBanner(r.err) : null;
-      if (info) { deviceRates.set(url, rate); return { ...info, fps: /\//.test(rate) ? Number(rate.split('/')[0]) / Number(rate.split('/')[1]) : Number(rate), audio: null }; }
-      last = r.err.trim().split('\n').filter((l) => !/output file/i.test(l)).pop() ?? '';
+      if (info) { deviceRates.set(key, rate); return { ...info, fps: /\//.test(rate) ? Number(rate.split('/')[0]) / Number(rate.split('/')[1]) : Number(rate), audio: dev.audio !== null ? info.audio : null }; }
+      last = lastProblem(r.err.split('\n').filter((l) => !/output file/i.test(l)).join('\n'));
     }
     throw new Error(last || 'Gerät nicht verfügbar');
   }
@@ -260,21 +330,65 @@ export function outputSize(w, h, maxWidth) {
  * ffmpeg argument lists. `audio` = 'fd3' (one process, PCM on pipe:3), 'split' (video
  * process + separate audio process on pipe:1, fallback for Windows) or 'none'.
  * `video: false` = audio only (PCM on pipe:1).
+ * `pts: true` (protocol 2): showinfo/ashowinfo print the presentation timestamps on stderr
+ * (parsed by PtsTracker); needs `-loglevel info`. Not in 'split' mode: two ffmpeg
+ * processes open two sessions whose timestamps cannot be compared.
  */
-export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', device = {} }) {
+export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', pts = false, device = {} }) {
   const test = url in TEST_PATTERNS;
-  const head = ['-hide_banner', '-loglevel', 'error', '-nostdin'];
-  const pcm = (map, target) => ['-map', map, '-vn', '-sn', '-dn', '-c:a', 'pcm_f32le', '-f', 'f32le', target];
-  const vid = ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vf, '-fps_mode', 'passthrough', '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-f', 'rawvideo', 'pipe:1'];
-  if (!video) return { main: [...head, ...inputArgs(url, transport, { audio: true, video: false }), ...pcm('0:a:0', 'pipe:1')], audio: null };
-  if (audio === 'fd3') return { main: [...head, ...inputArgs(url, transport, { audio: true }), ...vid, ...pcm(test ? '1:a:0' : '0:a:0', 'pipe:3')], audio: null };
+  const withPts = pts && audio !== 'split';
+  const head = ['-hide_banner', '-loglevel', withPts ? 'info' : 'error', '-nostdin', ...(withPts ? ['-nostats'] : [])];
+  const pcm = (map, target) => ['-map', map, '-vn', '-sn', '-dn', ...(withPts ? ['-af', 'ashowinfo'] : []), '-c:a', 'pcm_f32le', '-f', 'f32le', target];
+  const vid = ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', withPts ? `${vf},showinfo=checksum=0` : vf, '-fps_mode', 'passthrough', '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-f', 'rawvideo', 'pipe:1'];
+  if (!video) return { main: [...head, ...inputArgs(url, transport, { audio: true, video: false, device }), ...pcm(test ? '0:a:0' : audioMap(url), 'pipe:1')], audio: null };
+  if (audio === 'fd3') return { main: [...head, ...inputArgs(url, transport, { audio: true, device }), ...vid, ...pcm(audioMap(url), 'pipe:3')], audio: null };
   if (audio === 'split') {
     return {
-      main: [...head, ...inputArgs(url, transport), ...vid],
-      audio: [...head, ...inputArgs(url, transport, { audio: true, video: false }), ...pcm('0:a:0', 'pipe:1')],
+      main: [...head, ...inputArgs(url, transport, { device }), ...vid],
+      audio: [...head, ...inputArgs(url, transport, { audio: true, video: false, device }), ...pcm(test ? '0:a:0' : audioMap(url), 'pipe:1')],
     };
   }
   return { main: [...head, ...inputArgs(url, transport, { device }), ...vid], audio: null };
+}
+
+/** One showinfo/ashowinfo line → { audio, n, pts, samples } (null for other lines). */
+export function parseShowinfo(line) {
+  const m = /\[Parsed_(a?)showinfo_\d+ @ [^\]]+\]\s+n:\s*(\d+)\s+pts:\s*-?\d+\s+pts_time:\s*(-?[\d.e+-]+)/.exec(line);
+  if (!m) return null;
+  const samples = m[1] ? Number(/nb_samples:(\d+)/.exec(line)?.[1] ?? 0) : 0;
+  return { audio: m[1] === 'a', n: Number(m[2]), pts: Number(m[3]), samples };
+}
+
+/**
+ * Presentation timestamps from ffmpeg's stderr. Video: frame number → PTS. Audio: the
+ * sample index of every audio frame is counted; an anchor {index, pts} is reported for the
+ * first frame, after a jump of more than 5 ms (capture devices jitter by a few ms) and at
+ * least every 5 s.
+ */
+export class PtsTracker {
+  constructor(sampleRate, onAnchor) {
+    this.fs = sampleRate; this.onAnchor = onAnchor;
+    this.video = new Map(); this.samples = 0; this.last = null; this.lastAt = -Infinity; this.rest = '';
+  }
+  /** Feed raw stderr text; returns the lines that are not showinfo output. */
+  feed(text) {
+    const lines = (this.rest + text).split('\n');
+    this.rest = lines.pop() ?? '';
+    const other = [];
+    for (const l of lines) {
+      const r = parseShowinfo(l);
+      if (!r) { if (!/Parsed_a?showinfo/.test(l)) other.push(l); continue; }
+      if (!r.audio) { this.video.set(r.n, r.pts); if (this.video.size > 600) this.video.delete(this.video.keys().next().value); continue; }
+      const predicted = this.last ? this.last.pts + (this.samples - this.last.index) / this.fs : NaN;
+      if (!this.last || Math.abs(r.pts - predicted) > 0.005 || r.pts - this.lastAt >= 5) {
+        this.last = { index: this.samples, pts: r.pts }; this.lastAt = r.pts;
+        this.onAnchor?.(this.samples, r.pts);
+      }
+      this.samples += r.samples;
+    }
+    return other;
+  }
+  videoPts(n) { const v = this.video.get(n); if (v !== undefined) this.video.delete(n); return v; }
 }
 
 /** 16-byte header of proto 2: 4 ASCII bytes, uint32, float64 (little endian). */
@@ -363,6 +477,28 @@ async function startStream(ws, params) {
   const packetizer = audioInfo ? new AudioPacketizer(audioInfo.sampleRate, audioInfo.channels, (buf) => { if (ws.readyState === ws.OPEN) ws.send(buf, { binary: true }); }) : null;
 
   let pending = [], pendingBytes = 0;
+  // PTS (protocol 2 with picture and sound in one process): from showinfo/ashowinfo on stderr
+  let pts = null;
+  /** frames waiting for their PTS line (at most 150 ms, then sent with NaN) */
+  const waiting = [];
+  const sendFrame = (no, frame, t) => {
+    // Drop instead of queueing when the browser falls behind: scopes want the newest frame.
+    // This applies to video only – audio is never dropped.
+    if (ws.readyState !== ws.OPEN) return;
+    if (ws.bufferedAmount < bytesPerFrame * 2) {
+      ws.send(proto === 2 ? Buffer.concat([packetHeader('LZV1', no, t), frame]) : frame, { binary: true });
+      sent++;
+    } else dropped++;
+  };
+  const flushWaiting = (force = false) => {
+    while (waiting.length) {
+      const w = waiting[0];
+      const t = pts?.videoPts(w.no);
+      if (t === undefined && !force && Date.now() - w.at < 150) break;
+      waiting.shift();
+      sendFrame(w.no, w.frame, t ?? NaN);
+    }
+  };
   const onVideo = (chunk) => {
     pending.push(chunk); pendingBytes += chunk.length;
     while (pendingBytes >= bytesPerFrame) {
@@ -370,15 +506,12 @@ async function startStream(ws, params) {
       const frame = all.subarray(0, bytesPerFrame);
       const rest = all.subarray(bytesPerFrame);
       pending = rest.length ? [rest] : []; pendingBytes = rest.length;
-      // Drop instead of queueing when the browser falls behind: scopes want the newest frame.
-      // This applies to video only – audio is never dropped.
-      if (ws.bufferedAmount < bytesPerFrame * 2) {
-        ws.send(proto === 2 ? Buffer.concat([packetHeader('LZV1', frameNo, NaN), frame]) : frame, { binary: true });
-        sent++;
-      } else dropped++;
+      if (pts) { waiting.push({ no: frameNo, frame: Buffer.from(frame), at: Date.now() }); if (waiting.length > 8) flushWaiting(true); flushWaiting(); }
+      else sendFrame(frameNo, frame, NaN);
       frameNo++;
     }
   };
+  const ptsTimer = setInterval(() => flushWaiting(), 50);
 
   const finish = (code, text) => {
     if (closed) return;
@@ -391,18 +524,24 @@ async function startStream(ws, params) {
   };
 
   const launch = (mode) => {
-    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: audioInfo ? mode : 'none', device });
+    const withPts = proto === 2 && video && !!audioInfo && mode === 'fd3';
+    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: audioInfo ? mode : 'none', pts: withPts, device });
     const fd3 = mode === 'fd3' && video && !!audioInfo;
+    pts = withPts ? new PtsTracker(audioInfo.sampleRate, (index, t) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'apts', index, pts: t })); }) : null;
     const t0 = Date.now();
     let audioBytes = 0;
     const onAudio = (c) => { audioBytes += c.length; packetizer.push(c); };
-    const spawnOne = (a, withFd3) => {
+    const spawnOne = (a, withFd3, tracker) => {
       const p = spawn(ffmpeg, a, { stdio: withFd3 ? ['ignore', 'pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'], windowsHide: true });
       procs.add(p);
-      p.stderr.on('data', (d) => { stderr = (stderr + d).slice(-2000); });
+      p.stderr.on('data', (d) => {
+        const text = tracker ? tracker.feed(String(d)).join('\n') : String(d);
+        if (text) stderr = (stderr + '\n' + text).slice(-2000);
+        if (tracker) flushWaiting();
+      });
       return p;
     };
-    const main = spawnOne(args.main, fd3);
+    const main = spawnOne(args.main, fd3, pts);
     main.stdout.on('data', video ? onVideo : onAudio);
     if (fd3) main.stdio[3].on('data', onAudio);
     let side = null;
@@ -416,12 +555,13 @@ async function startStream(ws, params) {
       procs.delete(main);
       // pipe:3 not usable (e.g. handle inheritance on Windows): retry with a second process
       if (fd3 && code !== 0 && !closed && ws.readyState === ws.OPEN && audioBytes === 0 && Date.now() - t0 < 8000
-        && /pipe:3|bad file descriptor|invalid argument|error opening output/i.test(stderr)) {
+        && /pipe:3|bad file descriptor|invalid argument|error opening output/i.test(stderr.split('\n').filter((l) => /error|invalid|bad file/i.test(l)).join('\n'))) {
         stderr = ''; split = true;
         return launch('split');
       }
       side?.kill('SIGKILL');
-      finish(code, stderr.trim().split('\n').pop());
+      flushWaiting(true);
+      finish(code, lastProblem(stderr));
     });
   };
   launch(split ? 'split' : 'fd3');
@@ -429,10 +569,17 @@ async function startStream(ws, params) {
   const stats = setInterval(() => {
     if (ws.readyState !== ws.OPEN) return;
     const st = { type: 'stats', sent, dropped };
-    if (packetizer) Object.assign(st, { audioSent: packetizer.packets, audioDropped: 0, audioGaps: 0, audioSplit: split });
+    if (packetizer) Object.assign(st, { audioSent: packetizer.packets, audioDropped: 0, audioGaps: 0, audioSplit: split, pts: !!pts });
     ws.send(JSON.stringify(st));
   }, 1000);
-  ws.on('close', () => { clearInterval(stats); closed = true; for (const p of procs) p.kill('SIGKILL'); });
+  ws.on('close', () => { clearInterval(stats); clearInterval(ptsTimer); closed = true; for (const p of procs) p.kill('SIGKILL'); });
+}
+
+/** The line of ffmpeg's stderr that explains an exit (errors first, info lines skipped). */
+export function lastProblem(stderr) {
+  const lines = stderr.split('\n').map((l) => l.trim()).filter(Boolean);
+  const err = lines.filter((l) => /error|fail|invalid|no such|not found|denied|unable|could not|cannot/i.test(l));
+  return (err.length ? err : lines).pop() ?? '';
 }
 
 /**
@@ -489,22 +636,38 @@ async function startResolve(ws, params) {
   ws.on('close', () => { py.kill(); });
 }
 
-/** Video capture devices known to ffmpeg on this machine, as device: URLs. */
+/**
+ * Capture devices known to ffmpeg on this machine: video devices as device: URLs and
+ * audio devices as audio: URLs ({ name, url, kind: 'video' | 'audio' }).
+ */
 export function parseDeviceList(stderr, fmt) {
   const out = [];
   if (fmt === 'avfoundation') {
-    let video = false;
+    let kind = '';
     for (const l of stderr.split('\n')) {
-      if (/video devices:/i.test(l)) { video = true; continue; }
-      if (/audio devices:/i.test(l)) video = false;
+      if (/video devices:/i.test(l)) { kind = 'video'; continue; }
+      if (/audio devices:/i.test(l)) { kind = 'audio'; continue; }
       const m = /\]\s\[(\d+)\]\s(.+)$/.exec(l);
-      if (video && m && !/^Capture screen/i.test(m[2])) out.push({ name: m[2].trim(), url: `device:avfoundation:${m[2].trim()}` });
+      if (!m || !kind) continue;
+      const name = m[2].trim();
+      if (kind === 'video' && !/^Capture screen/i.test(name)) out.push({ name, url: `device:avfoundation:${name}`, kind });
+      if (kind === 'audio') out.push({ name, url: `audio:avfoundation:${name}`, kind });
     }
   } else if (fmt === 'dshow') {
     for (const l of stderr.split('\n')) {
-      const m = /"([^"]+)"\s*\(video\)/.exec(l);
-      if (m) out.push({ name: m[1], url: `device:dshow:${m[1]}` });
+      const m = /"([^"]+)"\s*\((video|audio)\)/.exec(l);
+      if (m) out.push({ name: m[1], url: `${m[2] === 'video' ? 'device' : 'audio'}:dshow:${m[1]}`, kind: m[2] });
     }
+  }
+  return out;
+}
+
+/** ALSA capture devices from /proc/asound/pcm (`00-00: … : capture 1`) as audio:alsa:hw:C,D. */
+export function parseAlsaPcm(text) {
+  const out = [];
+  for (const l of text.split('\n')) {
+    const m = /^(\d+)-(\d+):\s*([^:]*):[^:]*:.*capture/.exec(l);
+    if (m) out.push({ name: `${m[3].trim()} (hw:${Number(m[1])},${Number(m[2])})`, url: `audio:alsa:hw:${Number(m[1])},${Number(m[2])}`, kind: 'audio' });
   }
   return out;
 }
@@ -513,8 +676,9 @@ async function listDevices() {
   const ffmpeg = ffmpegCandidates()[0];
   if (!ffmpeg) return [];
   if (process.platform === 'linux') {
-    const { readdir } = await import('node:fs/promises');
-    return (await readdir('/dev').catch(() => [])).filter((f) => /^video\d+$/.test(f)).map((f) => ({ name: f, url: `device:v4l2:/dev/${f}` }));
+    const { readdir, readFile: rf } = await import('node:fs/promises');
+    const video = (await readdir('/dev').catch(() => [])).filter((f) => /^video\d+$/.test(f)).map((f) => ({ name: f, url: `device:v4l2:/dev/${f}`, kind: 'video' }));
+    return [...video, ...parseAlsaPcm(await rf('/proc/asound/pcm', 'utf8').catch(() => ''))];
   }
   const fmt = process.platform === 'win32' ? 'dshow' : 'avfoundation';
   const r = await run(ffmpeg, ['-hide_banner', '-f', fmt, '-list_devices', 'true', '-i', fmt === 'dshow' ? 'dummy' : ''], 10000);

@@ -41,9 +41,10 @@ Jede Binärnachricht beginnt bei `proto: 2` mit einem 16-Byte-Kopf (Little Endia
 |---|---|---|---|
 | 0 | 4 × ASCII | `LZV1` | `LZA1` |
 | 4 | uint32 | Bildnummer seit Start | Anzahl Sample-Frames n im Paket |
-| 8 | float64 | PTS in s (derzeit immer NaN) | Index des ersten Samples seit Start (lückenlos; ein Sprung = Lücke) |
+| 8 | float64 | PTS in s (NaN, wenn unbekannt) | Index des ersten Samples seit Start (lückenlos; ein Sprung = Lücke) |
 | 16 | … | RGBA wie oben | n × channels float32, verschachtelt |
 
+- **Zeitstempel (PTS)**: Liefert ein Stream Bild und Ton aus einem ffmpeg-Prozess, trägt jedes Bild seinen PTS (Sekunden, Zeitbasis der Quelle nach ffmpegs Startversatz). Der Ton bekommt Anker als Textnachricht `{"type":"apts","index":n,"pts":t}`: Sample `index` hat die Zeit `t`, spätere Samples zählen mit `1/sampleRate` weiter. Ein neuer Anker kommt beim ersten Paket, bei einem Sprung über 5 ms und spätestens alle 5 s. Bild-PTS und Ton-PTS sind vergleichbar (A/V-Versatz). Im Ersatzweg mit zwei Prozessen (unten) gibt es keine PTS, weil zwei Sitzungen verschiedene Zeitachsen haben. Die Bridge liest sie aus ffmpegs `showinfo`/`ashowinfo` (Log-Stufe `info`); ein Bild wartet höchstens 150 ms auf seine Zeile, sonst geht es mit NaN hinaus. Mit Bildraten-Begrenzung (`fps=`) stehen die PTS auf dem Raster des `fps`-Filters.
 - Tonpakete zu 20 ms (960 Frames bei 48 kHz). Keine Abtastraten- oder Kanalwandlung: Rate und Layout wie in der Quelle.
 - **Ton wird nie verworfen.** Die Drop-Regel über `bufferedAmount` gilt nur für Bilder.
 - `stats` enthält zusätzlich `audioSent`, `audioDropped` (immer 0), `audioGaps` und `audioSplit` (Ersatzweg aktiv, siehe unten).
@@ -90,3 +91,12 @@ Geräte ohne freien ffmpeg-Weg (DeckLink, NDI) laufen über einen eigenen Helfer
 - `ERR `: Fehlertext; der Helfer beendet sich danach.
 
 `--list` gibt stattdessen eine JSON-Zeile `{"ok":true,"devices":[…]}` bzw. `{"ok":false,"error":"…"}` aus. Die Bridge leitet die Bilder durch ffmpeg (`-f v210` bzw. `-f rawvideo -pix_fmt …` von stdin) und dieselbe Skalierung wie bei Streams; Richtung Browser gilt Protokoll 1. Zum Testen ohne Hardware: `test/fixtures/fake-helper.mjs`.
+
+## Lokale Geräte
+
+Die Bridge liest Capture- und Audiogeräte dieses Rechners über ffmpeg (Liste: `GET /api/devices` → `[{name, url, kind: "video"|"audio"}]`):
+
+- `device:avfoundation|dshow|v4l2:<Videogerät>` – Bild; mit `#audio=<Audiogerät>` zusätzlich der Ton im selben ffmpeg-Prozess (macOS `"<Video>:<Audio>"`, Windows `video=…:audio=…`, Linux zweiter Eingang ALSA, z. B. `#audio=hw:1,0`).
+- `audio:avfoundation|dshow|alsa:<Audiogerät>` – nur Ton, mit allen Kanälen, die der Treiber liefert. `#ch=<n>` fordert bei DirectShow/ALSA `n` Kanäle an.
+
+Namen gehen als ein Argument an ffmpeg, nie über eine Shell. Bei AVFoundation darf kein `:` im Namen stehen (Trennzeichen zwischen Bild und Ton). Geprüft auf macOS mit Kamera und Mikrofon eines MacBook; DirectShow, ALSA, Mehrkanal-Interfaces und Dante Virtual Soundcard sind ungeprüft.

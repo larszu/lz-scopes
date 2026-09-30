@@ -189,10 +189,14 @@ void main() {
   o = vec4(c * uTint, 1.0);
 }`;
 
-const PICTURE_FS = (k: TexKind) => `#version 300 es
+/**
+ * `r103`: variant with the R 103 overlay. Its 7×3 filter makes the shader much larger, which
+ * software GL (SwiftShader) needs seconds to compile – so it is only built when that overlay is used.
+ */
+const PICTURE_FS = (k: TexKind, r103: boolean) => `#version 300 es
 precision highp float; precision highp int;
 ${FETCH(k)}
-${R103_GLSL}
+${r103 ? R103_GLSL : ''}
 uniform ivec2 uSize; uniform int uMode; uniform vec2 uK;
 uniform vec4 uBand[8]; uniform int uBands;
 uniform float uZebra, uZebraLow;
@@ -258,13 +262,14 @@ void main() {
     if (d > 1.2) c = vec3(1.0, 0.1, 0.75);
     else if (d > 1.05) c = vec3(1.0, 0.45, 0.05);
     else if (d > 1.0) c = vec3(1.0, 0.9, 0.1);
-  } else if (uMode == 7) {
+  }${r103 ? `
+  if (uMode == 7) {
     // EBU R 103: filtered R, G, B, Y outside the preferred (amber) or total range (red)
     int lvl = r103Level(p, uSize, uK);
     c = vec3(dot(c, vec3(0.2126, 0.7152, 0.0722)) * 0.6);
     if (lvl == 2) c = vec3(1.0, 0.1, 0.2);
     else if (lvl == 1) c = vec3(1.0, 0.7, 0.1);
-  }
+  }` : ''}
   if (uRoiCount > 0 && !inRoi(p)) c *= 0.55;
   o = vec4(c, 1.0);
 }`;
@@ -592,7 +597,8 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(vp.x, vp.y, vp.w, vp.h);
     const kind = this.texKind(src, t);
-    const prog = this.program(`picture${kind}`, QUAD_VS, PICTURE_FS(kind));
+    const r103 = p.mode === 'r103';
+    const prog = this.program(`picture${kind}${r103 ? 'r103' : ''}`, QUAD_VS, PICTURE_FS(kind, r103));
     gl.useProgram(prog);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, t.tex);
@@ -603,7 +609,7 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
     gl.uniform2f(this.u(prog, 'uK'), kr, kb);
     gl.uniform1f(this.u(prog, 'uZebra'), p.zebra);
     gl.uniform1f(this.u(prog, 'uZebraLow'), p.zebraLow);
-    gl.uniform4f(this.u(prog, 'uR103'), R103.prefLo - R103.tol, R103.prefHi + R103.tol, R103.totalLo - R103.tol, R103.totalHi + R103.tol);
+    if (r103) gl.uniform4f(this.u(prog, 'uR103'), R103.prefLo - R103.tol, R103.prefHi + R103.tol, R103.totalLo - R103.tol, R103.totalHi + R103.tol);
     this.linearUniforms(prog, src);
     gl.uniform1i(this.u(prog, 'uDisp'), p.display.curve);
     gl.uniformMatrix3fv(this.u(prog, 'uGamut'), false, colMajor(p.display.gamut));

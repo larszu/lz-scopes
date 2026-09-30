@@ -84,7 +84,9 @@ describe('10-bit output through ffmpeg-static', () => {
     expect(ws.sent.some((m) => m.includes('live'))).toBe(true);
   }, 30_000);
 
-  it('hevc10: HEVC Main 10 with BT.709 tags', async () => {
+  // The Linux build of ffmpeg-static 6.0 crashes (SIGSEGV) as the HEVC receiver in CI – seen
+  // 30.09.2026; the sender side ran. Checked on macOS only.
+  it.skipIf(process.platform === 'linux')('hevc10: HEVC Main 10 with BT.709 tags', async () => {
     const w = 192, h = 108, port = await freePort();
     const rx = receive(port, 'mpegts');
     await new Promise((r) => setTimeout(r, 400));

@@ -33,10 +33,10 @@ Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen
 | `roi.clear` | `source` optional (ohne = alle): Messrahmen und Messpunkt löschen |
 | `pattern.select` | `pattern` (id oder Name), `source` optional (sonst erste Testbild-Quelle) |
 | `pattern.next`, `pattern.prev` | `source` optional |
-| `output.open` | `name`, `view` (`overlay` Standard, `grid`, `panel`, `clean`), `panel`, `source`, `scene`, `bg` `picture`\|`black`, `display` (Bildschirm-id), `fullscreen` (Standard `true`), `stream`, `target` |
+| `output.open` | `name`, `view` (`overlay` Standard, `grid`, `panel`, `clean`), `panel`, `source`, `scene`, `bg` `picture`\|`black`, `display` (Bildschirm-id), `fullscreen` (Standard `true`), `stream`, `target`, `codec` (10-bit-Stream: `hevc10`, `hevc422`, `v210`, `prores`; braucht `target`) |
 | `output.close` | `name` optional (ohne = alle) |
 | `scene.select` | `scene`; `output` optional (ohne = Vorgabe und alle offenen Overlay-Ausgaben) |
-| `stream.start` | `stream` (Name → `/out/<stream>.mjpeg`), `output` optional (sonst die erste offene Ausgabe; ist keine offen, öffnet sich ein Overlay-Fenster), `target` optional (`rtmp://`, `srt://`, `rtsp://`, `udp://`) |
+| `stream.start` | `stream` (Name → `/out/<stream>.mjpeg`), `output` optional (sonst die erste offene Ausgabe; ist keine offen, öffnet sich ein Overlay-Fenster), `target` optional (`rtmp://`, `srt://`, `rtsp://`, `udp://`, `tcp://`, `rtp://`), `codec` optional (10 bit, wie bei `output.open`; ohne MJPEG, RTMP geht dann nicht) |
 | `stream.stop` | `output` oder `stream` optional (ohne = alle) |
 | `transport` | `op` `play`\|`pause`\|`toggle`\|`stop`\|`next`\|`prev`\|`forward`\|`rewind`\|`start`\|`end`, `source` optional (sonst die gezeigte Videodatei) |
 | `audio.reset` | `source` optional (sonst alle Quellen mit Ton): I, LRA, Max M/S, Max TP, Zähler und Protokoll zurücksetzen (EBU Tech 3341) |

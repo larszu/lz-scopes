@@ -7,6 +7,9 @@
 // Panels, sources and layout presets are 1-based numbers or names/ids, as a user
 // sees them; the main window resolves them.
 
+/** Codecs of the 10-bit output stream (server/out10.mjs, src/deep.ts). */
+export const CODECS10 = ['hevc10', 'hevc422', 'v210', 'prores'];
+
 export const OVERLAY_SCOPES = ['wf-luma', 'wf-color', 'wf-skin', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'cie', 'hist'];
 export const AUDIO_SCOPES = ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check'];
 export const PANEL_SCOPES = ['picture', ...OVERLAY_SCOPES, 'diamond', 'cube', 'stats', ...AUDIO_SCOPES, 'clock'];
@@ -29,10 +32,10 @@ export const COMMANDS = {
   'pattern.select': 'Testbild wählen: pattern (id oder Name), source (optional)',
   'pattern.next': 'Nächstes Testbild: source (optional)',
   'pattern.prev': 'Vorheriges Testbild: source (optional)',
-  'output.open': 'Ausgabe öffnen: name, view grid|panel|clean|overlay, panel, source, scene, bg picture|black, display, fullscreen, stream, target',
+  'output.open': 'Ausgabe öffnen: name, view grid|panel|clean|overlay, panel, source, scene, bg picture|black, display, fullscreen, stream, target, codec (10 bit: hevc10|hevc422|v210|prores)',
   'output.close': 'Ausgabe schließen: name (ohne = alle)',
   'scene.select': 'Overlay-Szene wählen: scene (Name oder id), output (optional; ohne = alle Overlay-Ausgaben und Vorgabe)',
-  'stream.start': 'Stream einer Ausgabe starten: output (optional), stream (Name), target (optional Push-Ziel)',
+  'stream.start': 'Stream einer Ausgabe starten: output (optional), stream (Name), target (optional Push-Ziel), codec (optional, 10 bit)',
   'stream.stop': 'Stream stoppen: output oder stream (ohne = alle)',
   'transport': 'Videodatei: op play|pause|toggle|stop|next|prev|forward|rewind|start|end, source (optional)',
   'audio.reset': 'Lautheit zurücksetzen (I, LRA, Max M/S, Max TP, Zähler, Protokoll; Tech 3341): source (optional; ohne = alle Quellen mit Ton)',
@@ -78,8 +81,16 @@ export function validateCommand(raw) {
   };
   const optTarget = () => {
     if (c.target === undefined || c.target === '') return null;
-    if (!isStr(c.target) || !/^(rtmps?|srt|rtsp|udp):\/\//i.test(c.target) || c.target.length > 2048) return 'target: rtmp(s)://, srt://, rtsp:// oder udp://';
+    if (!isStr(c.target) || !/^(rtmps?|srt|rtsp|udp|tcp|rtp):\/\//i.test(c.target) || c.target.length > 2048) return 'target: rtmp(s)://, srt://, rtsp://, udp://, tcp:// oder rtp://';
     out.target = c.target;
+    return null;
+  };
+  // 10-bit stream codec (server/out10.mjs): needs a push target
+  const optCodec = () => {
+    if (c.codec === undefined || c.codec === '') return null;
+    if (!CODECS10.includes(/** @type {string} */ (c.codec))) return `codec: ${CODECS10.join(', ')}`;
+    if (!out.target) return 'codec braucht target';
+    out.codec = c.codec;
     return null;
   };
   const errors = [];
@@ -113,7 +124,7 @@ export function validateCommand(raw) {
         if (!(isStr(c.display) || typeof c.display === 'number') || !/^\d{1,12}$/.test(String(c.display))) errors.push('display: Bildschirm-id'); else out.display = String(c.display);
       }
       if (c.fullscreen !== undefined && typeof c.fullscreen !== 'boolean') errors.push('fullscreen: true/false'); else out.fullscreen = c.fullscreen ?? true;
-      check(optName('stream')); check(optTarget());
+      check(optName('stream')); check(optTarget()); check(optCodec());
       if (out.target && !out.stream) errors.push('target braucht stream');
       break;
     }
@@ -122,7 +133,7 @@ export function validateCommand(raw) {
     case 'stream.start':
       check(optName('output'));
       if (!name(c.stream)) errors.push('stream: Name aus Buchstaben, Ziffern, _ und - (max. 40)'); else out.stream = c.stream;
-      check(optTarget());
+      check(optTarget()); check(optCodec());
       break;
     case 'stream.stop': check(optName('output')); check(optName('stream')); break;
     case 'audio.reset': check(optRef('source')); break;

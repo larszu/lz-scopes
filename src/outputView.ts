@@ -8,6 +8,9 @@
 //   ?view=overlay&src=s1&scene=<id>&bg=picture|black   overlay scene over the picture (black = for a luma key)
 //   &name=<output name>        how the main window (and the control API) addresses this window
 //   &stream=<name>[&target=rtmp://…]   also send JPEG frames to the bridge (/out/<name>.mjpeg, optional push)
+//   &codec=hevc10|hevc422|v210|prores   instead: 10-bit Y′CbCr frames to the bridge, pushed to &target (server/out10.mjs)
+//
+// The WebGL canvas asks for a RGBA16F drawing buffer (src/deep.ts); the HUD says which one it got.
 //
 // Overlay view: E (or the ✎ button) toggles the edit mode – drag scopes, resize them by
 // their handles, add and remove them. Outside the edit mode there is no cursor and no
@@ -23,6 +26,7 @@ import { displayParams, vectorTargets } from './panel';
 import { CURSORS, MAX_ELEMENTS, dragElement, hitTest, newElement, type Handle, type OverlayElement, type OverlayScene } from './scene';
 import { OVERLAY_SCOPES } from '../server/control.mjs';
 import { HUD_STYLE, onThemeChange, storedTheme } from './theme';
+import { deepContext, isCodec10, pipelineText, pixelsToFrame10, readPixels, startStream10, type Codec10 } from './deep';
 
 export interface OutputHost {
   panels: PanelState[];
@@ -41,7 +45,7 @@ export interface OutputHost {
 
 /** What the main window can call on an open output window (control API). */
 export interface OutputWindowApi {
-  startStream: (name: string, target: string) => void;
+  startStream: (name: string, target: string, codec?: string) => void;
   stopStream: () => void;
   stream: () => string;
 }
@@ -66,7 +70,7 @@ export function runOutputView() {
   glCanvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
   root.append(glCanvas);
   document.body.replaceChildren(root);
-  const renderer = new Renderer(glCanvas);
+  const renderer = new Renderer(glCanvas, { deep: true });
 
   const cells: Cell[] = [];
   const sigs = new Map<number, string>();
@@ -112,7 +116,7 @@ export function runOutputView() {
   const frame = () => {
     requestAnimationFrame(frame);
     const g = root.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
-    if (renderer.resize(g.width, g.height, dpr)) clear = true;
+    if (renderer.resize(g.width, g.height, dpr)) { clear = true; document.body.dataset.pipeline = renderer.bufferFormat; showHud(); }
     renderer.beginFrame(clear);
     if (clear) { sigs.clear(); clear = false; }
     const o = { ...host.drawOptions(), emptyText: 'Kein Signal' };
@@ -149,6 +153,7 @@ export function runOutputView() {
       } else drawPanel(renderer, ctx, `o${i}`, c.state, src, body, o);
     });
     editor?.draw();
+    renderer.endFrame();
   };
   requestAnimationFrame(frame);
 
@@ -162,7 +167,11 @@ export function runOutputView() {
   const showHud = () => {
     if (editor?.editing()) { hud.style.opacity = '0'; return; }
     const sc = view === 'overlay' ? scene() : null;
-    hud.textContent = `${outName ? `${outName} · ` : ''}${view}${sc ? ` · ${sc.name}` : ''}${streamMsg ? ` · Stream ${streamMsg}` : ''}  ·  ${editor ? 'E Bearbeiten · ' : ''}F Vollbild · Doppelklick Vollbild`;
+    const buf = renderer.bufferFormat === 'RGBA16F' ? 'WebGL RGBA16F' : 'WebGL RGBA8 (RGBA16F nicht verfügbar)';
+    hud.replaceChildren(
+      `${outName ? `${outName} · ` : ''}${view}${sc ? ` · ${sc.name}` : ''}${streamMsg ? ` · Stream ${streamMsg}` : ''}  ·  ${editor ? 'E Bearbeiten · ' : ''}F Vollbild · Doppelklick Vollbild`,
+      Object.assign(document.createElement('div'), { textContent: `${pipelineText(`${buf}, Beschriftung 8 bit`)}` }),
+    );
     hud.style.opacity = '1'; clearTimeout(hudT); hudT = window.setTimeout(() => (hud.style.opacity = '0'), 2500);
   };
   document.addEventListener('keydown', (e) => {
@@ -177,17 +186,20 @@ export function runOutputView() {
 
   let stopStream: (() => void) | null = null, streamName = '';
   const api: OutputWindowApi = {
-    startStream: (name, target) => {
+    startStream: (name, target, codec) => {
       stopStream?.();
       streamName = name;
-      stopStream = startStream(host, glCanvas, cells, name, target, Number(q.get('fps') ?? 25), (m) => { streamMsg = m; showHud(); });
+      const fps = Number(q.get('fps') ?? 25), status = (m: string) => { streamMsg = m; showHud(); };
+      stopStream = isCodec10(codec ?? null)
+        ? startDeepStream(host, glCanvas, cells, name, target, codec as Codec10, fps, status)
+        : startStream(host, glCanvas, cells, name, target, fps, status);
     },
     stopStream: () => { stopStream?.(); stopStream = null; streamName = ''; streamMsg = ''; },
     stream: () => streamName,
   };
   (window as unknown as { lzsOut: OutputWindowApi }).lzsOut = api;
   const name = q.get('stream');
-  if (name) api.startStream(name, q.get('target') ?? '');
+  if (name) api.startStream(name, q.get('target') ?? '', q.get('codec') ?? '');
 }
 
 function toggleFs() {
@@ -427,4 +439,28 @@ function startStream(host: OutputHost, gl: HTMLCanvasElement, cells: Cell[], nam
     comp.toBlob((blob) => { if (blob && ws.readyState === WebSocket.OPEN) ws.send(blob); busy = false; }, 'image/jpeg', 0.85);
   }, 1000 / fps);
   return () => { stopped = true; clearInterval(timer); ws.close(); };
+}
+
+/**
+ * 10-bit stream: GL (RGBA16F where available) and overlays composited on a float16 canvas,
+ * read back as floats, sent as exact 10-bit narrow-range Y′CbCr (BT.709 tags – the view is
+ * display graphics, not the source signal). Returns stop().
+ */
+function startDeepStream(host: OutputHost, gl: HTMLCanvasElement, cells: Cell[], name: string, target: string, codec: Codec10, fps: number, status: (m: string) => void) {
+  const comp = document.createElement('canvas');
+  const dc = deepContext(comp);
+  return startStream10(host.bridgeUrl(), name, target, codec, fps, () => {
+    const W = gl.width & ~1, H = gl.height;
+    if (W < 2 || H < 1) return null;
+    if (comp.width !== W || comp.height !== H) { comp.width = W; comp.height = H; }
+    const ctx = dc.ctx;
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(gl, 0, 0);
+    const g = gl.getBoundingClientRect(), dpr = gl.width / Math.max(1, g.width);
+    for (const c of cells) {
+      const b = c.body.getBoundingClientRect();
+      ctx.drawImage(c.overlay, (b.left - g.left) * dpr, (b.top - g.top) * dpr);
+    }
+    return pixelsToFrame10(readPixels(dc, W, H), W, H, '709', 'sdr');
+  }, status);
 }

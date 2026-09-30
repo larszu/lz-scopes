@@ -2,6 +2,7 @@ export type Command = Record<string, unknown> & { cmd: string };
 export const OVERLAY_SCOPES: string[];
 export const PANEL_SCOPES: string[];
 export const OUTPUT_VIEWS: string[];
+export const CODECS10: string[];
 export const TRANSPORT_OPS: string[];
 export const COMMANDS: Record<string, string>;
 export function validateCommand(raw: unknown): { ok: true; command: Command } | { ok: false; error: string };

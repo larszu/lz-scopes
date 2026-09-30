@@ -2,6 +2,7 @@
 // GPU by scattering every sampled pixel as a point into a float accumulation buffer
 // (additive blending), then tone-mapped into the panel's plot rectangle.
 
+import { glDeepBuffer } from './deep';
 import { GAMUTS, HDR_PREVIEW_GLSL, LUMA, hexToRgb, rgbToXyzMatrix, type FalseColorBand, type HdrPreview } from './color';
 import { CHAIN_GLSL, baseOf, chainOf, linearGlsl, setChainUniforms, setLinearUniforms, type LutTex } from './chain';
 import type { Lut } from './lut';
@@ -352,8 +353,15 @@ export class Renderer {
   private lutTex = new Map<string, LutTex & { version: number }>();
   dpr = 1;
 
-  constructor(readonly canvas: HTMLCanvasElement) {
-    const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: true, premultipliedAlpha: false });
+  /** Drawing buffer format actually in use ('RGBA16F' only with the deep option, src/deep.ts). */
+  bufferFormat: 'RGBA16F' | 'RGBA8' = 'RGBA8';
+
+  /**
+   * `deep`: ask for a RGBA16F drawing buffer (output windows). drawingBufferStorage needs
+   * alpha: true (WebGL spec), so endFrame() then sets alpha back to 1 everywhere.
+   */
+  constructor(readonly canvas: HTMLCanvasElement, private readonly opts: { deep?: boolean } = {}) {
+    const gl = canvas.getContext('webgl2', { antialias: false, alpha: !!opts.deep, preserveDrawingBuffer: true, premultipliedAlpha: false });
     if (!gl) throw new Error('WebGL2 wird von diesem Browser nicht unterstützt.');
     if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float fehlt – Scopes brauchen Float-Rendertargets.');
     gl.getExtension('EXT_float_blend');
@@ -400,7 +408,20 @@ export class Renderer {
     const W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr));
     if (this.canvas.width === W && this.canvas.height === H) return false;
     this.canvas.width = W; this.canvas.height = H;
+    if (this.opts.deep) this.bufferFormat = glDeepBuffer(this.gl, W, H);
     return true;
+  }
+
+  /** Deep buffer only: make every pixel opaque (the canvas has alpha for drawingBufferStorage). */
+  endFrame() {
+    if (!this.opts.deep) return;
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.colorMask(false, false, false, true);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.colorMask(true, true, true, true);
   }
 
   /** Clear the whole canvas (after layout/size changes); otherwise untouched panels keep their pixels. */

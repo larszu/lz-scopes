@@ -1,7 +1,11 @@
-// Fullscreen pattern output: ?out=<id>&w=&h=&label=  (← → switch, F fullscreen, L label, Esc exit).
+// Fullscreen pattern output: ?out=<id>&w=&h=&label=  (← → switch, F fullscreen, L label, R levels, Esc exit).
 // Measurement patches sent with sendPatch() (src/patchSequencer.ts) take over while active.
+// More than 8 bit (src/deep.ts): float16 canvas where available, 10-bit patterns with exact
+// codes; &levels=code starts in “codes 1:1”. &stream=<name>&codec=hevc10|hevc422|v210|prores
+// [&target=udp://…] sends the pattern as exact 10-bit Y′CbCr to the bridge (server/out10.mjs).
 
-import { PATTERNS, patternById, renderPattern } from './patterns';
+import { PATTERNS, drawCaptions, drawLabel, patternById, renderPattern } from './patterns';
+import { deepContext, isCodec10, pipelineText, pixelsToFrame10, putRaster, rasterToFrame10, readPixels, remapToCodes, startStream10, type LevelMode } from './deep';
 import { drawPatch, listenPatches, type PatchFrame } from './patchSequencer';
 import { avCalibration } from './audio/avcal';
 import { HUD_STYLE, onThemeChange, storedTheme } from './theme';
@@ -18,7 +22,11 @@ export function runOutputWindow() {
   // object-fit keeps the aspect; at native screen size this is 1:1
   canvas.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;image-rendering:pixelated';
   document.body.replaceChildren(canvas);
-  const ctx = canvas.getContext('2d')!;
+  const dc = deepContext(canvas), ctx = dc.ctx;
+  let mode: LevelMode = q.get('levels') === 'code' ? 'code' : 'full';
+  const pipeline = dc.colorType === 'float16' ? 'Canvas 2D float16' : 'Canvas 2D 8 bit (float16 nicht verfügbar)';
+  document.body.dataset.pipeline = dc.colorType;
+  let streamMsg = '';
   const hud = document.createElement('div');
   // chrome follows the UI skin; the pattern and the black surround never do
   const skinHud = () => { const t = HUD_STYLE[storedTheme()]; Object.assign(hud.style, { font: t.font, color: t.fg, background: t.bg, borderRadius: t.radius }); };
@@ -33,20 +41,37 @@ export function runOutputWindow() {
     const p = PATTERNS[idx];
     const r = refreshMs();
     const av = p.id === 'avsync' ? `   Bildwechsel ${r ? `${r.toFixed(1).replace('.', ',')} ms (${Math.round(1000 / r)} Hz)` : '–'} · Blitz-Raster ±${(r / 2).toFixed(1).replace('.', ',')} ms · Bild-Vorlauf ${Math.round(avCalibration().videoLeadMs)} ms${avCalibration().note ? '' : ' (unkalibriert)'}` : '';
-    hud.textContent = `${p.group} · ${p.name} · ${w}×${h}${p.note ? ' · 8 bit: unter 0 % / über 100 % abgeschnitten' : ''}${av}   ← → wechseln · F Vollbild · L Label`;
+    hud.replaceChildren(
+      `${p.group} · ${p.name} · ${w}×${h}${av}   ← → wechseln · F Vollbild · L Label · R Pegel/Codes`,
+      Object.assign(document.createElement('div'), { textContent: `${pipelineText(pipeline, mode)}${streamMsg ? ` · Stream ${streamMsg}` : ''}` }),
+      ...(p.note ? [Object.assign(document.createElement('div'), { textContent: p.note })] : []),
+    );
     hud.style.opacity = '1';
     clearTimeout(hudTimer); hudTimer = window.setTimeout(() => (hud.style.opacity = '0'), 2500);
   };
   const t0 = performance.now();
   let busy = false;
   listenPatches((f) => { patch = f; hud.style.opacity = '0'; draw(); });
+  let dirty = true;
   const draw = async () => {
+    dirty = true;
     if (patch) { drawPatch(ctx, w, h, patch); return; }
     if (busy) return;
     busy = true;
-    await renderPattern(ctx, patternById(PATTERNS[idx].id), w, h, (performance.now() - t0) / 1000, showLabel ? label : '');
+    const def = patternById(PATTERNS[idx].id);
+    if (def.raster) {
+      // exact codes (float16) – or rounded to 8 bit where the canvas has no float16
+      putRaster(dc, def.raster(w, h), !!def.rasterFull, mode);
+      if (def.labels) drawCaptions(ctx, h, def.labels(w, h));
+      if (showLabel && label) drawLabel(ctx, w, h, label);
+    } else {
+      await renderPattern(ctx, def, w, h, (performance.now() - t0) / 1000, showLabel ? label : '');
+      if (mode === 'code') remapToCodes(dc, w, h);
+    }
     busy = false;
   };
+  // readable for the E2E test and for checks by hand (DevTools)
+  (window as unknown as { lzsOut10: unknown }).lzsOut10 = { colorType: dc.colorType, mode: () => mode, pixels: () => readPixels(dc, w, h) };
   // refresh interval of this display (median of rAF deltas): the flash of “A/V-Sync” can
   // only change at these instants, so ±½ interval stays as jitter after calibration
   const deltas: number[] = [];
@@ -62,6 +87,7 @@ export function runOutputWindow() {
     else if (e.key === 'ArrowLeft') idx = (idx - 1 + PATTERNS.length) % PATTERNS.length;
     else if (e.key === 'f' || e.key === 'F') { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); return; }
     else if (e.key === 'l' || e.key === 'L') { showLabel = !showLabel; if (showLabel && !label) label = prompt('Label / Kennung') ?? ''; }
+    else if (e.key === 'r' || e.key === 'R') mode = mode === 'full' ? 'code' : 'full';
     else return;
     draw(); showHud();
   });
@@ -70,4 +96,30 @@ export function runOutputWindow() {
   canvas.addEventListener('dblclick', () => document.documentElement.requestFullscreen());
   document.addEventListener('mousemove', showHud);
   draw(); showHud(); loop();
+
+  // 10-bit stream: raster patterns as exact codes, everything else from the canvas
+  const codec = q.get('codec'), streamName = (q.get('stream') ?? '').replace(/[^\w-]/g, '');
+  if (streamName && isCodec10(codec)) {
+    const opener = window.opener as (Window & { lzs?: { bridgeUrl: () => string } }) | null;
+    let bridge = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
+    try { bridge = opener?.lzs?.bridgeUrl() ?? bridge; } catch { /* other origin */ }
+    let cacheKey = '', cached: ArrayBuffer | null = null;
+    startStream10(bridge, streamName, q.get('target') ?? '', codec, Math.min(60, Math.max(1, Number(q.get('fps')) || 25)), () => {
+      if (!dirty || busy) return null;
+      dirty = false;
+      const def = patternById(PATTERNS[idx].id), cs = def.colorspace ?? '709', tf = def.transfer ?? 'sdr';
+      if (!patch && def.raster) {
+        const key = `${def.id}|${w}|${h}`;
+        if (key !== cacheKey) { cached = rasterToFrame10(def.raster(w, h), !!def.rasterFull, cs, tf); cacheKey = key; }
+        return cached;
+      }
+      const px = readPixels(dc, w, h);
+      if (mode === 'code') {
+        const back = new Float32Array(px.length);
+        for (let i = 0; i < px.length; i++) back[i] = (i & 3) === 3 ? px[i] : (px[i] * 1023 - 64) / 876;
+        return pixelsToFrame10(back, w, h, cs, tf);
+      }
+      return pixelsToFrame10(px, w, h, cs, tf);
+    }, (m) => { streamMsg = m; showHud(); });
+  }
 }

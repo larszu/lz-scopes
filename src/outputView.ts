@@ -22,6 +22,7 @@ import { LUMA } from './color';
 import { displayParams, vectorTargets } from './panel';
 import { CURSORS, MAX_ELEMENTS, dragElement, hitTest, newElement, type Handle, type OverlayElement, type OverlayScene } from './scene';
 import { OVERLAY_SCOPES } from '../server/control.mjs';
+import { HUD_STYLE, onThemeChange, storedTheme } from './theme';
 
 export interface OutputHost {
   panels: PanelState[];
@@ -152,7 +153,10 @@ export function runOutputView() {
   requestAnimationFrame(frame);
 
   const hud = document.createElement('div');
-  hud.style.cssText = 'position:fixed;left:10px;bottom:10px;background:rgba(19,32,64,.85);color:#F6F5F0;padding:4px 8px;transition:opacity .5s;pointer-events:none';
+  // chrome follows the UI skin; scopes, picture and the black surround never do
+  const skinHud = () => { const t = HUD_STYLE[storedTheme()]; Object.assign(hud.style, { font: t.font, color: t.fg, background: t.bg, borderRadius: t.radius }); };
+  hud.style.cssText = 'position:fixed;left:10px;bottom:10px;padding:4px 8px;transition:opacity .5s;pointer-events:none';
+  skinHud(); onThemeChange(skinHud);
   document.body.append(hud);
   let hudT = 0, streamMsg = '';
   const showHud = () => {
@@ -241,9 +245,10 @@ function createEditor(host: OutputHost, root: HTMLElement, scene: () => OverlayS
   canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:none;cursor:default';
   root.append(canvas);
   const bar = document.createElement('div');
-  bar.style.cssText = 'position:fixed;left:50%;top:10px;transform:translateX(-50%);display:none;gap:6px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 20px);background:rgba(16,18,21,.92);border:1px solid #333a41;border-radius:6px;padding:6px 8px;cursor:default;z-index:5';
+  const sk = HUD_STYLE[storedTheme()];
+  bar.style.cssText = `position:fixed;left:50%;top:10px;transform:translateX(-50%);display:none;gap:6px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 20px);background:${sk.bg};color:${sk.fg};border:1px solid ${sk.line};border-radius:${sk.radius};padding:6px 8px;cursor:default;z-index:5`;
   document.body.append(bar);
-  const inputCss = 'background:#181b1f;color:#ddd;border:1px solid #333a41;border-radius:4px;padding:2px 6px;font:12px system-ui';
+  const inputCss = `background:${sk.field};color:${sk.fg};border:1px solid ${sk.line};border-radius:${sk.radius};padding:2px 6px;font:${sk.font}`;
 
   const geom = () => {
     const b = root.getBoundingClientRect();
@@ -300,7 +305,7 @@ function createEditor(host: OutputHost, root: HTMLElement, scene: () => OverlayS
     return b;
   };
   const slider = (label: string, value: number, set: (v: number) => void) => {
-    const wrap = el('label', { style: 'display:flex;align-items:center;gap:4px;color:#aaa' }, label);
+    const wrap = el('label', { style: `display:flex;align-items:center;gap:4px;color:${sk.muted}` }, label);
     const r = el('input', { type: 'range', min: '0', max: '100', step: '1', value: String(Math.round(value * 100)), style: 'width:90px' }) as HTMLInputElement;
     r.oninput = () => set(Number(r.value) / 100);
     r.onchange = changed;
@@ -324,7 +329,7 @@ function createEditor(host: OutputHost, root: HTMLElement, scene: () => OverlayS
     if (cur) {
       const sources: [string, string][] = [['', 'Quelle des Fensters'], ...host.sources().map((s, i): [string, string] => [s.id, `${i + 1} ${s.name}`])];
       kids.push(
-        el('span', { style: 'width:1px;height:18px;background:#333a41' }),
+        el('span', { style: `width:1px;height:18px;background:${sk.line}` }),
         selectEl(cur.scope, scopeOptions(), (v) => { cur.scope = v as ScopeType; changed(); }, 'Scope'),
         selectEl(cur.src, sources, (v) => { cur.src = v; changed(); }, 'Quelle dieses Scopes'),
         slider('Deckkraft', cur.opacity, (v) => { cur.opacity = v; }),

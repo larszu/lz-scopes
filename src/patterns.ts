@@ -6,7 +6,8 @@
 import { bt709Oetf, hlgFromNits, pqEncode, type Colorspace } from './color';
 import { LED_PATTERNS } from './led/patterns';
 import { avCalibration } from './audio/avcal';
-import { NOTE_16, PATTERNS_16, PLUGE_16, drawRaster, plugeBoxes, plugeRaster, toFrame16, type Frame16 } from './patterns16';
+import { CodeRaster, NOTE_16, PATTERNS_16, PLUGE_16, drawRaster, plugeBoxes, plugeRaster, toFrame16, type Frame16 } from './patterns16';
+import { ramp10Labels, ramp10Raster } from './deep';
 
 export interface PatternDef {
   id: string;
@@ -24,6 +25,12 @@ export interface PatternDef {
   colorspace?: Colorspace;
   /** shown with the pattern, e.g. what the 8-bit output window cannot carry */
   note?: string;
+  /** exact 10-bit R′G′B′ codes: the output window draws these on its float16 canvas (src/deep.ts) */
+  raster?: (w: number, h: number) => CodeRaster;
+  /** code range of `raster` (false: narrow, 64 = 0 %) */
+  rasterFull?: boolean;
+  /** captions drawn over the raster in the output window [x, y, text] */
+  labels?: (w: number, h: number) => [number, number, string][];
 }
 
 type RGB = [number, number, number];
@@ -453,12 +460,25 @@ for (const p of PATTERNS_16) {
   PATTERNS.push({
     id: p.id, name: p.name, group: 'HDR', transfer: p.transfer, colorspace: p.colorspace, note: NOTE_16,
     draw: (c, w, h) => drawRaster(c, p.raster(w, h), p.full), frame16: (w, h) => toFrame16(p.raster(w, h), p.full, p.colorspace),
+    raster: p.raster, rasterFull: p.full,
   });
 }
 for (const p of PATTERNS) {
   const q = PLUGE_16[p.id];
-  if (q) Object.assign(p, { colorspace: q.colorspace, note: NOTE_16, frame16: (w: number, h: number) => toFrame16(plugeRaster(w, h, q.higher), false, q.colorspace) });
+  if (q) {
+    Object.assign(p, {
+      colorspace: q.colorspace, note: NOTE_16, frame16: (w: number, h: number) => toFrame16(plugeRaster(w, h, q.higher), false, q.colorspace),
+      raster: (w: number, h: number) => plugeRaster(w, h, q.higher), rasterFull: false,
+    });
+  }
 }
+// 10-bit banding test for the output window (src/deep.ts)
+PATTERNS.push({
+  id: 'ramp10', name: '10-bit-Rampe (Banding-Test)', group: '10 bit', colorspace: '709',
+  note: 'Obere Hälften 10 bit, untere dieselben Codes über 8 bit. Sehen beide gleich aus, kommen nur 8 bit an.',
+  draw: (c, w, h) => drawRaster(c, ramp10Raster(w, h), true), frame16: (w, h) => toFrame16(ramp10Raster(w, h), true, '709'),
+  raster: ramp10Raster, rasterFull: true, labels: ramp10Labels,
+});
 
 export const RESOLUTIONS: [number, number][] = [[1280, 720], [1920, 1080], [2560, 1440], [3840, 2160], [1920, 1200], [1024, 768]];
 
@@ -498,12 +518,26 @@ export async function renderPattern(ctx: CanvasRenderingContext2D, def: PatternD
   } else {
     def.draw?.(ctx, w, h, t);
   }
-  if (label) {
-    const size = h * 0.045;
-    ctx.font = `600 ${Math.round(size)}px system-ui, sans-serif`;
-    const tw = ctx.measureText(label).width + size;
-    ctx.fillStyle = 'rgba(0,0,0,0.75)';
-    ctx.fillRect((w - tw) / 2, h * 0.88 - size * 0.8, tw, size * 1.6);
-    text(ctx, label, w / 2, h * 0.88, size, '#fff');
+  if (label) drawLabel(ctx, w, h, label);
+}
+
+/** Label / identifier bar at the bottom of a pattern. */
+export function drawLabel(ctx: CanvasRenderingContext2D, w: number, h: number, label: string) {
+  const size = h * 0.045;
+  ctx.font = `600 ${Math.round(size)}px system-ui, sans-serif`;
+  const tw = ctx.measureText(label).width + size;
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.fillRect((w - tw) / 2, h * 0.88 - size * 0.8, tw, size * 1.6);
+  text(ctx, label, w / 2, h * 0.88, size, '#fff');
+}
+
+/** Small captions (left-aligned) over a pattern, e.g. the bands of the 10-bit ramp. */
+export function drawCaptions(ctx: CanvasRenderingContext2D, h: number, items: [number, number, string][]) {
+  const size = h * 0.018;
+  for (const [x, y, s] of items) {
+    ctx.font = `600 ${Math.round(size)}px system-ui, -apple-system, sans-serif`;
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(x - size * 0.3, y - size * 0.75, ctx.measureText(s).width + size * 0.6, size * 1.5);
+    text(ctx, s, x, y, size, '#fff', 'left');
   }
 }

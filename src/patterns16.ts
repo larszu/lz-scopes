@@ -1,7 +1,8 @@
 // Test patterns with exact 10-bit code values (issue #7). They are built as a raster of
 // R′G′B′ codes and handed to the scopes as 16-bit Y′CbCr frames (src/ycbcr.ts), so −7 %,
-// −2 % and 109 % arrive unclipped. The canvas version (output window) stays 8-bit full-range
-// R′G′B′: there everything below 0 % and above 100 % is clipped – the pattern note says so.
+// −2 % and 109 % arrive unclipped. The output window draws the same codes on a float16 canvas
+// where the browser has one (src/deep.ts); with levels 0–100 % it clips below 0 % and above
+// 100 %, with “codes 1:1” (legal-range monitor) it keeps them.
 
 import type { Colorspace } from './color';
 import { LUMA } from './color';
@@ -160,7 +161,7 @@ export function plugeRaster(w: number, h: number, higher: number) {
 }
 
 /** Note shown for patterns whose exact codes only reach the scopes. */
-export const NOTE_16 = 'Scopes: exakte 10-bit-Codes (16-bit-Y′CbCr-Pfad). Ausgabefenster: 8 bit Full Range – Werte unter 0 % und über 100 % werden dort abgeschnitten.';
+export const NOTE_16 = 'Scopes: exakte 10-bit-Codes (16-bit-Y′CbCr-Pfad). Ausgabefenster: exakte Codes auf float16-Canvas, wo verfügbar; Pegel Full schneidet unter 0 % / über 100 % ab, „Codes 1:1“ (Taste R) behält sie.';
 
 export interface Pattern16 { id: string; name: string; transfer?: 'pq' | 'hlg'; colorspace: Colorspace; full: boolean; raster: (w: number, h: number) => CodeRaster }
 

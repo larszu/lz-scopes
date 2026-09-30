@@ -1,6 +1,6 @@
 # Audiogenerator und Audioanalyser für LZ Scopes – Recherche
 
-Stand: 29.09.2026. Recherche; umgesetzt ist der Muss-Umfang aus (d) in `src/audio` (siehe README, Abschnitt Audio). Normwerte stammen aus den geöffneten PDFs (Links unter [Quellen](#quellen)). Seitenangaben beziehen sich auf die **PDF-Seite** (p). Was als **Einschätzung** markiert ist, ist eine eigene Bewertung und nicht belegt. Angaben aus Sekundärquellen stehen ausdrücklich als solche da.
+Stand: 30.09.2026. Recherche; umgesetzt ist der Muss-Umfang aus (d) in `src/audio` (siehe README, Abschnitt Audio), der Soll-Umfang mit dem Nachlauf #24 (Abschnitt h). Normwerte stammen aus den geöffneten PDFs (Links unter [Quellen](#quellen)). Seitenangaben beziehen sich auf die **PDF-Seite** (p). Was als **Einschätzung** markiert ist, ist eine eigene Bewertung und nicht belegt. Angaben aus Sekundärquellen stehen ausdrücklich als solche da.
 
 Ziel: Generator und Analyser „wie VMA, aber besser“, eingebettet in LZ Scopes (Browser/Electron, Bridge mit ffmpeg).
 
@@ -326,9 +326,61 @@ ffmpeg … -i <url> \
 5. Windows: Funktioniert `pipe:3` mit ffmpeg unter Windows (Handle-Vererbung)? Sonst `-f nut` auf stdout oder ein zweiter Prozess. Der zweite Prozess öffnet eine zweite RTSP-Sitzung, das vertragen manche Kameras nicht.
 6. Liefert `createMediaElementSource` an einem `muted` Video Stille? Test in Electron 44 und Chrome nötig.
 7. Mehrkanal-Ausgabe: Welche `destination.maxChannelCount` meldet Chrome bzw. Electron auf den eingesetzten Interfaces?
-8. Nicht aus Primärquellen belegt: Die **BLITS-Kanalreihenfolge** in Abschnitt 1 (Tech 3304 zeigt sie nur als Grafik), GLITS-Timing (nur Wikipedia) und der Wortlaut von EBU R 49 (nur über Tech 3304 und SOS). Vor der Umsetzung R 49 und die BLITS-Originalbeschreibung (IBS-Journal 2007) beschaffen.
+8. *(geklärt in h.1: R 49 und Tech 3304 Figure 2 geöffnet; GLITS weiter nur Sekundärquelle)* Nicht aus Primärquellen belegt: Die **BLITS-Kanalreihenfolge** in Abschnitt 1 (Tech 3304 zeigt sie nur als Grafik), GLITS-Timing (nur Wikipedia) und der Wortlaut von EBU R 49 (nur über Tech 3304 und SOS). Vor der Umsetzung R 49 und die BLITS-Originalbeschreibung (IBS-Journal 2007) beschaffen.
 9. PPM-Ballistik (IEC 60268-10, DIN/Nordic/BBC) und Korrelationsmesser-Zeitkonstante: Normtext nicht frei verfügbar. Entscheiden, ob PPM überhaupt gebraucht wird oder TP + Loudness reichen.
 10. Eigener DSP-Kern oder loudness-worklet übernehmen (Lizenz MIT)? Empfehlung oben: eigener Kern, fremde Implementierungen als Gegenprobe.
+
+---
+
+## (h) Nachlauf #24 (30.09.2026): Primärquellen, Umsetzung, A/V-Sync der Ausgänge
+
+Neu geöffnet (PDF bzw. HTML, Links unter [Quellen](#quellen)): EBU R 49-1999, EBU Tech 3304 (2009) samt Figure 2, ITU-R BT.1359-1 (erneut, Wortlaut geprüft), ITU-R BS.1770-5 Annex 3, W3C Web Audio API 1.1 (Abschnitt AudioContext), WICG „HTMLVideoElement.requestVideoFrameCallback()“, ffmpeg-devices (avfoundation, dshow, alsa). Die IBS-Originalbeschreibung von BLITS (Line Up, Feb./März 2007) war nicht zugänglich; maßgeblich ist hier die EBU-Beschreibung in Tech 3304 §4.1.
+
+### h.1 Idents (Primärquellen)
+
+- **EBU R 49-1999**, Table 2 (p3), Anmerkung 2: Tonspur 1 „interrupted for 0.25 s every 3 s“, 1000 Hz am Bezugspegel; Anmerkung 3: beide Spuren „coherent (i.e. from the same source) and in phase“. Das bestätigt die bisherige Umsetzung (Sekundärquellen aus c.7).
+- **Tech 3304 §4.1 BLITS** (p6–7): Frequenzen L = R = 880 Hz, C = 1320 Hz, LFE = 82,5 Hz, Ls = Rs = 660 Hz. Abschnitt 1: je Kanal 600 ms bei −18 dBFS, 200 ms Abstand, danach 200 ms Stille (0–4,80 s). **Kanalfolge L, R, C, LFE, Ls, Rs** laut Figure 2 (die Grafik ist in Tech 3304 abgebildet, damit ist die Reihenfolge jetzt aus der EBU-Quelle belegt). Abschnitt 2 (4,80–10,20 s): R 5,1 s Dauerton 1 kHz; L unterbrochen „at 1s, for 300ms, then on-and-off for 300ms, three more times, followed by 2s of steady tone“ – also vier Pausen; danach 300 ms Stille. Abschnitt 3 (10,20–13,40 s): 2 kHz bei −24 dBFS auf allen Kanälen gleichphasig, 3 s, dann 200 ms Stille.
+- **Tech 3304 §4.2 EBU-Mehrkanal-Ident** (p8): 3 s 1 kHz kohärent auf allen Hauptkanälen, 0,5 s Stille, dann jeder Hauptkanal einzeln „in clockwise reproduction order, starting at front left“, je 0,5 s Ton und 0,5 s Pause, zum Schluss 1 s Stille. Identifikationsdauer 6,0 s bei 5.0/5.1, 7,0 s bei 6.1, 8,0 s bei 7.1. LFE: 80 Hz Dauerton. Figure 3 zeigt für 5.1 die Folge Front Left, Centre, Front Right, Right Surround, Left Surround.
+- GLITS bleibt ohne Primärquelle (nur Wikipedia), ebenso bekannt als Einschätzung markiert.
+
+Umsetzung: Generator `blits` und `ebu-multi` (Stereo, 5.1, 7.1; Kanalreihenfolge wie ffmpeg/WAV), Erkennung in `src/audio/dsp/ident.ts` (10-ms-Hüllkurve, Nulldurchgänge, L·R-Korrelation über 32 s). Toleranzen ±40 ms und die Schwelle „Kanal fehlt“ (−50 dBFS) sind eigene Festlegungen.
+
+### h.2 Mehrkanal-Gewichte, BS.1770-5 Annex 3
+
+Tabelle 4 (p23): Elevation |φ| < 30° und 60° ≤ |θ| ≤ 120° → 1,41 (+1,5 dB), sonst 1,00; LFE-Kanäle werden nicht gemessen. Tabelle 5 (p24–25) wendet das auf die BS.2051-Bezeichnungen an: M±060, M±090, M±110 = 1,41; M±030, M±135, M+180, M±SC und alle U-, T- und B-Positionen = 1,00. Die Zuordnung der ffmpeg-Kanalnamen zu Richtungen ist eine **Einschätzung** (BS.2051 selbst nicht geöffnet): FL/FR = M±030, FC = M+000, SL/SR = M±090, BL/BR = M±135, in Layouts ohne SL/SR (5.1, quad) BL/BR = M±110; Top-Kanäle = U/T. Ohne Layout-Namen bleiben 3, 4, 7 und mehr als 8 Kanäle diskret (Gewicht 1,0, Hinweis im Meter).
+
+### h.3 A/V-Versatz
+
+- **ITU-R BT.1359-1**: „a positive value indicates that sound is advanced with respect to vision“ (Note 1). Erkennbarkeit etwa +45/−125 ms, Akzeptanz etwa +90/−185 ms (considering g, Appendix 1 §3). Empfehlungen: gesamte Kette höchstens +90/−185 ms (recommends 2), Quelle bis Sendeablauf +25/−100 ms (recommends 3), Sendeablauf bis Sendereingang +22,5/−30 ms (recommends 4).
+- Umsetzung (`src/audio/dsp/avsync.ts`): Bild-PTS und Ton-PTS aus demselben ffmpeg-Prozess (`showinfo`/`ashowinfo`, Protokoll 2). Blitz = Luma-Sprung; der Einsatz wird mit einem Belichtungsmodell zwischen die Bilder gelegt (Belichtung über die ganze Bilddauer, PTS = Belichtungsbeginn – **Annahme**, echte Kameras belichten kürzer und oft zeilenweise). Piep = Einsatz der 1-kHz-Hüllkurve (Bandpass Q = 2, 1-ms-Blöcke). Median der letzten 10 Paare.
+- Geprüft: synthetisch in vitest (±3 ms) und Ende-zu-Ende über die Bridge mit einer H.264/AAC-MPEG-TS-Datei (50 fps, Bild 60 ms verzögert → gemessen +59,7 ms; 25 fps, Ton 100 ms verzögert → −100,3 ms). **Ungeprüft:** gegen eine echte Kamera bzw. Capture-Karte.
+
+### h.4 Frage: „Wie wird sichergestellt, dass der Sync-Ausgang Video 100 % synchron zum Audio-Sync-Ausgang ist?“
+
+Kurz: **Im Browser lässt sich das nicht sicherstellen, nur messen und kalibrieren.**
+
+- **Ton:** Der Piep wird sample-genau im AudioWorklet erzeugt. Welcher Sample wann den Ausgang verlässt, schätzt der Browser: `getOutputTimestamp()` liefert Kontextzeit und die dazugehörige `performance.now()`-Zeit; `outputLatency` ist laut Web Audio API „the estimation in seconds of audio output latency … depends on the platform and the connected audio output device“ und darf sich während des Laufs ändern, `baseLatency` ist nur die Verarbeitung bis zum Audiosystem. LZ Scopes stellt den Piep jede Sekunde neu nach `getOutputTimestamp()` und zeigt beide Werte im Generator an. Was der Treiber nicht meldet (externe Wandler, HDMI-Audio im Fernseher, Funkstrecken), fehlt in der Schätzung.
+- **Bild:** Für ein Canvas gibt es keinen Anzeige-Zeitstempel. `requestVideoFrameCallback` liefert `expectedDisplayTime` („the time at which the user agent expects the frame to be visible“) nur für `<video>`-Elemente; ein Umweg Canvas → `captureStream()` → `<video>` hätte eine eigene, unbekannte Pipeline-Latenz und wurde deshalb nicht genommen. Dazu kommen Compositor (typisch mindestens ein Bildwechsel), Grafikausgang und die Verarbeitung im Monitor/Beamer bzw. in der Capture-Karte. Der Blitz wird im `requestAnimationFrame` gezeichnet und kann sich nur mit dem Bildwechsel ändern (Raster ±½ Bildwechsel; das Ausgabefenster zeigt die gemessene Bildwechseldauer an).
+- **Deshalb Kalibrierung:** Testbild-Ausgabe und Generator über **dieselbe Strecke** schicken, deren Bild und Ton synchron sind – z. B. HDMI dieses Rechners (Bild und Ton im selben Signal) → Capture-Karte → Bridge (`device:…#audio=…`) → Panel „Audio Ident & A/V-Versatz“. Den Median im Generator mit „Messwert übernehmen“ als **Bild-Vorlauf** speichern (`localStorage`, gilt für alle Fenster dieses Browsers). Danach misst dieselbe Strecke 0 ms.
+- **Was danach bleibt:** ±½ Bildwechsel der Anzeige, ±½ Bild der Capture-Karte, die Schwankung von `outputLatency`, und der Eigenversatz der Capture-Karte zwischen ihrem Bild- und Tonweg (er steckt in der Kalibrierung mit drin und lässt sich ohne ein Referenzgerät nicht davon trennen). Wechselt Ausgabegerät, Bildschirm oder Bildrate, muss neu kalibriert werden. Eine Zusage „100 % synchron“ gibt LZ Scopes deshalb nicht; UI und Testbild zeigen „unkalibriert“ bzw. die Kalibrierung mit Datum.
+- **Ungeprüft:** die Kalibrierung mit echter Capture-Hardware (am Test-Mac keine HDMI-Schleife verfügbar).
+
+### h.5 Eingänge: HDMI-Capture, Laptop-Mikrofon, USB, Dante
+
+- **Browser-Pfad** (`getUserMedia`, Gerätewahl, `echoCancellation`/`noiseSuppression`/`autoGainControl` aus): HDMI-Ton einer USB-Capture-Karte (von Lars am 29.09. mit MEI USB3.0 geprüft: 48 kHz, 2 Kanäle), Laptop-Mikrofon, USB-Interfaces. Chromium liefert höchstens 2 Kanäle (c.2/e.3).
+- **Bridge-Pfad** (neu): `audio:avfoundation|dshow|alsa:<Name>` und `device:…#audio=<Name>`; ffmpeg öffnet das Gerät mit seinen eigenen Kanälen und seiner Rate (Optionen laut ffmpeg-devices: AVFoundation `"[VIDEO]:[AUDIO]"`, DirectShow `video=…:audio=…` mit `-channels`, ALSA `hw:KARTE,GERÄT`). Geprüft auf dem Test-Mac: MacBook-Pro-Mikrofon allein (48 kHz, mono) und FaceTime-Kamera + Mikrofon in einem Prozess, beide mit PTS. **Ungeprüft:** Mehrkanal-Interfaces, DirectShow (Windows), ALSA (Linux).
+- **Dante:** kein eigenes Protokoll (proprietär, Audinate). Dante Virtual Soundcard und Dante Via stellen Dante-Kanäle als Systemaudiogerät bereit; LZ Scopes nimmt sie wie jedes andere Gerät, für mehr als 2 Kanäle über den Bridge-Pfad. Die Produktbeschreibung von Audinate wurde nicht geöffnet; die Angabe beruht auf Lars' Einsatz (Nachtrag im Issue #24). **Ungeprüft** mit echter Dante-Hardware.
+- **macOS-App:** `NSMicrophoneUsageDescription` ergänzt (ohne sie verweigert macOS Mikrofonzugriff in der gepackten App).
+
+### h.6 Abhören des Bridge-Tons
+
+AudioContext mit der Abtastrate des Streams, AudioWorklet mit Ringpuffer (`src/audio/dsp/driftbuffer.ts`): Ziel-Füllstand 120 ms, PI-Regler auf den geglätteten Füllstand (ω ≈ 0,1 rad/s, ζ ≈ 0,7), Tonhöhenänderung höchstens ±0,2 %, lineare Interpolation; Leerlauf → Stille und neues Vorfüllen. In vitest mit 0, +150, −300 und +1000 ppm Taktabweichung und 30 ms Paket-Jitter geprüft. Nur zum Abhören – gemessen wird immer an den unveränderten Samples. Ausgabegerät per `setSinkId`, Kanalpaar wählbar. Die Schnittstelle (`{init}`, `{pcm}`/`{planar}`, `{map}`) ist allgemein gehalten, z. B. für LTC-Wiedergabe (#28).
+
+### h.7 Weiterhin offen
+
+- Windows: `pipe:3`-Ersatzweg und DirectShow-Ton (kein Windows-Rechner zum Test).
+- Echte Hardware: Mehrkanal-Interface, Dante, A/V-Versatz gegen Kamera/Capture, Kalibrierung über HDMI-Schleife.
+- Tech 3341 #7/#8 und Tech 3342 #5/#6 mit den EBU-Programmdateien (nicht im Repo, Urheberrecht).
 
 ---
 
@@ -345,6 +397,10 @@ Primärquellen (geöffnet, als PDF geladen):
 - EBU R 68-2000: https://tech.ebu.ch/docs/r/r068.pdf
 - EBU Tech 3304 (2009): https://tech.ebu.ch/docs/tech/tech3304.pdf
 - libebur128, `ebur128.c`: https://github.com/jiixyj/libebur128 (MIT)
+- EBU R 49-1999: https://tech.ebu.ch/docs/r/r049.pdf (geöffnet 30.09.2026)
+- W3C Web Audio API 1.1 (AudioContext: baseLatency, outputLatency, getOutputTimestamp): https://www.w3.org/TR/webaudio-1.1/
+- WICG HTMLVideoElement.requestVideoFrameCallback(): https://wicg.github.io/video-rvfc/
+- ffmpeg Devices Documentation (avfoundation, dshow, alsa): https://ffmpeg.org/ffmpeg-devices.html
 
 VMA: https://vma-broadcast.com/audiogenerator.htm · https://vma-broadcast.com/audioanalyser.htm (29.09.2026, headless Chrome)
 

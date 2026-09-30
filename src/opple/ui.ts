@@ -98,7 +98,7 @@ export function mountOpple(root: HTMLElement) {
   const sup = bluetoothSupport();
   status.textContent = sup.ok ? 'Light Master wecken, Opple-App schließen (nur eine Verbindung), dann verbinden.' : sup.reason;
   root.replaceChildren(
-    h('p', { class: 'warnbox' }, 'Ungeprüft: Gerät nicht vorhanden. Protokoll und Umrechnung sind mit aufgezeichneten Paketen aus offenen Projekten getestet, die Bluetooth-Verbindung nicht.'),
+    h('p', { class: 'warnbox' }, 'Geprüft mit einem Light Master 3 (Verbindung, Kalibrierfaktoren, Messung) am 30.09.2026. Light Master 4 und Flimmern nur mit aufgezeichneten Paketen getestet.'),
     buttons, status, vals, chart, info,
     h('p', { class: 'hint' }, 'Lux, xy, CCT und Duv rechnet LZ Scopes aus den Rohkanälen (Filtersensor, 6 bzw. 8 Kanäle, Matrizen der Opple-App). Für schmalbandige LED-Primärfarben, z. B. einer LED-Wand, nur als Trendmesser geeignet.'),
   );

@@ -106,7 +106,9 @@ export class OppleMeter extends EventTarget {
       this.status('connected', `${this.model === 'lm4' ? 'Light Master 4' : 'Light Master 3'} verbunden${this.calibration ? '' : ' (ohne Kalibrierfaktoren – Werte ungenauer)'}`);
       this.emit(first);
     } catch (e) {
-      const msg = (e as Error).name === 'NotFoundError' ? 'Kein Gerät gewählt.' : (e as Error).message;
+      // Chromium cancels the chooser at once when the window is not focused; Electron's handler
+      // takes the first Light Master found within 20 s.
+      const msg = (e as Error).name === 'NotFoundError' ? 'Kein Light Master gefunden: Gerät einschalten, in die Nähe legen und mit dem Fenster im Vordergrund erneut verbinden. (In den Bluetooth-Einstellungen des Systems erscheint es nicht – das ist normal.)' : (e as Error).message;
       this.cleanup();
       this.status('error', msg);
       throw e;

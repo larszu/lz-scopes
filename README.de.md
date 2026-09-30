@@ -206,7 +206,7 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 
 ## Lichtmesser
 
-*Lichtmesser (Opple)* in der Seitenleiste verbindet einen Opple Light Master 3 oder 4 per Web Bluetooth (Chrome/Edge oder Desktop-App) und zeigt Beleuchtungsstärke, CCT (McCamy), Duv (Ohno) und xy, mit Verlauf und CSV-Export. Die Werte rechnet LZ Scopes aus den Rohkanälen des Filtersensors; für LED-Primärfarben nur ein Trendmesser. **Ungeprüft:** Ohne Gerät getestet sind nur Protokoll und Umrechnung (mit aufgezeichneten Paketen aus [sunday-light-meter](https://github.com/natmart-in/sunday-light-meter), MIT), nicht die Bluetooth-Verbindung. Details: [docs/research/opple-light-master.md](docs/research/opple-light-master.md).
+*Lichtmesser (Opple)* in der Seitenleiste verbindet einen Opple Light Master 3 oder 4 per Web Bluetooth (Chrome/Edge oder Desktop-App) und zeigt Beleuchtungsstärke, CCT (McCamy), Duv (Ohno) und xy, mit Verlauf und CSV-Export. Die Werte rechnet LZ Scopes aus den Rohkanälen des Filtersensors; für LED-Primärfarben nur ein Trendmesser. **Geprüft** mit einem Light Master 3 in der Desktop-App (Verbindung, Kalibrierfaktoren, Messung); der Light Master 4 und die Flimmermessung nur mit aufgezeichneten Paketen aus [sunday-light-meter](https://github.com/natmart-in/sunday-light-meter) (MIT) bzw. opple-bridge. Das Gerät braucht keine Kopplung und erscheint nicht in den Bluetooth-Einstellungen des Systems: Einschalten, *Verbinden …* klicken, die App nimmt den ersten Light Master in Reichweite. Details: [docs/research/opple-light-master.md](docs/research/opple-light-master.md).
 
 ## Uhr und Timecode
 

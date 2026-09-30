@@ -52,6 +52,9 @@ export async function launchApp(opts: { profile?: string; port?: number } = {}):
     timeout: 120_000,
   });
   const page = await app.firstWindow({ timeout: 120_000 });
+  // app errors in the test log (otherwise a hanging main window leaves no trace in CI)
+  page.on('pageerror', (e) => console.log('[pageerror]', e.message));
+  page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.log(`[app ${m.type()}]`, m.text().slice(0, 500)); });
   const base = `http://127.0.0.1:${port}`;
   const control = async (cmd: Record<string, unknown>) => {
     const r = await fetch(`${base}/api/control`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cmd) });

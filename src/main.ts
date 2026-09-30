@@ -23,6 +23,7 @@ import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { openLedTool } from './led/ui';
 import { ledSettings, pictureSize } from './led/wall';
 import { Renderer, type PictureMode, type SkinRange } from './renderer';
+import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, type BridgeUi } from './bridgeInputs';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 
 // ---------------------------------------------------------------- state
@@ -289,6 +290,10 @@ function renderSources() {
       const urlIn = h('input', { class: 'url', value: s.url, placeholder: 'rtsp://user:pass@host:554/stream', spellcheck: 'false' }) as HTMLInputElement;
       urlIn.onkeydown = (e) => { if (e.key === 'Enter') connect(); };
       const connect = () => { s.url = urlIn.value.trim(); save(); s.connectStream(s.url, bridgeUrl()); };
+      const bridgeUi: BridgeUi = {
+        http: () => bridgeUrl().replace(/^ws/, 'http'), hud: alertHud, upd,
+        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (url.startsWith('decklink:')) s.settings.depth = 16; } connect(); renderSources(); },
+      };
       card.append(
         h('div', { class: 'row' }, urlIn),
         h('div', { class: 'row' },
@@ -301,14 +306,8 @@ function renderSources() {
           running ? h('button', { onclick: () => s.stop() }, '■ Trennen') : h('button', { class: 'primary', onclick: connect }, '▶ Verbinden'),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
             h('button', { class: 'mini', title: `Testbild ${p}`, onclick: () => { urlIn.value = `test:${p}`; connect(); } }, p)),
-            h('button', { class: 'mini', title: 'Capture-Gerät dieses Rechners über die Bridge (roh, ohne Browser-Umweg)', onclick: async (e: Event) => {
-              const btn = e.currentTarget as HTMLElement;
-              let list: { name: string; url: string }[] = [];
-              try { list = await (await fetch(`${bridgeUrl().replace(/^ws/, 'http')}/api/devices`)).json(); } catch { /* bridge missing */ }
-              if (!list.length) { alertHud('Keine Capture-Geräte über die Bridge gefunden'); return; }
-              const sel = select('', [['', 'Gerät wählen …'], ...list.map((d) => [d.url, d.name] as [string, string])], (v) => { if (v) { urlIn.value = v; s.name = list.find((d) => d.url === v)?.name ?? s.name; connect(); } });
-              btn.replaceWith(sel);
-            } }, 'Gerät…'))),
+            deviceButton(bridgeUi), deckLinkButton(bridgeUi))),
+        ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
       );
     } else if (s.kind === 'pattern') {
       card.append(...patternControls(s));

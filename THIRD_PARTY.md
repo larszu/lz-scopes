@@ -37,6 +37,10 @@ The desktop installers bundle a static **ffmpeg binary** (via `ffmpeg-static`) a
 - Build used by `ffmpeg-static`: <https://github.com/eugeneware/ffmpeg-static/releases>
 - The web build does not contain ffmpeg. `npm start` uses an ffmpeg from your `PATH`.
 
+## Capture helpers (optional, built locally)
+
+- **DeckLink helper** (`helpers/decklink/`): own code, built against the Blackmagic Desktop Video SDK, which is **not** in this repository (free download after registration). The SDK headers carry Blackmagic Design's permissive licence (use, reproduce, distribute; notice kept in source copies). The terms of the SDK download itself were not reviewed – check them before shipping a built helper. ffmpeg's own DeckLink device is `nonfree` and is not used.
+
 ## ArgyllCMS (optional, not shipped)
 
 Display calibration (`server/meter.mjs`) can use **ArgyllCMS `spotread`** if the user has installed it. ArgyllCMS is licensed under the AGPL-3 (some drivers GPL-2+, <https://www.argyllcms.com/doc/ArgyllDoc.html>). LZ Scopes does not bundle, link or modify it: it starts the separately installed program and reads its text output, the way DisplayCAL does. Procedures from DisplayCAL (GPL-3) were read as reference only; no code was taken ([docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md)).

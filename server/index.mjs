@@ -22,6 +22,8 @@ import { basename, delimiter, dirname, extname, join, normalize, resolve, sep } 
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { COMMANDS, controlAccess, validateCommand } from './control.mjs';
+import { applyDecodeOverride, deviceInputArgs, deviceOptions, formatListArgs, parseDeviceUrl, parseFormatList, pickPixfmt } from './devices.mjs';
+import { helperList, helperPath, startHelperStream } from './helper-input.mjs';
 import { handleMeterSocket, meterInfo } from './meter.mjs';
 
 const args = process.argv.slice(2);
@@ -82,6 +84,7 @@ export function validateInput(url) {
   if (typeof url !== 'string' || url.length === 0 || url.length > 2048) return 'Keine Quelle angegeben';
   if (url in TEST_PATTERNS || url === 'resolve:') return null;
   if (/^device:(avfoundation|dshow|v4l2):[^\n\r]{1,200}$/.test(url)) return null;
+  if (/^decklink:\d{1,2}$/.test(url)) return null;
   if (url.startsWith('-')) return 'Ungültige Quelle';
   if (!ALLOWED.test(url)) return 'Nur rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s)://, resolve: oder test:*';
   return null;
@@ -92,24 +95,20 @@ export function validateInput(url) {
 const deviceRates = new Map();
 export const DEVICE_RATES = ['60', '50', '30', '25', '59.94', '29.97', '24'];
 
-export function deviceArgs(url, rateOverride) {
-  const [, fmt, name] = /^device:(avfoundation|dshow|v4l2):(.+)$/.exec(url) ?? [];
-  if (!fmt) return null;
+export function deviceArgs(url, rateOverride, opts = {}) {
   // the device's own capture rate; the analysis rate is limited later by the fps filter
-  const rate = ['-framerate', rateOverride ?? deviceRates.get(url) ?? '30'];
-  if (fmt === 'avfoundation') return ['-f', 'avfoundation', ...rate, '-pixel_format', 'uyvy422', '-i', `${name}:none`];
-  if (fmt === 'dshow') return ['-f', 'dshow', ...rate, '-rtbufsize', '256M', '-i', `video=${name}`];
-  return ['-f', 'v4l2', ...rate, '-i', name];
+  // explicit mode/pixel format: see server/devices.mjs
+  return deviceInputArgs(url, rateOverride ?? deviceRates.get(url) ?? '30', opts);
 }
 
-function inputArgs(url, transport, { audio = false, video = true } = {}) {
+function inputArgs(url, transport, { audio = false, video = true, device = {} } = {}) {
   if (url in TEST_PATTERNS) {
     const a = [];
     if (video) a.push('-re', '-f', 'lavfi', '-i', TEST_PATTERNS[url]);
     if (audio) a.push('-re', '-f', 'lavfi', '-i', TEST_TONE);
     return a;
   }
-  const dev = deviceArgs(url);
+  const dev = deviceArgs(url, undefined, device);
   if (dev) return dev;
   const a = ['-fflags', 'nobuffer', '-flags', 'low_delay', '-analyzeduration', '1000000', '-probesize', '2000000'];
   // low latency: no reorder queue, no demuxer delay (the probe already ran separately)
@@ -164,17 +163,18 @@ function run(binary, a, timeoutMs) {
   });
 }
 
-async function probe(url, transport) {
+async function probe(url, transport, device = {}) {
   if (url.startsWith('device:')) {
     // devices: find a capture rate the device accepts, read size/format from the banner
     const ffmpeg = ffmpegCandidates()[0];
     if (!ffmpeg) throw new Error('ffmpeg nicht gefunden');
     let last = '';
-    for (const rate of [deviceRates.get(url), ...DEVICE_RATES].filter(Boolean)) {
-      const r = await run(ffmpeg, ['-hide_banner', ...deviceArgs(url, rate), '-frames:v', '1', '-f', 'null', '-'], 15000);
+    const rates = device.rate ? [device.rate] : [deviceRates.get(url), ...DEVICE_RATES].filter(Boolean);
+    for (const rate of rates) {
+      const r = await run(ffmpeg, ['-hide_banner', ...deviceArgs(url, rate, device), '-frames:v', '1', '-f', 'null', '-'], 15000);
       if (!r) continue;
       const info = r.code === 0 ? parseFfmpegBanner(r.err) : null;
-      if (info) { deviceRates.set(url, rate); return { ...info, fps: Number(rate), audio: null }; }
+      if (info) { deviceRates.set(url, rate); return { ...info, fps: /\//.test(rate) ? Number(rate.split('/')[0]) / Number(rate.split('/')[1]) : Number(rate), audio: null }; }
       last = r.err.trim().split('\n').filter((l) => !/output file/i.test(l)).pop() ?? '';
     }
     throw new Error(last || 'Gerät nicht verfügbar');
@@ -261,7 +261,7 @@ export function outputSize(w, h, maxWidth) {
  * process + separate audio process on pipe:1, fallback for Windows) or 'none'.
  * `video: false` = audio only (PCM on pipe:1).
  */
-export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none' }) {
+export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', device = {} }) {
   const test = url in TEST_PATTERNS;
   const head = ['-hide_banner', '-loglevel', 'error', '-nostdin'];
   const pcm = (map, target) => ['-map', map, '-vn', '-sn', '-dn', '-c:a', 'pcm_f32le', '-f', 'f32le', target];
@@ -274,7 +274,7 @@ export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video =
       audio: [...head, ...inputArgs(url, transport, { audio: true, video: false }), ...pcm('0:a:0', 'pipe:1')],
     };
   }
-  return { main: [...head, ...inputArgs(url, transport), ...vid], audio: null };
+  return { main: [...head, ...inputArgs(url, transport, { device }), ...vid], audio: null };
 }
 
 /** 16-byte header of proto 2: 4 ASCII bytes, uint32, float64 (little endian). */
@@ -312,14 +312,23 @@ async function startStream(ws, params) {
   const problem = validateInput(url);
   if (problem) return fail(ws, problem);
   if (url === 'resolve:') return startResolve(ws, params);
+  if (url.startsWith('decklink:')) return startDeckLink(ws, params, url);
   const transport = params.get('transport') ?? 'tcp';
   const depth = params.get('depth') === '16' ? 16 : 8;
   const maxWidth = Math.min(3840, Math.max(0, Number(params.get('width') ?? 960) || 0));
   const fpsLimit = Math.min(60, Math.max(0, Number(params.get('fps') ?? 0) || 0));
   const wantAudio = params.get('audio') === '1';
 
+  const device = deviceOptions(params);
+  if (url.startsWith('device:') && (!device.pixfmt || !device.size)) {
+    // without an explicit choice: the deepest raw format the device lists, and on macOS
+    // a defined mode (avfoundation otherwise takes an arbitrary one)
+    const formats = await deviceFormats(url);
+    device.pixfmt ??= pickPixfmt(formats.pixfmts) ?? undefined;
+    if (!device.size && parseDeviceUrl(url)?.fmt === 'avfoundation') device.size = defaultMode(formats.modes) ?? undefined;
+  }
   let info;
-  try { info = await probe(url, transport); } catch (e) { return fail(ws, e.message); }
+  try { info = await probe(url, transport, device); } catch (e) { return fail(ws, e.message); }
   if (ws.readyState !== ws.OPEN) return;
   const audioInfo = wantAudio && info.audio?.sampleRate && info.audio?.channels ? info.audio : null;
   const video = !!info.width && !(wantAudio && params.get('video') === '0');
@@ -329,7 +338,7 @@ async function startStream(ws, params) {
 
   // The scale filter converts Y'CbCr → R'G'B' with the stream's own matrix/range but
   // leaves the transfer function untouched, so PQ/HLG code values arrive unchanged.
-  const { decodeMatrix, decodeRange } = decodeParams(info);
+  const { decodeMatrix, decodeRange } = applyDecodeOverride(decodeParams(info), device);
   const vf = [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}`];
   if (fpsLimit) vf.push(`fps=${fpsLimit}`);
   const ffmpeg = ffmpegCandidates()[0];
@@ -382,7 +391,7 @@ async function startStream(ws, params) {
   };
 
   const launch = (mode) => {
-    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: audioInfo ? mode : 'none' });
+    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: audioInfo ? mode : 'none', device });
     const fd3 = mode === 'fd3' && video && !!audioInfo;
     const t0 = Date.now();
     let audioBytes = 0;
@@ -512,6 +521,59 @@ async function listDevices() {
   return r ? parseDeviceList(r.err, fmt) : [];
 }
 
+/** Modes and pixel formats of a capture device (cached 30 s; listing opens the device). */
+const formatCache = new Map();
+export async function deviceFormats(url) {
+  const hit = formatCache.get(url);
+  if (hit && Date.now() - hit.t < 30000) return hit.v;
+  const ffmpeg = ffmpegCandidates()[0];
+  const runs = formatListArgs(url);
+  if (!ffmpeg || !runs) return { modes: [], pixfmts: [] };
+  const fmt = parseDeviceUrl(url).fmt;
+  const v = { modes: [], pixfmts: [] };
+  for (const a of runs) {
+    const r = await run(ffmpeg, a, 10000);
+    if (!r) continue;
+    const p = parseFormatList(r.err, fmt);
+    v.modes.push(...p.modes);
+    for (const x of p.pixfmts) if (!v.pixfmts.includes(x)) v.pixfmts.push(x);
+  }
+  formatCache.set(url, { t: Date.now(), v });
+  return v;
+}
+
+/** Default mode: largest 16:9 mode (else largest) that reaches 25 fps. */
+export function defaultMode(modes) {
+  const ok = modes.filter((m) => !m.fpsMax || m.fpsMax >= 24.9);
+  const wide = ok.filter((m) => Math.abs(m.width / m.height - 16 / 9) < 0.02);
+  const best = (wide.length ? wide : ok).sort((a, b) => b.width * b.height - a.width * a.height)[0];
+  return best ? `${best.width}x${best.height}` : null;
+}
+
+/**
+ * Blackmagic DeckLink/UltraStudio through the native helper (helpers/decklink, DeckLink
+ * SDK). ffmpeg's own decklink device is "nonfree" and must not be redistributed.
+ */
+export async function deckLinkStatus() {
+  const bin = helperPath('lz-decklink');
+  if (!bin) return { available: false, helper: false, devices: [], error: 'DeckLink-Helfer nicht gebaut (helpers/decklink, DeckLink SDK nötig)' };
+  const r = await helperList(bin);
+  return { available: !!r.ok, helper: true, devices: r.devices ?? [], error: r.ok ? undefined : r.error ?? 'Desktop Video nicht installiert' };
+}
+
+function startDeckLink(ws, params, url) {
+  const bin = helperPath('lz-decklink');
+  if (!bin) return fail(ws, 'DeckLink nicht verfügbar – Helfer nicht gebaut; Desktop Video und DeckLink SDK nötig (helpers/decklink/README.md)');
+  const ffmpeg = ffmpegCandidates()[0];
+  if (!ffmpeg) return fail(ws, 'ffmpeg nicht gefunden');
+  const index = url.slice('decklink:'.length);
+  const pixel = params.get('pixel') === '8' ? '8' : '10';
+  startHelperStream(ws, {
+    bin, args: ['--capture', index, '--bits', pixel], label: 'DeckLink', params,
+    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions },
+  });
+}
+
 function fail(ws, message) {
   if (ws.readyState === ws.OPEN) { ws.send(JSON.stringify({ type: 'error', message })); ws.close(); }
 }
@@ -526,6 +588,17 @@ const server = createServer((req, res) => {
   }
   const mj = /^\/out\/([\w-]+)\.mjpeg$/.exec(path);
   if (mj) return serveMjpeg(mj[1], res);
+  if (path === '/api/devices/formats') {
+    const url = new URL(req.url ?? '/', 'http://x').searchParams.get('url') ?? '';
+    const json = (code, body) => { res.writeHead(code, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(body)); };
+    if (!parseDeviceUrl(url) || validateInput(url)) return json(400, { error: 'device:-URL erwartet' });
+    deviceFormats(url).then((f) => json(200, { ...f, preferred: pickPixfmt(f.pixfmts), defaultSize: defaultMode(f.modes) }));
+    return;
+  }
+  if (path === '/api/decklink') {
+    deckLinkStatus().then((st) => { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(st)); });
+    return;
+  }
   if (path === '/api/devices') {
     listDevices().then((list) => { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(list)); });
     return;

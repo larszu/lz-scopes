@@ -9,7 +9,10 @@
 // UNTESTED WITH A DEVICE: no Light Master was available while this was written. The
 // parsing is tested with frames recorded by the MIT projects (test/opple.test.ts).
 
-import { MessageAssembler, NUS_RX, NUS_SERVICE, NUS_TX, OPCODE, buildCommand, encapsulate, opcodeOf, parseCalibration, parseMeasurement, type Calibration, type Model } from './protocol';
+import {
+  FlickerAssembler, MessageAssembler, NUS_RX, NUS_SERVICE, NUS_TX, OPCODE, buildCommand, encapsulate, flickerMetrics, flickerRequestBody, opcodeOf,
+  parseCalibration, parseFlickerChunk, parseMeasurement, type Calibration, type FlickerPeriod, type FlickerResult, type Model,
+} from './protocol';
 import { processMeasurement, type Reading } from './photometry';
 
 // Minimal Web Bluetooth types (not in TypeScript's DOM lib).
@@ -130,6 +133,65 @@ export class OppleMeter extends EventTarget {
     return processMeasurement(m, this.calibration);
   }
 
+  private flickerSink: ((m: Uint8Array) => void) | null = null;
+
+  /** One flicker capture (LM4 only): 4 answer messages → 1024 samples → metrics. */
+  private async flickerOnce(period: FlickerPeriod): Promise<FlickerResult> {
+    if (!this.server?.connected || !this.write) throw new Error('nicht verbunden');
+    const asm = new FlickerAssembler();
+    const done = new Promise<number[]>((ok, fail) => {
+      const t = window.setTimeout(() => { this.flickerSink = null; fail(new Error('Flicker: keine vollständige Antwort')); }, 10000);
+      this.flickerSink = (m) => { const c = parseFlickerChunk(m); const w = c ? asm.feed(c) : null; if (w) { clearTimeout(t); this.flickerSink = null; ok(w); } };
+    });
+    this.seq = (this.seq + 1) & 0xff;
+    await this.writeFrames(encapsulate(buildCommand(OPCODE.REQ_FREQ, this.seq, flickerRequestBody(period))));
+    return flickerMetrics(await done, asm.dataType, period);
+  }
+
+  /**
+   * Flicker measurement with the capture cascade of opple-bridge (`request_flicker`): period 25
+   * (≈ 40 kHz); above 2 kHz refine with 146 and try 11 (≈ 85 kHz), which wins above 15 kHz.
+   * UNTESTED WITH A DEVICE; the LM3 flicker format is not known.
+   */
+  async flicker(): Promise<FlickerResult> {
+    if (this.model !== 'lm4') throw new Error('Flicker-Messung ist nur für den Light Master 4 dokumentiert');
+    const wasPolling = this.polling;
+    this.stop();
+    while (this.busy) await new Promise((r) => setTimeout(r, 50));
+    this.busy = true;
+    try {
+      const r25 = await this.flickerOnce(25);
+      if (r25.frequency <= 2000) return r25;
+      const r146 = await this.flickerOnce(146).catch(() => null);
+      if (!r146) return r25;
+      const r11 = await this.flickerOnce(11).catch(() => null);
+      return r11 && r11.frequency > 15000 ? r11 : r146;
+    } finally {
+      this.busy = false;
+      if (wasPolling) this.start();
+    }
+  }
+
+  /** Several readings averaged (polling paused meanwhile). */
+  async measureAveraged(n = 3): Promise<Reading> {
+    const wasPolling = this.polling;
+    this.stop();
+    while (this.busy) await new Promise((r) => setTimeout(r, 50));
+    this.busy = true;
+    try {
+      const list: Reading[] = [];
+      for (let i = 0; i < n; i++) list.push(await this.measure());
+      const avg = (k: 'X' | 'Y' | 'Z') => list.reduce((a, r) => a + r[k], 0) / list.length;
+      const last = list[list.length - 1];
+      const r = { ...last, X: avg('X'), Y: avg('Y'), Z: avg('Z') };
+      this.emit(r);
+      return r;
+    } finally {
+      this.busy = false;
+      if (wasPolling) this.start();
+    }
+  }
+
   disconnect() {
     this.stop();
     try { this.device?.gatt?.disconnect(); } catch { /* ignore */ }
@@ -155,10 +217,22 @@ export class OppleMeter extends EventTarget {
     const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
     this.log('<', bytes);
     const msg = this.asm.feed(bytes);
+    if (msg && opcodeOf(msg) === OPCODE.RES_FREQ) { this.flickerSink?.(msg); return; }
     if (!msg || !this.pending || opcodeOf(msg) !== this.pending.opcode) return;
     const p = this.pending;
     this.pending = null; clearTimeout(p.timer); p.resolve(msg);
   };
+
+  private async writeFrames(frames: Uint8Array[]) {
+    for (const f of frames) {
+      this.log('>', f);
+      const c = this.write!;
+      const buf = f.slice().buffer as ArrayBuffer;
+      if (c.properties.writeWithoutResponse && c.writeValueWithoutResponse) await c.writeValueWithoutResponse(buf);
+      else if (c.writeValueWithResponse) await c.writeValueWithResponse(buf);
+      else await c.writeValue(buf);
+    }
+  }
 
   private command(opcode: number, response: number, timeout = TIMEOUT): Promise<Uint8Array> {
     if (!this.server?.connected || !this.write) return Promise.reject(new Error('nicht verbunden'));
@@ -168,16 +242,7 @@ export class OppleMeter extends EventTarget {
     return new Promise((resolve, reject) => {
       const timer = window.setTimeout(() => { this.pending = null; reject(new Error('keine Antwort (Gerät wach?)')); }, timeout);
       this.pending = { opcode: response, resolve, reject, timer };
-      (async () => {
-        for (const f of frames) {
-          this.log('>', f);
-          const c = this.write!;
-          const buf = f.slice().buffer as ArrayBuffer;
-          if (c.properties.writeWithoutResponse && c.writeValueWithoutResponse) await c.writeValueWithoutResponse(buf);
-          else if (c.writeValueWithResponse) await c.writeValueWithResponse(buf);
-          else await c.writeValue(buf);
-        }
-      })().catch((err) => { clearTimeout(timer); this.pending = null; reject(err); });
+      this.writeFrames(frames).catch((err) => { clearTimeout(timer); this.pending = null; reject(err); });
     });
   }
 }

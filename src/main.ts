@@ -14,6 +14,7 @@ import { DEFAULT_SKIN, ROI_CLOSE, defaultPanel as panel, drawPanel, panelSignatu
 import type { OutputHost, OutputWindowApi } from './outputView';
 import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } from './scene';
 import { connectRemote } from './remote';
+import { DEFAULT_CRT, PERSIST_CHOICES, PHOSPHORS, type CrtSettings, type Phosphor } from './crt';
 import type { Command } from '../server/control.mjs';
 import type { GenConfig } from './audio/dsp/signals';
 import { audioPanelSettings, audioRow, audioSourceControls, mountGenerator } from './audio/ui';
@@ -723,7 +724,26 @@ function panelSettings(p: PanelState): Node[] {
   }
   if (p.scope === 'wf-skin') row('Hautton-Bereich', check('skinBand', 'Band und Linien einblenden (aus = nur farbige Hauttöne)', true));
   if (p.scope === 'cie') row('Diagramm', check('cieUv', 'CIE 1976 u′v′ statt 1931 xy'));
-  if (scatter) row('Spurfarbe (Mono)', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); }));
+  if (scatter) {
+    const c = { ...DEFAULT_CRT, ...p.crt };
+    const reopen = () => {
+      const v = [...views.values()].find((x) => state.panels[x.idx] === p);
+      if (v) { fillHead(v); v.head.querySelector('details.psettings')?.setAttribute('open', ''); }
+    };
+    const setCrt = (patch: Partial<CrtSettings>, rebuild = false) => { p.crt = { ...c, ...patch }; Object.assign(c, patch); save(); if (rebuild) reopen(); };
+    row('Darstellung', select(c.on ? 'crt' : 'digital', [['digital', 'digital'], ['crt', 'CRT (analoger Strahl)']], (v) => setCrt({ on: v === 'crt' }, true),
+      'CRT: Spur als Elektronenstrahl zwischen benachbarten Abtastwerten (Helligkeit ∝ 1/Strahlgeschwindigkeit), Nachleuchten und Glow. Ein Look – gemessen wird dasselbe Signal.'));
+    if (c.on) {
+      row('Phosphor', select(c.phosphor, (Object.keys(PHOSPHORS) as Phosphor[]).map((k) => [k, PHOSPHORS[k].name] as [string, string]),
+        (v) => setCrt({ phosphor: v as Phosphor, persist: PHOSPHORS[v as Phosphor].tau }, true), `${PHOSPHORS[c.phosphor].note}. Farben angenähert, nicht farbmetrisch.`));
+      const persist = PERSIST_CHOICES.some(([ms]) => ms === c.persist) ? PERSIST_CHOICES : [...PERSIST_CHOICES, [c.persist, `${c.persist} ms`] as [number, string]];
+      row('Nachleuchten', select(String(c.persist), persist.map(([ms, l]) => [String(ms), l] as [string, string]), (v) => setCrt({ persist: Number(v) }), 'Zeitkonstante τ: Helligkeit fällt mit exp(−t/τ); „unendlich“ hält jede Spur (Speicher-Oszilloskop)'));
+      const glow = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: c.glow, title: 'Lichthof um die Spur' }) as HTMLInputElement;
+      glow.oninput = () => setCrt({ glow: Number(glow.value) });
+      row('Glow', glow);
+      row('Strahlbreite', select(String(c.beam), [['1', '1 px'], ['1.5', '1,5 px'], ['2', '2 px'], ['3', '3 px'], ['4', '4 px']], (v) => setCrt({ beam: Number(v) }), 'Halbwertsbreite des Strahls'));
+    } else row('Spurfarbe (Mono)', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); }));
+  }
   if (p.scope === 'vector') {
     row('Zoom', select(String(p.zoom), [['1', '×1'], ['2', '×2'], ['5', '×5']], (v) => { p.zoom = Number(v); save(); }));
     const gbox = (g: '709' | 'p3' | '2020', label: string) => {
@@ -1001,6 +1021,8 @@ function frame(now: number) {
     used.forEach((s) => { const { kr, kb } = LUMA[s.colorspace]; s.updateStats(kr, kb); });
   }
 
+  // CRT persistence still fading: redraw those panels although nothing else changed
+  for (const k of renderer.settling) panelSigs.delete(Number(k.slice(1)));
   for (const v of openViews()) {
     const p = state.panels[v.idx];
     const src = panelSource(p);

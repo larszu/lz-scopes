@@ -9,6 +9,7 @@ import {
 import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/panels';
 import type { DisplayParams, PictureMode, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
 import type { Source } from './sources';
+import { DEFAULT_CRT, PHOSPHORS, type CrtSettings } from './crt';
 import { chainOf, stageView, type Stage } from './chain';
 import { clockOpts, drawClockOverlay, drawClockPanel, type ClockOptions } from './clock/panel';
 
@@ -39,9 +40,14 @@ export interface PanelState {
   waveZoom?: WaveZoom; channels?: WaveChannels; names?: boolean;
   /** clock panel settings (src/clock/panel.ts); also used by the picture overlay */
   clock?: Partial<ClockOptions>;
+  /** scatter scopes: analogue beam look (crt.ts) */
+  crt?: Partial<CrtSettings>;
   /** picture: compact time of day / source time code in the corner */
   clockOverlay?: boolean;
 }
+
+/** CRT settings of a panel with defaults; null = digital display. */
+export const crtOf = (p: PanelState): CrtSettings | null => (p.crt?.on ? { ...DEFAULT_CRT, ...p.crt, on: true } : null);
 
 /** Graticule options of a waveform panel. */
 export const waveOpts = (p: PanelState, src: Source | null): WaveOpts => ({
@@ -145,8 +151,10 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   const probeRgb = src.probe ? src.readPixel(src.probe.x, src.probe.y) : null;
   const mode = SCATTER[p.scope];
   if (mode) {
+    const crt = crtOf(p);
     renderer.drawScatter(key, src, abs, {
-      mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: [...TINTS[o.tint]] as [number, number, number],
+      ...(crt ? { crt } : {}),
+      mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: crt ? [...PHOSPHORS[crt.phosphor].color] as [number, number, number] : [...TINTS[o.tint]] as [number, number, number],
       maxSamples: o.maxSamples, roi: src.activeRois(), skin: o.skin, cieUv: p.scope === 'cie' && !!p.cieUv,
       ...(isWaveform(p.scope) ? { range: WAVE_ZOOMS[p.waveZoom ?? 'full'], ...(({ sec, n }) => ({ sec, secN: n }))(channelLayout(p.scope, p.channels)) } : {}),
     });

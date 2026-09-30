@@ -22,6 +22,20 @@ describe('validateCommand', () => {
     expect(err({})).toMatch(/Unbekannter Befehl/);
   });
 
+  it('audio commands: I/LRA reset and pause, generator with a loudness guard (#24)', () => {
+    expect(ok({ cmd: 'audio.reset' })).toEqual({ cmd: 'audio.reset' });
+    expect(ok({ cmd: 'audio.reset', source: '2' })).toEqual({ cmd: 'audio.reset', source: 2 });
+    expect(ok({ cmd: 'audio.pause' })).toEqual({ cmd: 'audio.pause', mode: 'toggle' });
+    expect(ok({ cmd: 'audio.pause', mode: 'on', source: 'Kamera' })).toEqual({ cmd: 'audio.pause', mode: 'on', source: 'Kamera' });
+    expect(ok({ cmd: 'generator', mode: 'on', signal: 'ebu-ident', level: -18 })).toEqual({ cmd: 'generator', mode: 'on', signal: 'ebu-ident', level: -18 });
+    expect(ok({ cmd: 'generator', mode: 'off' })).toEqual({ cmd: 'generator', mode: 'off' });
+    expect(err({ cmd: 'generator', signal: 'laser' })).toMatch(/signal/);
+    expect(err({ cmd: 'generator', level: -3 })).toMatch(/force/);
+    expect(ok({ cmd: 'generator', level: -3, force: true }).level).toBe(-3);
+    expect(err({ cmd: 'generator', freq: 5 })).toMatch(/freq/);
+    expect(PANEL_SCOPES).toContain('audio-check');
+  });
+
   it('every documented command is known', () => {
     for (const cmd of ['state', 'source.select', 'layout.preset', 'layout.load', 'panel.scope', 'panel.maximize', 'freeze', 'roi.clear',
       'pattern.select', 'pattern.next', 'pattern.prev', 'output.open', 'output.close', 'scene.select', 'stream.start', 'stream.stop', 'transport']) {

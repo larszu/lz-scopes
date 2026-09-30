@@ -39,6 +39,9 @@ Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen
 | `stream.start` | `stream` (Name → `/out/<stream>.mjpeg`), `output` optional (sonst die erste offene Ausgabe; ist keine offen, öffnet sich ein Overlay-Fenster), `target` optional (`rtmp://`, `srt://`, `rtsp://`, `udp://`) |
 | `stream.stop` | `output` oder `stream` optional (ohne = alle) |
 | `transport` | `op` `play`\|`pause`\|`toggle`\|`stop`\|`next`\|`prev`\|`forward`\|`rewind`\|`start`\|`end`, `source` optional (sonst die gezeigte Videodatei) |
+| `audio.reset` | `source` optional (sonst alle Quellen mit Ton): I, LRA, Max M/S, Max TP, Zähler und Protokoll zurücksetzen (EBU Tech 3341) |
+| `audio.pause` | `mode` `toggle`\|`on`\|`off`, `source` optional: I und LRA anhalten/fortsetzen (Tech 3341) |
+| `generator` | `mode` `toggle`\|`on`\|`off`, `signal` optional (`sine`, `ebu-ident`, `glits`, `blits`, `ebu-multi`, `ident-lr`, `pink`, `pink-band`, `white`, `sweep`, `steps`, `polarity`, `avsync`, …), `freq` 10–20000 Hz, `level` −90–0 dBFS; über −6 dBFS nur mit `"force": true` |
 
 Antwort: `{ ok, result?, error?, state }`. Status `400` = ungültiger Befehl, `422` = nicht ausführbar (z. B. Szene unbekannt), `503` = kein Hauptfenster, `401`/`403` = Zugriff.
 
@@ -56,11 +59,14 @@ Antwort: `{ ok, result?, error?, state }`. Status `400` = ungültiger Befehl, `4
   "outputs": [{ "name": "key", "view": "overlay", "scene": "Waveform unten", "stream": "scopes" }],
   "pattern": { "id": "smpte75", "name": "SMPTE 75 % Balken + PLUGE" },
   "playing": null,
+  "audio": { "source": "Kamera 1", "momentary": -22.8, "shortTerm": -23.1, "integrated": -23.0, "lra": 4.2, "maxTP": -2.1,
+             "paused": false, "seconds": 312, "avOffsetMs": 12.5, "ident": "EBU-Stereo-Ident (R 49)", "identProblems": [] },
+  "generator": { "running": false, "signal": "sine", "level": -18, "freq": 1000, "channels": 2 },
   "sources": [], "layouts": [], "presets": [], "panels": [], "scenes": [], "patterns": []
 }
 ```
 
-`clip`, `yMin`, `yMax` sind Prozent (0,1-genau) der aktiven Quelle – das ist die Quelle, die die meisten sichtbaren Panels zeigen. Ohne Statistik stehen sie auf `null`. `layoutName` ist die zuletzt geladene Layout-Konfiguration bzw. die Beschriftung der Vorlage.
+`clip`, `yMin`, `yMax` sind Prozent (0,1-genau) der aktiven Quelle – das ist die Quelle, die die meisten sichtbaren Panels zeigen. Ohne Statistik stehen sie auf `null`. `audio` gilt für die aktive Quelle mit Ton (sonst die erste mit Ton), Werte in LUFS/LU/dBTP auf 0,1 gerundet, `avOffsetMs` nach ITU-R BT.1359-1 (+ = Ton vor Bild), `null` ohne Messwert. `layoutName` ist die zuletzt geladene Layout-Konfiguration bzw. die Beschriftung der Vorlage.
 
 Über WebSocket kommen `{type:"hello", connected, state, commands}` beim Verbinden, `{type:"state", state}` bei jeder Änderung (höchstens viermal pro Sekunde), `{type:"connected", connected}` wenn das Hauptfenster kommt oder geht, und `{type:"result", id, ok, result?, error?}` auf jeden Befehl (die `id` des Befehls wird zurückgegeben).
 
@@ -93,7 +99,7 @@ Im Browser öffnet `output.open` ein Fenster nur, wenn Pop-ups für die Seite er
 
 ## Companion-Modul
 
-`companion/` enthält das Modul `companion-module-lz-scopes` (API `@companion-module/base` ~1.14.1, wie das Modul in lz-camera-bridge) mit Aktionen für alle Befehle oben, Feedbacks (Verbunden, Eingefroren, Quelle aktiv, Clipping/Y′ über Schwelle, Layout, Szene, Ausgabe offen, Stream läuft, Panel maximiert, Videodatei läuft), Variablen und Presets.
+`companion/` enthält das Modul `companion-module-lz-scopes` (API `@companion-module/base` ~1.14.1, wie das Modul in lz-camera-bridge) mit Aktionen für alle Befehle oben, Feedbacks (Verbunden, Eingefroren, Quelle aktiv, Clipping/Y′ über Schwelle, Layout, Szene, Ausgabe offen, Stream läuft, Panel maximiert, Videodatei läuft, Tongenerator läuft, I/LRA angehalten, Max True Peak über Schwelle, Ident-Befund), Variablen (auch Lautheit M/S/I/LRA, True Peak, A/V-Versatz, Ident) und Presets.
 
 ```bash
 cd companion

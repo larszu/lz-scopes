@@ -8,11 +8,13 @@
 // sees them; the main window resolves them.
 
 export const OVERLAY_SCOPES = ['wf-luma', 'wf-color', 'wf-skin', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'cie', 'hist'];
-export const AUDIO_SCOPES = ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase'];
+export const AUDIO_SCOPES = ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check'];
 export const PANEL_SCOPES = ['picture', ...OVERLAY_SCOPES, 'stats', ...AUDIO_SCOPES];
 export const OUTPUT_VIEWS = ['grid', 'panel', 'clean', 'overlay'];
 export const TRANSPORT_OPS = ['play', 'pause', 'toggle', 'stop', 'next', 'prev', 'forward', 'rewind', 'start', 'end'];
 const MODES = ['toggle', 'on', 'off'];
+/** Generator signals (src/audio/dsp/signals.ts) */
+export const GEN_SIGNALS = ['sine', 'square', 'triangle', 'saw', 'white', 'pink', 'pink-band', 'sweep', 'steps', 'ebu-ident', 'glits', 'ident-lr', 'polarity', 'avsync', 'blits', 'ebu-multi'];
 
 /** Every command with a short description (GET /api/control/commands, docs). */
 export const COMMANDS = {
@@ -33,6 +35,9 @@ export const COMMANDS = {
   'stream.start': 'Stream einer Ausgabe starten: output (optional), stream (Name), target (optional Push-Ziel)',
   'stream.stop': 'Stream stoppen: output oder stream (ohne = alle)',
   'transport': 'Videodatei: op play|pause|toggle|stop|next|prev|forward|rewind|start|end, source (optional)',
+  'audio.reset': 'Lautheit zurücksetzen (I, LRA, Max M/S, Max TP, Zähler, Protokoll; Tech 3341): source (optional; ohne = alle Quellen mit Ton)',
+  'audio.pause': 'I und LRA anhalten/fortsetzen (Tech 3341): mode toggle|on|off, source (optional; ohne = alle Quellen mit Ton)',
+  'generator': 'Tongenerator: mode toggle|on|off, signal (optional), freq (Hz, optional), level (dBFS, optional; über −6 nur mit force: true)',
 };
 
 const isStr = (v) => typeof v === 'string';
@@ -120,6 +125,20 @@ export function validateCommand(raw) {
       check(optTarget());
       break;
     case 'stream.stop': check(optName('output')); check(optName('stream')); break;
+    case 'audio.reset': check(optRef('source')); break;
+    case 'audio.pause': check(optMode()); check(optRef('source')); break;
+    case 'generator': {
+      check(optMode());
+      if (c.signal !== undefined && c.signal !== '') { if (!GEN_SIGNALS.includes(/** @type {string} */ (c.signal))) errors.push(`signal: ${GEN_SIGNALS.join(', ')}`); else out.signal = c.signal; }
+      if (c.freq !== undefined && c.freq !== '') { const f = Number(c.freq); if (!Number.isFinite(f) || f < 10 || f > 20000) errors.push('freq: 10 … 20000 Hz'); else out.freq = f; }
+      if (c.level !== undefined && c.level !== '') {
+        const l = Number(c.level);
+        if (!Number.isFinite(l) || l < -90 || l > 0) errors.push('level: −90 … 0 dBFS');
+        else if (l > -6 && c.force !== true) errors.push('level über −6 dBFS nur mit force: true (laut)');
+        else out.level = l;
+      }
+      break;
+    }
     case 'transport':
       if (!TRANSPORT_OPS.includes(/** @type {string} */ (c.op))) errors.push(`op: ${TRANSPORT_OPS.join(', ')}`); else out.op = c.op;
       check(optRef('source'));

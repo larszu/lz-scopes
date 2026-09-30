@@ -270,6 +270,17 @@ export const SPECTRAL_LOCUS: [number, number, number][] = [
 
 export interface FalseColorBand { from: number; to: number; color: string; label: string }
 /** Signal-level bands in % (ARRI-style exposure false colour). Everything else shows as greyscale. */
+/**
+ * False-colour presets. ARRI: ALEXA Mini LF User Manual, "Exposure Tools; False Color", p83
+ * (opened on manualshelf.com, 30.09.2026): purple 0–2.5 % black clipping, blue 2.5–4 %, green
+ * 38–42 % 18 % grey, pink 52–56 % one stop over grey, yellow 97–99 %, red 99–100 % white clipping;
+ * applies to the monitored signal (Log C, look or 709). RED: docs.red.com DSMC2 DRAGON-X
+ * operation guide v7.4, "False Color Modes: Video": purple 0–4, blue 5, teal 10–12, green 41–48,
+ * pink 61–70, straw 92–93, yellow 94–95, orange 96–98, red 99–100 IRE of the video output;
+ * integer IRE ranges widened by ±0.5. RED evaluates the RGB levels, LZ Scopes the luma –
+ * for coloured areas that is an approximation. Sony: no preset, the VENICE table exists only as
+ * an image in the manual and could not be verified. "Belichtung" is our own, not a standard.
+ */
 export const FALSE_COLOR_PRESETS: Record<string, FalseColorBand[]> = {
   ARRI: [
     { from: 0, to: 2.5, color: '#8a2be2', label: 'Schwarz-Clip' },
@@ -278,6 +289,17 @@ export const FALSE_COLOR_PRESETS: Record<string, FalseColorBand[]> = {
     { from: 52, to: 56, color: '#ff6ec7', label: 'Grau +1 Blende' },
     { from: 97, to: 99, color: '#ffd400', label: 'knapp unter Weiß' },
     { from: 99, to: 100.01, color: '#ff1f1f', label: 'Weiß-Clip' },
+  ],
+  RED: [
+    { from: 0, to: 4.5, color: '#8a2be2', label: 'Lila 0–4 IRE' },
+    { from: 4.5, to: 5.5, color: '#1e5bff', label: 'Blau 5 IRE' },
+    { from: 9.5, to: 12.5, color: '#1fb5b5', label: 'Türkis 10–12 IRE' },
+    { from: 40.5, to: 48.5, color: '#22c55e', label: 'Grün 41–48 IRE' },
+    { from: 60.5, to: 70.5, color: '#ff6ec7', label: 'Rosa 61–70 IRE' },
+    { from: 91.5, to: 93.5, color: '#e8d9a0', label: 'Stroh 92–93 IRE' },
+    { from: 93.5, to: 95.5, color: '#ffd400', label: 'Gelb 94–95 IRE' },
+    { from: 95.5, to: 98.5, color: '#ff8c1a', label: 'Orange 96–98 IRE' },
+    { from: 98.5, to: 100.01, color: '#ff1f1f', label: 'Rot 99–100 IRE' },
   ],
   Belichtung: [
     { from: 0, to: 5, color: '#6a0dad', label: 'abgesoffen' },

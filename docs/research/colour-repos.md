@@ -264,3 +264,19 @@ GPL-3 heißt für LZ Scopes: Solange LZ Scopes nicht selbst unter GPL-3 steht (i
 6. Die ΔICtCp-Grenzwerte in DisplayCAL scheinen falsch indiziert. Welche Toleranzen gelten für HDR-Verifikation (Quelle: BT.2124, ggf. Netflix/EBU-Vorgaben)?
 7. PixelManager: Die S-Gamut3.Cine-Matrix gleicht der Venice-Variante. Vor Nutzung gegen Sony-Primaries prüfen (alwan: 0,766/0,275, 0,225/0,800, 0,089/−0,087).
 8. Braucht es einen vollständigen ACES-2.0-ODT live, oder reichen gebackene LUTs aus Resolve/OCIO?
+
+---
+
+## Umsetzung Rest von Issue #8 (30.09.2026)
+
+| Punkt | Quelle (geöffnet) | Umsetzung |
+|---|---|---|
+| Double Diamond | Formeln oben (scopes_plusplus, nur Idee), neu geschrieben | Scope „Double Diamond“: oben G/B, unten G/R, Schwarz in der Mitte, Weiß an den Spitzen; ohne den Tiefpass der Hardware-Geräte |
+| Falschfarben ARRI | ARRI ALEXA Mini LF User Manual, „Exposure Tools; False Color“, S. 83 (über manualshelf.com) | Werte des bestehenden Presets bestätigt (0–2,5 / 2,5–4 / 38–42 / 52–56 / 97–99 / 99–100 %) |
+| Falschfarben RED | docs.red.com, DSMC2 DRAGON-X Operation Guide v7.4, „False Color Modes: Video“ | neues Preset, 9 Zonen in IRE; RED wertet die RGB-Pegel des Video-Ausgangs, LZ Scopes die Luma → für bunte Flächen Näherung |
+| Falschfarben Sony | VENICE-Handbuch: Tabelle nur als Bild, PDF-Download vom Skript aus blockiert | **kein Preset** (nicht belegbar) |
+| ACES 1.3 RGC | alwan @ 8fc3044 (MIT): `src/alwan/api/alwan_aces_ff.c` Z. 426–434, 470–484; `src/alwan/core/alwan_aces_ff_core.inc` Z. 216–282 | Vorschau im Bild-Panel (in ACEScg), wirkt auch auf die Gamut-Warnung; nicht auf die Scopes |
+| MaxCLL/MaxFALL | alwan `docs/api/hdr.md` Z. 66–96 | Messwerte-Panel: MaxCLL und FALL des Bildes, Maxima seit Start der Quelle; gemessen am Analysebild (unterabgetastet), nur CPU-Statistikpfad |
+| A/B | prism (Idee Split/Wipe/Diff) | Bild-Panel: Split 50 %, Wipe, Differenz (max |A − B| der angezeigten Bilder × Verstärkung); B = anderer Messpunkt derselben Quelle oder andere Quelle |
+| ACES-2.0-Ansicht | aces-core Tonescale (schon in chain.ts) | keine neue Ansicht: die CST mit Tone-Mapping „ACES-2.0-Tonescale“ ist die Ansicht über die vorhandene Kette. Vollständiger ODT (JMh, Cusp-Tabellen) nicht umgesetzt – besser als gebackene LUT laden |
+| 3D-RGB-Würfel | – | nicht umgesetzt (Kann) |

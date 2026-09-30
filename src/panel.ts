@@ -3,14 +3,14 @@
 
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId } from './color';
 import {
-  drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
+  drawVectorExtras, drawDiamondGraticule, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
   WAVE_ZOOMS, channelLayout, isAudio, isWaveform, plotRect, type WaveChannels, type WaveOpts, type WaveZoom, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
 import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/panels';
-import type { DisplayParams, PictureMode, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
+import type { DisplayParams, PictureMode, PictureParams, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
 import type { Source } from './sources';
 import { DEFAULT_CRT, PHOSPHORS, type CrtSettings } from './crt';
-import { chainOf, stageView, type Stage } from './chain';
+import { STAGE_LABELS, baseOf, chainOf, stageView, type Stage } from './chain';
 import { clockOpts, drawClockOverlay, drawClockPanel, type ClockOptions } from './clock/panel';
 
 export interface PanelState {
@@ -42,6 +42,13 @@ export interface PanelState {
   clock?: Partial<ClockOptions>;
   /** scatter scopes: analogue beam look (crt.ts) */
   crt?: Partial<CrtSettings>;
+  /**
+   * picture: A/B comparison. `b` = 'stage:signal|cst|lut' (same source) or 'src:<id>';
+   * split = divider at 50 %, wipe = divider at `pos`, diff = max |A − B| × `gain`.
+   */
+  ab?: { mode: 'off' | 'split' | 'wipe' | 'diff'; b: string; pos?: number; gain?: number };
+  /** picture: ACES 1.3 reference gamut compression as a preview (display and gamut warning) */
+  rgc?: boolean;
   /** picture: compact time of day / source time code in the corner */
   clockOverlay?: boolean;
 }
@@ -66,6 +73,8 @@ export interface DrawOptions {
   /** default measuring stage of panels without their own */
   stage?: Stage;
   emptyText?: string;
+  /** resolves the B source of an A/B comparison */
+  sourceById?: (id: string) => Source | null;
 }
 
 export const DEFAULT_SKIN: SkinRange = { lo: 0.3, hi: 0.8, tol: 14 };
@@ -78,6 +87,13 @@ export function displayParams(src: Source, display: DisplaySpace): DisplayParams
   return { curve: display === 'rec709' ? 1 : 0, gamut: gamutConvert(from, to) };
 }
 export { DISPLAY_LABELS };
+
+/** Matrices of the RGC preview: source → AP1 (ACEScg), AP1 → display gamut, AP1 → warning target. */
+export const rgcParams = (src: Source, display: DisplaySpace, target: GamutId = '709') => ({
+  toAp1: gamutConvert(GAMUTS[src.gamut], GAMUTS.ap1),
+  display: gamutConvert(GAMUTS.ap1, display === 'p3' ? GAMUTS.p3 : GAMUTS['709']),
+  warn: gamutConvert(GAMUTS.ap1, GAMUTS[target]),
+});
 
 /** Source linear → target gamut linear for the gamut warning (Bradford-adapted). */
 export const warnMatrix = (src: Source, target: GamutId = '709') => gamutConvert(GAMUTS[src.gamut], GAMUTS[target]);
@@ -94,6 +110,36 @@ export const ROI_CLOSE = 16;
 export const roiCloseBox = (rx: number, ry: number, rw: number) => [rx + rw - ROI_CLOSE / 2, ry - ROI_CLOSE / 2] as const;
 
 /** Everything a panel's pixels depend on; unchanged → the panel is not redrawn. */
+/** B side of an A/B comparison: another stage of the panel's source or another source. */
+export function abSource(b: string, a: Source, p: PanelState, o: DrawOptions): Source | null {
+  if (b.startsWith('stage:')) return stageView(baseOf(a), b.slice(6) as Stage);
+  if (b.startsWith('src:')) { const s = o.sourceById?.(b.slice(4)); return s ? stageView(s, p.stage ?? o.stage ?? 'signal') : null; }
+  return null;
+}
+
+export const abLabel = (b: string, s: Source | null) => (b.startsWith('stage:') ? STAGE_LABELS[b.slice(6) as Stage] ?? b : s?.name ?? 'fehlt');
+
+function drawAbLabels(ctx: CanvasRenderingContext2D, r: Rect, ab: NonNullable<PanelState['ab']>, a: Source, b: Source | null) {
+  ctx.save();
+  ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'top';
+  const tag = (t: string, x: number, align: CanvasTextAlign) => {
+    ctx.textAlign = align; const w = ctx.measureText(t).width + 8;
+    ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(align === 'left' ? x : x - w, r.y + r.h - 20, w, 14);
+    ctx.fillStyle = '#ddd'; ctx.fillText(t, align === 'left' ? x + 4 : x - 4, r.y + r.h - 18);
+  };
+  const aName = a.name + (chainOf(a) ? ` · ${STAGE_LABELS[chainOf(a)!.stage]}` : '');
+  if (!b || !b.ready) tag(`B: ${abLabel(ab.b, b)} – keine Daten, nur A`, r.x + 4, 'left');
+  else if (ab.mode === 'diff') tag(`|A − B| × ${ab.gain ?? 4} · A ${aName} · B ${abLabel(ab.b, b)}`, r.x + 4, 'left');
+  else {
+    const x = r.x + r.w * (ab.mode === 'split' ? 0.5 : Math.max(0, Math.min(1, ab.pos ?? 0.5)));
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(Math.round(x) + 0.5, r.y); ctx.lineTo(Math.round(x) + 0.5, r.y + r.h); ctx.stroke();
+    tag(`A ${aName}`, x - 4, 'right');
+    tag(`B ${abLabel(ab.b, b)}`, x + 4, 'left');
+  }
+  ctx.restore();
+}
+
 export function panelSignature(p: PanelState, src: Source | null, body: Rect, o: DrawOptions) {
   // clocks run: redraw at 25 Hz
   const tick = p.scope === 'clock' || (p.scope === 'picture' && p.clockOverlay) ? `|t${Math.floor(performance.now() / 40)}` : '';
@@ -104,10 +150,12 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
   }
   if (src) src = stageView(src, p.stage ?? o.stage ?? 'signal');
   const s = src ? `${chainOf(src)?.sig ?? ''}:${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${src.faceMode}:${src.faces.map((f) => f.id + '/' + f.box.join(',')).join(';')}:${[...src.faceSel].join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}` : '-';
+  const bs = p.scope === 'picture' && src && p.ab && p.ab.mode !== 'off' ? abSource(p.ab.b, src, p, o) : null;
+  const abSig = bs ? `|B${bs.id}:${bs.frameSeq}:${bs.status}:${chainOf(bs)?.sig ?? ''}` : '';
   const { displayFps, ...rest } = o;
   // compact level bar on the picture: redraw at 20 Hz of audio time
   const bar = p.scope === 'picture' && p.audioBar !== false && src?.audio ? `${Math.floor(src.audio.frames / (src.audio.fs / 20))}:${src.audio.stale}` : '';
-  return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}${tick}|${bar}`;
+  return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}${tick}|${bar}${abSig}`;
 }
 
 export const defaultPanel = (scope: ScopeType): PanelState => ({
@@ -117,7 +165,7 @@ export const defaultPanel = (scope: ScopeType): PanelState => ({
 const PARADE: ScopeType[] = ['parade', 'yrgb', 'wf-rgb'];
 
 const SCATTER: Partial<Record<ScopeType, ScatterMode>> = {
-  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie',
+  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', diamond: 'diamond', cie: 'cie',
 };
 
 /**
@@ -164,6 +212,8 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     drawWaveGraticule(ctx, p.scope, r, o.unit, src.transfer, wo);
     if (p.scope === 'wf-skin' && p.skinBand !== false) drawSkinRange(ctx, r, o.skin, wo.range);
     if (probeRgb) drawWaveProbe(ctx, p.scope, r, src, probeRgb, wo);
+  } else if (p.scope === 'diamond') {
+    drawDiamondGraticule(ctx, r, probeRgb);
   } else if (p.scope === 'vector') {
     drawVectorGraticule(ctx, r, src.colorspace, p.zoom, o.skin.tol, vectorTargets(src));
     drawVectorExtras(ctx, r, src.colorspace, p.zoom, p.gamuts ?? [], o.targets ?? [], src.transfer, src.gamut);
@@ -178,10 +228,23 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   } else if (p.scope === 'hist') {
     drawHistogram(ctx, r, src, p.hist, p.log);
   } else if (p.scope === 'picture') {
-    renderer.drawPicture(src, abs, {
+    const pic = (s: Source): PictureParams => ({
       mode: p.picture, bands: FALSE_COLOR_PRESETS[o.falsePreset] ?? [], zebra: o.zebra, zebraLow: o.zebraLow,
-      roi: src.activeRois(), skin: o.skin, display: displayParams(src, o.display), warn: warnMatrix(src, p.gamutTarget),
+      roi: s.activeRois(), skin: o.skin, display: displayParams(s, o.display), warn: warnMatrix(s, p.gamutTarget),
+      ...(p.rgc && o.display !== 'raw' ? { rgc: rgcParams(s, o.display, p.gamutTarget) } : {}),
     });
+    const ab = p.ab && p.ab.mode !== 'off' ? p.ab : null;
+    const bSrc = ab ? abSource(ab.b, src, p, o) : null;
+    if (ab && bSrc?.ready) {
+      if (ab.mode === 'diff') {
+        if (!renderer.drawPictureDiff(key, src, pic(src), bSrc, pic(bSrc), abs, ab.gain ?? 4)) renderer.drawPicture(src, abs, pic(src));
+      } else {
+        const pos = ab.mode === 'split' ? 0.5 : Math.max(0, Math.min(1, ab.pos ?? 0.5));
+        renderer.drawPicture(src, abs, pic(src), { x: abs.x, y: abs.y, w: abs.w * pos, h: abs.h });
+        renderer.drawPicture(bSrc, abs, pic(bSrc), { x: abs.x + abs.w * pos, y: abs.y, w: abs.w * (1 - pos), h: abs.h });
+      }
+    } else renderer.drawPicture(src, abs, pic(src));
+    if (ab) drawAbLabels(ctx, r, ab, src, bSrc);
     if (src.faceTrack) {
       // detected faces, numbered left to right; active ones highlighted
       src.faces.forEach(({ id, box: f }, i) => {
@@ -214,7 +277,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
       bands.forEach((bd, i) => {
         const y = r.y + r.h - 12 - (bands.length - 1 - i) * 14;
-        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(r.x + 4, y - 7, 150, 14);
+        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(r.x + 4, y - 7, 190, 14);
         ctx.fillStyle = bd.color; ctx.fillRect(r.x + 6, y - 4, 8, 8);
         ctx.fillStyle = '#ddd'; ctx.fillText(`${bd.from}–${Math.min(100, bd.to)} % ${bd.label}`, r.x + 18, y);
       });

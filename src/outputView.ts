@@ -17,7 +17,7 @@ import { SCOPE_LABELS, isWaveform, plotRect, type ScopeType } from './graticule'
 import { defaultPanel, drawPanel, panelSignature, type DrawOptions, type PanelState } from './panel';
 import { Renderer, type Rect } from './renderer';
 import type { Source } from './sources';
-import { drawVectorGraticule, drawWaveGraticule, drawCieGraticule, drawSkinRange, drawHistogram } from './graticule';
+import { drawDiamondGraticule, drawVectorGraticule, drawWaveGraticule, drawCieGraticule, drawSkinRange, drawHistogram } from './graticule';
 import { LUMA } from './color';
 import { displayParams, vectorTargets } from './panel';
 import { CURSORS, MAX_ELEMENTS, dragElement, hitTest, newElement, type Handle, type OverlayElement, type OverlayScene } from './scene';
@@ -202,8 +202,8 @@ function pictureRect(body: { w: number; h: number }, src: Source | null): Rect {
 }
 const elementRect = (e: OverlayElement, pic: Rect): Rect => ({ x: pic.x + e.x * pic.w, y: pic.y + e.y * pic.h, w: e.w * pic.w, h: e.h * pic.h });
 
-const SCATTER_MODE: Partial<Record<ScopeType, 'vector' | 'cie' | 'skin' | 'parade' | 'yrgb' | 'ycbcr' | 'rgb' | 'luma'>> = {
-  vector: 'vector', cie: 'cie', 'wf-skin': 'skin', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', 'wf-rgb': 'rgb', 'wf-luma': 'luma', 'wf-color': 'luma',
+const SCATTER_MODE: Partial<Record<ScopeType, 'vector' | 'diamond' | 'cie' | 'skin' | 'parade' | 'yrgb' | 'ycbcr' | 'rgb' | 'luma'>> = {
+  vector: 'vector', diamond: 'diamond', cie: 'cie', 'wf-skin': 'skin', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', 'wf-rgb': 'rgb', 'wf-luma': 'luma', 'wf-color': 'luma',
 };
 
 /** Picture with the scene's scopes on top. */
@@ -232,6 +232,7 @@ function drawOverlay(renderer: Renderer, ctx: CanvasRenderingContext2D, src: Sou
     }
     if (isWaveform(el.scope)) { drawWaveGraticule(ctx, el.scope, r, o.unit, s.transfer, { lw: s.hlgLw }); if (el.scope === 'wf-skin') drawSkinRange(ctx, r, o.skin); }
     else if (el.scope === 'vector') drawVectorGraticule(ctx, r, s.colorspace, 1, 0, vectorTargets(s));
+    else if (el.scope === 'diamond') drawDiamondGraticule(ctx, r, null);
     else if (el.scope === 'cie') drawCieGraticule(ctx, r, s.colorspace, { gamut: s.gamut });
     else if (el.scope === 'hist') drawHistogram(ctx, r, s, 'rgb', false);
     ctx.restore();

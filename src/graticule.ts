@@ -9,13 +9,13 @@ import { CIE_VIEW, CIE_VIEW_UV, WAVE_MAX, WAVE_MIN, type Rect } from './renderer
 import { latencyLines } from './latency';
 import type { Source } from './sources';
 
-export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'hist' | 'stats'
+export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'diamond' | 'cie' | 'hist' | 'stats'
   | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits';
 
 export const SCOPE_LABELS: Record<ScopeType, string> = {
   picture: 'Bild', 'wf-luma': 'Waveform Luma', 'wf-color': 'Waveform Farbe', 'wf-skin': 'Waveform Hauttöne', 'wf-rgb': 'Waveform RGB', parade: 'RGB-Parade', yrgb: 'YRGB-Parade',
-  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', hist: 'Histogramm', stats: 'Messwerte',
+  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', diamond: 'Double Diamond', cie: 'CIE-Diagramm', hist: 'Histogramm', stats: 'Messwerte',
   'audio-meter': 'Audio Pegel & Lautheit', 'audio-loudness': 'Audio Lautheitsverlauf', 'audio-spectrum': 'Audio Spektrum', 'audio-phase': 'Audio Goniometer', 'audio-check': 'Audio Ident & A/V-Versatz',
   clock: 'Uhr / Timecode',
 };
@@ -33,7 +33,7 @@ const FONT = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
 /** Plot area inside a panel body (CSS px), shared by WebGL and the overlay. */
 export function plotRect(scope: ScopeType, w: number, h: number, aspect = 16 / 9): Rect {
   if (isWaveform(scope)) return { x: 44, y: 8, w: Math.max(10, w - 52), h: Math.max(10, h - 16) };
-  if (scope === 'vector') {
+  if (scope === 'vector' || scope === 'diamond') {
     const s = Math.max(10, Math.min(w, h) - 16);
     return { x: (w - s) / 2, y: (h - s) / 2, w: s, h: s };
   }
@@ -504,7 +504,7 @@ export function statsLines(src: Source, displayFps: number): string[] {
   }
   if (st) lines.push(`Statistik  ${src.statsPerf.path === 'gpu' ? 'GPU, volle Auflösung' : 'CPU, unterabgetastet'} · ${src.statsPerf.ms.toFixed(2)} ms Hauptthread`);
   lines.push(...latencyLines(src.latency.summary()));
-  lines.push('', ...r103Lines(src));
+  lines.push('', ...lightLines(src), '', ...r103Lines(src));
   return lines;
 }
 
@@ -526,4 +526,66 @@ export function r103Lines(src: Source): string[] {
   else if (src.yuv.full) out.push('           Quelle Full Range: R 103 ist für Narrow Range definiert, hier nur Prozentvergleich');
   if (src.info && src.info.sourceWidth > r.width) out.push(`           gemessen auf ${r.width}×${r.height} (skaliert; normgerecht bei Analysebreite „nativ“)`);
   return out;
+}
+
+/**
+ * MaxCLL / MaxFALL (hdrmeta.ts) of the signal: this frame and the maxima since the source
+ * started. Measured on the analysis picture, so single bright pixels may be averaged away.
+ */
+export function lightLines(src: Source): string[] {
+  const l = src.light, r = src.lightRun;
+  if (!l) return [`MaxCLL     – (${isGamma(src.transfer) || src.transfer === 'pq' || src.transfer === 'hlg' ? 'noch keine Messung' : 'Log-Signal ist szenenbezogen, kein Displaylicht'})`];
+  const n = (v: number) => `${v < 10 ? v.toFixed(2) : Math.round(v)} cd/m²`;
+  return [
+    `MaxCLL     ${n(l.maxCll)}  (bisher ${n(r.maxCll)})`,
+    `FALL       ${n(l.fall)}  (MaxFALL bisher ${n(r.maxFall)}, ${r.frames} Messungen)`,
+  ];
+}
+
+/**
+ * Double diamond (gamut display in the style of Tektronix; idea from scopes_plusplus, formulas
+ * written anew, see docs/research/colour-repos.md): upper diamond x = (B − G)/2, y = (B + G)/2,
+ * lower diamond x = (R − G)/2, y = −(R + G)/2. Black is the centre, white the upper and lower
+ * tip; every legal R′G′B′ (0…100 %) lies inside both diamonds. No low-pass filter as in the
+ * hardware instruments. Same mapping as the shader (renderer.ts, mode 8).
+ */
+export function diamondPoint(r: Rect, a: number, g: number, upper: boolean): [number, number] {
+  const x = (a - g) * 0.5 * 0.9, y = (upper ? 1 : -1) * (a + g) * 0.5 * 0.9;
+  return [r.x + (x * 0.5 + 0.5) * r.w, r.y + (0.5 - y * 0.5) * r.h];
+}
+
+export function drawDiamondGraticule(ctx: CanvasRenderingContext2D, r: Rect, probe: [number, number, number] | null) {
+  ctx.save();
+  ctx.lineWidth = 1;
+  const outline = (upper: boolean, lo: number, hi: number, style: string, dash: number[] = []) => {
+    ctx.strokeStyle = style; ctx.setLineDash(dash);
+    ctx.beginPath();
+    ([[lo, lo], [lo, hi], [hi, hi], [hi, lo]] as [number, number][]).forEach(([g, a], i) => {
+      const [x, y] = diamondPoint(r, a, g, upper);
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    });
+    ctx.closePath(); ctx.stroke();
+  };
+  for (const up of [true, false]) {
+    outline(up, 0, 1, GRID);
+    outline(up, 0, 0.5, GRID_DIM, [3, 3]);
+  }
+  ctx.setLineDash([]);
+  ctx.fillStyle = LABEL; ctx.font = FONT; ctx.textBaseline = 'middle';
+  const lab = (t: string, a: number, g: number, up: boolean, align: CanvasTextAlign, dx: number) => {
+    const [x, y] = diamondPoint(r, a, g, up); ctx.textAlign = align; ctx.fillText(t, x + dx, y);
+  };
+  lab('B', 1, 0, true, 'left', 6); lab('G', 0, 1, true, 'right', -6);
+  lab('R', 1, 0, false, 'left', 6); lab('G', 0, 1, false, 'right', -6);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText('G/B', r.x + 4, r.y + 4);
+  ctx.textBaseline = 'bottom'; ctx.fillText('G/R', r.x + 4, r.y + r.h - 4);
+  if (probe) {
+    ctx.strokeStyle = '#00dcff'; ctx.lineWidth = 1.5;
+    for (const [a, up] of [[probe[2], true], [probe[0], false]] as [number, boolean][]) {
+      const [x, y] = diamondPoint(r, a, probe[1], up);
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  ctx.restore();
 }

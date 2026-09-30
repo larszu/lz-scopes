@@ -7,14 +7,15 @@ import { CHAIN_GLSL, baseOf, chainOf, linearGlsl, setChainUniforms, setLinearUni
 import type { Lut } from './lut';
 import type { Source } from './sources';
 import { R103, R103_GLSL, YUV_FETCH_GLSL, yuvScale } from './ycbcr';
+import { RGC, RGC_GLSL, rgcScale } from './rgc';
 import { BLUR_FS, CRT_DISPLAY_FS, CRT_FS, CRT_VS_MAIN, PERSIST_FS, PHOSPHORS, beamSigma, persistDecay, type CrtSettings } from './crt';
 
 /** Beam segments per CRT scope and frame (each is a quad, far more fill than a point). */
 const CRT_BUDGET = 150_000;
 
-export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'skin';
-const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7 };
-const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1 };
+export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'skin' | 'diamond';
+const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7, diamond: 8 };
+const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1, diamond: 2 };
 
 export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'gamut' | 'r103';
 const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5, gamut: 6, r103: 7 };
@@ -137,6 +138,11 @@ bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
     float v = ch == 0 ? Y : ch == 1 ? cb + 0.5 : cr + 0.5;
     pos = vec2((float(ch) + x) / 3.0 * 2.0 - 1.0, waveY(v));
     col = ch == 0 || uColorize == 0 ? mono : ch == 1 ? vec3(0.35, 0.55, 1.0) : vec3(1.0, 0.3, 0.35);
+  } else if (uMode == 8) {
+    // double diamond (graticule.ts diamondPoint): upper G/B, lower G/R, black in the centre
+    float a = ch == 0 ? rgb.b : rgb.r;
+    pos = vec2(a - rgb.g, (ch == 0 ? 1.0 : -1.0) * (a + rgb.g)) * 0.5 * 0.9;
+    if (uColorize == 1) col = srcCol;
   } else if (uMode == 5) {
     pos = vec2(cb, cr) * 2.0 * 0.9 * uZoom;
     if (uColorize == 1) col = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
@@ -215,8 +221,9 @@ const PICTURE_FS = (k: TexKind, r103: boolean) => `#version 300 es
 precision highp float; precision highp int;
 ${FETCH(k)}
 ${r103 ? R103_GLSL : ''}
+${RGC_GLSL}
 uniform ivec2 uSize; uniform int uMode; uniform vec2 uK;
-uniform vec4 uBand[8]; uniform int uBands;
+uniform vec4 uBand[12]; uniform int uBands;
 uniform float uZebra, uZebraLow;
 uniform int uDisp;
 uniform mat3 uGamut, uWarn;
@@ -229,7 +236,8 @@ float srgbOetf(float l) { return l <= 0.0031308 ? 12.92 * l : 1.055 * pow(l, 1.0
 /** Signal → what the chosen display should show (uDisp 0 sRGB/P3 curve, 1 BT.1886, 2 raw). */
 vec3 toDisplay(vec3 rgb) {
   if (uDisp == 2) return rgb;
-  vec3 l = uGamut * toLinear(rgb);
+  vec3 lin = toLinear(rgb);
+  vec3 l = uRgc == 1 ? uAp1Disp * rgcAp1(uToAp1 * lin) : uGamut * lin;
   if (uTransfer >= 1 && uTransfer <= 3) { // simple highlight roll-off for HDR/log on SDR (approximation, not BT.2390/BT.2408)
     float m = max(l.r, max(l.g, l.b)), w = 4.0;
     if (m > 0.0) l *= (1.0 + m / (w * w)) / (1.0 + m);
@@ -249,7 +257,7 @@ void main() {
     if (!(isSkin(cb, cr, uSkin.z) && inRange)) c = vec3(dot(c, vec3(0.2126, 0.7152, 0.0722)));
   } else if (uMode == 1) {
     c = vec3(Y * 0.8);
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 12; i++) {
       if (i >= uBands) break;
       vec4 b = uBand[i];
       float from = b.x, to = b.y;
@@ -273,7 +281,7 @@ void main() {
     c = vec3(Y);
   } else if (uMode == 6) {
     // gamut warning: distance d = (max - c)/max in the target gamut; d > 1 = a channel is negative
-    vec3 t = uWarn * toLinear(rgb);
+    vec3 t = uRgc == 1 ? uAp1Warn * rgcAp1(uToAp1 * toLinear(rgb)) : uWarn * toLinear(rgb);
     float ach = max(t.r, max(t.g, t.b));
     float d = ach > 0.0 ? max((ach - t.r) / ach, max((ach - t.g) / ach, (ach - t.b) / ach)) : 0.0;
     c = vec3(dot(c, vec3(0.2126, 0.7152, 0.0722)) * 0.7);
@@ -313,6 +321,8 @@ export interface PictureParams {
   mode: PictureMode; bands: FalseColorBand[]; zebra: number; zebraLow: number; roi: Rois; skin: SkinRange; display: DisplayParams;
   /** gamut warning: row-major 3×3 source linear → target gamut linear */
   warn?: number[];
+  /** ACES 1.3 RGC preview (rgc.ts): row-major source linear → AP1, AP1 → display, AP1 → warning target */
+  rgc?: { toAp1: number[]; display: number[]; warn: number[] };
 }
 
 const colMajor = (m: number[]) => [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
@@ -448,7 +458,7 @@ export class Renderer {
   }
 
   dropPanel(key: string) {
-    for (const k of [key, `${key}#p0`, `${key}#p1`, `${key}#g0`, `${key}#g1`]) {
+    for (const k of [key, `${key}#p0`, `${key}#p1`, `${key}#g0`, `${key}#g1`, `${key}#da`, `${key}#db`]) {
       const a = this.accums.get(k);
       if (a) { this.gl.deleteTexture(a.tex); this.gl.deleteFramebuffer(a.fbo); this.accums.delete(k); }
     }
@@ -524,7 +534,7 @@ export class Renderer {
     const acc = this.accum(key, vp.w, vp.h);
     const kind = this.texKind(src, t);
     const crt = p.crt?.on ? p.crt : null;
-    const wave = p.mode !== 'vector' && p.mode !== 'cie';
+    const wave = p.mode !== 'vector' && p.mode !== 'cie' && p.mode !== 'diamond';
     // Normalise so that the display brightness does not depend on source or panel size.
     const sections = p.mode === 'parade' || p.mode === 'yrgb' ? p.secN ?? (p.mode === 'yrgb' ? 4 : 3) : p.mode === 'ycbcr' ? 3 : 1;
     let stepX: number, stepY: number;
@@ -710,13 +720,18 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
     gl.disable(gl.BLEND);
   }
 
-  drawPicture(src: Source, rect: Rect, p: PictureParams) {
+  /**
+   * @param clip  only draw inside this rect (A/B wipe)
+   * @param target render into an offscreen buffer instead of the canvas (A/B difference)
+   */
+  drawPicture(src: Source, rect: Rect, p: PictureParams, clip?: Rect, target?: Accum) {
     const t = this.sourceTexture(baseOf(src));
-    if (!t) return;
+    if (!t) return false;
     const gl = this.gl;
     const vp = this.viewport(rect);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(vp.x, vp.y, vp.w, vp.h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target?.fbo ?? null);
+    if (target) gl.viewport(0, 0, target.w, target.h); else gl.viewport(vp.x, vp.y, vp.w, vp.h);
+    if (clip && !target) { const c = this.viewport(clip); gl.enable(gl.SCISSOR_TEST); gl.scissor(c.x, c.y, c.w, c.h); }
     const kind = this.texKind(src, t);
     const r103 = p.mode === 'r103';
     const prog = this.program(`picture${kind}${r103 ? 'r103' : ''}`, QUAD_VS, PICTURE_FS(kind, r103));
@@ -735,17 +750,57 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
     gl.uniform1i(this.u(prog, 'uDisp'), p.display.curve);
     gl.uniformMatrix3fv(this.u(prog, 'uGamut'), false, colMajor(p.display.gamut));
     gl.uniformMatrix3fv(this.u(prog, 'uWarn'), false, colMajor(p.warn ?? [1, 0, 0, 0, 1, 0, 0, 0, 1]));
+    gl.uniform1i(this.u(prog, 'uRgc'), p.rgc ? 1 : 0);
+    if (p.rgc) {
+      gl.uniformMatrix3fv(this.u(prog, 'uToAp1'), false, colMajor(p.rgc.toAp1));
+      gl.uniformMatrix3fv(this.u(prog, 'uAp1Disp'), false, colMajor(p.rgc.display));
+      gl.uniformMatrix3fv(this.u(prog, 'uAp1Warn'), false, colMajor(p.rgc.warn));
+      gl.uniform3f(this.u(prog, 'uRgcThr'), RGC.thrC, RGC.thrM, RGC.thrY);
+      gl.uniform3f(this.u(prog, 'uRgcScale'), rgcScale(RGC.limC, RGC.thrC, RGC.power), rgcScale(RGC.limM, RGC.thrM, RGC.power), rgcScale(RGC.limY, RGC.thrY, RGC.power));
+      gl.uniform1f(this.u(prog, 'uRgcPow'), RGC.power);
+    }
     gl.uniform3f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol);
     this.setRois(prog, p.roi);
-    const bands = new Float32Array(32);
-    p.bands.slice(0, 8).forEach((b, i) => {
+    const bands = new Float32Array(48);
+    p.bands.slice(0, 12).forEach((b, i) => {
       const [r, g, bl] = hexToRgb(b.color).map((v) => Math.round(v * 255));
       bands.set([b.from / 100, b.to / 100, r * 65536 + g * 256 + bl, 0], i * 4);
     });
     gl.uniform4fv(this.u(prog, 'uBand'), bands);
-    gl.uniform1i(this.u(prog, 'uBands'), Math.min(8, p.bands.length));
+    gl.uniform1i(this.u(prog, 'uBands'), Math.min(12, p.bands.length));
     gl.bindVertexArray(this.vao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.disable(gl.SCISSOR_TEST);
+    return true;
+  }
+
+  /**
+   * A/B difference: both pictures rendered offscreen (display-encoded, as shown), then
+   * max |A − B| over R, G, B × gain as grey.
+   */
+  drawPictureDiff(key: string, a: Source, pa: PictureParams, b: Source, pb: PictureParams, rect: Rect, gain: number) {
+    const gl = this.gl, vp = this.viewport(rect);
+    const ta = this.accum(`${key}#da`, vp.w, vp.h), tb = this.accum(`${key}#db`, vp.w, vp.h);
+    if (!this.drawPicture(a, rect, pa, undefined, ta) || !this.drawPicture(b, rect, pb, undefined, tb)) return false;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(vp.x, vp.y, vp.w, vp.h);
+    const prog = this.program('abdiff', QUAD_VS, `#version 300 es
+precision highp float;
+uniform sampler2D uA, uB; uniform float uGain;
+in vec2 vUv; out vec4 o;
+void main() {
+  vec3 d = abs(texture(uA, vUv).rgb - texture(uB, vUv).rgb);
+  o = vec4(vec3(clamp(max(d.r, max(d.g, d.b)) * uGain, 0.0, 1.0)), 1.0);
+}`);
+    gl.useProgram(prog);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, ta.tex);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, tb.tex);
+    gl.uniform1i(this.u(prog, 'uA'), 0); gl.uniform1i(this.u(prog, 'uB'), 1);
+    gl.uniform1f(this.u(prog, 'uGain'), gain);
+    gl.bindVertexArray(this.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.activeTexture(gl.TEXTURE0);
+    return true;
   }
 
   private setRois(prog: WebGLProgram, rois: Rois) {

@@ -4,6 +4,7 @@ import type { ChainSettings, Compiled } from './chain';
 import { patternById, renderPattern } from './patterns';
 import { AudioAnalysis } from './audio/analysis';
 import { AudioTap, StreamMonitor, generator, measurementConstraints } from './audio/io';
+import { lightLevels, type LightLevels } from './hdrmeta';
 import { r103Check, rgbDecoder, yuvDecoder, type Decode, type R103Result, type YuvCoding } from './ycbcr';
 import { debugFlags, openFrameSocket, workerAvailable, type FrameSocket } from './frameLink';
 import { GpuStats } from './gpuStats';
@@ -147,6 +148,10 @@ export class Source {
   monitorError = '';
   private lastFrame: { px: ArrayLike<number>; w: number; h: number; step: number; scale: number; roi: [number, number, number, number][] | null; decode: Decode } | null = null;
   private r103Cache = new Map<string, { key: string; at: number; res: R103Result }>();
+  /** MaxCLL / frame average of the last analysed frame and the running maxima since the source started (hdrmeta.ts) */
+  light: LightLevels | null = null;
+  lightRun = { maxCll: 0, maxFall: 0, frames: 0 };
+  resetLight() { this.lightRun = { maxCll: 0, maxFall: 0, frames: 0 }; }
 
   /** Reads a pixel of the raw frame (`data`) as normalised R′G′B′: Y′CbCr decoded with the source matrix. */
   decoder(): Decode {
@@ -670,6 +675,7 @@ export class Source {
     this.audio = null;
     if (this.videoEl) { this.videoEl.pause(); this.videoEl.srcObject = null; this.videoEl = null; }
     if (this.objectUrl) { URL.revokeObjectURL(this.objectUrl); this.objectUrl = null; }
+    this.resetLight(); this.light = null;
     this.element = null; this.data = null; this.yuv = null; this.info = null; this.tc = null; this.width = 0; this.height = 0; this.stats = null;
     this.fps = 0; this.dropped = 0;
     if (this.status !== 'idle') this.set('idle');
@@ -767,7 +773,7 @@ export class Source {
       const g = this.gpuStats;
       if (g) {
         const res = g.poll();
-        if (res) { this.stats = res; this.lastFrame = null; this.statsVersion++; }
+        if (res) { this.stats = res; this.lastFrame = null; this.light = null; this.statsVersion++; }
         let queued = true;
         if (!g.busy && this.statsSeq !== seqKey) {
           const rois = this.activeRois();
@@ -785,6 +791,12 @@ export class Source {
     const f = this.readbackFrame();
     if (!f) return;
     this.stats = computeStats(f.px, f.w, f.h, f.step, f.scale, kr, kb, f.roi, undefined, f.decode);
+    // light levels on the whole frame (not the ROI), about 30 k samples
+    this.light = lightLevels(f.px, f.w, f.h, Math.max(1, Math.round(Math.sqrt((f.w * f.h) / 30000))), f.decode, this.transfer, this.hlgLw);
+    if (this.light) {
+      const r = this.lightRun;
+      r.maxCll = Math.max(r.maxCll, this.light.maxCll); r.maxFall = Math.max(r.maxFall, this.light.fall); r.frames++;
+    }
     this.statsVersion++;
     this.statsPerf = { path: 'cpu', ms: performance.now() - t0 };
   }

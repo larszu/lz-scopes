@@ -54,6 +54,7 @@
 - **Your layout.** Dock, stack and resize panels by drag and drop, keep layout configurations as JSON.
 - **Face tracking.** Skin-tone waveform that follows a detected face; pick which face to track (MediaPipe BlazeFace, runs locally).
 - **Vectorscope tools.** Zoom, gamut boundaries and colour-match targets; per-scope settings behind the gear icon.
+- **Double diamond** gamut display (G/B over G/R), **A/B comparison** in the picture panel (split, wipe, difference; other stage of the same source or another source), **ACES 1.3 gamut compression preview**, false-colour presets ARRI and RED (from their manuals; no Sony preset, its table could not be verified), **MaxCLL / MaxFALL** in the measurements panel ([docs/research/colour-repos.md](docs/research/colour-repos.md)).
 - **Outputs and overlay scenes.** Send a scope view or clean picture to another screen, as an MJPEG stream or by ffmpeg to RTMP / SRT / RTSP / UDP. Overlay scenes combine any number of scopes with position, size and opacity, editable in the output window (`E`).
 - **Remote control.** HTTP / WebSocket control API and a Bitfocus Companion module ([docs/control-api.md](docs/control-api.md), `companion/`).
 - **Embeddable.** `ScopeView` renders scopes in any page without a framework.

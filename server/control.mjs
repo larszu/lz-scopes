@@ -7,7 +7,7 @@
 // Panels, sources and layout presets are 1-based numbers or names/ids, as a user
 // sees them; the main window resolves them.
 
-export const OVERLAY_SCOPES = ['wf-luma', 'wf-color', 'wf-skin', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'cie', 'hist'];
+export const OVERLAY_SCOPES = ['wf-luma', 'wf-color', 'wf-skin', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'diamond', 'cie', 'hist'];
 export const AUDIO_SCOPES = ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check'];
 export const PANEL_SCOPES = ['picture', ...OVERLAY_SCOPES, 'stats', ...AUDIO_SCOPES, 'clock'];
 export const OUTPUT_VIEWS = ['grid', 'panel', 'clean', 'overlay'];

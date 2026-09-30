@@ -1,4 +1,4 @@
-import { LUMA, detectColorspace, detectTransfer, isLog, transferSignalled, type Colorspace, type GamutId, type Transfer } from './color';
+import { LUMA, detectColorspace, detectTransfer, isLog, pqDecode, transferSignalled, type Colorspace, type GamutId, type Transfer } from './color';
 import { LOG_CURVES } from './camera';
 import type { ChainSettings, Compiled } from './chain';
 import { patternById, renderPattern } from './patterns';
@@ -86,7 +86,15 @@ export interface Stats {
   rgbAvg: [number, number, number];
   clipLow: number[]; clipHigh: number[]; // fraction per R, G, B
   samples: number;
+  /**
+   * PQ only: content light level of this frame (HDR10 static metadata, definition as in alwan docs/api/hdr.md) – per pixel max(R, G, B)
+   * in cd/m²; max = brightest pixel, avg = frame average (on the analysed samples).
+   */
+  cll?: { max: number; avg: number };
 }
+
+/** MaxCLL / MaxFALL (CTA-861.3) over the frames seen since the last reset. */
+export interface LightLevel { maxCll: number; maxFall: number; frames: number }
 
 /** Extra query parameters of the bridge for capture devices, DeckLink and the decode matrix. */
 export function bridgeInputParams(url: string, set: SourceSettings): Record<string, string> {
@@ -134,6 +142,10 @@ export class Source {
   frozen = false;
   stats: Stats | null = null;
   statsVersion = 0;
+  /** running MaxCLL / MaxFALL of PQ sources (whole frames only, reset on source/transfer change) */
+  lightLevel: LightLevel = { maxCll: 0, maxFall: 0, frames: 0 };
+  private lightKey = '';
+  resetLightLevel() { this.lightLevel = { maxCll: 0, maxFall: 0, frames: 0 }; }
   /** Sound of this source (bridge PCM, video file, audio device, generator); null = none. */
   audio: AudioAnalysis | null = null;
   audioIn: AudioInput = { mode: 'device', deviceId: '' };
@@ -784,7 +796,14 @@ export class Source {
     this.statsSeq = seqKey;
     const f = this.readbackFrame();
     if (!f) return;
-    this.stats = computeStats(f.px, f.w, f.h, f.step, f.scale, kr, kb, f.roi, undefined, f.decode);
+    const pq = this.transfer === 'pq';
+    this.stats = computeStats(f.px, f.w, f.h, f.step, f.scale, kr, kb, f.roi, undefined, f.decode, pq ? pqDecode : undefined);
+    const lk = `${this.id}:${this.transfer}:${this.url}`;
+    if (lk !== this.lightKey) { this.lightKey = lk; this.resetLightLevel(); }
+    if (pq && this.stats.cll && !f.roi) {
+      const l = this.lightLevel;
+      l.maxCll = Math.max(l.maxCll, this.stats.cll.max); l.maxFall = Math.max(l.maxFall, this.stats.cll.avg); l.frames++;
+    }
     this.statsVersion++;
     this.statsPerf = { path: 'cpu', ms: performance.now() - t0 };
   }
@@ -812,7 +831,8 @@ export class Source {
   }
 }
 
-export function computeStats(px: ArrayLike<number>, w: number, h: number, step: number, scale: number, kr: number, kb: number, rois: [number, number, number, number] | [number, number, number, number][] | null = null, map?: (rgb: number[]) => number[], decode: Decode = rgbDecoder(scale)): Stats {
+/** @param light signal → cd/m² (PQ): adds the frame's content light level (Stats.cll) */
+export function computeStats(px: ArrayLike<number>, w: number, h: number, step: number, scale: number, kr: number, kb: number, rois: [number, number, number, number] | [number, number, number, number][] | null = null, map?: (rgb: number[]) => number[], decode: Decode = rgbDecoder(scale), light?: (v: number) => number): Stats {
   // one rectangle or several (union); the bounding box limits the scan
   const list = !rois ? null : (typeof rois[0] === 'number' ? [rois as [number, number, number, number]] : rois as [number, number, number, number][]);
   const x0 = list ? Math.min(...list.map((r) => r[0])) : 0, y0 = list ? Math.min(...list.map((r) => r[1])) : 0;
@@ -822,7 +842,7 @@ export function computeStats(px: ArrayLike<number>, w: number, h: number, step: 
   const kg = 1 - kr - kb;
   const lo = 0.5 / 255, hi = 254.5 / 255;
   const clipLow = [0, 0, 0], clipHigh = [0, 0, 0];
-  let yMin = 1, yMax = 0, ySum = 0, n = 0, rS = 0, gS = 0, bS = 0;
+  let yMin = 1, yMax = 0, ySum = 0, n = 0, rS = 0, gS = 0, bS = 0, cllMax = 0, cllSum = 0;
   for (let y = Math.max(0, y0); y < Math.min(h, y1); y += step) {
     for (let x = Math.max(0, x0); x < Math.min(w, x1); x += step) {
       if (!inside(x, y)) continue;
@@ -840,11 +860,14 @@ export function computeStats(px: ArrayLike<number>, w: number, h: number, step: 
       if (Y < yMin) yMin = Y;
       if (Y > yMax) yMax = Y;
       ySum += Y; n++; rS += r; gS += g; bS += b;
+      // signal clamped to 0…1: super-whites of unclipped Y′CbCr are not light above the PQ peak
+      if (light) { const l = light(Math.min(1, Math.max(r, g, b, 0))); cllSum += l; if (l > cllMax) cllMax = l; }
     }
   }
   return {
     hist, yMin, yMax, yAvg: n ? ySum / n : 0, samples: n, rgbAvg: n ? [rS / n, gS / n, bS / n] : [0, 0, 0],
     clipLow: clipLow.map((c) => c / Math.max(1, n)), clipHigh: clipHigh.map((c) => c / Math.max(1, n)),
+    ...(light ? { cll: { max: cllMax, avg: n ? cllSum / n : 0 } } : {}),
   };
 }
 

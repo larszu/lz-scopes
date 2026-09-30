@@ -65,3 +65,6 @@ Statistics of a 1920×1080 video file (e2e/gpustats.spec.ts), main-thread time p
   labelled as such in the source card and the Messwerte panel.
 - The GPU statistics remove the synchronous readback for browser-decoded video (camera,
   capture, files) – about 6 ms less main-thread work every 100 ms, at full resolution.
+
+Follow-up (low-latency mode, stage split, the rawvideo encoder's one-frame hold-back):
+[low-latency.md](low-latency.md).

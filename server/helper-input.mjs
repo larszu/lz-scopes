@@ -134,7 +134,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
     const { decodeMatrix, decodeRange } = ctx.applyDecodeOverride(ctx.decodeParams(tags), opts);
     const vf = [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}`];
     if (fpsLimit) vf.push(`fps=${fpsLimit}`);
-    ff = spawn(ctx.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', ...f.input, '-vf', vf.join(','), '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-f', 'rawvideo', 'pipe:1'],
+    ff = spawn(ctx.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', ...f.input, '-vf', vf.join(','), '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-threads', '1', '-f', 'rawvideo', 'pipe:1'],
       { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     ff.stdin.on('error', () => {});
     ff.stderr.on('data', (d) => { stderr = (stderr + d).slice(-1500); });

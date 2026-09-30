@@ -178,6 +178,7 @@ function settingsItems(): Node[] {
     row('Messpunkt', select(state.stage ?? 'signal', STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string]), (v) => setStage(v as Stage), 'Standard für alle Panels ohne eigenen Messpunkt (Taste C)')),
     row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}${detected.hdr ? ' (HDR-fähig)' : ''}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])],
       (v) => { state.display = v as Persisted['display']; save(); renderHeader(); }, 'Display-Farbraum der Bildansicht; die Scopes messen immer das Signal')),
+    row('', h('button', { class: 'mini', title: 'Messfelder ausgeben, Display mit Messgerät (ArgyllCMS) oder manuell prüfen, Uniformität, Bericht, 3D-LUT', onclick: openCalibrationDialog }, 'Kalibrierung / Verifikation …')),
     row('Spurfarbe', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); })),
     row('Präzision', select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }, 'Abtastpunkte je Scope')),
     row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); })),
@@ -187,6 +188,15 @@ function settingsItems(): Node[] {
     row('Hautton Farbton ±', numIn(state.skin.tol, 2, 45, (v) => { state.skin.tol = v; }), '° um die Hautton-Linie'),
     row('Zebra', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%'),
   ];
+}
+
+function openCalibrationDialog() {
+  document.querySelectorAll<HTMLDetailsElement>('#globals details.menu[open]').forEach((d) => (d.open = false));
+  const ws = bridgeUrl();
+  import('./calib/ui').then((m) => m.openCalibration({
+    bridgeWs: () => ws, bridgeHttp: () => ws.replace(/^ws/, 'http'),
+    openPatchWindow: () => window.open(`${location.pathname}?${new URLSearchParams({ out: 'black', w: String(Math.round(screen.width * devicePixelRatio)), h: String(Math.round(screen.height * devicePixelRatio)) })}`, 'lz-scopes-pattern', 'popup,width=1280,height=720'),
+  }));
 }
 
 function numIn(value: number, min: number, max: number, set: (v: number) => void) {

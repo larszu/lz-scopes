@@ -1,6 +1,8 @@
-// Fullscreen pattern output: ?out=<id>&w=&h=&label=  (← → switch, F fullscreen, L label, Esc exit)
+// Fullscreen pattern output: ?out=<id>&w=&h=&label=  (← → switch, F fullscreen, L label, Esc exit).
+// Measurement patches sent with sendPatch() (src/patchSequencer.ts) take over while active.
 
 import { PATTERNS, patternById, renderPattern } from './patterns';
+import { drawPatch, listenPatches, type PatchFrame } from './patchSequencer';
 
 export function runOutputWindow() {
   const q = new URLSearchParams(location.search);
@@ -19,7 +21,10 @@ export function runOutputWindow() {
   hud.style.cssText = 'position:fixed;left:12px;bottom:12px;font:12px system-ui;color:#F6F5F0;background:rgba(19,32,64,.85);padding:4px 8px;transition:opacity .4s';
   document.body.append(hud);
   let hudTimer = 0;
+  // Measurement patches from the main window (calibration, LED wall) replace the pattern.
+  let patch: PatchFrame | null = null;
   const showHud = () => {
+    if (patch) return;
     const p = PATTERNS[idx];
     hud.textContent = `${p.group} · ${p.name} · ${w}×${h}   ← → wechseln · F Vollbild · L Label`;
     hud.style.opacity = '1';
@@ -27,13 +32,15 @@ export function runOutputWindow() {
   };
   const t0 = performance.now();
   let busy = false;
+  listenPatches((f) => { patch = f; hud.style.opacity = '0'; draw(); });
   const draw = async () => {
+    if (patch) { drawPatch(ctx, w, h, patch); return; }
     if (busy) return;
     busy = true;
     await renderPattern(ctx, patternById(PATTERNS[idx].id), w, h, (performance.now() - t0) / 1000, showLabel ? label : '');
     busy = false;
   };
-  const loop = () => { if (PATTERNS[idx].animated) draw(); requestAnimationFrame(loop); };
+  const loop = () => { if (!patch && PATTERNS[idx].animated) draw(); requestAnimationFrame(loop); };
   document.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight' || e.key === ' ') idx = (idx + 1) % PATTERNS.length;
     else if (e.key === 'ArrowLeft') idx = (idx - 1 + PATTERNS.length) % PATTERNS.length;

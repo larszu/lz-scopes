@@ -194,7 +194,7 @@ function toggleFs() {
   if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {});
 }
 
-const displayOf = (o: DrawOptions, src: Source) => displayParams(src, o.display);
+const displayOf = (o: DrawOptions, src: Source) => displayParams(src, o.display, o.hdrPreview);
 
 /** Picture area of the overlay view (fractions of it position the scene elements). */
 function pictureRect(body: { w: number; h: number }, src: Source | null): Rect {

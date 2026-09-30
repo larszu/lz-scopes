@@ -1,7 +1,7 @@
 import './vendor/dockview.css';
 import './style.css';
 import { DEFAULT_THEME, SIGNET, THEMES, applyTheme, isTheme, type UiTheme } from './theme';
-import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, HLG_PEAKS, LUMA, detectDisplay, transferLabel, type DisplaySpace, type GamutId } from './color';
+import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, HDR_PREVIEW_LABELS, HLG_PEAKS, LUMA, detectDisplay, transferLabel, type DisplaySpace, type GamutId, type HdrPreview } from './color';
 import { CAMERA_GAMUTS, LOG_CURVES } from './camera';
 import {
   CAMERA_PRESETS, CST_TARGETS, DEFAULT_CST, STAGES, STAGE_LABELS, TONEMAP_LABELS, autoPeaks, stageNote,
@@ -38,6 +38,8 @@ interface Persisted {
   layout: string; panels: PanelState[]; unit: Unit; tint: Tint; falsePreset: string;
   zebra: number; zebraLow: number; maxSamples: number; bridge: string; sidebar: boolean;
   skin: SkinRange; display: 'auto' | DisplaySpace;
+  /** picture view: HDR/log → SDR down-mapping */
+  hdrPreview?: HdrPreview;
   /** UI skin (Oberfläche); chrome only, never the measurement colours */
   theme: UiTheme;
   targets: VectorTarget[];
@@ -186,6 +188,8 @@ function settingsItems(): Node[] {
   return [
     row('Oberfläche', select(state.theme, THEMES, (v) => { if (isTheme(v)) setTheme(v); }, 'Farben der Bedienoberfläche. Messdarstellungen (Spuren, Graticule, Falschfarben) bleiben in allen Varianten gleich.')),
     row('Messpunkt', select(state.stage ?? 'signal', STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string]), (v) => setStage(v as Stage), 'Standard für alle Panels ohne eigenen Messpunkt (Taste C)')),
+    row('HDR-Vorschau', select(state.hdrPreview ?? 'bt2408', Object.entries(HDR_PREVIEW_LABELS) as [string, string][], (v) => { state.hdrPreview = v as HdrPreview; save(); renderHeader(); },
+      'Wie die Bildansicht HDR (PQ/HLG) und Log auf einem SDR-Display zeigt: BT.2408 hybrid-linear (Referenzweiß ≈ 93 %, Lichter per BT.2390-EETF) oder BT.2446 Methode A. Die Scopes messen immer das Signal.')),
     row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}${detected.hdr ? ' (HDR-fähig)' : ''}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])],
       (v) => setDisplaySpace(v as Persisted['display']), 'Display-Farbraum der Bildansicht; die Scopes messen immer das Signal')),
     row('', h('button', { class: 'mini', title: 'Messfelder ausgeben, Display mit Messgerät (ArgyllCMS) oder manuell prüfen, Uniformität, Bericht, 3D-LUT', onclick: openCalibrationDialog }, 'Kalibrierung / Verifikation …')),
@@ -693,7 +697,7 @@ function panelSettings(p: PanelState): Node[] {
     c.onchange = () => { p[key] = c.checked; save(); refreshHeads(); };
     return h('label', { class: 'inline' }, c, label);
   };
-  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'cie';
+  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond';
   if (scatter) {
     const gain = h('input', { type: 'range', min: -3, max: 3, step: 0.1, value: Math.log2(p.gain), title: 'Doppelklick = Standard' }) as HTMLInputElement;
     gain.oninput = () => { p.gain = 2 ** Number(gain.value); save(); };
@@ -706,7 +710,7 @@ function panelSettings(p: PanelState): Node[] {
   } else if (scatter && p.scope !== 'wf-skin' && p.scope !== 'wf-color') {
     row('Farbe', check('colorize', 'Spur in Bildfarbe'));
   }
-  if (scatter && p.scope !== 'vector' && p.scope !== 'cie') {
+  if (isWaveform(p.scope)) {
     row('Skala', select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m² / Szene']], (v) => { state.unit = v as Unit; save(); renderHeader(); }));
     row('Marken', check('marks', 'BT.2408 (HDR) / 18 % Grau (Log)', true));
     row('EBU R 103', check('r103', 'Grenzen −5 / 105 %'));
@@ -794,6 +798,9 @@ function panelSettings(p: PanelState): Node[] {
         refreshHeads();      }, 'Erkannte Gesichter erscheinen grau; ein Klick aufs Gesicht im Bild verfolgt es (erneut klicken hebt auf)'));
     }
   }
+  if (p.scope === 'stats') {
+    row('HDR10-Kennwerte', h('button', { class: 'mini', title: 'MaxCLL/MaxFALL (CTA-861.3) neu zählen – nur bei PQ-Quellen, nur ganze Bilder', onclick: () => { panelSource(p)?.resetLightLevel(); } }, 'MaxCLL/MaxFALL zurücksetzen'));
+  }
   if (p.scope === 'picture') {
     row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung'], ['r103', 'EBU R 103']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
     if (p.picture === 'gamut') row('Zielgamut', select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, 'Markiert Pixel, die im Zielgamut negative Anteile hätten'));
@@ -803,6 +810,8 @@ function panelSettings(p: PanelState): Node[] {
     clk.onchange = () => { p.clockOverlay = clk.checked; save(); };
     row('Uhr', h('label', { class: 'inline', title: 'Tageszeit-Timecode (Systemuhr) und Quell-Timecode mit Differenz einblenden; Rate und PTP wie im Uhr-Panel' }, clk, 'Timecode einblenden'));
     row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])], (v) => setDisplaySpace(v as Persisted['display'])));
+    row('HDR-Vorschau', select(state.hdrPreview ?? 'bt2408', Object.entries(HDR_PREVIEW_LABELS) as [string, string][], (v) => { state.hdrPreview = v as HdrPreview; save(); renderHeader(); },
+      'Wie die Bildansicht HDR (PQ/HLG) und Log auf einem SDR-Display zeigt: BT.2408 hybrid-linear (Referenzweiß ≈ 93 %, Lichter per BT.2390-EETF) oder BT.2446 Methode A. Die Scopes messen immer das Signal.'));
     const bar = h('input', { type: 'checkbox', checked: p.audioBar !== false }) as HTMLInputElement;
     bar.onchange = () => { p.audioBar = bar.checked; save(); refreshHeads(); };
     row('Ton', h('label', { class: 'inline', title: 'Pegel je Kanal (−60 … 0 dBFS, Marken −18 und −1) und Short-term-Lautheit am rechten Bildrand, wenn die Quelle Ton hat' }, bar, 'Kompakter Pegelbalken'));
@@ -1057,7 +1066,7 @@ function drawOptions(): DrawOptions {
   const displaySpace = state.display === 'auto' ? detected.space : state.display;
   return {
     unit: state.unit, tint: state.tint, maxSamples: state.maxSamples, falsePreset: state.falsePreset,
-    zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps, skin: state.skin, display: displaySpace, targets: state.targets,
+    zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps, skin: state.skin, display: displaySpace, hdrPreview: state.hdrPreview, targets: state.targets,
     stage: state.stage ?? 'signal',
   };
 }
@@ -1074,7 +1083,7 @@ interface LayoutConfig {
   dock: unknown; panels: PanelState[];
   /** overlay scenes (#1); older files have none */
   scenes?: OverlayScene[]; activeScene?: string;
-  settings: Pick<Persisted, 'unit' | 'tint' | 'skin' | 'falsePreset' | 'zebra' | 'zebraLow' | 'display' | 'maxSamples' | 'targets' | 'stage'> & { theme?: UiTheme };
+  settings: Pick<Persisted, 'unit' | 'tint' | 'skin' | 'falsePreset' | 'zebra' | 'zebraLow' | 'display' | 'hdrPreview' | 'maxSamples' | 'targets' | 'stage'> & { theme?: UiTheme };
   /** CST/LUT chain per source, by source name (LUT files themselves stay in the browser's LUT store) */
   chains?: Record<string, ChainSettings>;
   saved: string;
@@ -1086,9 +1095,9 @@ function storeLayouts(l: Record<string, LayoutConfig>) {
   try { localStorage.setItem(LAYOUTS_KEY, JSON.stringify(l)); } catch { /* ignore */ }
 }
 function currentLayout(): LayoutConfig {
-  const { unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets, stage, theme } = state;
+  const { unit, tint, skin, falsePreset, zebra, zebraLow, display, hdrPreview, maxSamples, targets, stage, theme } = state;
   const chains = Object.fromEntries(sources.filter((s) => s.settings.chain).map((s) => [s.name, structuredClone(s.settings.chain!)]));
-  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), scenes: structuredClone(state.scenes), activeScene: state.activeScene, settings: structuredClone({ unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets, stage, theme }), chains, saved: new Date().toISOString() };
+  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), scenes: structuredClone(state.scenes), activeScene: state.activeScene, settings: structuredClone({ unit, tint, skin, falsePreset, zebra, zebraLow, display, hdrPreview, maxSamples, targets, stage, theme }), chains, saved: new Date().toISOString() };
 }
 function applyLayout(c: LayoutConfig) {
   // mutate in place: panel views hold references to their state objects

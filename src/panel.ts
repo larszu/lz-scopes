@@ -1,16 +1,16 @@
 // Draws one scope panel (WebGL trace + 2D overlay). Shared by the full app and the
 // embeddable ScopeView (src/embed.ts).
 
-import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId } from './color';
+import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, bandRange, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId, type HdrPreview } from './color';
 import {
-  drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
+  drawDiamondGraticule, diamondPoint, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
   WAVE_ZOOMS, channelLayout, isAudio, isWaveform, plotRect, type WaveChannels, type WaveOpts, type WaveZoom, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
 import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/panels';
 import type { DisplayParams, PictureMode, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
 import type { Source } from './sources';
 import { DEFAULT_CRT, PHOSPHORS, type CrtSettings } from './crt';
-import { chainOf, stageView, type Stage } from './chain';
+import { autoPeaks, chainOf, stageView, type Stage } from './chain';
 import { clockOpts, drawClockOverlay, drawClockPanel, type ClockOptions } from './clock/panel';
 
 export interface PanelState {
@@ -61,6 +61,8 @@ export interface DrawOptions {
   unit: Unit; tint: Tint; maxSamples: number; falsePreset: string;
   zebra: number; zebraLow: number; frozen: boolean; displayFps: number;
   skin: SkinRange; display: DisplaySpace;
+  /** picture view: HDR/log → SDR down-mapping (default BT.2408 hybrid-linear) */
+  hdrPreview?: HdrPreview;
   /** user colour-match targets (vectorscope) */
   targets?: VectorTarget[];
   /** default measuring stage of panels without their own */
@@ -70,12 +72,20 @@ export interface DrawOptions {
 
 export const DEFAULT_SKIN: SkinRange = { lo: 0.3, hi: 0.8, tol: 14 };
 
-/** Input gamut → display gamut and output curve for the picture view. */
-export function displayParams(src: Source, display: DisplaySpace): DisplayParams {
+/**
+ * Input gamut → display gamut and output curve for the picture view; HDR and log sources are
+ * down-mapped to SDR (color.ts hdrToSdr) with the source peak (PQ 1000 cd/m² mastering, HLG Lw,
+ * log the curve's top in cd/m² at 203 = reference white).
+ */
+export function displayParams(src: Source, display: DisplaySpace, hdrPreview: HdrPreview = 'bt2408'): DisplayParams {
   const from = GAMUTS[src.gamut];
   if (display === 'raw') return { curve: 2, gamut: [1, 0, 0, 0, 1, 0, 0, 0, 1] };
   const to = display === 'p3' ? GAMUTS.p3 : GAMUTS['709'];
-  return { curve: display === 'rec709' ? 1 : 0, gamut: gamutConvert(from, to) };
+  const peak = autoPeaks({ transfer: src.transfer, gamut: src.gamut, lw: src.hlgLw }, { transfer: 'sdr', gamut: '709', lw: 100 }).src;
+  return {
+    curve: display === 'rec709' ? 1 : 0, gamut: gamutConvert(from, to),
+    hdr: { mode: hdrPreview, peak, to2020: gamutConvert(from, GAMUTS['2020']), from2020: gamutConvert(GAMUTS['2020'], to) },
+  };
 }
 export { DISPLAY_LABELS };
 
@@ -117,7 +127,7 @@ export const defaultPanel = (scope: ScopeType): PanelState => ({
 const PARADE: ScopeType[] = ['parade', 'yrgb', 'wf-rgb'];
 
 const SCATTER: Partial<Record<ScopeType, ScatterMode>> = {
-  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie',
+  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie', diamond: 'diamond',
 };
 
 /**
@@ -175,12 +185,21 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     }
   } else if (p.scope === 'cie') {
     drawCieGraticule(ctx, r, src.colorspace, { uv: p.cieUv, gamut: src.gamut });
+  } else if (p.scope === 'diamond') {
+    drawDiamondGraticule(ctx, r);
+    if (probeRgb) {
+      ctx.strokeStyle = '#00dcff'; ctx.lineWidth = 1.5;
+      for (const [a, upper] of [[probeRgb[2], true], [probeRgb[0], false]] as [number, boolean][]) {
+        const [x, y] = diamondPoint(r, a, probeRgb[1], upper);
+        ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
   } else if (p.scope === 'hist') {
     drawHistogram(ctx, r, src, p.hist, p.log);
   } else if (p.scope === 'picture') {
     renderer.drawPicture(src, abs, {
       mode: p.picture, bands: FALSE_COLOR_PRESETS[o.falsePreset] ?? [], zebra: o.zebra, zebraLow: o.zebraLow,
-      roi: src.activeRois(), skin: o.skin, display: displayParams(src, o.display), warn: warnMatrix(src, p.gamutTarget),
+      roi: src.activeRois(), skin: o.skin, display: displayParams(src, o.display, o.hdrPreview), warn: warnMatrix(src, p.gamutTarget),
     });
     if (src.faceTrack) {
       // detected faces, numbered left to right; active ones highlighted
@@ -212,11 +231,13 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     if (p.picture === 'false') {
       const bands = FALSE_COLOR_PRESETS[o.falsePreset] ?? [];
       ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      const text = bands.map((bd) => `${bandRange(bd)} % ${bd.label}`);
+      const bw = Math.max(150, ...text.map((t) => ctx.measureText(t).width + 20));
       bands.forEach((bd, i) => {
         const y = r.y + r.h - 12 - (bands.length - 1 - i) * 14;
-        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(r.x + 4, y - 7, 150, 14);
+        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(r.x + 4, y - 7, bw, 14);
         ctx.fillStyle = bd.color; ctx.fillRect(r.x + 6, y - 4, 8, 8);
-        ctx.fillStyle = '#ddd'; ctx.fillText(`${bd.from}–${Math.min(100, bd.to)} % ${bd.label}`, r.x + 18, y);
+        ctx.fillStyle = '#ddd'; ctx.fillText(text[i], r.x + 18, y);
       });
     }
     if (p.picture === 'r103') {

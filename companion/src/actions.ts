@@ -6,7 +6,7 @@ export const SCOPES: { id: string; label: string }[] = [
   { id: 'picture', label: 'Bild' }, { id: 'wf-luma', label: 'Waveform Luma' }, { id: 'wf-color', label: 'Waveform Farbe' },
   { id: 'wf-skin', label: 'Waveform Hauttöne' }, { id: 'wf-rgb', label: 'Waveform RGB' }, { id: 'parade', label: 'RGB-Parade' },
   { id: 'yrgb', label: 'YRGB-Parade' }, { id: 'ycbcr', label: 'YCbCr-Parade' }, { id: 'vector', label: 'Vectorscope' },
-  { id: 'cie', label: 'CIE 1931' }, { id: 'hist', label: 'Histogramm' }, { id: 'stats', label: 'Messwerte' },
+  { id: 'cie', label: 'CIE 1931' }, { id: 'diamond', label: 'Diamond (Gamut)' }, { id: 'hist', label: 'Histogramm' }, { id: 'stats', label: 'Messwerte' },
   { id: 'audio-meter', label: 'Audio Pegel & Lautheit' }, { id: 'audio-loudness', label: 'Audio Lautheitsverlauf' },
   { id: 'audio-spectrum', label: 'Audio Spektrum' }, { id: 'audio-phase', label: 'Audio Goniometer' },
   { id: 'clock', label: 'Uhr / Timecode' },

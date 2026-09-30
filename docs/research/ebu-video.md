@@ -245,3 +245,16 @@ Geöffnet: BT.2111-3 (PDF, Fig. 1–6, Tab. 1–6), R 103 v3.0, BT.2100-3 Tab. 9
 | ffmpeg-Bittiefe | n-bit-Codes werden nach 16 bit linksbündig geschoben, auch Full Range: 10 bit 943 → 60352, 8 bit 235 → 60160, 8 bit full 255 → 65280 | eigene Messung |
 | ffmpeg ohne Range-Wandlung | `scale=…:in_range=limited:out_range=limited` nach `ayuv64le` erhält Y 8 und 1019 (10 bit) sowie Cb 1016, Cr 4 | eigene Messung |
 | Ausgabe > 8 bit | Chrome 154 (headless) bietet 2D-Canvas `colorType: 'float16'` und WebGL `drawingBufferStorage(RGBA16F)`. Ob der Monitor 10 bit bekommt, hängt von Betriebssystem, Treiber und Anschluss ab; ohne 10-bit-Capture am Ausgang nicht prüfbar. Sub-Black ließe sich ohnehin nur mit einem Legal-Range-Ausgabemodus zeigen. Deshalb bleibt die Ausgabe 8 bit mit Hinweis | eigene Prüfung |
+
+## (g) Umsetzung aus Issue #8 (30.09.2026)
+
+Geöffnet: BT.2408-8 (PDF, § 5.2, § 7.1.3), BT.2446-1 (PDF, § 4.1, Tab. 2/3), Tektronix-Application-Note 25W-15609 „Preventing Illegal Colors“ (Diamond), docs.red.com 955-0196 „False Color Video Mode“, Sony Help Guide „Monitor & Control“ → Shooting Assist Functions → False color.
+
+| Punkt | Umsetzung | Quelle |
+|---|---|---|
+| HDR → SDR (Abw. 10 / Soll 12) | eigener Roll-off ersetzt: *BT.2408 hybrid-linear* = Display-Light ×0,5, Lichter per BT.2390-EETF in 100 cd/m² (Referenzweiß ≈ 93 %); *BT.2446 Methode A* wörtlich nach Tab. 2/3, Rückweg Y′CbCr → R′G′B′ nach BT.2020 | BT.2408-8 p24–25 (§ 5.2: Display-Light bevorzugt, lineare Abbildung mit Faktor 0,5), p32–33 (§ 7.1.3: SDR-Ausgang für Referenzweiß 86–95 %); BT.2446-1 p8–9 |
+| Knie Methode A | die veröffentlichten 4-stelligen Koeffizienten lassen bei 0,7399 eine Stufe von 5·10⁻⁴ | eigene Rechnung, `test/gamut-hdr.test.ts` |
+| Diamond | oben B′+G′ (vertikal) über B′−G′, unten −(R′+G′) über R′−G′; Hardware filtert Übergänge mit einem Tiefpass, LZ Scopes nicht | Tektronix 25W-15609, p3–4 |
+| RED-Falschfarben | Video Mode: Violett 0–4, Blau 5, Petrol 10–12, Grün 41–48 (18 % Grau), Rosa 61–70 (helle Haut), Stroh 92–93, Gelb 94–95, Orange 96–98, Rot 99–100 IRE. Exposure Mode (RAW-basiert, ohne veröffentlichte Grenzen) nicht umgesetzt | docs.red.com 955-0196 |
+| Sony-Falschfarben | Pattern1 (SDR) und Pattern2 (S-Log3) mit Ober-/Untergrenzen je Farbe, wie in der Tabelle der App | helpguide.sony.net/promobile/mc/v1 |
+| MaxCLL/MaxFALL | je Pixel max(R,G,B) in cd/m², Frame-Maximum bzw. -Mittel, Maximum über die Frames; auf den Analysepunkten (unterabgetastet), nur PQ | Definition nach alwan `docs/api/hdr.md` („HDR10 static metadata“, MIT; CTA-861.3 selbst nicht geöffnet) |

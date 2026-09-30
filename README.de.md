@@ -103,8 +103,9 @@ Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einste
 - **Vectorscope** mit 75-%- und 100-%-Zielen passend zur Matrix (bei Log: 709-Balken in Kurve und Gamut der Quelle), Hautton-Linie, Zoom ×1/×2/×5, Spur optional in Bildfarbe
 - **CIE-Diagramm** 1931 xy oder 1976 u′v′ (⚙) mit Spektralzug, Rec.709, P3-D65, Rec.2020, D65 und dem Gamut der Quelle
 - **Histogramm** RGB, Luma, getrennt, linear oder log, mit Clipping-Anteil
-- **Bild** mit Falschfarben (ARRI-Schema), Zebra, Clipping-Anzeige, Luma und **Gamut-Warnung** (Pixel mit negativen Anteilen im Zielgamut 709/P3/2020, abgestuft nach der Distanz (max − c)/max). Ein Klick setzt einen Messpunkt, der zusätzlich in Waveform und Vectorscope markiert wird
-- **Messwerte**: Quelle, Codec, Metadaten, Y' min/max/Mittel (bei HDR in cd/m²), Clipping je Kanal, verworfene Frames
+- **Diamond (Gamut)** nach Tektronix: oben B′+G′ über B′−G′, unten −(R′+G′) über R′−G′; alles Legale liegt in beiden Rauten, ein Überschreiten zeigt sofort, welcher Kanal (Blau nur oben, Rot nur unten, Grün in beiden). Ohne den Tiefpass der Hardware-Geräte, kurze Überschwinger zählen also mit. Auch als CRT-Strahl
+- **Bild** mit Falschfarben (ARRI-Schema, RED „Video Mode“ nach docs.red.com, Sony-Paletten SDR und S-Log3 aus Monitor & Control; bis 12 Bänder), Zebra, Clipping-Anzeige, Luma und **Gamut-Warnung** (Pixel mit negativen Anteilen im Zielgamut 709/P3/2020, abgestuft nach der Distanz (max − c)/max). Ein Klick setzt einen Messpunkt, der zusätzlich in Waveform und Vectorscope markiert wird
+- **Messwerte**: Quelle, Codec, Metadaten, Y' min/max/Mittel (bei HDR in cd/m²), Clipping je Kanal, verworfene Frames; bei PQ Content Light Level des Frames sowie **MaxCLL/MaxFALL** nach CTA-861.3 (max(R,G,B) je Pixel, auf den Analysepunkten, nur ganze Bilder, ⚙ setzt zurück)
 
 **Anordnung:** Panels per Drag-and-drop am Tab verschieben, andocken, als Tabs stapeln und mit den Trennern skalieren (dockview, wie das Raster im multicam-planner). Die Vorlagen 1 bis 3×3 und „+ Panel“ dienen als Start. Ein Doppelklick vergrößert ein Panel, `Esc` holt es zurück.
 
@@ -120,6 +121,8 @@ Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einste
 - Parade, YRGB und RGB-Overlay wahlweise mono, in Kanalfarben oder in Bildfarben.
 
 **Display-Farbraum** der Bildansicht wird automatisch erkannt (sRGB/P3, HDR-fähig) oder gewählt; die Scopes messen immer das Signal.
+
+**HDR-Vorschau** (⚙ → HDR-Vorschau): HDR und Log zeigt die Bildansicht auf SDR-Displays per Display-Light-Down-Mapping in BT.2020. *BT.2408 hybrid-linear* (Standard): linear ×0,5 (BT.2408-8 § 5.2, SDR 100 cd/m² ≙ ≈ 203 cd/m²), die Lichter rollt die BT.2390-EETF (§ 5.4, je Kanal in PQ) in die 100-cd/m²-Spitze; HDR-Referenzweiß landet bei ≈ 93 % SDR (§ 7.1.3 nennt 86–95 %). *BT.2446 Methode A* (BT.2446-1 § 4.1, Tab. 2/3): 1000 → 100 cd/m² mit Farbkorrektur; Quellen über 1000 cd/m² bringt vorher die EETF auf 1000. Quellspitze: PQ 1000 cd/m² (Mastering, ohne Metadaten angenommen), HLG das eingestellte Lw, Log das Kurvenende.
 
 **Videodateien** mit Playhead, Timecode, Start/Stopp, Frame ±1 und J/K/L wie in Resolve.
 

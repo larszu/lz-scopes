@@ -9,13 +9,13 @@ import { CIE_VIEW, CIE_VIEW_UV, WAVE_MAX, WAVE_MIN, type Rect } from './renderer
 import { latencyLines } from './latency';
 import type { Source } from './sources';
 
-export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'hist' | 'stats'
+export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'hist' | 'stats'
   | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits';
 
 export const SCOPE_LABELS: Record<ScopeType, string> = {
   picture: 'Bild', 'wf-luma': 'Waveform Luma', 'wf-color': 'Waveform Farbe', 'wf-skin': 'Waveform Hauttöne', 'wf-rgb': 'Waveform RGB', parade: 'RGB-Parade', yrgb: 'YRGB-Parade',
-  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', hist: 'Histogramm', stats: 'Messwerte',
+  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', diamond: 'Diamond (Gamut)', hist: 'Histogramm', stats: 'Messwerte',
   'audio-meter': 'Audio Pegel & Lautheit', 'audio-loudness': 'Audio Lautheitsverlauf', 'audio-spectrum': 'Audio Spektrum', 'audio-phase': 'Audio Goniometer', 'audio-check': 'Audio Ident & A/V-Versatz',
   clock: 'Uhr / Timecode',
 };
@@ -40,6 +40,11 @@ export function plotRect(scope: ScopeType, w: number, h: number, aspect = 16 / 9
   if (scope === 'cie') {
     const s = Math.max(10, Math.min(w - 36, h - 24));
     return { x: (w - s + 24) / 2, y: (h - s - 16) / 2, w: s, h: s };
+  }
+  if (scope === 'diamond') {
+    // two diamonds on top of each other: width : height = 1 : 2
+    const ph = Math.max(20, Math.min(h - 16, 2 * (w - 16))), pw = ph / 2;
+    return { x: (w - pw) / 2, y: (h - ph) / 2, w: pw, h: ph };
   }
   if (scope === 'hist') return { x: 8, y: 8, w: Math.max(10, w - 16), h: Math.max(10, h - 26) };
   if (scope === 'picture') {
@@ -237,6 +242,52 @@ export function vectorPoint(r: Rect, cb: number, cr: number, zoom: number) {
 }
 
 export interface BarTargetSet { t100: { label: string; cb: number; cr: number }[]; t75: { label: string; cb: number; cr: number }[]; label: string }
+
+/**
+ * Tektronix diamond display (Tektronix application note 25W-15609 "Preventing Illegal Colors"):
+ * upper diamond B′+G′ vertical over B′−G′ horizontal, lower diamond −(R′+G′) over R′−G′.
+ * Every legal R′G′B′ value (0…1 per channel) lies inside or on both diamonds. Clip-space scale
+ * of the trace (renderer.ts mode 8): x = 0.92·(B′−G′), y = 0.46·(B′+G′).
+ */
+export const DIAMOND_SCALE: [number, number] = [0.92, 0.46];
+
+/** Diamond plot position (CSS px) of a pair (a = B′ or R′ with G′; upper = the B/G diamond). */
+export function diamondPoint(r: Rect, a: number, g: number, upper: boolean): [number, number] {
+  const x = (a - g) * DIAMOND_SCALE[0], y = (a + g) * DIAMOND_SCALE[1] * (upper ? 1 : -1);
+  return [r.x + r.w / 2 + (x * r.w) / 2, r.y + r.h / 2 - (y * r.h) / 2];
+}
+
+export function drawDiamondGraticule(ctx: CanvasRenderingContext2D, r: Rect) {
+  ctx.save();
+  ctx.font = FONT; ctx.textBaseline = 'middle';
+  const outline = (upper: boolean, level: number, dash: number[]) => {
+    const pts = [diamondPoint(r, 0, 0, upper), diamondPoint(r, level, 0, upper), diamondPoint(r, level, level, upper), diamondPoint(r, 0, level, upper)];
+    ctx.setLineDash(dash);
+    ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.stroke();
+  };
+  for (const upper of [true, false]) {
+    ctx.strokeStyle = GRID_DIM; ctx.lineWidth = 1;
+    outline(upper, 0.5, [3, 3]);
+    ctx.strokeStyle = GRID; ctx.lineWidth = 1.2;
+    outline(upper, 1, []);
+  }
+  ctx.setLineDash([]);
+  // centre line and corner names (100 % primaries and their sums)
+  ctx.strokeStyle = GRID_DIM;
+  ctx.beginPath(); ctx.moveTo(r.x + r.w / 2, r.y); ctx.lineTo(r.x + r.w / 2, r.y + r.h); ctx.stroke();
+  ctx.fillStyle = LABEL;
+  const label = (t: string, [x, y]: [number, number], dx: number, dy: number, align: CanvasTextAlign) => { ctx.textAlign = align; ctx.fillText(t, x + dx, y + dy); };
+  label('B', diamondPoint(r, 1, 0, true), 6, 0, 'left');
+  label('G', diamondPoint(r, 0, 1, true), -6, 0, 'right');
+  label('Cy', diamondPoint(r, 1, 1, true), 0, -2, 'center');
+  label('R', diamondPoint(r, 1, 0, false), 6, 0, 'left');
+  label('G', diamondPoint(r, 0, 1, false), -6, 0, 'right');
+  label('Yl', diamondPoint(r, 1, 1, false), 0, 2, 'center');
+  ctx.textAlign = 'left';
+  ctx.fillText('B′/G′', r.x + 2, r.y + 8);
+  ctx.fillText('R′/G′', r.x + 2, r.y + r.h - 8);
+  ctx.restore();
+}
 
 export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, skinTol = 0, targets?: BarTargetSet) {
   const R = r.w / 2, cx = r.x + R, cy = r.y + R;
@@ -501,6 +552,12 @@ export function statsLines(src: Source, displayFps: number): string[] {
     lines.push(`Y' Mittel  ${pct(st.yAvg)}${n(st.yAvg)}`);
     lines.push(`Clip ▲ RGB ${st.clipHigh.map((v) => (v * 100).toFixed(2)).join(' / ')} %`);
     lines.push(`Clip ▼ RGB ${st.clipLow.map((v) => (v * 100).toFixed(2)).join(' / ')} %`);
+    if (st.cll) {
+      // CTA-861.3: MaxCLL / MaxFALL since the last reset (whole frames), plus this frame
+      const l = src.lightLevel;
+      lines.push(`CLL/FALL   ${Math.round(st.cll.max)} / ${Math.round(st.cll.avg)} cd/m² (Frame)`);
+      lines.push(`MaxCLL     ${l.frames ? `${Math.round(l.maxCll)} cd/m²  MaxFALL ${Math.round(l.maxFall)} cd/m²  (${l.frames} Frames)` : '– (nur ohne Messrahmen)'}`);
+    }
   }
   if (st) lines.push(`Statistik  ${src.statsPerf.path === 'gpu' ? 'GPU, volle Auflösung' : 'CPU, unterabgetastet'} · ${src.statsPerf.ms.toFixed(2)} ms Hauptthread`);
   lines.push(...latencyLines(src.latency.summary()));

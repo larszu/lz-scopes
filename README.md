@@ -163,4 +163,4 @@ Built and maintained by **Lars Zumpe**, Lars Zumpe Medienproduktion. Scopes can 
 Proprietary, &copy; 2026 Lars Zumpe, all rights reserved. Using the published builds is free; redistribution and derivative works are not. See [LICENSE](LICENSE). Not open source: the code is public to read.
 Bundled third-party components keep their own licences: [THIRD_PARTY.md](THIRD_PARTY.md) (including the GPL ffmpeg binary in the desktop app).
 
-The logo, signet and app icon of Lars Zumpe Medienproduktion are its own trademark and not free to use (LICENSE, section 10). The interface follows the Brand Guide 2.0 (Public Sans, navy palette); scope traces and measurement colours are not brand colours and stay unchanged.
+The logo, signet and app icon of Lars Zumpe Medienproduktion are its own trademark and not free to use (LICENSE, section 10). The interface has three skins (⚙ → Oberfläche): *Neutral* (achromatic greys for colour-critical work, default), *LZM* (Brand Guide 2.0, navy) and *Original* (near black). Scope traces and measurement colours are the same in every skin. Reasoning: [docs/research/ui-farben.md](docs/research/ui-farben.md).

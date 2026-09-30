@@ -1,7 +1,6 @@
 import './vendor/dockview.css';
 import './style.css';
-// Signet "lz." of Lars Zumpe Medienproduktion, unchanged file from the brand kit (own trademark).
-import signetUrl from './brand/lzm_signet_offwhite_1c.svg';
+import { DEFAULT_THEME, SIGNET, THEMES, applyTheme, isTheme, type UiTheme } from './theme';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, HLG_PEAKS, LUMA, detectDisplay, transferLabel, type DisplaySpace, type GamutId } from './color';
 import { CAMERA_GAMUTS, LOG_CURVES } from './camera';
 import {
@@ -34,6 +33,8 @@ interface Persisted {
   layout: string; panels: PanelState[]; unit: Unit; tint: Tint; falsePreset: string;
   zebra: number; zebraLow: number; maxSamples: number; bridge: string; sidebar: boolean;
   skin: SkinRange; display: 'auto' | DisplaySpace;
+  /** UI skin (Oberfläche); chrome only, never the measurement colours */
+  theme: UiTheme;
   targets: VectorTarget[];
   /** default measuring stage in the CST/LUT chain (panels can override) */
   stage?: Stage;
@@ -55,7 +56,7 @@ const STORE_KEY = 'lz-scopes.v1';
 function load(): Persisted {
   const base: Persisted = {
     layout: 'lc', panels: DEFAULT_SCOPES.map(panel), unit: 'percent', tint: 'green', falsePreset: 'ARRI', zebra: 0.95, zebraLow: 0,
-    maxSamples: 1_000_000, bridge: '', sidebar: true, skin: { ...DEFAULT_SKIN }, display: 'auto', targets: [], scenes: [defaultScene()], activeScene: '', layoutName: '',
+    maxSamples: 1_000_000, bridge: '', sidebar: true, skin: { ...DEFAULT_SKIN }, display: 'auto', theme: DEFAULT_THEME, targets: [], scenes: [defaultScene()], activeScene: '', layoutName: '',
     sources: [{ kind: 'pattern', name: 'Testbild', url: '', settings: { transfer: 'auto', colorspace: 'auto', width: 960, fps: 0, depth: 8, transport: 'tcp' }, pattern: { id: 'smpte75', width: 1920, height: 1080, label: '' } }],
   };
   try {
@@ -66,6 +67,8 @@ function load(): Persisted {
 }
 
 const state = load();
+if (!isTheme(state.theme)) state.theme = DEFAULT_THEME;
+applyTheme(state.theme);
 const detected = detectDisplay();
 const sources: Source[] = [];
 let frozen = false;
@@ -114,7 +117,7 @@ const groupedSelect = (value: string, groups: [string, [string, string][]][], on
 const app = $('#app');
 app.innerHTML = `
   <header class="bar">
-    <div class="brand" title="LZ Scopes · Lars Zumpe Medienproduktion"><img class="signet" src="${signetUrl}" alt="Lars Zumpe Medienproduktion" width="33" height="20" /><span class="product">Scopes</span></div>
+    <div class="brand" title="LZ Scopes · Lars Zumpe Medienproduktion"><img class="signet" src="${SIGNET[state.theme]}" alt="Lars Zumpe Medienproduktion" width="33" height="20" /><span class="product">Scopes</span></div>
     <button class="icon" id="toggle-side" title="Quellen ein/aus (B)">☰</button>
     <div class="group" id="layouts"></div>
     <div class="group" id="globals"></div>
@@ -175,6 +178,7 @@ function renderHeader() {
 function settingsItems(): Node[] {
   const row = (label: string, ...kids: (Node | string)[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
   return [
+    row('Oberfläche', select(state.theme, THEMES, (v) => { if (isTheme(v)) setTheme(v); }, 'Farben der Bedienoberfläche. Messdarstellungen (Spuren, Graticule, Falschfarben) bleiben in allen Varianten gleich.')),
     row('Messpunkt', select(state.stage ?? 'signal', STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string]), (v) => setStage(v as Stage), 'Standard für alle Panels ohne eigenen Messpunkt (Taste C)')),
     row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}${detected.hdr ? ' (HDR-fähig)' : ''}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])],
       (v) => { state.display = v as Persisted['display']; save(); renderHeader(); }, 'Display-Farbraum der Bildansicht; die Scopes messen immer das Signal')),
@@ -201,6 +205,10 @@ function openCalibrationDialog() {
 
 function numIn(value: number, min: number, max: number, set: (v: number) => void) {
   return h('input', { type: 'number', class: 'num', min, max, step: 1, value, onchange: (e: Event) => { set(Number((e.target as HTMLInputElement).value)); save(); } });
+}
+
+function setTheme(t: UiTheme) {
+  state.theme = t; applyTheme(t); save();
 }
 
 function setLayout(k: string) {
@@ -1015,7 +1023,7 @@ interface LayoutConfig {
   dock: unknown; panels: PanelState[];
   /** overlay scenes (#1); older files have none */
   scenes?: OverlayScene[]; activeScene?: string;
-  settings: Pick<Persisted, 'unit' | 'tint' | 'skin' | 'falsePreset' | 'zebra' | 'zebraLow' | 'display' | 'maxSamples' | 'targets' | 'stage'>;
+  settings: Pick<Persisted, 'unit' | 'tint' | 'skin' | 'falsePreset' | 'zebra' | 'zebraLow' | 'display' | 'maxSamples' | 'targets' | 'stage'> & { theme?: UiTheme };
   /** CST/LUT chain per source, by source name (LUT files themselves stay in the browser's LUT store) */
   chains?: Record<string, ChainSettings>;
   saved: string;
@@ -1027,14 +1035,17 @@ function storeLayouts(l: Record<string, LayoutConfig>) {
   try { localStorage.setItem(LAYOUTS_KEY, JSON.stringify(l)); } catch { /* ignore */ }
 }
 function currentLayout(): LayoutConfig {
-  const { unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets, stage } = state;
+  const { unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets, stage, theme } = state;
   const chains = Object.fromEntries(sources.filter((s) => s.settings.chain).map((s) => [s.name, structuredClone(s.settings.chain!)]));
-  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), scenes: structuredClone(state.scenes), activeScene: state.activeScene, settings: structuredClone({ unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets, stage }), chains, saved: new Date().toISOString() };
+  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), scenes: structuredClone(state.scenes), activeScene: state.activeScene, settings: structuredClone({ unit, tint, skin, falsePreset, zebra, zebraLow, display, maxSamples, targets, stage, theme }), chains, saved: new Date().toISOString() };
 }
 function applyLayout(c: LayoutConfig) {
   // mutate in place: panel views hold references to their state objects
   c.panels.forEach((p, i) => { if (state.panels[i]) { delete state.panels[i].stage; Object.assign(state.panels[i], p); } else state.panels.push(p); });
   Object.assign(state, structuredClone(c.settings));
+  // older configurations have no skin: keep the current one
+  if (!isTheme(state.theme)) state.theme = DEFAULT_THEME;
+  applyTheme(state.theme);
   for (const [name, chain] of Object.entries(c.chains ?? {})) {
     const s = sources.find((x) => x.name === name);
     if (!s) continue;

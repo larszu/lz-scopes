@@ -80,10 +80,20 @@ export function decodeRow(s: Source, ui: BridgeUi): Node | null {
 export function deviceButton(ui: BridgeUi): HTMLElement {
   return el('button', { class: 'mini', title: 'Capture-Gerät des Bridge-Rechners über ffmpeg (roh, eigene Matrix, auch entfernte Bridges): UVC/AVFoundation/DirectShow/V4L2 – z. B. Magewell, MEI, Blackmagic-Karten mit WDM-/AVFoundation-Treiber', onclick: async (e: Event) => {
     const btn = e.currentTarget as HTMLElement;
-    let list: { name: string; url: string }[] = [];
+    let list: { name: string; url: string; kind?: string }[] = [];
     try { list = await (await fetch(`${ui.http()}/api/devices`)).json(); } catch { /* bridge missing */ }
-    if (!list.length) { ui.hud('Keine Capture-Geräte über die Bridge gefunden'); return; }
-    btn.replaceWith(sel('', [['', 'Gerät wählen …'], ...list.map((d) => [d.url, d.name] as [string, string])], (v) => { if (v) ui.connect(v, list.find((d) => d.url === v)?.name); }));
+    const video = list.filter((d) => d.kind !== 'audio'), audio = list.filter((d) => d.kind === 'audio');
+    if (!video.length) { ui.hud('Keine Capture-Geräte über die Bridge gefunden'); return; }
+    // sound to the picture from the same ffmpeg process (#audio=…): A/V timestamps comparable (#24)
+    const snd = sel('', [['', 'ohne Ton'], ...audio.map((d) => [d.url, `Ton: ${d.name}`] as [string, string])], () => {}, 'Ton zum Bild, z. B. HDMI-Ton der Capture-Karte oder Dante Virtual Soundcard (Audiogerät des Bridge-Rechners)');
+    const guess = audio.find((a) => video.some((v) => v.name === a.name)) ?? audio.find((a) => /capture|hdmi|usb3/i.test(a.name));
+    if (guess) snd.value = guess.url;
+    btn.replaceWith(sel('', [['', 'Gerät wählen …'], ...video.map((d) => [d.url, d.name] as [string, string])], (v) => {
+      if (!v) return;
+      // audio:<api>:<name> → #audio=<name> (ALSA: hw:…)
+      const a = snd.value.replace(/^audio:[a-z]+:/, '');
+      ui.connect(a ? `${v}#audio=${a}` : v, video.find((d) => d.url === v)?.name);
+    }), snd);
   } }, 'Gerät…');
 }
 

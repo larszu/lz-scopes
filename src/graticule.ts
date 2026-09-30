@@ -499,7 +499,7 @@ export function statsLines(src: Source, displayFps: number): string[] {
     lines.push(`Clip ▲ RGB ${st.clipHigh.map((v) => (v * 100).toFixed(2)).join(' / ')} %`);
     lines.push(`Clip ▼ RGB ${st.clipLow.map((v) => (v * 100).toFixed(2)).join(' / ')} %`);
   }
-  lines.push('', ...r103Lines(src));
+  if ((globalThis as { LZS_R103?: boolean }).LZS_R103) lines.push('', ...r103Lines(src)); // DEBUG
   return lines;
 }
 

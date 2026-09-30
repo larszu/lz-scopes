@@ -40,6 +40,7 @@ The desktop installers bundle a static **ffmpeg binary** (via `ffmpeg-static`) a
 ## Capture helpers (optional, built locally)
 
 - **DeckLink helper** (`helpers/decklink/`): own code, built against the Blackmagic Desktop Video SDK, which is **not** in this repository (free download after registration). The SDK headers carry Blackmagic Design's permissive licence (use, reproduce, distribute; notice kept in source copies). The terms of the SDK download itself were not reviewed – check them before shipping a built helper. ffmpeg's own DeckLink device is `nonfree` and is not used.
+- **NDI® helper** (`helpers/ndi/`): own code; `ndi-min.h` takes over type and function declarations from the NDI SDK 6.3 headers, which are MIT-licensed file by file (text in [licenses/ndi-sdk-headers-MIT.txt](licenses/ndi-sdk-headers-MIT.txt)). The NDI runtime is **not** shipped; the helper loads the one the user installed. NDI® is a registered trademark of Vizrt NDI AB (<https://ndi.video/>).
 
 ## Development only (not shipped)
 

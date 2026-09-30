@@ -14,7 +14,7 @@ let mainWindow = null;
 let origin = '';
 
 async function createWindow() {
-  const { startBridge, ffmpegCandidates } = await import(pathToFileURL(path.join(__dirname, '..', 'server', 'index.mjs')).href);
+  const { startBridge, ffmpegCandidates, addWatchDir } = await import(pathToFileURL(path.join(__dirname, '..', 'server', 'index.mjs')).href);
   // Fixed port 4192 when free, so Bitfocus Companion finds the control API. Not 4190:
   // that is on the Fetch "bad ports" list (sieve), Chrome and Node's fetch refuse it.
   // (LZS_PORT, LZS_HOST, LZS_CONTROL_TOKEN override); otherwise any free port.
@@ -43,6 +43,12 @@ async function createWindow() {
   ipcMain.handle('lzs:displays', () => screen.getAllDisplays().map((d) => ({
     id: d.id, label: d.label, bounds: d.bounds, primary: d.id === screen.getPrimaryDisplay().id,
   })));
+  // watch folder in the bridge (16-bit TIFF/DPX/EXR exports of Lightroom, Capture One, Resolve)
+  ipcMain.handle('lzs:watch-folder', async () => {
+    const { dialog } = require('electron');
+    const r = await dialog.showOpenDialog(mainWindow, { title: 'Export-Ordner überwachen', properties: ['openDirectory'] });
+    return r.canceled || !r.filePaths[0] ? null : addWatchDir(r.filePaths[0]);
+  });
   ipcMain.handle('lzs:capture-sources', async () => {
     const list = await desktopCapturer.getSources({ types: ['window', 'screen'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: false });
     return list.map((s) => ({ id: s.id, name: s.name, thumb: s.thumbnail.toDataURL() }));

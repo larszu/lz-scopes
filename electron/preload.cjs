@@ -12,4 +12,6 @@ contextBridge.exposeInMainWorld('lzsDesktop', {
     restore: (id) => ipcRenderer.invoke('lzs:profile-restore', id),
     ddc: (id, code, value) => ipcRenderer.invoke('lzs:ddc-set', id, code, value),
   },
+  /** Release a folder to the bridge's watch-folder input (native dialog); → { name, url } or null. */
+  watchFolder: () => ipcRenderer.invoke('lzs:watch-folder'),
 });

@@ -26,7 +26,7 @@ import { openLedTool } from './led/ui';
 import { mountOpple } from './opple/ui';
 import { ledSettings, pictureSize } from './led/wall';
 import { Renderer, type PictureMode, type SkinRange } from './renderer';
-import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, type BridgeUi } from './bridgeInputs';
+import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 
 // ---------------------------------------------------------------- state
@@ -315,7 +315,7 @@ function renderSources() {
       const connect = () => { s.url = urlIn.value.trim(); save(); s.connectStream(s.url, bridgeUrl()); };
       const bridgeUi: BridgeUi = {
         http: () => bridgeUrl().replace(/^ws/, 'http'), hud: alertHud, upd,
-        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (url.startsWith('decklink:') || url.startsWith('ndi:')) s.settings.depth = 16; } connect(); renderSources(); },
+        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (/^(decklink|ndi|folder):/.test(url)) s.settings.depth = 16; } connect(); renderSources(); },
       };
       card.append(
         h('div', { class: 'row' }, urlIn),
@@ -329,7 +329,7 @@ function renderSources() {
           running ? h('button', { onclick: () => s.stop() }, '■ Trennen') : h('button', { class: 'primary', onclick: connect }, '▶ Verbinden'),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
             h('button', { class: 'mini', title: `Testbild ${p}`, onclick: () => { urlIn.value = `test:${p}`; connect(); } }, p)),
-            deviceButton(bridgeUi), deckLinkButton(bridgeUi), ndiButton(bridgeUi))),
+            deviceButton(bridgeUi), deckLinkButton(bridgeUi), ndiButton(bridgeUi), folderButton(bridgeUi, (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop?.watchFolder))),
         ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
       );
     } else if (s.kind === 'pattern') {
@@ -347,6 +347,7 @@ function renderSources() {
       card.append(h('div', { class: 'row' },
         running ? h('button', { onclick: () => s.stop() }, '■ Stopp')
           : h('button', { class: 'primary', onclick: () => startLocal(s) }, s.kind === 'file' ? 'Datei wählen …' : s.kind === 'folder' ? 'Ordner wählen …' : '▶ Start')));
+      if (s.kind === 'folder') card.append(h('details', { class: 'hint' }, h('summary', {}, 'Lightroom, Capture One, Resolve'), STILL_WORKFLOW()));
     }
     const ar = audioRow(s, renderSources);
     if (ar) card.append(ar);
@@ -1155,6 +1156,7 @@ let sceneSave = 0;
 interface DesktopApi {
   displays: () => Promise<{ id: number; label: string; bounds: { width: number; height: number }; primary: boolean }[]>;
   captureSources?: () => Promise<{ id: string; name: string; thumb: string }[]>;
+  watchFolder?: () => Promise<{ name: string; url: string } | null>;
 }
 const desktop = (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop;
 

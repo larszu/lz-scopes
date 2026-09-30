@@ -134,3 +134,27 @@ export function ndiRow(s: Source): Node | null {
   if (!s.url.startsWith('ndi:')) return null;
   return el('div', { class: 'row hint' }, 'NDI® über die NDI-Runtime · ', ndiLink(), ` · ${NDI_NOTICE}`);
 }
+
+/** Watch folders of the bridge (released with --watch-dir, in the desktop app by dialog). */
+export function folderButton(ui: BridgeUi, release?: () => Promise<{ name: string; url: string } | null>): HTMLElement {
+  return el('button', { class: 'mini', title: 'Neuestes Standbild eines Ordners auf dem Bridge-Rechner, in voller Tiefe (16-bit-TIFF, 10-bit-DPX, 16-bit-PNG, EXR) – Exporte aus Lightroom, Capture One, Resolve. Freigabe: Desktop-App per Dialog, sonst Bridge mit --watch-dir starten.', onclick: async (e: Event) => {
+    const btn = e.currentTarget as HTMLElement;
+    let list: { name: string; url: string }[] = [];
+    try { list = await (await fetch(`${ui.http()}/api/folders`)).json(); } catch { /* bridge missing */ }
+    const add = async () => { const r = await release?.(); if (r) ui.connect(r.url, r.name); };
+    if (!list.length && !release) { ui.hud('Keine Ordner freigegeben – Bridge mit --watch-dir <Ordner> starten'); return; }
+    if (!list.length) { await add(); return; }
+    btn.replaceWith(sel('', [['', 'Ordner wählen …'], ...list.map((f) => [f.url, f.name] as [string, string]), ...(release ? [['+', 'Weiteren Ordner freigeben …'] as [string, string]] : [])],
+      (v) => { if (v === '+') add(); else if (v) ui.connect(v, list.find((f) => f.url === v)?.name); }));
+  } }, 'Ordner…');
+}
+
+/** How to get stills out of Lightroom, Capture One and Resolve into a watch folder. */
+export function STILL_WORKFLOW(): HTMLElement {
+  return el('div', {},
+    el('p', {}, 'Gezeigt wird immer das neueste Bild im Ordner. Im Browser nur JPG/PNG/WebP/AVIF in 8 bit; 16-bit-TIFF, DPX und EXR in voller Tiefe über „Ordner…“ in einer Stream-Karte (Bridge).'),
+    el('p', {}, 'Lightroom Classic: Datei → Exportieren, Speicherort = überwachter Ordner, TIFF 16 bit; als Vorgabe sichern, danach Datei → Mit Vorgabe exportieren.'),
+    el('p', {}, 'Capture One: Verarbeitungsrezept mit Ausgabeordner = überwachter Ordner, TIFF 16 bit, dann Verarbeiten.'),
+    el('p', {}, 'DaVinci Resolve: Quelle „DaVinci Resolve“ (Scripting-API, 16 bit, laufend) – oder auf der Color-Seite ein Standbild aufnehmen und in der Galerie per Rechtsklick in den Ordner exportieren.'),
+    el('p', {}, 'Farbraum des Exports an der Quelle einstellen (sRGB-Export → Transfer „sRGB“). Eingebettete ICC-Profile werden nicht gelesen, Adobe RGB/ProPhoto nicht erkannt. Mit echten Lightroom-/Capture-One-Installationen nicht geprüft.'));
+}

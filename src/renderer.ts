@@ -2,11 +2,15 @@
 // GPU by scattering every sampled pixel as a point into a float accumulation buffer
 // (additive blending), then tone-mapped into the panel's plot rectangle.
 
-import { GAMUTS, LUMA, hexToRgb, rgbToXyzMatrix, type Colorspace, type FalseColorBand } from './color';
+import { GAMUTS, LUMA, hexToRgb, rgbToXyzMatrix, type FalseColorBand } from './color';
 import { CHAIN_GLSL, baseOf, chainOf, linearGlsl, setChainUniforms, setLinearUniforms, type LutTex } from './chain';
 import type { Lut } from './lut';
 import type { Source } from './sources';
 import { R103, R103_GLSL, YUV_FETCH_GLSL, yuvScale } from './ycbcr';
+import { BLUR_FS, CRT_DISPLAY_FS, CRT_FS, CRT_VS_MAIN, PERSIST_FS, PHOSPHORS, beamSigma, persistDecay, type CrtSettings } from './crt';
+
+/** Beam segments per CRT scope and frame (each is a quad, far more fill than a point). */
+const CRT_BUDGET = 150_000;
 
 export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'skin';
 const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7 };
@@ -71,8 +75,8 @@ const FETCH = (k: TexKind) => (k === 'yuv' ? YUV_FETCH_GLSL : k === '16'
   : `uniform highp sampler2D uSrc;
      vec3 fetchRaw(ivec2 p) { return texelFetch(uSrc, p, 0).rgb; }`) + CHAIN_GLSL;
 
-const SCATTER_VS = (k: TexKind) => `#version 300 es
-precision highp float; precision highp int;
+/** Shared by the point scatter and the CRT beam (crt.ts): uniforms and plotSample(). */
+const SAMPLE_GLSL = (k: TexKind) => `
 ${FETCH(k)}
 uniform ivec2 uSize;
 uniform int uStep, uCols, uMode, uColorize, uCieUv, uSecN;
@@ -90,22 +94,19 @@ ${LINEAR_GLSL}
 
 float waveY(float v) { return (v - uWMin) / (uWMax - uWMin) * 2.0 - 1.0; }
 
-void main() {
-  gl_PointSize = uPointSize;
-  ivec2 p = ivec2(gl_VertexID % uCols, gl_VertexID / uCols) * uStep;
-  if (p.y >= uSize.y || p.x >= uSize.x) { gl_Position = vec4(9.0); return; }
+/** Position (clip space) and colour of one trace sample; false = not drawn (hidden channel, no colour). */
+bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
   vec3 rgb = fetchRGB(p);
   float kr = uK.x, kb = uK.y, kg = 1.0 - kr - kb;
   float Y = dot(rgb, vec3(kr, kg, kb));
   float cb = (rgb.b - Y) / (2.0 * (1.0 - kb));
   float cr = (rgb.r - Y) / (2.0 * (1.0 - kr));
   float x = (float(p.x) + 0.5) / float(uSize.x);
-  int ch = gl_InstanceID;
   vec3 unit[3] = vec3[3](vec3(1.0, 0.18, 0.18), vec3(0.2, 1.0, 0.25), vec3(0.3, 0.45, 1.0));
   vec3 mono = uTint;
   // the pixel's own colour, brightness normalised so dark pixels stay visible
   vec3 srcCol = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
-  vec2 pos; vec3 col = mono;
+  col = mono;
 
   if (uMode == 7) {
     pos = vec2(x * 2.0 - 1.0, waveY(Y));
@@ -117,7 +118,7 @@ void main() {
     pos = vec2(x * 2.0 - 1.0, waveY(Y));
     if (uColorize == 1) col = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
   } else if (uMode == 1 || uMode == 2) {
-    if (uSec[ch] < 0) { gl_Position = vec4(9.0); return; }
+    if (uSec[ch] < 0) return false;
     float v = ch == 0 ? rgb.r : ch == 1 ? rgb.g : rgb.b;
     float px = uMode == 2 ? (float(uSec[ch]) + x) / float(uSecN) : x;
     pos = vec2(px * 2.0 - 1.0, waveY(v));
@@ -126,7 +127,7 @@ void main() {
     bool dom = cv >= max(rgb.r, max(rgb.g, rgb.b)) - 0.02 && cv - min(rgb.r, min(rgb.g, rgb.b)) > 0.04;
     col = uColorize == 2 ? (dom ? srcCol : vec3(0.3)) : uColorize == 1 || uMode == 1 ? unit[ch] : mono;
   } else if (uMode == 3) {
-    if (uSec[ch] < 0) { gl_Position = vec4(9.0); return; }
+    if (uSec[ch] < 0) return false;
     float v = ch == 0 ? Y : ch == 1 ? rgb.r : ch == 2 ? rgb.g : rgb.b;
     pos = vec2((float(uSec[ch]) + x) / float(uSecN) * 2.0 - 1.0, waveY(v));
     float cv3 = ch == 1 ? rgb.r : ch == 2 ? rgb.g : rgb.b;
@@ -142,7 +143,7 @@ void main() {
   } else {
     vec3 XYZ = uToXYZ * toLinear(rgb);
     float s = uCieUv == 1 ? XYZ.x + 15.0 * XYZ.y + 3.0 * XYZ.z : XYZ.x + XYZ.y + XYZ.z;
-    if (s < 1e-6) { gl_Position = vec4(9.0); return; }
+    if (s < 1e-6) return false;
     // CIE 1931 xy or CIE 1976 u'v' = (4X, 9Y)/(X + 15Y + 3Z)
     vec2 xy = uCieUv == 1 ? vec2(4.0 * XYZ.x, 9.0 * XYZ.y) / s : XYZ.xy / s;
     pos = vec2((xy.x - uCie.x) / (uCie.y - uCie.x), (xy.y - uCie.z) / (uCie.w - uCie.z)) * 2.0 - 1.0;
@@ -153,10 +154,27 @@ void main() {
     bool colored = uColorize >= 1 || uMode == 1 || uMode == 7;
     col = inside ? (colored ? col : vec3(1.0, 0.72, 0.25)) : col * 0.25;
   }
+  return true;
+}`;
+
+
+const SCATTER_VS = (k: TexKind) => `#version 300 es
+precision highp float; precision highp int;
+${SAMPLE_GLSL(k)}
+void main() {
+  gl_PointSize = uPointSize;
+  ivec2 p = ivec2(gl_VertexID % uCols, gl_VertexID / uCols) * uStep;
+  vec2 pos; vec3 col;
+  if (p.y >= uSize.y || p.x >= uSize.x || !plotSample(p, gl_InstanceID, pos, col)) { gl_Position = vec4(9.0); return; }
   vColor = col * uIntensity;
   vW = uIntensity;
   gl_Position = vec4(pos, 0.0, 1.0);
 }`;
+
+const CRT_VS = (k: TexKind) => `#version 300 es
+precision highp float; precision highp int;
+${SAMPLE_GLSL(k)}
+${CRT_VS_MAIN}`;
 
 const SCATTER_FS = `#version 300 es
 precision highp float;
@@ -286,6 +304,8 @@ export interface ScatterParams {
   /** waveforms: vertical range (zoom) and trace sections (graticule.channelLayout) */
   range?: [number, number];
   sec?: number[]; secN?: number;
+  /** analogue beam look (crt.ts) */
+  crt?: CrtSettings;
 }
 /** How the picture view maps the signal to the screen. */
 export interface DisplayParams { curve: 0 | 1 | 2; gamut: number[] /* row-major 3×3 input→display, linear */ }
@@ -428,8 +448,11 @@ export class Renderer {
   }
 
   dropPanel(key: string) {
-    const a = this.accums.get(key);
-    if (a) { this.gl.deleteTexture(a.tex); this.gl.deleteFramebuffer(a.fbo); this.accums.delete(key); }
+    for (const k of [key, `${key}#p0`, `${key}#p1`, `${key}#g0`, `${key}#g1`]) {
+      const a = this.accums.get(k);
+      if (a) { this.gl.deleteTexture(a.tex); this.gl.deleteFramebuffer(a.fbo); this.accums.delete(k); }
+    }
+    this.settling.delete(key); this.crtTimes.delete(key);
   }
   dropSource(id: string) {
     const t = this.textures.get(id);
@@ -500,78 +523,176 @@ export class Renderer {
     const vp = this.viewport(rect);
     const acc = this.accum(key, vp.w, vp.h);
     const kind = this.texKind(src, t);
-    const prog = this.program(`scatter${kind}`, SCATTER_VS(kind), SCATTER_FS);
-    const step = Math.max(1, Math.ceil(Math.sqrt((t.w * t.h) / p.maxSamples)));
-    const cols = Math.ceil(t.w / step), rows = Math.ceil(t.h / step);
-    const cs: Colorspace = src.colorspace;
-    const { kr, kb } = LUMA[cs];
-    const mode = MODE_ID[p.mode];
-    const n = cols * rows;
+    const crt = p.crt?.on ? p.crt : null;
+    const wave = p.mode !== 'vector' && p.mode !== 'cie';
     // Normalise so that the display brightness does not depend on source or panel size.
     const sections = p.mode === 'parade' || p.mode === 'yrgb' ? p.secN ?? (p.mode === 'yrgb' ? 4 : 3) : p.mode === 'ycbcr' ? 3 : 1;
+    let stepX: number, stepY: number;
+    if (crt) {
+      // beam segments are expensive: waveforms first reduced horizontally to the scope width,
+      // then as many lines as the (smaller) budget allows
+      const budget = Math.min(p.maxSamples, CRT_BUDGET);
+      if (wave) {
+        stepX = Math.max(1, Math.ceil(t.w / Math.max(16, vp.w / sections)));
+        stepY = Math.max(1, Math.ceil(t.h / Math.max(1, Math.floor(budget / Math.ceil(t.w / stepX)))));
+      } else stepX = stepY = Math.max(1, Math.ceil(Math.sqrt((t.w * t.h) / budget)));
+    } else stepX = stepY = Math.max(1, Math.ceil(Math.sqrt((t.w * t.h) / p.maxSamples)));
+    const cols = Math.ceil(t.w / stepX), rows = Math.ceil(t.h / stepY);
+    const n = crt ? Math.max(1, cols - 1) * rows : cols * rows;
     const area = (vp.w / sections) * vp.h;
-    const dot = p.mode === 'vector' || p.mode === 'cie' ? Math.max(1, Math.round(this.dpr)) : 1;
-    const intensity = ((p.mode === 'vector' || p.mode === 'cie' ? 0.6 : 0.9) * area) / n / (dot * dot);
+    const dot = !crt && !wave ? Math.max(1, Math.round(this.dpr)) : 1;
+    const intensity = ((wave ? 0.9 : 0.6) * area) / n / (dot * dot);
 
     // Only re-scatter when the frame or a parameter changed; otherwise reuse the accumulation.
-    const sig = `${src.id}:${src.frameSeq}:${t.w}x${t.h}:${acc.w}x${acc.h}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${chainOf(src)?.sig ?? ''}:${JSON.stringify(baseOf(src).yuv)}:${baseOf(src).colorspace}:${JSON.stringify(p)}`;
+    const sig = `${src.id}:${src.frameSeq}:${t.w}x${t.h}:${acc.w}x${acc.h}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${chainOf(src)?.sig ?? ''}:${JSON.stringify(baseOf(src).yuv)}:${baseOf(src).colorspace}:${this.dpr}:${JSON.stringify(p)}`;
     const fresh = this.sigs.get(key) !== sig;
     this.sigs.set(key, sig);
     if (fresh) {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, acc.fbo);
-    gl.viewport(0, 0, acc.w, acc.h);
-    gl.disable(gl.SCISSOR_TEST);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE);
-    gl.useProgram(prog);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, t.tex);
-    gl.uniform1i(this.u(prog, 'uSrc'), 0);
-    gl.uniform2i(this.u(prog, 'uSize'), t.w, t.h);
-    gl.uniform1i(this.u(prog, 'uStep'), step);
-    gl.uniform1i(this.u(prog, 'uCols'), cols);
-    gl.uniform1i(this.u(prog, 'uMode'), mode);
-    this.linearUniforms(prog, src);
-    gl.uniform1i(this.u(prog, 'uCieUv'), p.cieUv ? 1 : 0);
-    gl.uniform1i(this.u(prog, 'uColorize'), Number(p.colorize));
-    gl.uniform2f(this.u(prog, 'uK'), kr, kb);
-    gl.uniform1f(this.u(prog, 'uZoom'), p.zoom);
-    gl.uniform1f(this.u(prog, 'uIntensity'), intensity);
-    gl.uniform1f(this.u(prog, 'uPointSize'), dot);
-    gl.uniform1f(this.u(prog, 'uWMin'), p.range?.[0] ?? WAVE_MIN);
-    gl.uniform1f(this.u(prog, 'uWMax'), p.range?.[1] ?? WAVE_MAX);
-    const sec = p.sec ?? [0, 1, 2, 3];
-    gl.uniform4i(this.u(prog, 'uSec'), sec[0], sec[1], sec[2], sec[3] ?? 3);
-    gl.uniform1i(this.u(prog, 'uSecN'), p.secN ?? (p.mode === 'yrgb' ? 4 : 3));
-    // GLSL mat3 is column-major
-    gl.uniformMatrix3fv(this.u(prog, 'uToXYZ'), false, colMajor(rgbToXyzMatrix(GAMUTS[src.gamut])));
-    const cv = p.cieUv ? CIE_VIEW_UV : CIE_VIEW;
-    gl.uniform4f(this.u(prog, 'uCie'), cv.x0, cv.x1, cv.y0, cv.y1);
-    this.setRois(prog, p.roi);
-    gl.uniform3f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol);
-    gl.uniform3fv(this.u(prog, 'uTint'), p.tint);
-    gl.bindVertexArray(this.vao);
-    gl.drawArraysInstanced(gl.POINTS, 0, n, INSTANCES[p.mode]);
-    gl.disable(gl.BLEND);
+      const prog = crt ? this.program(`crt${kind}`, CRT_VS(kind), CRT_FS) : this.program(`scatter${kind}`, SCATTER_VS(kind), SCATTER_FS);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, acc.fbo);
+      gl.viewport(0, 0, acc.w, acc.h);
+      gl.disable(gl.SCISSOR_TEST);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      gl.useProgram(prog);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, t.tex);
+      const { kr, kb } = LUMA[src.colorspace];
+      gl.uniform1i(this.u(prog, 'uSrc'), 0);
+      gl.uniform2i(this.u(prog, 'uSize'), t.w, t.h);
+      gl.uniform1i(this.u(prog, 'uStep'), stepX);
+      gl.uniform1i(this.u(prog, 'uCols'), cols);
+      gl.uniform1i(this.u(prog, 'uMode'), MODE_ID[p.mode]);
+      this.linearUniforms(prog, src);
+      gl.uniform1i(this.u(prog, 'uCieUv'), p.cieUv ? 1 : 0);
+      gl.uniform1i(this.u(prog, 'uColorize'), Number(p.colorize));
+      gl.uniform2f(this.u(prog, 'uK'), kr, kb);
+      gl.uniform1f(this.u(prog, 'uZoom'), p.zoom);
+      gl.uniform1f(this.u(prog, 'uIntensity'), intensity);
+      gl.uniform1f(this.u(prog, 'uPointSize'), dot);
+      gl.uniform1f(this.u(prog, 'uWMin'), p.range?.[0] ?? WAVE_MIN);
+      gl.uniform1f(this.u(prog, 'uWMax'), p.range?.[1] ?? WAVE_MAX);
+      const sec = p.sec ?? [0, 1, 2, 3];
+      gl.uniform4i(this.u(prog, 'uSec'), sec[0], sec[1], sec[2], sec[3] ?? 3);
+      gl.uniform1i(this.u(prog, 'uSecN'), p.secN ?? (p.mode === 'yrgb' ? 4 : 3));
+      // GLSL mat3 is column-major
+      gl.uniformMatrix3fv(this.u(prog, 'uToXYZ'), false, colMajor(rgbToXyzMatrix(GAMUTS[src.gamut])));
+      const cv = p.cieUv ? CIE_VIEW_UV : CIE_VIEW;
+      gl.uniform4f(this.u(prog, 'uCie'), cv.x0, cv.x1, cv.y0, cv.y1);
+      this.setRois(prog, p.roi);
+      gl.uniform3f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol);
+      gl.uniform3fv(this.u(prog, 'uTint'), p.tint);
+      gl.bindVertexArray(this.vao);
+      if (crt) {
+        const sigma = beamSigma(crt.beam, this.dpr);
+        gl.uniform1i(this.u(prog, 'uStepX'), stepX);
+        gl.uniform1i(this.u(prog, 'uStepY'), stepY);
+        gl.uniform1i(this.u(prog, 'uChN'), INSTANCES[p.mode]);
+        gl.uniform2f(this.u(prog, 'uVp'), acc.w, acc.h);
+        gl.uniform1f(this.u(prog, 'uReach'), 3.5 * sigma);
+        gl.uniform1f(this.u(prog, 'uSigma'), sigma);
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n * INSTANCES[p.mode]);
+      } else gl.drawArraysInstanced(gl.POINTS, 0, n, INSTANCES[p.mode]);
+      gl.disable(gl.BLEND);
     }
+
+    let shown = acc.tex, glow: WebGLTexture | null = null;
+    if (crt) ({ shown, glow } = this.crtPasses(key, acc, crt, fresh));
+    else this.settling.delete(key);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(vp.x, vp.y, vp.w, vp.h);
-    const dp = this.program('display', QUAD_VS, DISPLAY_FS);
-    gl.useProgram(dp);
-    gl.bindTexture(gl.TEXTURE_2D, acc.tex);
-    gl.uniform1i(this.u(dp, 'uAcc'), 0);
-    gl.uniform1f(this.u(dp, 'uGain'), p.gain);
-    gl.uniform3f(this.u(dp, 'uTint'), 1, 1, 1);
-    gl.uniform1i(this.u(dp, 'uAvg'), p.mode === 'rgb' ? 0 : 1);
+    const avg = p.mode === 'rgb' ? 0 : 1;
+    if (crt) {
+      const dp = this.program('crtDisplay', QUAD_VS, CRT_DISPLAY_FS);
+      gl.useProgram(dp);
+      [shown, glow ?? shown, acc.tex].forEach((tex, i) => { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, tex); });
+      gl.uniform1i(this.u(dp, 'uPers'), 0); gl.uniform1i(this.u(dp, 'uGlow'), 1); gl.uniform1i(this.u(dp, 'uAcc'), 2);
+      gl.uniform1f(this.u(dp, 'uGain'), p.gain);
+      gl.uniform1f(this.u(dp, 'uGlowAmt'), glow ? crt.glow * 1.5 : 0);
+      gl.uniform1i(this.u(dp, 'uAvg'), avg);
+      const ph = PHOSPHORS[crt.phosphor];
+      gl.uniform1i(this.u(dp, 'uTwo'), ph.flash && !p.colorize ? 1 : 0);
+      gl.uniform3fv(this.u(dp, 'uFlash'), ph.flash ?? ph.color);
+      gl.uniform3fv(this.u(dp, 'uAfter'), ph.color);
+      gl.activeTexture(gl.TEXTURE0);
+    } else {
+      const dp = this.program('display', QUAD_VS, DISPLAY_FS);
+      gl.useProgram(dp);
+      gl.bindTexture(gl.TEXTURE_2D, acc.tex);
+      gl.uniform1i(this.u(dp, 'uAcc'), 0);
+      gl.uniform1f(this.u(dp, 'uGain'), p.gain);
+      gl.uniform3f(this.u(dp, 'uTint'), 1, 1, 1);
+      gl.uniform1i(this.u(dp, 'uAvg'), avg);
+    }
     if (overlay) {
       gl.enable(gl.BLEND);
       if (opacity < 1) { gl.blendColor(0, 0, 0, opacity); gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE); } else gl.blendFunc(gl.ONE, gl.ONE);
     }
+    gl.bindVertexArray(this.vao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.disable(gl.BLEND);
+  }
+
+  /**
+   * Panels whose CRT persistence is still fading: they must be redrawn although their inputs
+   * did not change (main.ts clears their signatures).
+   */
+  readonly settling = new Set<string>();
+  private crtTimes = new Map<string, { last: number; fresh: number; cur: number }>();
+
+  /** CRT persistence (ping-pong) and glow (separable blur); returns the textures to display. */
+  private crtPasses(key: string, acc: Accum, crt: CrtSettings, fresh: boolean) {
+    const gl = this.gl, now = performance.now();
+    const st = this.crtTimes.get(key) ?? { last: now, fresh: now, cur: 0 };
+    this.crtTimes.set(key, st);
+    const dt = now - st.last;
+    st.last = now;
+    if (fresh) st.fresh = now;
+    const quad = (prog: WebGLProgram, target: Accum) => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+      gl.viewport(0, 0, target.w, target.h);
+      gl.disable(gl.BLEND);
+      gl.useProgram(prog);
+      gl.bindVertexArray(this.vao);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    };
+    let shown = acc.tex;
+    if (crt.persist !== 0) {
+      const prev = this.accum(`${key}#p${st.cur}`, acc.w, acc.h), next = this.accum(`${key}#p${1 - st.cur}`, acc.w, acc.h);
+      const prog = this.program('persist', QUAD_VS, PERSIST_FS);
+      gl.useProgram(prog);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc.tex);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, prev.tex);
+      gl.uniform1i(this.u(prog, 'uAcc'), 0); gl.uniform1i(this.u(prog, 'uPrev'), 1);
+      gl.uniform1f(this.u(prog, 'uDecay'), persistDecay(dt, crt.persist));
+      gl.uniform1i(this.u(prog, 'uStore'), crt.persist < 0 ? 1 : 0);
+      quad(prog, next);
+      gl.activeTexture(gl.TEXTURE0);
+      st.cur = 1 - st.cur;
+      shown = next.tex;
+    }
+    // keep redrawing until the tail has faded (5 τ); not needed for τ = 0 or ∞
+    if (crt.persist > 0 && now - st.fresh < 5 * crt.persist) this.settling.add(key); else this.settling.delete(key);
+    let glow: WebGLTexture | null = null;
+    if (crt.glow > 0) {
+      const a = this.accum(`${key}#g0`, acc.w, acc.h), b = this.accum(`${key}#g1`, acc.w, acc.h);
+      const prog = this.program('blur', QUAD_VS, BLUR_FS);
+      const px = Math.max(1, Math.round(beamSigma(crt.beam, this.dpr) * 2));
+      gl.useProgram(prog);
+      gl.uniform1i(this.u(prog, 'uTex'), 0);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, shown);
+      gl.uniform2f(this.u(prog, 'uDir'), px / acc.w, 0);
+      quad(prog, a);
+      gl.bindTexture(gl.TEXTURE_2D, a.tex);
+      gl.uniform2f(this.u(prog, 'uDir'), 0, px / acc.h);
+      quad(prog, b);
+      glow = b.tex;
+    }
+    return { shown, glow };
   }
 
   /** Darken a rect (translucent black), e.g. behind an overlaid scope. */

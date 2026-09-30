@@ -59,8 +59,15 @@ export function updateFeedbacks(self: ModuleInstance): void {
       callback: (fb) => checks.maximized(s(), opts(fb.options)),
     },
     playing: { type: 'boolean', name: 'Videodatei läuft', defaultStyle: { bgcolor: GREEN, color: WHITE }, options: [], callback: () => checks.playing(s()) },
+    generator_running: { type: 'boolean', name: 'Tongenerator läuft', defaultStyle: { bgcolor: RED, color: WHITE }, options: [], callback: () => checks.generator_running(s()) },
+    loudness_paused: { type: 'boolean', name: 'I/LRA angehalten', defaultStyle: { bgcolor: AMBER, color: BLACK }, options: [], callback: () => checks.loudness_paused(s()) },
+    true_peak_above: {
+      type: 'boolean', name: 'Max True Peak über Schwelle', defaultStyle: { bgcolor: RED, color: WHITE },
+      options: [num('threshold', 'Schwelle dBTP', -1, -60, 6)], callback: (fb) => checks.true_peak_above(s(), opts(fb.options)),
+    },
+    ident_problem: { type: 'boolean', name: 'Ident-Befund (vertauscht, fehlt, Polarität)', defaultStyle: { bgcolor: RED, color: WHITE }, options: [], callback: () => checks.ident_problem(s()) },
   }
   self.setFeedbackDefinitions(defs)
 }
 
-export const FEEDBACK_IDS = ['connected', 'frozen', 'source_active', 'clip_above', 'ymax_above', 'ymin_below', 'layout_active', 'scene_active', 'output_open', 'streaming', 'maximized', 'playing']
+export const FEEDBACK_IDS = ['connected', 'frozen', 'source_active', 'clip_above', 'ymax_above', 'ymin_below', 'layout_active', 'scene_active', 'output_open', 'streaming', 'maximized', 'playing', 'generator_running', 'loudness_paused', 'true_peak_above', 'ident_problem']

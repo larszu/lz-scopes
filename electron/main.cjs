@@ -94,6 +94,9 @@ async function createWindow() {
 }
 
 app.on('second-instance', () => { if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); } });
+// About box: the NDI SDK licence asks for the trademark notice here (docs/research/geraete-eingaenge.md)
+app.setAboutPanelOptions({ applicationName: 'LZ Scopes', copyright: `© ${new Date().getFullYear()} Lars Zumpe`, credits: 'NDI® is a registered trademark of Vizrt NDI AB. https://ndi.video/' });
+
 app.whenReady().then(createWindow).catch((e) => {
   const { dialog } = require('electron');
   dialog.showErrorBox('LZ Scopes', `Start fehlgeschlagen:\n${e && e.stack ? e.stack : e}`);

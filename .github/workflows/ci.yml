@@ -31,6 +31,8 @@ jobs:
       - run: npx tsc -p e2e --noEmit
       - run: npm test
       - run: npm run build
+      # the NDI helper builds without any SDK (helpers/ndi/ndi-min.h); run it once without runtime
+      - run: node scripts/build-helpers.mjs ndi && helpers/bin/lz-ndi --list
 
   e2e:
     runs-on: ubuntu-latest

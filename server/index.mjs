@@ -87,6 +87,7 @@ export function validateInput(url) {
   if (url in TEST_PATTERNS || url === 'resolve:') return null;
   if (/^device:(avfoundation|dshow|v4l2):[^\n\r]{1,200}$/.test(url)) return null;
   if (/^decklink:\d{1,2}$/.test(url)) return null;
+  if (/^ndi:[^\n\r\0]{1,200}$/.test(url) && !url.slice(4).startsWith('-')) return null;
   if (url.startsWith('-')) return 'Ungültige Quelle';
   if (!ALLOWED.test(url)) return 'Nur rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s)://, resolve: oder test:*';
   return null;
@@ -370,6 +371,7 @@ async function startStream(ws, params) {
   if (problem) return fail(ws, problem);
   if (url === 'resolve:') return startResolve(ws, params);
   if (url.startsWith('decklink:')) return startDeckLink(ws, params, url);
+  if (url.startsWith('ndi:')) return startNdi(ws, params, url);
   const transport = params.get('transport') ?? 'tcp';
   const depth = params.get('depth') === '16' ? 16 : 8;
   const maxWidth = Math.min(3840, Math.max(0, Number(params.get('width') ?? 960) || 0));
@@ -639,6 +641,29 @@ function startDeckLink(ws, params, url) {
   });
 }
 
+/**
+ * NDI(R) through the native helper (helpers/ndi). The NDI runtime is installed by the
+ * user and loaded by the helper at run time; lz-scopes ships nothing of NDI.
+ * NDI(R) is a registered trademark of Vizrt NDI AB.
+ */
+export async function ndiStatus() {
+  const bin = helperPath('lz-ndi');
+  if (!bin) return { available: false, helper: false, runtime: false, sources: [], error: 'NDI-Helfer nicht gebaut (npm run build:helpers)' };
+  const r = await helperList(bin, ['--wait', '1500']);
+  return { available: !!r.ok, helper: true, runtime: !!r.runtime, version: r.version, sources: r.sources ?? [], error: r.ok ? undefined : r.error };
+}
+
+function startNdi(ws, params, url) {
+  const bin = helperPath('lz-ndi');
+  if (!bin) return fail(ws, 'NDI nicht verfügbar – Helfer nicht gebaut (npm run build:helpers)');
+  const ffmpeg = ffmpegCandidates()[0];
+  if (!ffmpeg) return fail(ws, 'ffmpeg nicht gefunden');
+  startHelperStream(ws, {
+    bin, args: ['--capture', url.slice('ndi:'.length)], label: 'NDI', params,
+    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions },
+  });
+}
+
 function fail(ws, message) {
   if (ws.readyState === ws.OPEN) { ws.send(JSON.stringify({ type: 'error', message })); ws.close(); }
 }
@@ -658,6 +683,10 @@ const server = createServer((req, res) => {
     const json = (code, body) => { res.writeHead(code, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(body)); };
     if (!parseDeviceUrl(url) || validateInput(url)) return json(400, { error: 'device:-URL erwartet' });
     deviceFormats(url).then((f) => json(200, { ...f, preferred: pickPixfmt(f.pixfmts), defaultSize: defaultMode(f.modes) }));
+    return;
+  }
+  if (path === '/api/ndi') {
+    ndiStatus().then((st) => { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(st)); });
     return;
   }
   if (path === '/api/decklink') {

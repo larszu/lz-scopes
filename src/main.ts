@@ -27,7 +27,7 @@ import { openLedTool } from './led/ui';
 import { mountOpple } from './opple/ui';
 import { ledSettings, pictureSize } from './led/wall';
 import { Renderer, type PictureMode, type SkinRange } from './renderer';
-import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, type BridgeUi } from './bridgeInputs';
+import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, type BridgeUi } from './bridgeInputs';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 
 // ---------------------------------------------------------------- state
@@ -307,7 +307,7 @@ function renderSources() {
       const connect = () => { s.url = urlIn.value.trim(); save(); s.connectStream(s.url, bridgeUrl()); };
       const bridgeUi: BridgeUi = {
         http: () => bridgeUrl().replace(/^ws/, 'http'), hud: alertHud, upd,
-        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (url.startsWith('decklink:')) s.settings.depth = 16; } connect(); renderSources(); },
+        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (url.startsWith('decklink:') || url.startsWith('ndi:')) s.settings.depth = 16; } connect(); renderSources(); },
       };
       card.append(
         h('div', { class: 'row' }, urlIn),
@@ -321,8 +321,8 @@ function renderSources() {
           running ? h('button', { onclick: () => s.stop() }, '■ Trennen') : h('button', { class: 'primary', onclick: connect }, '▶ Verbinden'),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
             h('button', { class: 'mini', title: `Testbild ${p}`, onclick: () => { urlIn.value = `test:${p}`; connect(); } }, p)),
-            deviceButton(bridgeUi), deckLinkButton(bridgeUi))),
-        ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
+            deviceButton(bridgeUi), deckLinkButton(bridgeUi), ndiButton(bridgeUi))),
+        ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
       );
     } else if (s.kind === 'pattern') {
       card.append(...patternControls(s));

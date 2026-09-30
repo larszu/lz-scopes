@@ -3,6 +3,9 @@
 //
 //   DECKLINK_SDK_DIR=~/SDKs/Blackmagic_DeckLink_SDK_16.0 node scripts/build-helpers.mjs
 //
+// NDI: builds without the SDK (helpers/ndi/ndi-min.h); the NDI runtime is loaded at run
+// time from the user's installation.
+//
 // DeckLink: the Desktop Video SDK is a free download from Blackmagic Design after
 // registration and is not part of this repository. macOS and Linux build here with
 // clang++/g++; Windows needs MIDL (see helpers/decklink/README.md).
@@ -46,5 +49,18 @@ function buildColorSync() {
   for (const p of parts) rmSync(p);
 }
 
+function buildNdi() {
+  const dir = join(root, 'helpers', 'ndi');
+  const src = join(dir, 'lz-ndi.cpp');
+  if (process.platform === 'darwin') {
+    run('clang++', ['-std=c++17', '-O2', '-arch', 'arm64', '-arch', 'x86_64', '-mmacosx-version-min=11.0', `-I${dir}`, src, '-o', join(bin, 'lz-ndi')]);
+  } else if (process.platform === 'linux') {
+    run('g++', ['-std=c++17', '-O2', `-I${dir}`, src, '-ldl', '-lpthread', '-o', join(bin, 'lz-ndi')]);
+  } else {
+    run('cl', ['/nologo', '/EHsc', '/O2', '/std:c++17', `/I${dir}`, src, `/Fe:${join(bin, 'lz-ndi.exe')}`, `/Fo:${join(bin, 'lz-ndi.obj')}`]);
+  }
+}
+
+if (want('ndi')) buildNdi();
 if (want('decklink')) buildDeckLink();
 if (want('colorsync')) buildColorSync();

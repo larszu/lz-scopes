@@ -28,3 +28,16 @@ Entscheidung: eigener Helfer `helpers/decklink/lz-decklink.cpp`, SDK nicht im Re
 v210-Zeilenlänge: 48 Pixel je 128 Byte; nachgeprüft an ffmpegs v210-Encoder (1280×720 → 3456 Byte/Zeile). ffmpeg hat einen v210-Demuxer (`-f v210`), einen r210-Rohdemuxer nicht brauchbar (Paketgröße falsch) – daher wandelt der Helfer r210 selbst in `rgb48le`.
 
 **AJA (Notiz):** NTV2-SDK ist laut Issue MIT-lizenziert; nicht recherchiert, nicht umgesetzt. Der Helfer-Weg (Helfer-Protokoll → Bridge) passt ohne Bridge-Änderung.
+
+## 3. NDI® (#26)
+
+Geöffnet (30.09.2026):
+- docs.ndi.video/all/developing-with-ndi/sdk/licensing – SDK „royalty-free, subject to the SDK terms and conditions“; Pflichten: Link auf ndi.video „in a location close to all locations where NDI is used/selected“, Schreibweise „NDI®“ mit dem Satz „NDI® is a registered trademark of Vizrt NDI AB“ nahe der ersten Nennung und in der About-Box; NDI-DLLs im eigenen App-Ordner, nicht im Systempfad; NDI Tools nicht selbst verteilen, sondern auf ndi.video/tools verlinken; „NDI“ im Produktnamen nur nach Rückfrage. Die 5- bzw. 30-Minuten-Testlaufzeit gilt nur für das **Advanced SDK**.
+- docs.ndi.video/all/developing-with-ndi/sdk/software-distribution – Runtime darf mit eigenem Installer verteilt werden, wenn die eigene EULA die NDI-Bedingungen abdeckt; alternativ Link auf die offizielle Runtime. **Header:** „open-source projects have the right to include the header files within their distributions, which may then be used with dynamic loading of the NDI libraries“ (MIT).
+- NDI-SDK-Header 6.3 (Kopie im Repository DistroAV/DistroAV, `lib/ndi/`): MIT-Hinweis „applies to this file ONLY and not to the SDK as a whole“; Bibliotheksnamen `libndi.dylib`, `libndi.so.6`, `Processing.NDI.Lib.x64.dll`, Umgebungsvariable `NDI_RUNTIME_DIR_V6`. Zu `NDIlib_recv_color_format_best`: „P216, or UYVY“, Halbbilder können einzeln kommen.
+- ffmpeg: Commit 4b32f8b3eb (09.03.2019) „lavd: Remove libndi_newtek“ – ffmpeg hat keinen NDI-Eingang mehr (eingeführt 2634927fe3, 2017). Den Hintergrund (Lizenzstreit) nicht selbst gelesen.
+- Homebrew-Cask `libndi` (Paket `libNDI_for_Mac.pkg`, Version 6.3.2.0, Installationsort `/usr/local/lib`), Lizenzdatei `libndi_licenses.txt` im Paket.
+
+Entscheidung: kein NDI-Code und keine Runtime im Repository oder in der App. Eigener Helfer `helpers/ndi/lz-ndi.cpp`, der die vom Nutzer installierte Runtime dynamisch lädt; nötige Deklarationen in `helpers/ndi/ndi-min.h` aus den MIT-Headern (Hinweis in `licenses/ndi-sdk-headers-MIT.txt`). UI: „NDI®“, Link auf ndi.video und Markenhinweis an der Quellenkarte, Markenhinweis in der About-Box der Desktop-App. Ein Node-Addon war nicht nötig.
+
+Test: Runtime 6.3.2 nur in ein temporäres Verzeichnis entpackt (nicht installiert, `NDI_RUNTIME_DIR_V6`), eigener Testsender (`--send-test`, P216) → Suche → Empfang → Bridge → 16-bit-RGBA, Loopback auf einem Rechner. NDI Tools (Test Patterns) nicht installiert. Nicht geprüft: echte Quellen im Netz, NDI HX, Windows, Linux.

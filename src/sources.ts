@@ -4,6 +4,7 @@ import type { ChainSettings, Compiled } from './chain';
 import { patternById, renderPattern } from './patterns';
 import { AudioAnalysis } from './audio/analysis';
 import { AudioTap, StreamMonitor, generator, measurementConstraints } from './audio/io';
+import { r103Check, rgbDecoder, yuvDecoder, type Decode, type R103Result, type YuvCoding } from './ycbcr';
 
 export type SourceKind = 'stream' | 'webcam' | 'screen' | 'file' | 'pattern' | 'folder' | 'audio';
 
@@ -29,6 +30,8 @@ export interface SourceSettings {
   width: number;
   fps: number;
   depth: 8 | 16;
+  /** bridge streams: unclipped 16-bit Y′CbCr instead of R′G′B′ (docs/frame-protocol.md, format "yuv") */
+  yuv?: boolean;
   transport: 'tcp' | 'udp';
   /** bridge streams: request the sound as well (protocol 2) */
   audio?: boolean;
@@ -47,6 +50,12 @@ export interface StreamInfo {
   /** protocol 2 (audio=1): header on every binary message */
   proto?: number;
   audio?: AudioStreamInfo | null;
+  /** 'yuv': samples are A, Y′, Cb, Cr (16 bit, left-justified codes, no range conversion) */
+  format?: 'rgb' | 'yuv';
+  /** format 'yuv': quantisation range and bit depth of the source codes */
+  yuvRange?: 'limited' | 'full'; bits?: number;
+  /** why the bridge sent something other than requested */
+  note?: string;
   /** start time code of the container (ffprobe tag, e.g. MOV tmcd) and the stream's start time in s */
   timecode?: string; startTime?: number;
   /** "30000/1001" (ffprobe r_frame_rate) and the source frame rate before any fps limit */
@@ -101,6 +110,8 @@ export class Source {
   width = 0;
   height = 0;
   depth: 8 | 16 = 8;
+  /** raw frames are 16-bit Y′CbCr (A, Y′, Cb, Cr) with this coding; null = R′G′B′ */
+  yuv: YuvCoding | null = null;
   /** Latest raw frame (bridge streams). */
   data: Uint8Array | Uint16Array | null = null;
   /** Browser-decoded media (webcam, screen, files). */
@@ -124,7 +135,31 @@ export class Source {
   /** listening to bridge sound (drift-compensated, io.ts StreamMonitor) */
   monitor: StreamMonitor | null = null;
   monitorError = '';
-  private lastFrame: { px: ArrayLike<number>; w: number; h: number; step: number; scale: number; roi: [number, number, number, number][] | null } | null = null;
+  private lastFrame: { px: ArrayLike<number>; w: number; h: number; step: number; scale: number; roi: [number, number, number, number][] | null; decode: Decode } | null = null;
+  private r103Cache = new Map<string, { key: string; at: number; res: R103Result }>();
+
+  /** Reads a pixel of the raw frame (`data`) as normalised R′G′B′: Y′CbCr decoded with the source matrix. */
+  decoder(): Decode {
+    if (!this.yuv) return rgbDecoder(this.depth === 16 ? 65535 : 255);
+    const { kr, kb } = LUMA[this.colorspace];
+    return yuvDecoder(kr, kb, this.yuv);
+  }
+
+  /**
+   * EBU R 103 check of the last analysed frame (ycbcr.ts), optionally after the processing
+   * chain. Computed on demand, at most every 250 ms per stage.
+   */
+  r103Stats(c?: Compiled): R103Result | null {
+    const f = this.lastFrame;
+    if (!f) return null;
+    const key = `${this.statsVersion}:${c?.sig ?? ''}:${this.colorspace}`, slot = c?.stage ?? 'signal';
+    const hit = this.r103Cache.get(slot), now = performance.now();
+    if (hit && (hit.key === key || now - hit.at < 250)) return hit.res;
+    const { kr, kb } = LUMA[c ? c.view.colorspace : this.colorspace];
+    const res = r103Check(f.px, f.w, f.h, f.decode, kr, kb, c?.apply, f.roi);
+    this.r103Cache.set(slot, { key, at: now, res });
+    return res;
+  }
   private stageCache = new Map<string, { key: string; stats: Stats }>();
 
   /** Statistics of the last analysed frame after the processing chain (stage views, chain.ts). */
@@ -135,7 +170,7 @@ export class Source {
     const hit = this.stageCache.get(c.stage);
     if (hit?.key === key) return hit.stats;
     const { kr, kb } = LUMA[c.view.colorspace];
-    const stats = computeStats(f.px, f.w, f.h, f.step, f.scale, kr, kb, f.roi, c.apply);
+    const stats = computeStats(f.px, f.w, f.h, f.step, f.scale, kr, kb, f.roi, c.apply, f.decode);
     this.stageCache.set(c.stage, { key, stats });
     return stats;
   }
@@ -154,7 +189,7 @@ export class Source {
     for (const [x0, y0, x1, y1] of rects) for (let y = Math.floor(y0); y < Math.min(f.h, y1); y += f.step) {
       for (let x = Math.floor(x0); x < Math.min(f.w, x1); x += f.step) {
         const i = (y * f.w + x) * 4;
-        const r = f.px[i] / f.scale, g = f.px[i + 1] / f.scale, b = f.px[i + 2] / f.scale;
+        const [r, g, b] = f.decode(f.px, i);
         const Y = kr * r + kg * g + kb * b, cb = (b - Y) / (2 * (1 - kb)), cr = (r - Y) / (2 * (1 - kr));
         const ang = (Math.atan2(cr, cb) * 180) / Math.PI;
         if (Math.hypot(cb, cr) > 0.012 && Math.abs(ang - 123) <= tolDeg) ys.push(Y);
@@ -222,6 +257,7 @@ export class Source {
   }
   get colorspace(): Colorspace {
     if (this.settings.colorspace !== 'auto') return this.settings.colorspace;
+    if (this.kind === 'pattern') { const c = patternById(this.pattern.id).colorspace; if (c) return c; }
     if (!this.info) return this.height > 576 || this.height === 0 ? '709' : this.height === 576 ? '601-625' : '601';
     return detectColorspace(this.info.decodeMatrix ?? this.info.matrix, this.info.primaries, this.info.sourceHeight);
   }
@@ -254,6 +290,7 @@ export class Source {
     const q = new URLSearchParams({ url, width: String(width), fps: String(fps), depth: String(depth), transport });
     if (this.settings.audio !== false) q.set('audio', '1');
     for (const [k, v] of Object.entries(bridgeInputParams(url, this.settings))) q.set(k, v);
+    if (this.settings.yuv) { q.set('format', 'yuv'); q.set('depth', '16'); }
     this.connectFrames(`${bridge}/stream?${q}`, false);
   }
 
@@ -271,6 +308,7 @@ export class Source {
         const msg = JSON.parse(ev.data);
         if (msg.type === 'info') {
           this.info = msg; this.width = msg.width; this.height = msg.height; this.depth = msg.depth;
+          this.yuv = yuvOf(msg);
           const a = msg.audio as AudioStreamInfo | null | undefined;
           this.monitor?.close(); this.monitor = null; this.audioAnchor = null;
           this.audio = a ? new AudioAnalysis(a.sampleRate, a.channels, a.layout) : null;
@@ -311,7 +349,7 @@ export class Source {
         const pts = head.getFloat64(8, true);
         const px = this.depth === 16 ? new Uint16Array(buf, 16) : new Uint8Array(buf, 16);
         // A/V offset: mean luma of every frame (also while frozen), stamped with its PTS
-        if (this.audio && this.width) this.audio.av.pushVideo(pts, meanLuma(px, this.width, this.height, this.depth === 16 ? 65535 : 255));
+        if (this.audio && this.width) this.audio.av.pushVideo(pts, meanLuma(px, this.width, this.height, this.depth === 16 ? 65535 : 255, !!this.yuv));
         if (this.frozen) return;
         this.data = px;
         this.tick();
@@ -331,6 +369,7 @@ export class Source {
    */
   pushInfo(info: StreamInfo) {
     this.info = info; this.width = info.width; this.height = info.height; this.depth = info.depth;
+    this.yuv = yuvOf(info);
     this.set('live', `${info.sourceWidth}×${info.sourceHeight} ${info.codec ?? ''}`.trim());
   }
   pushFrame(buffer: ArrayBuffer) {
@@ -472,8 +511,13 @@ export class Source {
       return;
     }
     this.element = canvas; this.width = width; this.height = height; this.depth = 8;
+    if (def.frame16) {
+      // exact codes for the scopes; the canvas stays as the 8-bit picture for other uses
+      const f = def.frame16(width, height);
+      this.data = f.data; this.depth = 16; this.yuv = f.coding;
+    }
     this.tick();
-    this.set('live', `${def.name} · ${width}×${height}`);
+    this.set('live', `${def.name} · ${width}×${height}${def.frame16 ? ' · 16 bit Y′CbCr' : ''}`);
     if (def.animated) {
       let busy = false;
       const timer = setInterval(async () => {
@@ -607,7 +651,7 @@ export class Source {
     this.audio = null;
     if (this.videoEl) { this.videoEl.pause(); this.videoEl.srcObject = null; this.videoEl = null; }
     if (this.objectUrl) { URL.revokeObjectURL(this.objectUrl); this.objectUrl = null; }
-    this.element = null; this.data = null; this.info = null; this.tc = null; this.width = 0; this.height = 0; this.stats = null;
+    this.element = null; this.data = null; this.yuv = null; this.info = null; this.tc = null; this.width = 0; this.height = 0; this.stats = null;
     this.fps = 0; this.dropped = 0;
     if (this.status !== 'idle') this.set('idle');
   }
@@ -669,10 +713,7 @@ export class Source {
   private readPixelNow(x: number, y: number): [number, number, number] | null {
     x = Math.floor(x); y = Math.floor(y);
     if (x < 0 || y < 0 || x >= this.width || y >= this.height) return null;
-    if (this.data) {
-      const i = (y * this.width + x) * 4, s = this.depth === 16 ? 65535 : 255;
-      return [this.data[i] / s, this.data[i + 1] / s, this.data[i + 2] / s];
-    }
+    if (this.data) return this.decoder()(this.data, (y * this.width + x) * 4);
     if (this.element) {
       const c = this.scratch(1, 1);
       const ctx = c.getContext('2d', { willReadFrequently: true })!;
@@ -708,13 +749,14 @@ export class Source {
     const sx = w / this.width, sy = h / this.height;
     const rois = this.activeRois().map((r) => [Math.floor(r[0] * sx), Math.floor(r[1] * sy), Math.ceil(r[2] * sx), Math.ceil(r[3] * sy)] as [number, number, number, number]);
     const roi = rois.length ? rois : null;
-    this.lastFrame = { px, w, h, step, scale, roi };
-    this.stats = computeStats(px, w, h, step, scale, kr, kb, roi);
+    const decode = this.data ? this.decoder() : rgbDecoder(255);
+    this.lastFrame = { px, w, h, step, scale, roi, decode };
+    this.stats = computeStats(px, w, h, step, scale, kr, kb, roi, undefined, decode);
     this.statsVersion++;
   }
 }
 
-export function computeStats(px: ArrayLike<number>, w: number, h: number, step: number, scale: number, kr: number, kb: number, rois: [number, number, number, number] | [number, number, number, number][] | null = null, map?: (rgb: number[]) => number[]): Stats {
+export function computeStats(px: ArrayLike<number>, w: number, h: number, step: number, scale: number, kr: number, kb: number, rois: [number, number, number, number] | [number, number, number, number][] | null = null, map?: (rgb: number[]) => number[], decode: Decode = rgbDecoder(scale)): Stats {
   // one rectangle or several (union); the bounding box limits the scan
   const list = !rois ? null : (typeof rois[0] === 'number' ? [rois as [number, number, number, number]] : rois as [number, number, number, number][]);
   const x0 = list ? Math.min(...list.map((r) => r[0])) : 0, y0 = list ? Math.min(...list.map((r) => r[1])) : 0;
@@ -729,7 +771,7 @@ export function computeStats(px: ArrayLike<number>, w: number, h: number, step: 
     for (let x = Math.max(0, x0); x < Math.min(w, x1); x += step) {
       if (!inside(x, y)) continue;
       const i = (y * w + x) * 4;
-      let r = px[i] / scale, g = px[i + 1] / scale, b = px[i + 2] / scale;
+      let [r, g, b] = decode(px, i);
       if (map) [r, g, b] = map([r, g, b]);
       const Y = kr * r + kg * g + kb * b;
       hist[0][Math.max(0, Math.min(255, (r * 255 + 0.5) | 0))]++;
@@ -750,17 +792,23 @@ export function computeStats(px: ArrayLike<number>, w: number, h: number, step: 
   };
 }
 
+/** Y′CbCr coding announced in a frame-protocol info message (format "yuv"). */
+export function yuvOf(info: StreamInfo): YuvCoding | null {
+  return info.format === 'yuv' ? { full: info.yuvRange === 'full', bits: info.bits ?? 10 } : null;
+}
+
 /** Output device and channel pair for listening to bridge sound (set from the UI). */
 export const monitorSink = { id: '', pair: 0 };
 
 /** Mean luma (BT.709 weights on the R'G'B' values, 0…1) on a sparse grid – only for flash detection. */
-export function meanLuma(px: ArrayLike<number>, w: number, h: number, max: number): number {
+export function meanLuma(px: ArrayLike<number>, w: number, h: number, max: number, yuv = false): number {
   const sx = Math.max(1, Math.floor(w / 64)), sy = Math.max(1, Math.floor(h / 36));
   let sum = 0, n = 0;
   for (let y = sy >> 1; y < h; y += sy) for (let x = sx >> 1; x < w; x += sx) {
     const i = (y * w + x) * 4;
     if (i + 2 >= px.length) break;
-    sum += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]; n++;
+    // Y′CbCr frames (A, Y′, Cb, Cr): the Y′ code itself
+    sum += yuv ? px[i + 1] : 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]; n++;
   }
   return n ? sum / n / max : 0;
 }

@@ -323,7 +323,7 @@ function renderSources() {
         h('div', { class: 'row' },
           select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', 'nativ']], (v) => upd({ width: Number(v) }, true), 'Analyseauflösung'),
           select(String(set.fps), [['0', 'alle fps'], ['10', '10 fps'], ['25', '25 fps'], ['30', '30 fps']], (v) => upd({ fps: Number(v) }, true), 'Bildrate begrenzen'),
-          select(String(set.depth), [['8', '8 bit'], ['16', '16 bit']], (v) => upd({ depth: Number(v) as 8 | 16 }, true), 'Bittiefe (16 bit für 10-bit/HDR-Quellen)'),
+          select(set.yuv ? 'yuv' : String(set.depth), [['8', '8 bit'], ['16', '16 bit'], ['yuv', '16 bit Y′CbCr']], (v) => upd(v === 'yuv' ? { depth: 16, yuv: true } : { depth: Number(v) as 8 | 16, yuv: false }, true), 'Bittiefe. 16 bit für 10-bit/HDR-Quellen; Y′CbCr = unbeschnitten ohne Range-Wandlung (Sub-Black, Super-White, R 103)'),
           select(set.transport, [['tcp', 'TCP'], ['udp', 'UDP']], (v) => upd({ transport: v as 'tcp' | 'udp' }, true), 'RTSP-Transport'),
           select(set.audio === false ? '0' : '1', [['1', 'Ton'], ['0', 'ohne Ton']], (v) => upd({ audio: v === '1' }, true), 'Ton des Streams mitmessen (Bridge-Protokoll 2)')),
         h('div', { class: 'row' },
@@ -503,6 +503,7 @@ function patternControls(s: Source): Node[] {
     h('div', { class: 'row' },
       resolutionControls(pt, apply),
       label),
+    ...(patternById(pt.id).note ? [h('p', { class: 'hint' }, patternById(pt.id).note!)] : []),
     h('div', { class: 'row' },
       h('button', { class: 'primary', title: 'Testbild im eigenen Fenster ausgeben (für Monitor, Beamer, Capture)', onclick: () => openOutput(pt) }, '⧉ Ausgeben'),
       h('button', { title: 'Eigene Bilder als Testbilder laden', onclick: () => imgs.click() }, '+ Bilder'), imgs),
@@ -773,7 +774,7 @@ function panelSettings(p: PanelState): Node[] {
     }
   }
   if (p.scope === 'picture') {
-    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
+    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung'], ['r103', 'EBU R 103']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
     if (p.picture === 'gamut') row('Zielgamut', select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, 'Markiert Pixel, die im Zielgamut negative Anteile hätten'));
     if (p.picture === 'false') row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); }));
     if (p.picture === 'zebra') row('Zebra ab', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%');

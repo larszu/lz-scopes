@@ -176,6 +176,8 @@ export function stageView(src: Source, stage: Stage): Source {
     colorspace: { get: () => c.view.colorspace },
     readPixel: { value: (x: number, y: number) => { const p = src.readPixel(x, y); return p ? (c.apply(p) as [number, number, number]) : null; } },
     stats: { get: (): Stats | null => src.stageStats(c) },
+    r103Stats: { value: () => src.r103Stats(c) },
+    decoder: { value: () => src.decoder() },
   });
   return v;
 }

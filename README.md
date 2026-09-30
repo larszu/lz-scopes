@@ -46,7 +46,8 @@
 - **CST and LUTs per source.** Colour space transform to Rec.709 / Rec.2020 PQ / HLG (or any gamut and transfer) with Bradford adaptation and tone mapping (ACES 2.0 tonescale, BT.2390 EETF, extended Reinhard, clip), camera presets (log → Rec.709), then up to two LUTs (`.cube`, `.3dl`, `.spi3d`, `.spi1d`, `.csp`, tetrahedral, by drag and drop). Each panel measures the signal, after the CST or after the LUTs (gear menu, key `C`), shown in the panel head. Manufacturer look LUTs are not bundled; the app links their official download pages ([docs/research/lut-cst.md](docs/research/lut-cst.md)).
 - **Honest about what it knows.** Transfer (BT.1886, gamma 2.2 / 2.6 / 2.8, sRGB, linear, PQ, HLG) and matrix come from the stream metadata; when nothing is signalled the source card says so and names the assumption.
 - **Waveform zoom and channels.** Black and highlight magnifier for black balance, parade / YRGB / RGB channels can be hidden, labels switchable.
-- **Built-in test patterns.** About 40 generated patterns from PLUGE (ITU-R BT.814-4, SDR and HDR) and SMPTE bars to PQ wedges and EBU R 95 safe areas, plus 20 LZ display test images, at preset or free resolutions. Open any of them full screen on a monitor, projector or capture.
+- **Unclipped Y′CbCr and EBU R 103.** Bridge mode *16 bit Y′CbCr* sends Y′CbCr 4:4:4 without range conversion; the shader converts to R′G′B′ with the source matrix, so values below 0 % and above 100 % survive. EBU R 103 v3.0 check with its measurement filter (1/16…1/16 × 1/4-1/2-1/4): share outside −5/105 % and outside 4-1019 in the Messwerte panel (reported above 1 % of the area) and as picture overlay.
+- **Built-in test patterns.** About 40 generated patterns from PLUGE (ITU-R BT.814-4, SDR and HDR, with real −2 %), ITU-R BT.2111-3 HDR bars (HLG narrow, PQ narrow, PQ full, exact 10-bit codes as 16-bit frames) and SMPTE bars to PQ wedges and EBU R 95 safe areas, plus 20 LZ display test images, at preset or free resolutions. Open any of them full screen on a monitor, projector or capture.
 - **LED wall check.** Wall/cabinet setup, cabinet grid with IDs, pixel-mapping, scroll, free-level, low-level, shutter/genlock, moiré and patch-sequencer patterns in wall resolution; camera-based relative check after a 4-point rectification: per-cabinet heatmap, seam profiles, before/after, viewing-angle series, scan-line index, dead-pixel search, CSV/PNG report, and an Unreal-style 3×3 camera matrix. The wall itself is calibrated in its processor (Brompton, NovaStar, Colorlight); not yet tried on a real wall.
 - **Light meter (untested).** Opple Light Master 3 / 4 over Web Bluetooth: lux, CCT (McCamy), Duv (Ohno), xy, history, CSV. Protocol and maths are tested with recorded frames from MIT projects; the Bluetooth link itself is untested (no device).
 - **Your layout.** Dock, stack and resize panels by drag and drop, keep layout configurations as JSON.
@@ -143,7 +144,7 @@ Panel type **Clock / time code** (and an optional corner read-out in the picture
 
 ## Architecture
 
-- **Bridge** (`server/index.mjs`): ffprobe for resolution and colour metadata, then ffmpeg scales to the analysis width and writes raw `rgba` / `rgba64le` frames over a WebSocket. Slow browsers get frames dropped, no queue builds up. The Y'CbCr matrix is passed to ffmpeg explicitly, the transfer function is left untouched. It listens on `127.0.0.1` only and accepts network URLs, test patterns and local capture/audio devices, never local files, ffmpeg options or a shell.
+- **Bridge** (`server/index.mjs`): ffprobe for resolution and colour metadata, then ffmpeg scales to the analysis width and writes raw `rgba` / `rgba64le` frames (or `ayuv64le` in Y′CbCr mode, [docs/frame-protocol.md](docs/frame-protocol.md)) over a WebSocket. Slow browsers get frames dropped, no queue builds up. The Y'CbCr matrix is passed to ffmpeg explicitly, the transfer function is left untouched. It listens on `127.0.0.1` only and accepts network URLs and test patterns, never local files, ffmpeg options or a shell.
 - **Renderer** (`src/renderer.ts`): one WebGL2 context behind all panels. Every sampled pixel is scattered as an additive point into a float target (up to 4 million per scope and frame) and mapped with `1 - e^(-k x)`.
 - **UI**: plain TypeScript, [dockview](https://github.com/mathuo/dockview) for the docking layout, Vite for the build, Electron for the desktop shell.
 - **Web build**: asset paths are relative, so it runs at `/` and under `/lz-scopes/`.
@@ -162,7 +163,9 @@ view.setSource(src);
 
 ## Limits
 
-- Values are full-range R'G'B' after conversion. Sub-black and super-white outside 16-235 are clipped; there is no legal / illegal check at Y'CbCr level yet.
+- Only bridge streams in *16 bit Y′CbCr* mode and the 16-bit patterns keep sub-black and super-white; 8 / 16 bit R′G′B′ streams and browser sources are clipped to 0-100 %, the R 103 check then says so.
+- The R 103 check runs on the analysis picture; with a scaled analysis width it is not normative (set width to native).
+- The pattern output window is 8-bit full-range: −7 %, −2 % and 109 % are clipped there. Chrome offers float16 canvases, but whether a display link really carries more than 8 bit is not verified.
 - No AJA input. NDI only with the NDI runtime installed, no sound, untested with real network sources. DeckLink only through the helper you build yourself (ffmpeg's own DeckLink device is "nonfree" and cannot be redistributed); never run with hardware yet. Audio from the browser is limited to 2 channels (more only through the bridge). Not tested yet: multichannel interfaces and Dante on real hardware, the bridge on Windows, the A/V offset against a real camera.
 - Browser sources (camera, file) are always 8 bit and pass through the browser's colour management.
 

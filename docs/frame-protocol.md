@@ -22,6 +22,30 @@ ffmpeg -rtsp_transport tcp -i <url> -an -map 0:v:0 \
 
 `in_color_matrix` immer explizit setzen, sonst wandelt swscale ungetaggte HD-Streams mit BT.601. Kommt der Browser nicht hinterher, Bilder verwerfen statt puffern (`ws.bufferedAmount`).
 
+## Y′CbCr unbeschnitten (`format=yuv`)
+
+Opt-in über `/stream?url=…&format=yuv` (setzt `depth` auf 16). Die Bridge wandelt dann nicht nach R′G′B′, sondern skaliert Y′CbCr 4:4:4 ohne Range- und Matrixwandlung. Codes unter Schwarz und über Weiß (Sub-Black, Super-White, BT.2111 −7 %/109 %) kommen unverändert an; die Umrechnung nach R′G′B′ macht der Client (Shader), ohne zu begrenzen.
+
+`info` bekommt drei Felder:
+
+```json
+{"type":"info", "...":"wie oben", "depth":16, "format":"yuv", "yuvRange":"limited"|"full", "bits":10}
+```
+
+- Jedes Pixel: 4 × Uint16 LE in der Reihenfolge **A, Y′, Cb, Cr** (ffmpeg `ayuv64le`), A = 65535.
+- n-bit-Codes linksbündig: Wert · 2^(16−n), in beiden Ranges (ffmpeg 9.0.1 geprüft: 10 bit 943 → 60352, 8 bit full 255 → 65280). `bits` ist n der Quelle, aus `pix_fmt`.
+- Narrow: Y′ = (D − 4096)/56064, Cb/Cr = (D − 32768)/57344. Full: Y′ = D/((2^n − 1)·2^(16−n)), Cb/Cr = (D − 2^(n−1)·2^(16−n))/((2^n − 1)·2^(16−n)) (BT.2100-3 Tab. 9).
+- Matrix: `decodeMatrix` bzw. `matrix` wie oben; der Client nimmt die Matrix der Quelle (manuell überschreibbar).
+- Ist die Quelle R′G′B′ (`gbrp`, `rgb24` …), antwortet die Bridge mit `"format":"rgb"`, 16 bit R′G′B′ und einem `note`.
+
+```
+ffmpeg … -i <url> -map 0:v:0 -an \
+  -vf scale=960:540:flags=area:in_color_matrix=bt709:out_color_matrix=bt709:in_range=limited:out_range=limited \
+  -pix_fmt ayuv64le -f rawvideo pipe:1
+```
+
+Andere Hosts dürfen statt `ayuv64le` planar `yuv444p16le` erzeugen, müssen dann aber vor dem Senden in A, Y′, Cb, Cr umsortieren.
+
 ## Protokoll 2: Bild und Ton (`audio=1`)
 
 Opt-in über die Anfrage: `/stream?url=…&audio=1` (optional `&video=0` für reine Tonquellen). Ohne `audio=1` bleibt alles wie oben; Hosts, die nur Protokoll 1 sprechen, funktionieren unverändert weiter (der Client erkennt Protokoll 2 an `info.proto`).

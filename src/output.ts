@@ -33,7 +33,7 @@ export function runOutputWindow() {
     const p = PATTERNS[idx];
     const r = refreshMs();
     const av = p.id === 'avsync' ? `   Bildwechsel ${r ? `${r.toFixed(1).replace('.', ',')} ms (${Math.round(1000 / r)} Hz)` : '–'} · Blitz-Raster ±${(r / 2).toFixed(1).replace('.', ',')} ms · Bild-Vorlauf ${Math.round(avCalibration().videoLeadMs)} ms${avCalibration().note ? '' : ' (unkalibriert)'}` : '';
-    hud.textContent = `${p.group} · ${p.name} · ${w}×${h}${av}   ← → wechseln · F Vollbild · L Label`;
+    hud.textContent = `${p.group} · ${p.name} · ${w}×${h}${p.note ? ' · 8 bit: unter 0 % / über 100 % abgeschnitten' : ''}${av}   ← → wechseln · F Vollbild · L Label`;
     hud.style.opacity = '1';
     clearTimeout(hudTimer); hudTimer = window.setTimeout(() => (hud.style.opacity = '0'), 2500);
   };

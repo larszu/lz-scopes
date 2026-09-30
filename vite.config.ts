@@ -13,6 +13,7 @@ export default defineConfig({
       '/out': { target: 'http://127.0.0.1:4192', ws: true },
       '/control': { target: 'ws://127.0.0.1:4192', ws: true },
       '/meter': { target: 'ws://127.0.0.1:4192', ws: true },
+      '/clock': { target: 'ws://127.0.0.1:4192', ws: true },
     },
   },
   build: { target: 'es2022' },

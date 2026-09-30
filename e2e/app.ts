@@ -62,6 +62,10 @@ export async function launchApp(opts: { profile?: string; port?: number } = {}):
   };
   // the main window connects to /control?role=app once it has booted
   await until(async () => (await (await fetch(`${base}/api/control`)).json()).connected === true, 60_000, 'Hauptfenster verbindet sich nicht mit der Bridge');
+  // In software GL (CI: xvfb + SwiftShader) the main window can be busy for several seconds
+  // right after booting (first scatter frames); the bridge gives each command 4 s. Wait until it
+  // answers before the tests start.
+  await until(async () => (await control({ cmd: 'state' })).ok, 60_000, 'Hauptfenster antwortet nicht');
   const state = async () => {
     const r = await control({ cmd: 'state' });
     if (!r.ok) throw new Error(r.error);

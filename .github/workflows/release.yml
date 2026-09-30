@@ -41,6 +41,9 @@ jobs:
       - name: Universal ffmpeg (macOS)
         if: runner.os == 'macOS'
         run: node scripts/ffmpeg-universal.mjs
+      - name: NDI helper (macOS, universal; loads the user's NDI runtime, ships nothing of NDI)
+        if: runner.os == 'macOS'
+        run: node scripts/build-helpers.mjs ndi
       - name: Package
         # bash on every OS: pwsh swallowed electron-builder's exit code in cable-planner v0.2.35
         shell: bash

@@ -41,3 +41,14 @@ Geöffnet (30.09.2026):
 Entscheidung: kein NDI-Code und keine Runtime im Repository oder in der App. Eigener Helfer `helpers/ndi/lz-ndi.cpp`, der die vom Nutzer installierte Runtime dynamisch lädt; nötige Deklarationen in `helpers/ndi/ndi-min.h` aus den MIT-Headern (Hinweis in `licenses/ndi-sdk-headers-MIT.txt`). UI: „NDI®“, Link auf ndi.video und Markenhinweis an der Quellenkarte, Markenhinweis in der About-Box der Desktop-App. Ein Node-Addon war nicht nötig.
 
 Test: Runtime 6.3.2 nur in ein temporäres Verzeichnis entpackt (nicht installiert, `NDI_RUNTIME_DIR_V6`), eigener Testsender (`--send-test`, P216) → Suche → Empfang → Bridge → 16-bit-RGBA, Loopback auf einem Rechner. NDI Tools (Test Patterns) nicht installiert. Nicht geprüft: echte Quellen im Netz, NDI HX, Windows, Linux.
+
+## 4. DaVinci Resolve, Lightroom, Capture One (#4)
+
+Bestand vor #4-Abschluss: Quelle *DaVinci Resolve* (Scripting-API, `server/resolve_helper.py`, 16-bit-TIFF, getestet mit Resolve Studio 21.1), *Bildschirm/Fenster* mit Zuschnitt auf den Viewer, *Ordner* im Browser (File System Access API, nur 8-bit-Formate des Browsers).
+
+Ergänzt:
+- **Watch-Ordner in der Bridge** (`server/folder.mjs`, `folder:<Name>`): neuestes Standbild (TIFF, DPX, PNG, JPEG, WebP, EXR) in voller Tiefe über ffmpeg, auch auf entfernten Bridges. Freigabe nur ausdrücklich (`--watch-dir`, `LZS_WATCH_DIRS`, in der Desktop-App per Ordnerdialog); Clients sehen nur den Namen, nie den Pfad. Eine Datei wird erst gelesen, wenn Größe und Zeit über einen Abfragetakt (500 ms) gleich bleiben. Geprüft in vitest: 16-bit-TIFF 0x8000 kommt als 0x8000 an, 10-bit-DPX als 514/1023.
+- **Export-Wege in der Oberfläche** (Karte *Ordner* → „Lightroom, Capture One, Resolve“): Lightroom-Classic-Export mit Vorgabe, Capture-One-Verarbeitungsrezept, Resolve-Standbild aus der Galerie. Diese Menüwege sind aus der Produktkenntnis beschrieben und **nicht** an den installierten Programmen (Lightroom Classic, Capture One 20/21 auf dem Test-Mac) nachgeklickt.
+- **Resolve-Scripting-Weg** (vorhanden, dokumentiert): `Project.ExportCurrentFrameAsStill(path)` im Helfer, Voraussetzung Resolve Studio mit *Einstellungen → System → Allgemein → Externes Scripting: Lokal* und Python 3. Die Scripting-Module liegen unter `…/Developer/Scripting/Modules`, die Bibliothek `fusionscript.so/.dll` (Pfade im Helfer).
+
+Grenzen: eingebettete ICC-Profile werden nicht gelesen (Adobe RGB/ProPhoto-Exporte erscheinen als Rec.709-Primaries, sofern nicht an der Quelle umgestellt). Der Resolve-MCP-Server dieser Arbeitsumgebung war nicht verbunden (venv fehlt) und wurde nicht repariert.

@@ -565,7 +565,7 @@ export function statsLines(src: Source, displayFps: number): string[] {
     }
   }
   if (st) lines.push(`Statistik  ${src.statsPerf.path === 'gpu' ? 'GPU, volle Auflösung' : 'CPU, unterabgetastet'} · ${src.statsPerf.ms.toFixed(2)} ms Hauptthread`);
-  lines.push(...latencyLines(src.latency.summary()));
+  lines.push(...latencyLines(src.latency.summary(), src.kind === 'stream' && src.lowLatency));
   lines.push('', ...r103Lines(src));
   return lines;
 }

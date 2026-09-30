@@ -165,7 +165,7 @@ export async function startMediamtx(bin: string): Promise<{ rtsp: number; stop: 
     'logLevel: warn',
     `rtspAddress: 127.0.0.1:${rtsp}`,
     'rtspTransports: [tcp]',
-    'rtmp: no', 'hls: no', 'webrtc: no', 'srt: no', 'api: no', 'metrics: no', 'pprof: no', 'playback: no',
+    'rtmp: no', 'hls: no', 'webrtc: no', 'srt: no', 'moq: no', 'api: no', 'metrics: no', 'pprof: no', 'playback: no',
     'paths:', '  all_others:',
   ].join('\n'));
   // cwd = temp dir: mediamtx writes auto.crt/auto.key into its working directory

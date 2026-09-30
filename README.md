@@ -128,6 +128,7 @@ Tone generator and loudness/level analyser, measured with an own DSP core (`src/
 - **Report**: ΔE00 and ΔITP (mean, median, 95th percentile, max) against BT.1886 with measured black / gamma / sRGB / PQ, grey curve with effective gamma, CCT and Duv, contrast; CSV, HTML, print to PDF.
 - **Uniformity** 3×3 to 9×9 at 100/75/50/25 %, ΔE00 to the centre (≤ 4 / ≤ 2 as quoted by DisplayCAL for ISO 14861) and contrast deviation.
 - **3D LUT** `.cube` 33/65 from a matrix/shaper model of the measurements, only if the model predicts the measured patches well enough (SDR only).
+- **System profile (desktop app)**: ⚙ → *Systemprofil mitschalten* sets the operating system's display profile to match the chosen display colour space (sRGB / Display P3 / Rec.709, profile per space selectable). The previous profile is backed up first and restored on quit, with *Zurücksetzen* and after a crash on the next start. macOS via a small Swift helper on the public ColorSync API (`npm run build:helpers`, checked on a built-in display), Windows via mscms (untested). Monitor preset/brightness over DDC/CI (VCP 0x14 / 0x10) where a tool is present, untested. Not available in the browser ([docs/research/systemprofil.md](docs/research/systemprofil.md)).
 
 ## Clock and time code
 

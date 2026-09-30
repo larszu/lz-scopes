@@ -190,6 +190,7 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 - **Bericht**: ΔE00 und ΔITP (Mittel, Median, 95. Perzentil, Max) gegen BT.1886 mit gemessenem Schwarz, Gamma, sRGB oder PQ. Dazu Graukurve mit effektivem Gamma, CCT und Duv, Kontrast. Export als CSV und HTML, Druck als PDF.
 - **Uniformität** 3×3 bis 9×9 in 100/75/50/25 %: ΔE00 zum Mittelfeld (≤ 4 / ≤ 2, ISO 14861 wie von DisplayCAL zitiert) und Kontrastabweichung.
 - **3D-LUT** `.cube` 33/65 aus einem Matrix/Shaper-Modell der Messungen. Sie entsteht nur, wenn das Modell die gemessenen Felder gut genug vorhersagt, und nur für SDR.
+- **Systemprofil (Desktop-App)**: ⚙ → *Systemprofil mitschalten* setzt das Display-Profil des Betriebssystems passend zum gewählten Display-Farbraum (sRGB, Display P3 oder Rec.709, das Profil je Farbraum ist wählbar). Das vorherige Profil wird vorher gesichert und zurückgesetzt: beim Beenden, mit *Zurücksetzen* und nach einem Absturz beim nächsten Start. Unter macOS läuft das über einen kleinen Swift-Helfer auf der öffentlichen ColorSync-API (`npm run build:helpers`, am eingebauten Display geprüft). Unter Windows läuft es über mscms (ungeprüft). Monitor-Preset und Helligkeit per DDC/CI (VCP 0x14 / 0x10) gehen, wo ein Werkzeug vorhanden ist, ebenfalls ungeprüft. Im Browser nicht verfügbar ([docs/research/systemprofil.md](docs/research/systemprofil.md)).
 
 ## Lichtmesser
 

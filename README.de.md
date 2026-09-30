@@ -180,9 +180,30 @@ Lautheit nach ITU-R BS.1770-5 und EBU Tech 3341: K-Filter für jede Abtastrate, 
 
 Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Zyklus 3 s), Polaritätstest (positiver Halbsinus-Puls, 1 ms alle 20 ms), Rauschen mit dem Effektivwert eines Sinus gleichen Spitzenpegels, Korrelationsfenster Standard 600 ms. GLITS-Zeitplan nur nach Sekundärquelle.
 
+## Display-Kalibrierung und Verifikation
+
+⚙ → *Kalibrierung / Verifikation …*. Die Abläufe folgen DisplayCAL, der Code ist eigen. Details: [docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md).
+
+- **Messfeld-Sequenzer**: Das Testbild-Ausgabefenster (`?out=`) zeigt die Messfelder. Einstellbar sind Feldgröße, konstanter APL-Hintergrund und Vollbild-Einschub gegen ABL. Der Sequenzer (`src/patchSequencer.ts`) ist auch für die LED-Wand-Werkzeuge gedacht.
+- **Messgerät**: ArgyllCMS `spotread` läuft als eigener Prozess über die Bridge (Desktop-App oder `npm start`), mit CCMX/CCSS-Korrektur und Displaytyp. ArgyllCMS wird nicht mitgeliefert. Fehlt es, meldet der Dialog „ArgyllCMS nicht gefunden“ und nimmt XYZ oder xyY von Hand an. *Mit echtem Messgerät noch nicht geprüft.*
+- **Eigene Testfeldsätze**: Graukeil 21, Video 47, Video 81, HDR PQ bis zur gewählten Spitze. Untethered-Modus für externe Generatoren: neues Feld bei ΔE00 > 1,5, zweimal bestätigt.
+- **Bericht**: ΔE00 und ΔITP (Mittel, Median, 95. Perzentil, Max) gegen BT.1886 mit gemessenem Schwarz, Gamma, sRGB oder PQ. Dazu Graukurve mit effektivem Gamma, CCT und Duv, Kontrast. Export als CSV und HTML, Druck als PDF.
+- **Uniformität** 3×3 bis 9×9 in 100/75/50/25 %: ΔE00 zum Mittelfeld (≤ 4 / ≤ 2, ISO 14861 wie von DisplayCAL zitiert) und Kontrastabweichung.
+- **3D-LUT** `.cube` 33/65 aus einem Matrix/Shaper-Modell der Messungen. Sie entsteht nur, wenn das Modell die gemessenen Felder gut genug vorhersagt, und nur für SDR.
+
 ## Lichtmesser
 
 *Lichtmesser (Opple)* in der Seitenleiste verbindet einen Opple Light Master 3 oder 4 per Web Bluetooth (Chrome/Edge oder Desktop-App) und zeigt Beleuchtungsstärke, CCT (McCamy), Duv (Ohno) und xy, mit Verlauf und CSV-Export. Die Werte rechnet LZ Scopes aus den Rohkanälen des Filtersensors; für LED-Primärfarben nur ein Trendmesser. **Ungeprüft:** Ohne Gerät getestet sind nur Protokoll und Umrechnung (mit aufgezeichneten Paketen aus [sunday-light-meter](https://github.com/natmart-in/sunday-light-meter), MIT), nicht die Bluetooth-Verbindung. Details: [docs/research/opple-light-master.md](docs/research/opple-light-master.md).
+
+## Uhr und Timecode
+
+Panel-Typ **Uhr / Timecode**, dazu wahlweise eine Einblendung im Bild-Panel (⚙ → Uhr). Quellen und Befunde: [docs/research/clock-ptp.md](docs/research/clock-ptp.md).
+
+- **Tageszeit** nach SMPTE ST 2059-1: Systemzeit → TAI (IERS Bulletin C 72, TAI − UTC = 37 s) → Timecode mit Daily Jam, 23,98 … 60 fps, DF/NDF, Frame-Phase zur SMPTE-Epoche. Gekennzeichnet als „Systemuhr – keine Referenz“, solange kein PTP die Uhr korrigiert.
+- **Quell-Timecode**: Start-Timecode des Containers (ffprobe-Tag), GOP-/SEI-Timecode je Bild (ffmpeg `showinfo`), Timeline-Timecode aus DaVinci Resolve, Videodateien im Browser aus `currentTime`; Differenz zur Tageszeit in Frames.
+- **LTC** aus dem Ton jeder Quelle: eigener Biphase-Mark-Leser (24–30 fps, vorwärts und rückwärts).
+- **PTP-Monitor** in der Bridge (eigener Code, UDP 319/320, 224.0.1.129): Grandmaster, Domain, clockClass, Nachrichtenraten, SMPTE-SM-TLV (Lock, Lokal-Offset, nächster Jam), Offset und auf Wunsch Mean Path Delay – als Schätzung mit Software-Zeitstempeln. Ohne PTP im Netz: „kein PTP empfangen“. Nur mit der UI aus Bridge oder Desktop-App, nicht von GitHub Pages.
+- **ST-2110-RTP-Prüfung**: RTP-Zeitstempel (90 kHz, Offset 0 zur Epoche) gegen Ankunftszeit und Frame-Raster.
 
 ## Einbetten
 

@@ -9,7 +9,7 @@
 
 export const OVERLAY_SCOPES = ['wf-luma', 'wf-color', 'wf-skin', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'cie', 'hist'];
 export const AUDIO_SCOPES = ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase'];
-export const PANEL_SCOPES = ['picture', ...OVERLAY_SCOPES, 'stats', ...AUDIO_SCOPES];
+export const PANEL_SCOPES = ['picture', ...OVERLAY_SCOPES, 'stats', ...AUDIO_SCOPES, 'clock'];
 export const OUTPUT_VIEWS = ['grid', 'panel', 'clean', 'overlay'];
 export const TRANSPORT_OPS = ['play', 'pause', 'toggle', 'stop', 'next', 'prev', 'forward', 'rewind', 'start', 'end'];
 const MODES = ['toggle', 'on', 'off'];

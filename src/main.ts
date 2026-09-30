@@ -18,6 +18,8 @@ import { connectRemote } from './remote';
 import type { Command } from '../server/control.mjs';
 import type { GenConfig } from './audio/dsp/signals';
 import { audioPanelSettings, audioRow, audioSourceControls, mountGenerator } from './audio/ui';
+import { setClockHooks } from './clock/panel';
+import { clockPanelSettings } from './clock/ui';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { openLedTool } from './led/ui';
@@ -85,6 +87,7 @@ const bridgeUrl = () => {
   if (b) return b.replace(/^http/, 'ws').replace(/\/$/, '');
   return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
 };
+setClockHooks(() => sources, bridgeUrl);
 
 // ---------------------------------------------------------------- DOM
 
@@ -178,6 +181,7 @@ function settingsItems(): Node[] {
     row('Messpunkt', select(state.stage ?? 'signal', STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string]), (v) => setStage(v as Stage), 'Standard für alle Panels ohne eigenen Messpunkt (Taste C)')),
     row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}${detected.hdr ? ' (HDR-fähig)' : ''}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])],
       (v) => { state.display = v as Persisted['display']; save(); renderHeader(); }, 'Display-Farbraum der Bildansicht; die Scopes messen immer das Signal')),
+    row('', h('button', { class: 'mini', title: 'Messfelder ausgeben, Display mit Messgerät (ArgyllCMS) oder manuell prüfen, Uniformität, Bericht, 3D-LUT', onclick: openCalibrationDialog }, 'Kalibrierung / Verifikation …')),
     row('Spurfarbe', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); })),
     row('Präzision', select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }, 'Abtastpunkte je Scope')),
     row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); })),
@@ -187,6 +191,15 @@ function settingsItems(): Node[] {
     row('Hautton Farbton ±', numIn(state.skin.tol, 2, 45, (v) => { state.skin.tol = v; }), '° um die Hautton-Linie'),
     row('Zebra', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%'),
   ];
+}
+
+function openCalibrationDialog() {
+  document.querySelectorAll<HTMLDetailsElement>('#globals details.menu[open]').forEach((d) => (d.open = false));
+  const ws = bridgeUrl();
+  import('./calib/ui').then((m) => m.openCalibration({
+    bridgeWs: () => ws, bridgeHttp: () => ws.replace(/^ws/, 'http'),
+    openPatchWindow: () => window.open(`${location.pathname}?${new URLSearchParams({ out: 'black', w: String(Math.round(screen.width * devicePixelRatio)), h: String(Math.round(screen.height * devicePixelRatio)) })}`, 'lz-scopes-pattern', 'popup,width=1280,height=720'),
+  }));
 }
 
 function numIn(value: number, min: number, max: number, set: (v: number) => void) {
@@ -622,7 +635,7 @@ function fillHead(v: PanelView) {
 
 /** Measuring stage in the panel head, honest about stages that have nothing to apply. */
 function stageChip(p: PanelState): Node | string {
-  if (isAudio(p.scope)) return '';
+  if (isAudio(p.scope) || p.scope === 'clock') return '';
   const n = stageNote(panelSource(p), p.stage ?? state.stage ?? 'signal');
   return n.text ? h('span', { class: `stagechip${n.warn ? ' warn' : ''}`, title: 'Messpunkt in der CST/LUT-Kette (⚙ → Messpunkt, Taste C)' }, n.text) : '';
 }
@@ -643,6 +656,12 @@ function addScopePanel() {
 /** Settings of one measuring tool, shown in its ⚙ menu. */
 function panelSettings(p: PanelState): Node[] {
   if (isAudio(p.scope)) return audioPanelSettings(p, save);
+  if (p.scope === 'clock') {
+    return clockPanelSettings(p, save, sources, () => {
+      const v = [...views.values()].find((x) => state.panels[x.idx] === p);
+      if (v) { fillHead(v); v.head.querySelector('details.psettings')?.setAttribute('open', ''); }
+    });
+  }
   const rows: Node[] = [];
   const row = (label: string, ...kids: (Node | string)[]) => rows.push(h('label', { class: 'mrow' }, h('span', {}, label), ...kids));
   row('Messpunkt', select(p.stage ?? 'auto', [['auto', `wie Standard (${STAGE_LABELS[state.stage ?? 'signal']})`], ...STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string])],
@@ -739,6 +758,9 @@ function panelSettings(p: PanelState): Node[] {
     if (p.picture === 'gamut') row('Zielgamut', select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, 'Markiert Pixel, die im Zielgamut negative Anteile hätten'));
     if (p.picture === 'false') row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); }));
     if (p.picture === 'zebra') row('Zebra ab', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%');
+    const clk = h('input', { type: 'checkbox', checked: !!p.clockOverlay }) as HTMLInputElement;
+    clk.onchange = () => { p.clockOverlay = clk.checked; save(); };
+    row('Uhr', h('label', { class: 'inline', title: 'Tageszeit-Timecode (Systemuhr) und Quell-Timecode mit Differenz einblenden; Rate und PTP wie im Uhr-Panel' }, clk, 'Timecode einblenden'));
     row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])], (v) => { state.display = v as Persisted['display']; save(); renderHeader(); }));
     rows.push(h('p', { class: 'hint' }, 'Klick = Messpunkt, Ziehen = Messrahmen, Rechtsklick löscht.'));
   }

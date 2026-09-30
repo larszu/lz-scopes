@@ -248,3 +248,21 @@ dialog.lutlib { background: var(--panel-2); color: var(--text); border: 1px soli
 dialog.lutlib table { border-collapse: collapse; font-size: 12px; margin: 8px 0; }
 dialog.lutlib td { padding: 3px 8px; border-top: 1px solid var(--line); vertical-align: top; }
 dialog.lutlib a { color: var(--text); text-decoration: underline; text-underline-offset: .2em; }
+/* display calibration dialog (src/calib/ui.ts); grade colours are measurement colours, not brand */
+dialog.calib { background: var(--panel-2); color: var(--text); border: 1px solid var(--line-strong); width: min(820px, 96vw); max-height: 92vh; overflow-y: auto; }
+dialog.calib[open] { display: flex; flex-direction: column; gap: 6px; }
+dialog.calib .calib-head { display: flex; align-items: center; justify-content: space-between; }
+dialog.calib .calib-head h3 { margin: 0; }
+dialog.calib .mrow { flex-wrap: wrap; }
+dialog.calib .mrow .lbl { width: auto; }
+dialog.calib input.num { width: 72px; flex: none; }
+dialog.calib .hint.ok { color: var(--meas-ok); }
+dialog.calib .hint.bad { color: var(--meas-bad); }
+dialog.calib .calib-work:not(:empty) { border: 1px solid var(--line-strong); padding: 8px; }
+dialog.calib .calib-log { max-height: 160px; overflow: auto; font: 11px var(--mono); white-space: pre-wrap; }
+.calib-table, .calib-grid { border-collapse: collapse; font-size: 12px; }
+.calib-table td, .calib-table th { padding: 2px 8px; border-top: 1px solid var(--line); text-align: right; }
+.calib-grid td { width: 44px; height: 30px; text-align: center; border: 1px solid var(--line); }
+.calib-grid td.g-gut { background: #1d3324; }
+.calib-grid td.g-ok { background: #3a3414; }
+.calib-grid td.g-aus { background: #4a1c1c; }

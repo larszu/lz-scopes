@@ -3,7 +3,7 @@
 Keeps one scripting connection to Resolve and exports the current frame (viewer,
 graded) as an uncompressed 16-bit TIFF, alternating between two files so the reader
 never sees a half-written one. Prints one JSON line per frame:
-  {"path": ".../f0.tif", "tc": "01:00:10:12", "timeline": "…", "project": "…"}
+  {"path": ".../f0.tif", "tc": "01:00:10:12", "fps": 25.0, "df": false, "timeline": "…", "project": "…"}
 Needs DaVinci Resolve (Studio) with Preferences → System → General → External
 scripting using: Local.
 """
@@ -32,6 +32,29 @@ def out(obj):
     sys.stdout.flush()
 
 
+def timeline_rate(timeline):
+    """Timeline frame rate and drop-frame flag (README: "timelineFrameRate" returned as a number,
+    "timelineDropFrameTimecode" '0' or '1'). GetSettings() on newer versions, GetSetting() before."""
+    fps, df = None, None
+    try:
+        s = timeline.GetSettings() or {}
+        fps, df = s.get("timelineFrameRate"), s.get("timelineDropFrameTimecode")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        if fps is None:
+            fps = timeline.GetSetting("timelineFrameRate")
+        if df is None:
+            df = timeline.GetSetting("timelineDropFrameTimecode")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        fps = float(str(fps).split()[0])
+    except Exception:  # noqa: BLE001
+        fps = None
+    return fps, str(df) == "1"
+
+
 def main():
     folder = sys.argv[1]
     fps = max(0.5, min(30.0, float(sys.argv[2]) if len(sys.argv) > 2 else 10.0))
@@ -54,7 +77,8 @@ def main():
         else:
             path = os.path.join(folder, f"f{i % 2}.tif")
             if project.ExportCurrentFrameAsStill(path):
-                out({"path": path, "tc": timeline.GetCurrentTimecode(), "timeline": timeline.GetName(), "project": project.GetName()})
+                fps, df = timeline_rate(timeline)
+                out({"path": path, "tc": timeline.GetCurrentTimecode(), "fps": fps, "df": df, "timeline": timeline.GetName(), "project": project.GetName()})
                 i += 1
             else:
                 out({"wait": "Standbild-Export fehlgeschlagen (Farbseite/Viewer prüfen)"})

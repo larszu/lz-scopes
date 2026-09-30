@@ -7,9 +7,9 @@
 //   dshow:        -list_options true   (libavdevice/dshow.c)
 //   v4l2:         -list_formats all    (libavdevice/v4l2.c)
 
-/** device:<fmt>:<name> → { fmt, name } or null. */
+/** device:<fmt>:<name>[#audio=…][#ch=…] → { fmt, name } or null (the sound suffix is handled in index.mjs). */
 export function parseDeviceUrl(url) {
-  const m = /^device:(avfoundation|dshow|v4l2):(.+)$/.exec(url ?? '');
+  const m = /^device:(avfoundation|dshow|v4l2):([^#]+)(#.*)?$/.exec(url ?? '');
   return m ? { fmt: m[1], name: m[2] } : null;
 }
 

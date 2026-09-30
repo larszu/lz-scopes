@@ -44,6 +44,15 @@ async function createWindow() {
     const list = await desktopCapturer.getSources({ types: ['window', 'screen'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: false });
     return list.map((s) => ({ id: s.id, name: s.name, thumb: s.thumbnail.toDataURL() }));
   });
+  // Web Bluetooth (Opple Light Master, #11): without this handler Electron cancels every
+  // requestDevice(). The page filters by name, so take the first device the scan finds;
+  // cancel after 20 s. UNTESTED: no Light Master was available.
+  let btTimer = null;
+  mainWindow.webContents.on('select-bluetooth-device', (event, devices, callback) => {
+    event.preventDefault();
+    if (devices.length) { clearTimeout(btTimer); btTimer = null; callback(devices[0].deviceId); return; }
+    if (!btTimer) btTimer = setTimeout(() => { btTimer = null; callback(''); }, 20000);
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith(origin) && url.includes('view=')) {
       // Scope/picture output on a chosen screen, fullscreen if asked.

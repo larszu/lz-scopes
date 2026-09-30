@@ -48,6 +48,7 @@
 - **Waveform zoom and channels.** Black and highlight magnifier for black balance, parade / YRGB / RGB channels can be hidden, labels switchable.
 - **Built-in test patterns.** About 40 generated patterns from PLUGE (ITU-R BT.814-4, SDR and HDR) and SMPTE bars to PQ wedges and EBU R 95 safe areas, plus 20 LZ display test images, at preset or free resolutions. Open any of them full screen on a monitor, projector or capture.
 - **LED wall check.** Wall/cabinet setup, cabinet grid with IDs, pixel-mapping, scroll, free-level, low-level, shutter/genlock, moiré and patch-sequencer patterns in wall resolution; camera-based relative check after a 4-point rectification: per-cabinet heatmap, seam profiles, before/after, viewing-angle series, scan-line index, dead-pixel search, CSV/PNG report, and an Unreal-style 3×3 camera matrix. The wall itself is calibrated in its processor (Brompton, NovaStar, Colorlight); not yet tried on a real wall.
+- **Light meter (untested).** Opple Light Master 3 / 4 over Web Bluetooth: lux, CCT (McCamy), Duv (Ohno), xy, history, CSV. Protocol and maths are tested with recorded frames from MIT projects; the Bluetooth link itself is untested (no device).
 - **Your layout.** Dock, stack and resize panels by drag and drop, keep layout configurations as JSON.
 - **Face tracking.** Skin-tone waveform that follows a detected face; pick which face to track (MediaPipe BlazeFace, runs locally).
 - **Vectorscope tools.** Zoom, gamut boundaries and colour-match targets; per-scope settings behind the gear icon.

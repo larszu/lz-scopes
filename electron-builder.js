@@ -35,6 +35,8 @@ export default {
     gatekeeperAssess: false,
     extendInfo: {
       NSCameraUsageDescription: 'LZ Scopes misst das Bild einer angeschlossenen Kamera oder Capture-Karte.',
+      // required when the app uses Bluetooth (Apple: NSBluetoothAlwaysUsageDescription, macOS 11+)
+      NSBluetoothAlwaysUsageDescription: 'LZ Scopes verbindet sich per Bluetooth mit einem Lichtmesser (Opple Light Master).',
     },
   },
   win: {

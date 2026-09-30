@@ -19,6 +19,7 @@ import type { GenConfig } from './audio/dsp/signals';
 import { audioPanelSettings, audioRow, audioSourceControls, mountGenerator } from './audio/ui';
 import { setClockHooks } from './clock/panel';
 import { clockPanelSettings } from './clock/ui';
+import { generator } from './audio/io';
 import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
@@ -335,7 +336,7 @@ function renderSources() {
     } else if (s.kind === 'pattern') {
       card.append(...patternControls(s));
     } else if (s.kind === 'audio') {
-      card.append(...audioSourceControls(s, save, renderSources));
+      card.append(...audioSourceControls(s, save, renderSources, bridgeUrl));
     } else {
       if (s.isVideoFile) card.append(...transportControls(s));
       if (s.kind === 'webcam') card.append(deviceRow(s));
@@ -781,6 +782,9 @@ function panelSettings(p: PanelState): Node[] {
     clk.onchange = () => { p.clockOverlay = clk.checked; save(); };
     row('Uhr', h('label', { class: 'inline', title: 'Tageszeit-Timecode (Systemuhr) und Quell-Timecode mit Differenz einblenden; Rate und PTP wie im Uhr-Panel' }, clk, 'Timecode einblenden'));
     row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])], (v) => setDisplaySpace(v as Persisted['display'])));
+    const bar = h('input', { type: 'checkbox', checked: p.audioBar !== false }) as HTMLInputElement;
+    bar.onchange = () => { p.audioBar = bar.checked; save(); refreshHeads(); };
+    row('Ton', h('label', { class: 'inline', title: 'Pegel je Kanal (−60 … 0 dBFS, Marken −18 und −1) und Short-term-Lautheit am rechten Bildrand, wenn die Quelle Ton hat' }, bar, 'Kompakter Pegelbalken'));
     rows.push(h('p', { class: 'hint' }, 'Klick = Messpunkt, Ziehen = Messrahmen, Rechtsklick löscht.'));
   }
   if (p.scope === 'hist') {
@@ -1389,8 +1393,46 @@ function execute(c: Command): unknown {
       }
       return { source: s.name };
     }
+    case 'audio.reset': case 'audio.pause': {
+      const list = c.source !== undefined ? [need(findSource(c.source), `Quelle ${c.source} nicht gefunden`)] : sources.filter((x) => x.audio);
+      const withAudio = list.filter((x) => x.audio);
+      if (!withAudio.length) throw new Error(c.source !== undefined ? `${list[0].name} hat keinen Ton` : 'Keine Quelle mit Ton');
+      for (const x of withAudio) {
+        if (c.cmd === 'audio.reset') x.audio!.reset(); else x.audio!.paused = mode(x.audio!.paused);
+      }
+      renderSources();
+      return { sources: withAudio.map((x) => ({ name: x.name, paused: x.audio!.paused })) };
+    }
+    case 'generator': {
+      const patch: Partial<GenConfig> = {};
+      if (c.signal !== undefined) patch.signal = c.signal as GenConfig['signal'];
+      if (c.freq !== undefined) patch.freq = Number(c.freq);
+      if (c.level !== undefined) patch.level = Number(c.level);
+      patch.running = mode(generator.cfg.running);
+      generator.update(patch).catch(() => {});
+      state.gen = { ...generator.cfg, running: false }; save();
+      return { running: patch.running, signal: generator.cfg.signal, level: generator.cfg.level, freq: generator.cfg.freq };
+    }
   }
   throw new Error(`Befehl ${c.cmd} nicht umgesetzt`);
+}
+
+/** Loudness of the active source with sound (else the first one); values rounded to 0.1, null = unknown. */
+function audioState() {
+  const act = activeSource();
+  const s = act?.audio ? act : sources.find((x) => x.audio);
+  const a = s?.audio;
+  if (!s || !a) return null;
+  const r1 = (v: number | null) => (v === null || !Number.isFinite(v) ? null : Math.round(v * 10) / 10);
+  const tp = 20 * Math.log10(Math.max(...a.level.maxTP));
+  const av = a.av.result();
+  const id = a.identReport();
+  return {
+    source: s.name, momentary: r1(a.loud.momentary), shortTerm: r1(a.loud.shortTerm), integrated: r1(a.loud.integrated),
+    lra: r1(a.loud.lra), maxTP: r1(tp), paused: a.paused, seconds: Math.round(a.loud.measuredSeconds),
+    avOffsetMs: r1(av.medianMs), ident: id.kind && id.kind !== 'tone' ? id.label : '',
+    identProblems: id.findings.filter((f) => f.level === 'bad').map((f) => f.text),
+  };
 }
 
 /** State for the control API: Companion feedbacks and variables. Percent values rounded to 0.1. */
@@ -1421,6 +1463,8 @@ function controlState() {
     pattern: pat ? { id: pat.pattern.id, name: patternById(pat.pattern.id).name } : null,
     patterns: PATTERNS.map((p) => ({ id: p.id, name: p.name })),
     playing: vid?.video ? !vid.video.paused || !!vid.reverseSpeed : null,
+    audio: audioState(),
+    generator: { running: generator.running, signal: generator.cfg.signal, level: generator.cfg.level, freq: generator.cfg.freq, channels: generator.cfg.channels ?? 2 },
   };
 }
 
@@ -1459,9 +1503,17 @@ for (const saved of state.sources) {
   if (saved.audioIn) Object.assign(s.audioIn, saved.audioIn);
   if (s.kind === 'pattern') s.startPattern();
   if (s.kind === 'audio' && s.audioIn.mode === 'generator') s.startAudio();
+  if (s.kind === 'audio' && s.audioIn.mode === 'bridge' && s.audioIn.bridgeUrl) s.startAudio(undefined, bridgeUrl());
 }
 mountOpple($('#opple'));
-mountGenerator($('#gen'), state.gen, state.genSink ?? '', (cfg, sink) => { state.gen = cfg; state.genSink = sink; save(); }, () => addAudioSource('generator'));
+mountGenerator($('#gen'), state.gen, state.genSink ?? '', (cfg, sink) => { state.gen = cfg; state.genSink = sink; save(); }, () => addAudioSource('generator'), () => {
+  // A/V offset measured at a bridge source (median), for the calibration of the outputs
+  for (const s of sources) {
+    const r = s.audio?.av.result();
+    if (r && r.medianMs !== null && r.pairs.length >= 3) return { ms: r.medianMs, source: s.name };
+  }
+  return null;
+});
 applySidebar();
 renderHeader();
 const dock = createDock($('#dock'), {

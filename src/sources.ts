@@ -3,13 +3,17 @@ import { LOG_CURVES } from './camera';
 import type { ChainSettings, Compiled } from './chain';
 import { patternById, renderPattern } from './patterns';
 import { AudioAnalysis } from './audio/analysis';
-import { AudioTap, generator, measurementConstraints } from './audio/io';
+import { AudioTap, StreamMonitor, generator, measurementConstraints } from './audio/io';
 import { r103Check, rgbDecoder, yuvDecoder, type Decode, type R103Result, type YuvCoding } from './ycbcr';
 
 export type SourceKind = 'stream' | 'webcam' | 'screen' | 'file' | 'pattern' | 'folder' | 'audio';
 
-/** Input of an audio-only source. */
-export interface AudioInput { mode: 'device' | 'file' | 'generator'; deviceId: string }
+/**
+ * Input of an audio-only source: an audio device in the browser (getUserMedia, at most
+ * 2 channels in Chromium), a file, the generator loop-back, or an audio device read by the
+ * bridge's ffmpeg (`bridge`: all channels of the device, e.g. Dante Virtual Soundcard).
+ */
+export interface AudioInput { mode: 'device' | 'file' | 'generator' | 'bridge'; deviceId: string; bridgeUrl?: string }
 
 export interface AudioStreamInfo { sampleRate: number; channels: number; format: string; layout?: string; codec?: string }
 
@@ -126,6 +130,11 @@ export class Source {
   /** audio file playing in an audio source (mode 'file') */
   audioEl: HTMLAudioElement | null = null;
   private audioTap: AudioTap | null = null;
+  /** PTS of the bridge's sound: sample index → presentation time (protocol 2 `apts`) */
+  private audioAnchor: { index: number; pts: number } | null = null;
+  /** listening to bridge sound (drift-compensated, io.ts StreamMonitor) */
+  monitor: StreamMonitor | null = null;
+  monitorError = '';
   private lastFrame: { px: ArrayLike<number>; w: number; h: number; step: number; scale: number; roi: [number, number, number, number][] | null; decode: Decode } | null = null;
   private r103Cache = new Map<string, { key: string; at: number; res: R103Result }>();
 
@@ -301,12 +310,16 @@ export class Source {
           this.info = msg; this.width = msg.width; this.height = msg.height; this.depth = msg.depth;
           this.yuv = yuvOf(msg);
           const a = msg.audio as AudioStreamInfo | null | undefined;
+          this.monitor?.close(); this.monitor = null; this.audioAnchor = null;
           this.audio = a ? new AudioAnalysis(a.sampleRate, a.channels, a.layout) : null;
           if (this.audio && a) this.audio.label = `Bridge · ${a.codec ?? ''} ${a.sampleRate / 1000} kHz`.replace('  ', ' ');
           const pic = msg.width ? `${msg.sourceWidth}×${msg.sourceHeight} ${msg.codec ?? ''}`.trim() : 'nur Ton';
           this.set('live', a ? `${pic} · Ton ${a.codec ?? ''} ${a.sampleRate / 1000} kHz ${a.channels} Kan.` : msg.proto === 2 ? `${pic} · kein Ton` : pic);
         } else if (msg.type === 'tc') {
           this.tc = { ...msg, at: performance.now() };
+        } else if (msg.type === 'apts') {
+          // PTS anchor of the sound: sample `index` has presentation time `pts` (s)
+          this.audioAnchor = { index: msg.index, pts: msg.pts };
         } else if (msg.type === 'stats') {
           this.dropped = msg.dropped;
           if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', msg.message);
@@ -323,11 +336,22 @@ export class Source {
         if (magic === 'LZA1') {
           // audio keeps running while frozen: loudness must not have gaps
           const n = head.getUint32(4, true), first = head.getFloat64(8, true);
-          if (this.audio) this.audio.pushInterleaved(new Float32Array(buf, 16, n * this.audio.channels), first);
+          const an = this.audioAnchor;
+          const pts0 = an && this.audio ? an.pts + (first - an.index) / this.audio.fs : NaN;
+          if (this.audio) {
+            const pcm = new Float32Array(buf, 16, n * this.audio.channels);
+            this.audio.pushInterleaved(pcm, first, pts0);
+            this.monitor?.push(pcm);
+          }
           return;
         }
-        if (this.frozen || magic !== 'LZV1') return;
-        this.data = this.depth === 16 ? new Uint16Array(buf, 16) : new Uint8Array(buf, 16);
+        if (magic !== 'LZV1') return;
+        const pts = head.getFloat64(8, true);
+        const px = this.depth === 16 ? new Uint16Array(buf, 16) : new Uint8Array(buf, 16);
+        // A/V offset: mean luma of every frame (also while frozen), stamped with its PTS
+        if (this.audio && this.width) this.audio.av.pushVideo(pts, meanLuma(px, this.width, this.height, this.depth === 16 ? 65535 : 255, !!this.yuv));
+        if (this.frozen) return;
+        this.data = px;
         this.tick();
         return;
       }
@@ -548,14 +572,33 @@ export class Source {
     el.addEventListener('play', () => tap.resume());
   }
 
-  get monitoring() { return this.audioTap?.monitoring ?? false; }
-  setMonitor(on: boolean) { this.audioTap?.setMonitor(on); this.onChange(); }
-  get canMonitor() { return !!this.audioTap; }
+  get monitoring() { return this.audioTap?.monitoring ?? !!this.monitor; }
+  setMonitor(on: boolean) {
+    if (this.audioTap) { this.audioTap.setMonitor(on); this.onChange(); return; }
+    if (!on) { this.monitor?.close(); this.monitor = null; this.onChange(); return; }
+    const a = this.audio;
+    if (!a || this.monitor) return;
+    StreamMonitor.create(a.fs, a.channels, monitorSink.id).then((m) => {
+      if (this.audio !== a) { m.close(); return; }
+      this.monitor = m; this.monitorError = m.error;
+      m.setPair(monitorSink.pair);
+      m.onStats = () => this.onChange();
+      this.onChange();
+    }).catch((e) => { this.monitorError = (e as Error).message; this.onChange(); });
+  }
+  /** Element/device sources monitor through their tap, bridge sources through a StreamMonitor. */
+  get canMonitor() { return !!this.audioTap || (!!this.audio && this.kind === 'stream'); }
 
-  /** Audio-only source: audio device, audio file or the generator loop-back. */
-  async startAudio(file?: File) {
+  /** Audio-only source: audio device, audio file, the generator loop-back or a bridge audio device. */
+  async startAudio(file?: File, bridge?: string) {
     this.stop();
     const inp = this.audioIn;
+    if (inp.mode === 'bridge') {
+      if (!inp.bridgeUrl) { this.set('idle', 'Gerät wählen'); return; }
+      if (!bridge) { this.set('error', 'Bridge nicht verbunden'); return; }
+      this.connectStream(inp.bridgeUrl, bridge);
+      return;
+    }
     try {
       if (inp.mode === 'generator') {
         generator.setLoopback((chs, n, rate) => this.feed(chs, n, rate, `Generator · ${rate / 1000} kHz`));
@@ -602,6 +645,7 @@ export class Source {
     this.media?.getTracks().forEach((t) => t.stop());
     this.media = null;
     this.audioTap?.close(); this.audioTap = null;
+    this.monitor?.close(); this.monitor = null; this.audioAnchor = null;
     if (this.audioEl) { this.audioEl.pause(); this.audioEl.removeAttribute('src'); this.audioEl = null; }
     if (this.generatorBound) { generator.setLoopback(null); this.generatorBound = false; }
     this.audio = null;
@@ -751,4 +795,20 @@ export function computeStats(px: ArrayLike<number>, w: number, h: number, step: 
 /** Y′CbCr coding announced in a frame-protocol info message (format "yuv"). */
 export function yuvOf(info: StreamInfo): YuvCoding | null {
   return info.format === 'yuv' ? { full: info.yuvRange === 'full', bits: info.bits ?? 10 } : null;
+}
+
+/** Output device and channel pair for listening to bridge sound (set from the UI). */
+export const monitorSink = { id: '', pair: 0 };
+
+/** Mean luma (BT.709 weights on the R'G'B' values, 0…1) on a sparse grid – only for flash detection. */
+export function meanLuma(px: ArrayLike<number>, w: number, h: number, max: number, yuv = false): number {
+  const sx = Math.max(1, Math.floor(w / 64)), sy = Math.max(1, Math.floor(h / 36));
+  let sum = 0, n = 0;
+  for (let y = sy >> 1; y < h; y += sy) for (let x = sx >> 1; x < w; x += sx) {
+    const i = (y * w + x) * 4;
+    if (i + 2 >= px.length) break;
+    // Y′CbCr frames (A, Y′, Cb, Cr): the Y′ code itself
+    sum += yuv ? px[i + 1] : 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]; n++;
+  }
+  return n ? sum / n / max : 0;
 }

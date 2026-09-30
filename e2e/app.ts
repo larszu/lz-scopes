@@ -56,12 +56,21 @@ export async function launchApp(opts: { profile?: string; port?: number } = {}):
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.log(`[app ${m.type()}]`, m.text().slice(0, 500)); });
   const base = `http://127.0.0.1:${port}`;
-  const control = async (cmd: Record<string, unknown>) => {
+  const post = async (cmd: Record<string, unknown>) => {
     const r = await fetch(`${base}/api/control`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cmd) });
-    return r.json();
+    return { status: r.status, body: await r.json() };
   };
-  // the main window connects to /control?role=app once it has booted
+  // The bridge gives the window 4 s per command. In CI (software WebGL) the window can be
+  // busy longer, above all while it boots: retry timeouts (504) instead of failing.
+  const control = async (cmd: Record<string, unknown>) => {
+    for (let i = 0; ; i++) {
+      const r = await post(cmd);
+      if (r.status !== 504 || i >= 5) return r.body;
+    }
+  };
+  // the main window connects to /control?role=app once it has booted, then answers commands
   await until(async () => (await (await fetch(`${base}/api/control`)).json()).connected === true, 60_000, 'Hauptfenster verbindet sich nicht mit der Bridge');
+  await until(async () => (await post({ cmd: 'state' })).body.ok === true, 90_000, 'Hauptfenster beantwortet keine Steuerbefehle');
   const state = async () => {
     const r = await control({ cmd: 'state' });
     if (!r.ok) throw new Error(r.error);

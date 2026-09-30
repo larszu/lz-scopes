@@ -85,6 +85,16 @@ describe('bridge: PTS and local audio devices (#24)', () => {
     // split mode: two sessions, timestamps not comparable → no PTS
     expect(ffmpegArgs({ url: 'rtsp://cam/1', vf: 'x', audio: 'split', pts: true }).main.join(' ')).not.toContain('showinfo');
   });
+  it('H.264 transport (#16) with sound: libx264 in FLV on pipe:1, PCM on pipe:3, no PTS filters', async () => {
+    // @ts-expect-error plain JS module
+    const { ffmpegArgs } = await import('../server/index.mjs');
+    const a = ffmpegArgs({ url: 'rtsp://cam/1', vf: 'scale=960:540,format=yuv420p', audio: 'fd3', codec: 'h264', gop: 50 }).main.join(' ');
+    expect(a).toContain('-vf scale=960:540,format=yuv420p -fps_mode passthrough -c:v libx264');
+    expect(a).toContain('-g 50 -pix_fmt yuv420p -flush_packets 1 -f flv pipe:1');
+    expect(a).toContain('-c:a pcm_f32le -f f32le pipe:3');
+    expect(a).not.toContain('showinfo');
+    expect(a).not.toContain('rawvideo');
+  });
   it('reads showinfo/ashowinfo lines and anchors the sample index to the PTS', async () => {
     // @ts-expect-error plain JS module
     const { PtsTracker, parsePtsLine, lastProblem } = await import('../server/index.mjs');

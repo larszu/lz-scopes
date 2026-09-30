@@ -6,6 +6,7 @@ import {
   type Colorspace, type GamutId, type Transfer,
 } from './color';
 import { CIE_VIEW, CIE_VIEW_UV, WAVE_MAX, WAVE_MIN, type Rect } from './renderer';
+import { latencyLines } from './latency';
 import type { Source } from './sources';
 
 export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'hist' | 'stats'
@@ -487,6 +488,7 @@ export function statsLines(src: Source, displayFps: number): string[] {
   if (info?.note) lines.push(`Hinweis    ${info.note}`);
   if (info) {
     lines.push(`Quelle     ${info.sourceWidth}×${info.sourceHeight}  ${info.codec ?? ''} ${info.pixFmt ?? ''}`);
+    if (info.transport === 'h264') lines.push('Übertragung H.264 · 8 bit 4:2:0, verlustbehaftet (im Browser dekodiert)');
     lines.push(`Metadaten  ${info.matrix}/${info.primaries}/${info.transfer}  ${info.range}`);
   }
   lines.push(`Auswertung Rec.${src.colorspace}  ${transferLabel(src.transfer)}${src.transfer === 'hlg' ? ` (Lw ${src.hlgLw})` : ''}  ${GAMUTS[src.gamut].name}`);
@@ -500,6 +502,8 @@ export function statsLines(src: Source, displayFps: number): string[] {
     lines.push(`Clip ▲ RGB ${st.clipHigh.map((v) => (v * 100).toFixed(2)).join(' / ')} %`);
     lines.push(`Clip ▼ RGB ${st.clipLow.map((v) => (v * 100).toFixed(2)).join(' / ')} %`);
   }
+  if (st) lines.push(`Statistik  ${src.statsPerf.path === 'gpu' ? 'GPU, volle Auflösung' : 'CPU, unterabgetastet'} · ${src.statsPerf.ms.toFixed(2)} ms Hauptthread`);
+  lines.push(...latencyLines(src.latency.summary()));
   lines.push('', ...r103Lines(src));
   return lines;
 }

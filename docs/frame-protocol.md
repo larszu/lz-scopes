@@ -125,6 +125,20 @@ Geräte ohne freien ffmpeg-Weg (DeckLink, NDI) laufen über einen eigenen Helfer
 
 WebSocket nur für die lokale UI (gleiche Herkunft, 127.0.0.1). Server → Client 4 Hz `{"type":"ptp", state, domain, gm, rates, offsetNs, meanPathDelayNs, pathDelayIncluded, sm, history, ifaces, rtp}`; Client → Server `{"type":"config","iface":"","delayReq":false}` und `{"type":"rtp","group":"239.1.1.1","port":5004,"rateNum":25,"rateDen":1}` bzw. `{"type":"rtp","off":true}`. Siehe `server/ptp.mjs` und `docs/research/clock-ptp.md`.
 
+## H.264-Übertragung (`codec=h264`)
+
+Für entfernte Bridges mit wenig Bandbreite: `/stream?url=…&codec=h264` (erzwingt Protokoll 2). Die Bridge skaliert wie oben, bleibt aber in Y′CbCr (Matrix der Quelle, schmaler Bereich, 4:2:0) und kodiert mit libx264 (`ultrafast`, `zerolatency`, keine B-Frames, GOP 2 s) in FLV auf der Pipe; `server/flv.mjs` zerlegt das in Access Units.
+
+- `info` bekommt `"transport":"h264"`, `depth` ist immer 8. `format=yuv` wird ignoriert, PTS und `apts`-Anker entfallen (kein A/V-Versatz).
+- Text `{"type":"video","codec":"avc1.42c01f","format":"annexb"}` vor dem ersten Bild (Codec-String nach RFC 6381 aus dem AVCDecoderConfigurationRecord).
+- Binär mit dem 16-Byte-Kopf: `LZHK` (Keyframe, SPS/PPS vorangestellt) oder `LZHD` (abhängiges Bild), uint32 Bildnummer, float64 Bridge-Uhr in ms; danach eine Access Unit im Annex-B-Format (Startcodes).
+- Kommt der Browser nicht hinterher, verwirft die Bridge bis zum nächsten Keyframe.
+- Der Browser dekodiert mit WebCodecs im Worker (`src/frameWorker.ts`) und wandelt Y′CbCr selbst mit `decodeMatrix` in R′G′B′ (`src/yuv.ts`), nicht über ein Canvas mit Farbmanagement. Ergebnis: 8 bit, verlustbehaftet – für exakte Messungen `roh` verwenden.
+
+## Latenz-Stempel
+
+`scripts/latency-source.mjs` schreibt Uhrzeit (ms, mod 2³²) und Bildzähler als Schwarz-Weiß-Blöcke in die obersten zwei Zeilen des Bildes (Aufbau in `server/stamp.mjs`). Die App liest sie in jedem Bild und zeigt im Panel Messwerte: Stempel → Anzeige, bei H.264 zusätzlich Quelle → Bridge und Bridge → App (Bridge-Uhr im Kopf von `LZHK`/`LZHD`; im rohen Weg trägt der `LZV1`-Kopf die PTS, dort gibt es keine Aufteilung). Alle Werte setzen dieselbe Uhr voraus (ein Rechner oder NTP); die Verzögerung des Monitors ist nicht enthalten.
+
 ## Lokale Geräte
 
 Die Bridge liest Capture- und Audiogeräte dieses Rechners über ffmpeg (Liste: `GET /api/devices` → `[{name, url, kind: "video"|"audio"}]`):

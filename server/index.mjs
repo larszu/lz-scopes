@@ -28,6 +28,7 @@ import { resolveFolder, startFolderStream, watchRoots } from './folder.mjs';
 import { handleMeterSocket, meterInfo } from './meter.mjs';
 import { PtpMonitor, RtpMonitor, ipv4Interfaces, isMulticastV4, nowUtcNs } from './ptp.mjs';
 import { taiMinusUtc } from './leap.mjs';
+import { FlvH264Demuxer } from './flv.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -363,7 +364,7 @@ export function outputSize(w, h, maxWidth) {
  * (parsed by PtsTracker); needs `-loglevel info`. Not in 'split' mode: two ffmpeg
  * processes open two sessions whose timestamps cannot be compared.
  */
-export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', pts = false, device = {}, pixFmt = '', log = 'error' }) {
+export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', pts = false, device = {}, pixFmt = '', log = 'error', codec = 'raw', gop = 50 }) {
   const test = url in TEST_PATTERNS;
   const withPts = pts && audio !== 'split';
   // time code (#28) and PTS (#24) both read showinfo output; level+info keeps the error lines recognisable
@@ -372,7 +373,13 @@ export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video =
   const pcm = (map, target) => ['-map', map, '-vn', '-sn', '-dn', ...(withPts ? ['-af', 'ashowinfo'] : []), '-c:a', 'pcm_f32le', '-f', 'f32le', target];
   // PTS need a showinfo at the end of the chain (after fps=); the time-code showinfo at the start serves when nothing drops frames
   const needShowinfo = withPts && !(/^showinfo=/.test(vf) && !/(^|,)fps=/.test(vf));
-  const vid = ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', needShowinfo ? `${vf},showinfo=checksum=0` : vf, '-fps_mode', 'passthrough', '-pix_fmt', pixFmt || (depth === 16 ? 'rgba64le' : 'rgba'), '-f', 'rawvideo', 'pipe:1'];
+  const vfPts = needShowinfo ? `${vf},showinfo=checksum=0` : vf;
+  // codec 'h264' (#16): 8-bit 4:2:0 H.264 in FLV framing for remote bridges; no B-frames, no
+  // lookahead, every packet flushed at once. `vf` must then produce yuv420p.
+  const vid = codec === 'h264'
+    ? ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vfPts, '-fps_mode', 'passthrough', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
+      '-bf', '0', '-g', String(gop), '-pix_fmt', 'yuv420p', '-flush_packets', '1', '-f', 'flv', 'pipe:1']
+    : ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vfPts, '-fps_mode', 'passthrough', '-pix_fmt', pixFmt || (depth === 16 ? 'rgba64le' : 'rgba'), '-f', 'rawvideo', 'pipe:1'];
   if (!video) return { main: [...head, ...inputArgs(url, transport, { audio: true, video: false, device }), ...pcm(test ? '0:a:0' : audioMap(url), 'pipe:1')], audio: null };
   if (audio === 'fd3') return { main: [...head, ...inputArgs(url, transport, { audio: true, device }), ...vid, ...pcm(audioMap(url), 'pipe:3')], audio: null };
   if (audio === 'split') {
@@ -523,7 +530,9 @@ async function startStream(ws, params) {
   if (url.startsWith('ndi:')) return startNdi(ws, params, url);
   if (url.startsWith('folder:')) return startFolder(ws, params, url);
   const transport = params.get('transport') ?? 'tcp';
-  const wantYuv = params.get('format') === 'yuv';
+  // compressed transport for remote bridges (#16): 8 bit only, decoded by the browser; excludes the Y'CbCr path (#7)
+  const h264 = params.get('codec') === 'h264';
+  const wantYuv = params.get('format') === 'yuv' && !h264;
   const depth = wantYuv || params.get('depth') === '16' ? 16 : 8;
   const maxWidth = Math.min(3840, Math.max(0, Number(params.get('width') ?? 960) || 0));
   const fpsLimit = Math.min(60, Math.max(0, Number(params.get('fps') ?? 0) || 0));
@@ -545,12 +554,16 @@ async function startStream(ws, params) {
   if (!video && !audioInfo) return fail(ws, wantAudio ? 'Weder Bild noch Ton in dieser Quelle' : 'Kein Videostream in dieser Quelle');
   const { width, height } = video ? outputSize(info.width, info.height, maxWidth) : { width: 0, height: 0 };
   const bytesPerFrame = width * height * 4 * (depth / 8);
+  const outDepth = h264 ? 8 : depth;
 
   // The scale filter converts Y'CbCr → R'G'B' with the stream's own matrix/range but
   // leaves the transfer function untouched, so PQ/HLG code values arrive unchanged.
   const { decodeMatrix, decodeRange } = applyDecodeOverride(decodeParams(info), device);
   const yp = wantYuv ? yuvParams(info, decodeMatrix, decodeRange) : null;
-  const vf = [yp?.yuv ? `scale=${width}:${height}:flags=area:${yp.scale}` : `scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}`];
+  const vf = h264
+    // H.264: stay in Y'CbCr with the source matrix, narrow range; the browser converts with decodeMatrix (src/yuv.ts)
+    ? [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}:out_color_matrix=${decodeMatrix}:out_range=limited`, 'format=yuv420p']
+    : [yp?.yuv ? `scale=${width}:${height}:flags=area:${yp.scale}` : `scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}`];
   if (fpsLimit) vf.push(`fps=${fpsLimit}`);
   // time code of every source frame (before scale/fps): showinfo side data, see ShowinfoTracker
   const wantTc = video && params.get('tc') !== '0';
@@ -558,10 +571,11 @@ async function startStream(ws, params) {
   const ffmpeg = ffmpegCandidates()[0];
   if (!ffmpeg) return fail(ws, 'ffmpeg nicht gefunden – installieren (brew install ffmpeg) oder FFMPEG setzen');
 
-  const proto = wantAudio ? 2 : 1;
+  const proto = wantAudio || h264 ? 2 : 1;
   const { audio: _probed, ...videoInfo } = info;
-  const msg = { type: 'info', ...videoInfo, decodeMatrix, sourceWidth: info.width, sourceHeight: info.height, sourceFps: info.fps, width, height, depth, fps: video ? (fpsLimit || info.fps) : 0 };
-  if (yp?.yuv) Object.assign(msg, { format: 'yuv', yuvRange: yp.range, bits: yp.bits });
+  const msg = { type: 'info', ...videoInfo, decodeMatrix, sourceWidth: info.width, sourceHeight: info.height, sourceFps: info.fps, width, height, depth: outDepth, fps: video ? (fpsLimit || info.fps) : 0 };
+  if (h264 && video) Object.assign(msg, { transport: 'h264', range: 'tv' });
+  else if (yp?.yuv) Object.assign(msg, { format: 'yuv', yuvRange: yp.range, bits: yp.bits });
   else if (yp) Object.assign(msg, { format: 'rgb', note: yp.note });
   if (proto === 2) {
     Object.assign(msg, {
@@ -579,6 +593,20 @@ async function startStream(ws, params) {
   const packetizer = audioInfo ? new AudioPacketizer(audioInfo.sampleRate, audioInfo.channels, (buf) => { if (ws.readyState === ws.OPEN) ws.send(buf, { binary: true }); }) : null;
 
   let pending = [], pendingBytes = 0;
+  // H.264: whole access units from the FLV demuxer; when the browser falls behind, skip to
+  // the next key frame (a dropped delta frame would corrupt everything up to it)
+  let waitKey = false;
+  const demux = h264 ? new FlvH264Demuxer(({ codec }) => {
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'video', codec, format: 'annexb' }));
+  }, ({ key, data }) => {
+    if (ws.readyState !== ws.OPEN) return;
+    if (key) waitKey = false;
+    if (!waitKey && ws.bufferedAmount < 4 * 1024 * 1024) {
+      ws.send(Buffer.concat([packetHeader(key ? 'LZHK' : 'LZHD', frameNo, Date.now()), data]), { binary: true });
+      sent++;
+    } else { waitKey = true; dropped++; }
+    frameNo++;
+  }) : null;
   // PTS (protocol 2 with picture and sound in one process): from showinfo/ashowinfo on stderr
   let pts = null;
   /** frames waiting for their PTS line (at most 150 ms, then sent with NaN) */
@@ -601,7 +629,9 @@ async function startStream(ws, params) {
       sendFrame(w.no, w.frame, t ?? NaN);
     }
   };
-  const onVideo = (chunk) => {
+  const onVideo = h264 ? (chunk) => {
+    try { demux.push(chunk); } catch (e) { stderr += `\n${e.message}`; }
+  } : (chunk) => {
     pending.push(chunk); pendingBytes += chunk.length;
     while (pendingBytes >= bytesPerFrame) {
       const all = pending.length === 1 ? pending[0] : Buffer.concat(pending, pendingBytes);
@@ -626,8 +656,10 @@ async function startStream(ws, params) {
   };
 
   const launch = (mode) => {
-    const withPts = proto === 2 && video && !!audioInfo && mode === 'fd3';
-    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: audioInfo ? mode : 'none', pts: withPts, device, pixFmt: yp?.yuv ? 'ayuv64le' : '', log: wantTc ? 'level+info' : 'error' });
+    // PTS (#24) only on the raw path: H.264 packets carry the bridge clock (#16) instead
+    const withPts = proto === 2 && video && !!audioInfo && mode === 'fd3' && !h264;
+    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: audioInfo ? mode : 'none', pts: withPts, device, pixFmt: yp?.yuv ? 'ayuv64le' : '', log: wantTc ? 'level+info' : 'error',
+      codec: h264 ? 'h264' : 'raw', gop: Math.max(10, Math.round((fpsLimit || info.fps || 25) * 2)) });
     const fd3 = mode === 'fd3' && video && !!audioInfo;
     pts = withPts ? new PtsTracker(audioInfo.sampleRate, (index, t) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'apts', index, pts: t })); }) : null;
     const t0 = Date.now();

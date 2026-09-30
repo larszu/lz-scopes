@@ -325,7 +325,8 @@ function renderSources() {
           select(String(set.fps), [['0', 'alle fps'], ['10', '10 fps'], ['25', '25 fps'], ['30', '30 fps']], (v) => upd({ fps: Number(v) }, true), 'Bildrate begrenzen'),
           select(set.yuv ? 'yuv' : String(set.depth), [['8', '8 bit'], ['16', '16 bit'], ['yuv', '16 bit Y′CbCr']], (v) => upd(v === 'yuv' ? { depth: 16, yuv: true } : { depth: Number(v) as 8 | 16, yuv: false }, true), 'Bittiefe. 16 bit für 10-bit/HDR-Quellen; Y′CbCr = unbeschnitten ohne Range-Wandlung (Sub-Black, Super-White, R 103)'),
           select(set.transport, [['tcp', 'TCP'], ['udp', 'UDP']], (v) => upd({ transport: v as 'tcp' | 'udp' }, true), 'RTSP-Transport'),
-          select(set.audio === false ? '0' : '1', [['1', 'Ton'], ['0', 'ohne Ton']], (v) => upd({ audio: v === '1' }, true), 'Ton des Streams mitmessen (Bridge-Protokoll 2)')),
+          select(set.audio === false ? '0' : '1', [['1', 'Ton'], ['0', 'ohne Ton']], (v) => upd({ audio: v === '1' }, true), 'Ton des Streams mitmessen (Bridge-Protokoll 2)'),
+          select(set.codec ?? 'raw', [['raw', 'roh'], ['h264', 'H.264 · 8 bit']], (v) => upd({ codec: v as 'raw' | 'h264' }, true), 'Übertragung Bridge → Browser: roh = unkomprimiert, exakt (8/16 bit); H.264 = für entfernte Bridges, ca. 1/50 der Datenrate, aber 8 bit 4:2:0 und verlustbehaftet')),
         h('div', { class: 'row' },
           running ? h('button', { onclick: () => s.stop() }, '■ Trennen') : h('button', { class: 'primary', onclick: connect }, '▶ Verbinden'),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
@@ -1463,6 +1464,10 @@ function controlState() {
     pattern: pat ? { id: pat.pattern.id, name: patternById(pat.pattern.id).name } : null,
     patterns: PATTERNS.map((p) => ({ id: p.id, name: p.name })),
     playing: vid?.video ? !vid.video.paused || !!vid.reverseSpeed : null,
+    /** latency of stamped test pictures (scripts/latency-source.mjs), ms, last 2 s; null = no stamps */
+    latency: act?.latency.summary() ?? null,
+    /** where the statistics come from and their main-thread cost in ms */
+    statsPerf: act ? { ...act.statsPerf } : null,
     audio: audioState(),
     generator: { running: generator.running, signal: generator.cfg.signal, level: generator.cfg.level, freq: generator.cfg.freq, channels: generator.cfg.channels ?? 2 },
   };

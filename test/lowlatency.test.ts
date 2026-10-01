@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error plain JS module
 import { ageStats, ffmpegArgs } from '../server/index.mjs';
-import { LatencyMeter, latencyLines } from '../src/latency';
+import { LatencyMeter, latencyLines, rtpLines } from '../src/latency';
 import { DEFAULT_LOW_LATENCY, effectiveWidth, mergeLowLatency } from '../src/lowLatency';
 
 // Low-latency mode (docs/research/low-latency.md)
@@ -52,6 +52,17 @@ describe('Latenzstufen', () => {
 
   it('Mittel/min/max der Stempelalter für die Bridge-Statistik', () => {
     expect(ageStats([80, 90, 100])).toEqual({ mean: 90, min: 80, max: 100 });
+  });
+});
+
+describe('Messwerte: RTP-Eigenempfang', () => {
+  it('Verlustquote, Wechsel auf TCP, Rückfall-Grund', () => {
+    const l = rtpLines({ own: true, codec: 'h264', transport: 'udp' }, { transport: 'tcp', packets: 653, lost: 139, reordered: 0, late: 0, accessUnits: 3, droppedUnits: 36, switched: 'UDP verlor 18 % der Pakete → TCP' });
+    expect(l[0]).toContain('RTP eigen · H.264 · TCP');
+    expect(l[1]).toContain('→ TCP');
+    expect(l[2]).toContain('139 verloren (17.6 %)');
+    expect(rtpLines({ own: false, note: 'RTP-Eigenempfang nur für rtsp://' }, null)).toEqual(['Empfang    RTP-Eigenempfang nur für rtsp://']);
+    expect(rtpLines(null, null)).toEqual([]);
   });
 });
 

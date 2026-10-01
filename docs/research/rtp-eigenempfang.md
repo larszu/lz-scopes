@@ -105,10 +105,43 @@ Bridge integration checked against mediamtx: own RTP over TCP and UDP with AAC s
 stream (note "RTP-Eigenempfang nicht möglich (Kein H.264-/HEVC-Videotrack im SDP) – ffmpeg
 empfängt"), unit tests with a mock RTSP server (Digest challenge, interleaved RTP).
 
+## Real camera (01.10.2026)
+
+Sony SRG-A40, H.264 High 1080p50 (no B-frames, key frame every 1 s, key frames up to
+≈ 148 KB), reached over a routed path with Wi-Fi on this side (ping: 10 % loss, 7–69 ms).
+Address and credentials stay out of the repository.
+
+- **TCP**: own reception 50.1 fps and ffmpeg 50.3 fps in steady state (each alone, from
+  second 5 on); 0 packets lost. Both at the same time, frames matched by content: the
+  ffmpeg path delivers the same frame later by a median of 13.1 / 14.2 ms (two runs of 20 s,
+  p10 1.6–4.0, p90 17.7–19.4), about two thirds of a frame interval at 50 fps. Running both
+  at once shares the Wi-Fi link: then ffmpeg reached 46 fps over 20 s, mostly because its
+  start (probing) takes longer – first frame after 1.1–6.5 s against 0.4–1.4 s.
+- **UDP before the fix**: 9 fps. Not the socket buffer – the system counted 0 drops "due to
+  full socket buffers" – but real loss on the path: 15–25 % of the packets, none of them
+  arriving late (a longer reorder wait did not help). Every gap drops the frame and all
+  frames up to the next key frame (1 s), so little was left. ffmpeg over UDP conceals the
+  gaps and reached 43 fps – with damaged pictures.
+- **Changes**:
+  - UDP receive buffer 8 MB requested; macOS granted it (`kern.ipc.maxsockbuf` 8 MB). The
+    granted size is shown in the Messwerte panel.
+  - Above 2 % packet loss (or a quarter of dropped frames) within 3 s, the session moves to
+    TCP interleaved on its own. ffmpeg keeps running, the time line continues, and the
+    Messwerte panel says why. On the camera the switch came after 3–9 s and cost ≈ 1.5 s of
+    frames (new session plus waiting for the next key frame); after that 50 fps.
+  - Counters: lost (with share), reordered (filled a gap in time), late (after being given
+    up), dropped frames.
+- **After**: own reception over UDP with auto-TCP 42–45 fps over 20 s including the switch,
+  50 fps afterwards; through the bridge (640 px, raw): own TCP and own UDP→TCP both
+  delivered, ffmpeg-RTSP as well; the camera stream has no sound track.
+- Default stays TCP: the own reception uses the source's RTSP transport setting, which is
+  TCP unless changed; UDP is only worth it on a clean wired LAN, and then the switch is not
+  triggered.
+
 ## Not checked
 
-- Real cameras (Sony, Panasonic, Axis …): none reachable from this machine; Digest and
-  keep-alive behaviour of real firmware, cameras that send without marker bit (handled by
-  the time stamp change, but untested against hardware), interlaced H.264 (PAFF/MBAFF).
+- Other cameras (Panasonic, Axis, BirdDog …), cameras that send without marker bit (handled
+  by the time-stamp change, untested against hardware), interlaced H.264 (PAFF/MBAFF),
+  HEVC from a real camera, UDP on a clean wired LAN.
 - Packet loss on a real network; the drop logic is unit-tested only.
 - Windows (UDP port binding, firewall prompts).

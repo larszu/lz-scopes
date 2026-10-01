@@ -69,7 +69,8 @@ test('SRT-Push: 10-bit-Stream (HEVC Main 10) → srt:// → mitgeliefertes ffmpe
   const done = new Promise((ok) => rx.on('close', ok));
   await new Promise((r) => setTimeout(r, 500));
   const w = await openWindow(`out=ramp10&w=1280&h=720&stream=e2esrt&codec=hevc10&target=${encodeURIComponent(`srt://127.0.0.1:${port}`)}`);
-  await Promise.race([done, new Promise((r) => setTimeout(r, 60_000))]);
+  // the window boots in software WebGL first (CI, busy machines: up to about a minute)
+  await Promise.race([done, new Promise((r) => setTimeout(r, 120_000))]);
   rx.kill();
   expect(log).toMatch(/hevc \(Main 10\)/);
   expect(log).toMatch(/1280x720/);

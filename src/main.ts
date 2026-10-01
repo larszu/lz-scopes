@@ -1151,7 +1151,7 @@ function drawAll(now: number) {
     if (src?.latency.waiting && !drawnSources.has(src)) drawnSources.set(src, Date.now());
     const W = Math.round(b.width * dpr), H = Math.round(b.height * dpr);
     for (const c of [v.overlay, v.blit]) if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
-    const ctx = v.overlay.getContext('2d')!;
+    const ctx = v.overlay.getContext('2d', { colorSpace: displaySpace === 'p3' ? 'display-p3' : 'srgb' })!; // colour space fixed at first use (light-swatch reads it)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, b.width, b.height);
     renderer.clearRect(bodyRect, [0.043, 0.047, 0.055]);
@@ -1678,6 +1678,7 @@ for (const saved of state.sources) {
   if (s.kind === 'audio' && s.audioIn.mode === 'bridge' && s.audioIn.bridgeUrl) s.startAudio(undefined, bridgeUrl());
 }
 mountOpple($('#opple'), {
+  bridgeWs: () => bridgeUrl(),
   /** light scopes as their own layout (top: diagram, vectorscope, channels; bottom: time course, grid) */
   openScopes: () => {
     const idxs = LIGHT_SCOPES.map((scope) => {

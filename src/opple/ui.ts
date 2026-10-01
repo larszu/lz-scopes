@@ -6,6 +6,8 @@ import { bluetoothSupport } from './meter';
 import { LM3_MODE_NAMES, readingsCsv, type Reading } from './photometry';
 import { compareLights, greenMagentaHint } from './lightScience';
 import { desktopBluetooth, lightStore, oppleMeter, type LightStore } from './store';
+import { ArgyllLightMeter, DRIVER_LABELS } from './drivers';
+import type { SpectrumUnit } from './spectrum';
 
 export { oppleMeter };
 
@@ -77,10 +79,11 @@ export function pickerBox(s: LightStore = lightStore()): HTMLElement {
   return box;
 }
 
-export function mountOpple(root: HTMLElement, hooks: { openScopes?: () => void } = {}) {
+export function mountOpple(root: HTMLElement, hooks: { openScopes?: () => void; bridgeWs?: () => string } = {}) {
   if (!document.getElementById('opple-css')) document.head.append(h('style', { id: 'opple-css' }, CSS));
   root.classList.add('opple');
   const s = lightStore();
+  if (hooks.bridgeWs) s.bridgeWs = hooks.bridgeWs;
   const sup = bluetoothSupport();
 
   const status = h('p', { class: 'hint' });
@@ -104,10 +107,11 @@ export function mountOpple(root: HTMLElement, hooks: { openScopes?: () => void }
         alias,
         st === 'connected'
           ? h('button', { class: 'mini', onclick: () => s.disconnect(k.key) }, 'Trennen')
-          : h('button', { class: 'mini', disabled: !sup.ok || (st !== 'idle' && st !== 'error'), title: 'Verbinden (in Reichweite und eingeschaltet)', onclick: () => connect(s.reconnect(k)) }, 'Verbinden'),
+          : h('button', { class: 'mini', disabled: (k.driver !== 'argyll' && !sup.ok) || (st !== 'idle' && st !== 'error'), title: 'Verbinden (eingeschaltet, in Reichweite bzw. angeschlossen)', onclick: () => connect(s.reconnect(k)) }, 'Verbinden'),
+        m instanceof ArgyllLightMeter && st !== 'idle' ? h('button', { class: 'mini', title: 'spotread-Taste k: Kalibrierung (Gerät dafür in die Kalibrierposition bringen, Anweisung im Status)', onclick: () => m.key('k') }, 'Kalibrieren') : '',
         st === 'connected' && s.active !== k.key ? h('button', { class: 'mini', title: 'Werte dieses Geräts oben anzeigen und für Messpunkte nutzen', onclick: () => { s.active = k.key; s.changed(); } }, 'aktiv') : '',
         h('button', { class: 'icon', title: 'Vergessen', onclick: () => s.forget(k.key) }, '✕'),
-        h('div', { class: 'val' }, st === 'connected' && r ? `${de(r.lux, r.lux < 10 ? 1 : 0)} lx · ${de(r.cct, 0)} K · Duv ${sgn(r.duv, 4)}` : `${k.name}${k.model ? ` · ${k.model === 'lm4' ? 'LM4' : 'LM3'}` : ''}${m?.message && st !== 'connected' ? ` · ${m.message}` : ''}`));
+        h('div', { class: 'val' }, st === 'connected' && r ? `${de(r.lux, r.lux < 10 ? 1 : 0)} ${r.quantity ?? 'lx'} · ${de(r.cct, 0)} K · Duv ${sgn(r.duv, 4)}` : `${k.driver === 'argyll' ? `${DRIVER_LABELS.argyll} (ungeprüft)` : `${k.name}${k.model ? ` · ${k.model === 'lm4' ? 'LM4' : 'LM3'}` : ''}`}${m?.message && st !== 'connected' ? ` · ${m.message}` : ''}`));
     });
     devices.replaceChildren(...(rows.length ? [h('h3', {}, 'Geräte'), ...rows] : []));
   }
@@ -117,13 +121,13 @@ export function mountOpple(root: HTMLElement, hooks: { openScopes?: () => void }
     const act = s.meters.get(s.active);
     const r = s.latest(s.active) ?? s.latest();
     vals.replaceChildren(
-      cell('Lux', r ? de(r.lux, r.lux < 10 ? 2 : 0) : '–'),
+      cell(r?.quantity === 'cd/m²' ? 'cd/m² (kein Umgebungsmodus)' : 'Lux', r ? de(r.lux, r.lux < 10 ? 2 : 0) : '–'),
       cell('CCT K (McCamy)', r ? de(r.cct, 0) : '–'),
       cell('Duv (Ohno)', r ? de(r.duv, 4) : '–'),
       cell('x / y (CIE 1931)', r ? `${de(r.x, 4)} / ${de(r.y, 4)}` : '–'),
     );
     info.textContent = r
-      ? `${s.label(r.device ?? '')} · ${r.model === 'lm4' ? 'Light Master 4' : `Light Master 3${r.mode ? `, Matrix ${LM3_MODE_NAMES[r.mode]}` : ''}`} · ${r.calibrated ? 'mit Kalibrierfaktoren' : 'ohne Kalibrierfaktoren'}${r.temperature != null ? ` · ${de(r.temperature, 1)} °C` : ''} · ${s.history.length} Messungen im Verlauf`
+      ? `${s.label(r.device ?? '')} · ${r.model === 'argyll' ? 'ArgyllCMS' : r.model === 'datei' ? 'Spektrum aus Datei' : r.model === 'lm4' ? 'Light Master 4' : `Light Master 3${r.mode ? `, Matrix ${LM3_MODE_NAMES[r.mode]}` : ''}`}${r.spectrum ? ` · Spektrum ${r.spectrum.values.length} Werte` : ''}${r.cri ? ` · Ra ${de(r.cri.ra, 1)}` : ''} · ${r.model === 'lm3' || r.model === 'lm4' ? (r.calibrated ? 'mit Kalibrierfaktoren' : 'ohne Kalibrierfaktoren') : 'Messwerte des Geräts'}${r.temperature != null ? ` · ${de(r.temperature, 1)} °C` : ''} · ${s.history.length} Messungen im Verlauf`
       : '';
     const anyConnected = s.connected.length > 0;
     const scanning = [...s.meters.values()].some((m) => m.state === 'requesting' || m.state === 'connecting' || m.state === 'calibrating');
@@ -177,8 +181,8 @@ export function mountOpple(root: HTMLElement, hooks: { openScopes?: () => void }
         h('select', { onchange: (e: Event) => { o.gelMaker = (e.target as HTMLSelectElement).value as 'Lee' | 'Rosco'; s.saveOpts(); s.changed(); } },
           ...['Lee', 'Rosco'].map((m) => h('option', { value: m, selected: m === o.gelMaker }, m))), h('br'),
         ...(cmp.gels.length ? cmp.gels.map((g, i) => h('span', {}, `${i + 1}. ${g.gels.map((x) => x.name).join(' + ')} (${sgn(g.mired, 0)}) → ${de(g.resultK, 0)} K, Rest ${sgn(g.residual, 0)} mired`, h('br'))) : ['keine Farbtemperatur-Folie nötig (< 5 mired)', h('br')]),
-        greenMagentaHint(cmp.dDuv), h('br'),
-        h('span', { class: 'hint' }, 'Mired-Werte der Folien laut Tabelle (Sekundärquelle), Folien addieren sich in Mired. Grün/Magenta nur Richtung, Stärke nicht belegt.')) : '',
+        greenMagentaHint(cmp.dDuv, cmp.cctB), h('br'),
+        h('span', { class: 'hint' }, 'Mired-Werte: Lee-Datenblätter, Rosco-Produktangaben (einige Rosco-CTB aus einer Sekundärtabelle). Folien addieren sich in Mired. Grün/Magenta-Stärke aus den von Lee angegebenen Farborten (Kunstlicht bzw. Tageslicht).')) : '',
       s.points.length ? h('div', { class: 'row' },
         h('button', { class: 'mini', onclick: () => download(`lichtmesser-punkte-${stamp()}.csv`, pointsCsv(s)) }, '⤓ Punkte CSV'),
         h('button', { class: 'mini', onclick: () => s.clearPoints() }, 'Punkte löschen')) : '',
@@ -212,7 +216,7 @@ export function mountOpple(root: HTMLElement, hooks: { openScopes?: () => void }
 
   root.replaceChildren(
     h('p', { class: 'warnbox' }, 'Geprüft mit einem Light Master 3 (Verbindung, Kalibrierfaktoren, Messung) am 30.09.2026. Light Master 4, Flimmern und mehrere Geräte gleichzeitig nur ohne zweites Gerät bzw. mit aufgezeichneten Paketen getestet.'),
-    buttons, pickerBox(s), status, devices, vals, chart, info, points,
+    buttons, pickerBox(s), status, devices, vals, chart, info, points, otherMeters(s, () => render()),
     h('p', { class: 'hint' }, `Lux, xy, CCT und Duv rechnet LZ Scopes aus den Rohkanälen (Filtersensor, 6 bzw. 8 Kanäle, Matrizen der Opple-App). Ein Wert je Messung an einer Stelle, kein Bild. Für schmalbandige LED-Primärfarben, z. B. einer LED-Wand, und für Displays nur als Trendmesser geeignet.${desktopBluetooth() ? '' : ' Im Browser: Chrome/Edge zeigen die Geräteauswahl selbst; bekannte Geräte verbinden dort ohne Auswahl, wenn der Browser sie sich merkt.'}`),
   );
   render();
@@ -231,4 +235,40 @@ export function pointsCsv(s: LightStore) {
       return [`"${p.label.replace(/"/g, '""')}"`, p.cell ? `${String.fromCharCode(65 + p.cell[1])}${p.cell[0] + 1}` : '', `"${s.label(r.device ?? '')}"`, new Date(r.ts).toISOString(), f(r.lux, 2), f(r.x, 5), f(r.y, 5), f(r.cct, 0), f(r.duv, 5), f(d, 5)].join(',');
     }),
   ].join('\n') + '\n';
+}
+
+/** Other light meters: ArgyllCMS spectrometers/colorimeters (bridge) and spectrum files. */
+function otherMeters(s: LightStore, done: () => void): HTMLElement {
+  const box = h('details', { class: 'hint' });
+  let unit: SpectrumUnit = 'relativ';
+  let ports: { port: number; name: string }[] = [];
+  let info = '';
+  const render = () => {
+    box.replaceChildren(
+      h('summary', {}, 'Weitere Messgeräte: Spektrometer, Spektrum-Datei'),
+      h('p', {}, 'Spektrometer und Kolorimeter, die ArgyllCMS kennt (i1Pro, ColorMunki, JETI specbos/spectraval, i1Display …), über die Bridge mit spotread im Umgebungsmodus. Spektrometer liefern das Spektrum; CRI, TLCI und TM-30 rechnet ArgyllCMS. Ungeprüft: hier ist weder ArgyllCMS noch ein solches Gerät vorhanden.'),
+      h('div', { class: 'row' },
+        h('select', { onchange: (e: Event) => { sel = Number((e.target as HTMLSelectElement).value) || undefined; } },
+          h('option', { value: '' }, ports.length ? 'erstes Gerät' : 'Gerät (Liste laden …)'), ...ports.map((p) => h('option', { value: p.port }, `${p.port}: ${p.name}`))),
+        h('button', { class: 'mini', title: 'Geräteliste von spotread über die Bridge', onclick: () => {
+          fetch(`${s.bridgeWs().replace(/^ws/, 'http')}/api/meter`).then((r) => r.json()).then((m: { found: boolean; instruments: { port: number; name: string }[]; version?: string }) => {
+            ports = m.instruments ?? []; info = m.found ? `ArgyllCMS ${m.version ?? ''} gefunden, ${ports.length} Gerät(e)` : 'ArgyllCMS (spotread) nicht gefunden – installieren oder LZS_ARGYLL_BIN setzen'; render();
+          }).catch(() => { info = 'Bridge nicht erreichbar (Desktop-App oder npm start)'; render(); });
+        } }, 'Liste'),
+        h('button', { class: 'mini', onclick: () => { s.connectArgyll(sel).then(() => s.setRunning(true)).catch(() => {}).finally(done); } }, 'Verbinden')),
+      info ? h('p', {}, info) : '',
+      h('p', {}, 'Spektrum-Datei: Argyll .sp (spotread -O) oder zwei Spalten Wellenlänge, Wert (CSV, gleicher Abstand). Wird als Messpunkt übernommen.'),
+      h('div', { class: 'row' },
+        h('select', { title: 'Einheit der CSV-Werte (.sp-Dateien bringen sie mit)', onchange: (e: Event) => { unit = (e.target as HTMLSelectElement).value as SpectrumUnit; } },
+          ...([['relativ', 'CSV: relativ'], ['mW/(m²·nm)', 'CSV: mW/(m²·nm) (Bestrahlungsstärke)'], ['mW/(m²·sr·nm)', 'CSV: mW/(m²·sr·nm) (Strahldichte)']] as [SpectrumUnit, string][]).map(([v, l]) => h('option', { value: v, selected: v === unit }, l))),
+        h('input', { type: 'file', accept: '.sp,.csv,.txt,.tsv', onchange: async (e: Event) => {
+          const f = (e.target as HTMLInputElement).files?.[0];
+          if (!f) return;
+          try { s.importSpectrum(await f.text(), f.name, unit); s.message = ''; } catch (err) { s.message = (err as Error).message; s.changed(); }
+        } })),
+    );
+  };
+  let sel: number | undefined;
+  render();
+  return box;
 }

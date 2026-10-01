@@ -51,10 +51,10 @@ export function sourceFfmpegText(url: string, h: BridgeHealth | null): string {
   return used ? `SRT-Empfang mit ${ffmpegLine(used)}` : 'kein ffmpeg mit SRT gefunden – srt:// geht nicht';
 }
 
-/** /api/health of the bridge; null if it does not answer. */
+/** /api/health of the bridge; null if it does not answer (20 s: the first ffmpeg -version can be slow on a cold disk). */
 export async function fetchBridgeHealth(httpBase: string): Promise<BridgeHealth | null> {
   try {
-    const r = await fetch(`${httpBase}/api/health`, { signal: AbortSignal.timeout(5000) });
+    const r = await fetch(`${httpBase}/api/health`, { signal: AbortSignal.timeout(20_000) });
     return r.ok ? await r.json() as BridgeHealth : null;
   } catch { return null; }
 }

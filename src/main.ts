@@ -296,8 +296,13 @@ async function refreshFfmpegInfo() {
   el.textContent = bridgeFfmpegText(bridgeHealth);
   el.title = bridgeHealth?.ffmpeg?.path ?? '';
   if (sources.some((x) => x.kind === 'stream' && /^srt:/i.test(x.url))) renderSources();
+  // no answer (bridge still starting, first ffmpeg run slow): ask again, never show a stale guess
+  clearTimeout(ffmpegRetry);
+  if (!bridgeHealth) ffmpegRetry = setTimeout(refreshFfmpegInfo, 10_000);
 }
+let ffmpegRetry: ReturnType<typeof setTimeout> | undefined;
 bridgeInput.onchange = () => { state.bridge = bridgeInput.value; save(); refreshFfmpegInfo(); };
+$('details.bridge').addEventListener('toggle', (e) => { if ((e.target as HTMLDetailsElement).open) refreshFfmpegInfo(); });
 refreshFfmpegInfo();
 
 function toggleFreeze() {

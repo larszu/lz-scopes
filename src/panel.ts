@@ -3,7 +3,7 @@
 
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, mul3, rgbToXyzMatrix, bandRange, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId, type HdrPreview } from './color';
 import {
-  drawCubeGraticule, drawDiamondGraticule, diamondPoint, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
+  drawChannelPlotGraticule, drawCubeGraticule, drawDiamondGraticule, drawSatLumGraticule, diamondPoint, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
   WAVE_ZOOMS, channelLayout, isAudio, isWaveform, plotRect, type WaveChannels, type WaveOpts, type WaveZoom, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
 import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/panels';
@@ -46,6 +46,8 @@ export interface PanelState {
   clock?: Partial<ClockOptions>;
   /** scatter scopes: analogue beam look (crt.ts) */
   crt?: Partial<CrtSettings>;
+  /** channel plot: channel pair (graticule.ts CHANNEL_PAIRS) */
+  pair?: number;
   /** timeline: shown time span in seconds */
   span?: TimelineSpan;
   /** vectorscope, CIE, diamond, 3D volume (digital): persistence in ms, −1 = infinite (trace history) */
@@ -189,13 +191,13 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
 }
 
 export const defaultPanel = (scope: ScopeType): PanelState => ({
-  scope, sourceId: '', gain: 1, colorize: scope === 'vector' || scope === 'cie' || scope === 'cube', zoom: 1, picture: 'normal', hist: 'rgb', log: false,
+  scope, sourceId: '', gain: 1, colorize: scope === 'vector' || scope === 'cie' || scope === 'cube' || scope === 'satlum' || scope === 'chplot', zoom: 1, picture: 'normal', hist: 'rgb', log: false,
 });
 
 const PARADE: ScopeType[] = ['parade', 'yrgb', 'wf-rgb'];
 
 const SCATTER: Partial<Record<ScopeType, ScatterMode>> = {
-  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie', diamond: 'diamond', cube: 'cube',
+  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie', diamond: 'diamond', cube: 'cube', satlum: 'satlum', chplot: 'chplot',
 };
 
 /**
@@ -249,9 +251,11 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     renderer.drawScatter(key, src, abs, {
       ...(crt ? { crt } : {}),
       ...(!crt && p.persist && !isWaveform(p.scope) ? { persist: p.persist } : {}),
+      ...(p.scope === 'chplot' ? { pair: p.pair ?? 0 } : {}),
       ...(cube ? { cube: {
         space: CUBE_SPACE_ID[cube.space], rot: cubeRotation(cube.yaw, cube.pitch), to2020: gamutConvert(GAMUTS[src.gamut], GAMUTS['2020']),
         white: mul3(rgbToXyzMatrix(GAMUTS[src.gamut]), [1, 1, 1]), nits: cubeNits(src.transfer),
+        view: { zoom: cube.zoom ?? 1, panX: cube.panX ?? 0, panY: cube.panY ?? 0 },
       } } : {}),
       mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: crt ? [...PHOSPHORS[crt.phosphor].color] as [number, number, number] : [...TINTS[o.tint]] as [number, number, number],
       maxSamples: o.maxSamples, roi: src.activeRois(), skin: o.skin, cieUv: p.scope === 'cie' && !!p.cieUv,
@@ -274,9 +278,13 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     }
   } else if (p.scope === 'cie') {
     drawCieGraticule(ctx, r, src.colorspace, { uv: p.cieUv, gamut: src.gamut });
+  } else if (p.scope === 'satlum') {
+    drawSatLumGraticule(ctx, r);
+  } else if (p.scope === 'chplot') {
+    drawChannelPlotGraticule(ctx, r, p.pair ?? 0);
   } else if (p.scope === 'cube') {
     const c = { ...DEFAULT_CUBE, ...p.cube };
-    drawCubeGraticule(ctx, r, c, src.gamut, cubeNits(src.transfer), probeRgb ? cubeQOf(c.space, probeRgb, src) : null);
+    drawCubeGraticule(ctx, r, c, src.gamut, cubeNits(src.transfer), probeRgb ? cubeQOf(c.space, probeRgb, src) : null, src.colorspace);
   } else if (p.scope === 'diamond') {
     drawDiamondGraticule(ctx, r);
     if (probeRgb) {

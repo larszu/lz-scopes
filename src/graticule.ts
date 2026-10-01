@@ -1,23 +1,23 @@
 // 2D overlays per panel: graticules, labels, histogram, statistics, probe read-outs.
 
 import {
-  GAMUTS, SKIN_LINE_DEG, isGamma, SPECTRAL_LOCUS, barTargets, codeValue, gamutConvert, hlgFromNits, isLog, levelText, nitsToSignal, pqEncode,
+  GAMUTS, LUMA, SKIN_LINE_DEG, isGamma, SPECTRAL_LOCUS, barTargets, codeValue, gamutConvert, hlgFromNits, isLog, levelText, nitsToSignal, pqEncode,
   sceneToSignal, transferLabel, xyToUv, ycbcr,
   type Colorspace, type GamutId, type Transfer,
 } from './color';
 import { CIE_VIEW, CIE_VIEW_UV, WAVE_MAX, WAVE_MIN, type Rect } from './renderer';
 import { latencyLines } from './latency';
 import type { Source } from './sources';
-import { CUBE_SPACE_LABELS, cubeProject, cubeRotation, cubeWireframe, qFromIctcp, qFromLab, qFromRgb, type CubeSettings } from './cube';
+import { CUBE_SPACE_LABELS, SIGNAL_SPACES, cubeProject, cubeRotation, cubeWireframe, qFromChl, qFromHsv, qFromIctcp, qFromLab, qFromRgb, qFromXyz, qFromYcc, type CubeSettings } from './cube';
 
-export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'timeline' | 'hist' | 'stats'
+export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'timeline' | 'hist' | 'stats'
   | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock'
   | 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map' | 'light-spectrum' | 'light-swatch';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits';
 
 export const SCOPE_LABELS: Record<ScopeType, string> = {
   picture: 'Bild', 'wf-luma': 'Waveform Luma', 'wf-color': 'Waveform Farbe', 'wf-skin': 'Waveform Hauttöne', 'wf-rgb': 'Waveform RGB', parade: 'RGB-Parade', yrgb: 'YRGB-Parade',
-  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', diamond: 'Diamond (Gamut)', cube: '3D-Farbvolumen', timeline: 'Zeitverlauf', hist: 'Histogramm', stats: 'Messwerte',
+  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', diamond: 'Diamond (Gamut)', cube: '3D-Farbvolumen', satlum: 'Sättigung über Luma', chplot: 'Kanal-Plot', timeline: 'Zeitverlauf', hist: 'Histogramm', stats: 'Messwerte',
   'audio-meter': 'Audio Pegel & Lautheit', 'audio-loudness': 'Audio Lautheitsverlauf', 'audio-spectrum': 'Audio Spektrum', 'audio-phase': 'Audio Goniometer', 'audio-check': 'Audio Ident & A/V-Versatz',
   clock: 'Uhr / Timecode',
   // Opple Light Master (src/opple/scopes.ts, LIGHT_LABELS)
@@ -45,6 +45,11 @@ export function plotRect(scope: ScopeType, w: number, h: number, aspect = 16 / 9
   if (scope === 'cie') {
     const s = Math.max(10, Math.min(w - 36, h - 24));
     return { x: (w - s + 24) / 2, y: (h - s - 16) / 2, w: s, h: s };
+  }
+  if (scope === 'satlum') return { x: 44, y: 8, w: Math.max(10, w - 52), h: Math.max(10, h - 26) };
+  if (scope === 'chplot') {
+    const s = Math.max(10, Math.min(w - 52, h - 30));
+    return { x: 44 + (w - 52 - s) / 2, y: 8, w: s, h: s };
   }
   if (scope === 'cube') {
     const s = Math.max(10, Math.min(w, h) - 16);
@@ -596,9 +601,9 @@ export function r103Lines(src: Source): string[] {
 }
 
 /** 3D volume overlay: wire frame of the target, axis labels (cube.ts, same projection as the shader). */
-export function drawCubeGraticule(ctx: CanvasRenderingContext2D, r: Rect, c: CubeSettings, srcGamut: GamutId, nits: number, probe: number[] | null) {
-  const rot = cubeRotation(c.yaw, c.pitch);
-  const P = (q: number[]): [number, number] => { const [x, y] = cubeProject(rot, q); return [r.x + (x * 0.5 + 0.5) * r.w, r.y + (0.5 - y * 0.5) * r.h]; };
+export function drawCubeGraticule(ctx: CanvasRenderingContext2D, r: Rect, c: CubeSettings, srcGamut: GamutId, nits: number, probe: number[] | null, cs: Colorspace = '709') {
+  const rot = cubeRotation(c.yaw, c.pitch), view = { zoom: c.zoom ?? 1, panX: c.panX ?? 0, panY: c.panY ?? 0 };
+  const P = (q: number[]): [number, number] => { const [x, y] = cubeProject(rot, q, view); return [r.x + (x * 0.5 + 0.5) * r.w, r.y + (0.5 - y * 0.5) * r.h]; };
   const line = (pts: number[][], style: string, width = 1, dash: number[] = []) => {
     ctx.strokeStyle = style; ctx.lineWidth = width; ctx.setLineDash(dash);
     ctx.beginPath(); pts.forEach((q, i) => { const [x, y] = P(q); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }); ctx.stroke();
@@ -635,6 +640,26 @@ export function drawCubeGraticule(ctx: CanvasRenderingContext2D, r: Rect, c: Cub
     axis((v) => qFromRgb([0, v, 0]), steps, pct, 'G′ %', 1.14);
     axis((v) => qFromRgb([0, 0, v]), steps, pct, 'B′ %', 1.14);
     label('Weiß', qFromRgb([1.06, 1.06, 1.06]));
+  } else if (c.space === 'ycbcr') {
+    for (const l of cubeWireframe('ycbcr', srcGamut, srcGamut, nits, 24, LUMA[cs])) line(l, STRONG, 1.5);
+    axis((v) => qFromYcc([v, 0, 0]), steps, (v) => `${Math.round(v * 100)}`, 'Y′ %', 1.1);
+    axis((v) => qFromYcc([0.5, v, 0]), [-0.5, -0.25, 0, 0.25, 0.5], (v) => (v ? v.toFixed(2) : ''), 'Cb', 0.6);
+    axis((v) => qFromYcc([0.5, 0, v]), [-0.5, -0.25, 0, 0.25, 0.5], (v) => (v ? v.toFixed(2) : ''), 'Cr', 0.6);
+  } else if (c.space === 'hsv') {
+    for (const l of cubeWireframe('hsv', srcGamut, srcGamut, nits)) line(l, STRONG, 1.5);
+    for (const sv of [0.5, 1]) line(Array.from({ length: 49 }, (_, i) => qFromHsv([(i / 48) * 360, sv, 1])), SOFT, 1, [2, 3]);
+    axis((v) => qFromHsv([0, 0, v]), steps, (v) => `${Math.round(v * 100)}`, 'V %', 1.12);
+    for (const [n, hd] of [['R', 0], ['Yl', 60], ['G', 120], ['Cy', 180], ['B', 240], ['Mg', 300]] as [string, number][]) label(n, qFromHsv([hd, 1.15, 1]));
+  } else if (c.space === 'xyz') {
+    for (const l of cubeWireframe('xyz', c.gamut, srcGamut, nits)) line(l, STRONG, 1.5);
+    axis((v) => qFromXyz([v, 0, 0]), steps, (v) => v.toFixed(2), 'X', 1.14);
+    axis((v) => qFromXyz([0, v, 0]), steps, (v) => v.toFixed(2), 'Y', 1.14);
+    axis((v) => qFromXyz([0, 0, v]), steps, (v) => v.toFixed(2), 'Z', 1.14);
+  } else if (c.space === 'chl') {
+    for (const l of cubeWireframe('chl', c.gamut, srcGamut, nits)) line(l, STRONG, 1.5);
+    axis((v) => qFromChl([0, 0, v]), [0, 90, 180, 270, 360], (v) => `${v}°`, 'h', 380);
+    axis((v) => qFromChl([v, 0, 0]), [0, 25, 50, 75, 100], (v) => `${v}`, 'L*', 112);
+    axis((v) => qFromChl([0, v, 0]), [0, 50, 100], (v) => `${v}`, 'C*', 125);
   } else if (c.space === 'lab') {
     for (const l of cubeWireframe('lab', c.gamut, srcGamut, nits)) line(l, STRONG, 1.5);
     // chroma rings 50 and 100 at L* 50, the a*/b* axes through L* 50
@@ -651,6 +676,57 @@ export function drawCubeGraticule(ctx: CanvasRenderingContext2D, r: Rect, c: Cub
   ctx.setLineDash([]);
   if (probe) { ctx.strokeStyle = '#00dcff'; ctx.lineWidth = 1.5; const [x, y] = P(probe); ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.stroke(); }
   ctx.fillStyle = LABEL; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-  ctx.fillText(`${CUBE_SPACE_LABELS[c.space]}${c.space === 'rgb' ? ' · 0–100 %' : ` · Drahtgitter ${GAMUTS[c.gamut].name}`} · ziehen = drehen`, r.x + 4, r.y + r.h - 4);
+  ctx.fillText(`${CUBE_SPACE_LABELS[c.space]}${SIGNAL_SPACES.includes(c.space) ? ' · 0–100 %' : ` · Drahtgitter ${GAMUTS[c.gamut].name}`} · ziehen = drehen, ⇧ = schieben, Rad = Zoom`, r.x + 4, r.y + r.h - 4);
+  ctx.restore();
+}
+
+/** waveform level → position inside r along one axis (same mapping as waveY in the shader) */
+const lvl = (v: number, a: number, len: number, flip: boolean) => { const f = (v - WAVE_MIN) / (WAVE_MAX - WAVE_MIN); return flip ? a + (1 - f) * len : a + f * len; };
+
+/**
+ * Saturation over luma (idea: Nobe OmniScope "Sat / Lum"; own implementation): x = Y′, y = length of
+ * the CbCr vector / 0.5 (100 % ≈ a fully saturated primary, 75 % bars ≈ 75 %). Desaturated pixels sit
+ * at the bottom; bulges top right = saturated highlights, top left = coloured shadows.
+ */
+export function drawSatLumGraticule(ctx: CanvasRenderingContext2D, r: Rect) {
+  ctx.save(); ctx.font = FONT; ctx.lineWidth = 1;
+  for (const v of [0, 0.25, 0.5, 0.75, 1]) {
+    const x = Math.round(lvl(v, r.x, r.w, false)) + 0.5;
+    ctx.strokeStyle = v === 0 || v === 1 ? GRID : GRID_DIM; ctx.beginPath(); ctx.moveTo(x, r.y); ctx.lineTo(x, r.y + r.h); ctx.stroke();
+    ctx.fillStyle = LABEL; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(`${v * 100}`, x, r.y + r.h + 3);
+  }
+  for (const s of [0, 0.25, 0.5, 0.75, 1]) {
+    const y = Math.round(r.y + r.h - (s / 1.2) * r.h) + 0.5;
+    ctx.strokeStyle = s === 0 || s === 1 ? GRID : GRID_DIM; ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke();
+    ctx.fillStyle = LABEL; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(`${s * 100}`, r.x - 4, y);
+  }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('Sättigung % (|CbCr|)  über  Luma Y′ %', r.x + 4, r.y + 4);
+  ctx.restore();
+}
+
+export const CHANNEL_PAIRS = ['R′ / G′', 'R′ / B′', 'G′ / B′', 'Y′ / Cb', 'Y′ / Cr', 'Cb / Cr'];
+
+/** Channel plot: two channels as x/y (idea: OmniScope "Channel Plot"); diagonal = equal channels. */
+export function drawChannelPlotGraticule(ctx: CanvasRenderingContext2D, r: Rect, pair: number) {
+  const [nx, ny] = CHANNEL_PAIRS[pair].split(' / ');
+  const chroma = (axis: 0 | 1) => (pair === 5 || (axis === 1 && (pair === 3 || pair === 4)));
+  ctx.save(); ctx.font = FONT; ctx.lineWidth = 1;
+  for (const v of [0, 0.25, 0.5, 0.75, 1]) {
+    const x = Math.round(lvl(v, r.x, r.w, false)) + 0.5, y = Math.round(lvl(v, r.y, r.h, true)) + 0.5;
+    ctx.strokeStyle = v === 0 || v === 1 ? GRID : GRID_DIM;
+    ctx.beginPath(); ctx.moveTo(x, r.y); ctx.lineTo(x, r.y + r.h); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke();
+    ctx.fillStyle = LABEL; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(chroma(0) ? (v - 0.5).toFixed(2) : `${v * 100}`, x, r.y + r.h + 3);
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText(chroma(1) ? (v - 0.5).toFixed(2) : `${v * 100}`, r.x - 4, y);
+  }
+  if (pair < 3) {
+    // neutral: both channels equal
+    ctx.strokeStyle = 'rgba(235,235,235,0.45)'; ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(lvl(0, r.x, r.w, false), lvl(0, r.y, r.h, true)); ctx.lineTo(lvl(1, r.x, r.w, false), lvl(1, r.y, r.h, true)); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.fillStyle = LABEL; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText(`${ny} (senkrecht) über ${nx}${pair < 3 ? ' · Diagonale = gleiche Kanäle' : ''}`, r.x + 4, r.y + 4);
   ctx.restore();
 }

@@ -166,16 +166,17 @@ export const SHIPPED_FFMPEG = ((): string | null => {
   return existsSync(f) ? f : null;
 })();
 
-/** mediamtx on free ports: RTSP (TCP), with `srt` also an SRT listener (UDP). */
+/** mediamtx on free ports: RTSP (TCP and UDP), with `srt` also an SRT listener (UDP). */
 export async function startMediamtx(bin: string, opts: { srt?: boolean } = {}): Promise<{ rtsp: number; srt: number; stop: () => void; proc: ChildProcess }> {
-  const rtsp = await freePort();
+  const rtsp = await freePort(), rtp = 20000 + 2 * Math.floor(Math.random() * 10000);
   const srt = opts.srt ? await freePort() : 0;
   const dir = mkdtempSync(join(tmpdir(), 'lzs-mtx-'));
   const cfg = join(dir, 'mediamtx.yml');
   writeFileSync(cfg, [
     'logLevel: warn',
     `rtspAddress: 127.0.0.1:${rtsp}`,
-    'rtspTransports: [tcp]',
+    // UDP as well (own RTP reception over UDP, low-latency mode); RTP port even, RTCP = RTP + 1
+    'rtspTransports: [tcp, udp]', `rtpAddress: :${rtp}`, `rtcpAddress: :${rtp + 1}`,
     'rtmp: no', 'hls: no', 'webrtc: no', ...(srt ? ['srt: yes', `srtAddress: 127.0.0.1:${srt}`] : ['srt: no']), 'moq: no', 'api: no', 'metrics: no', 'pprof: no', 'playback: no',
     'paths:', '  all_others:',
   ].join('\n'));

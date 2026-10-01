@@ -119,3 +119,16 @@ export function latencyLines(s: LatencySummary | null, low = false): string[] {
   lines.push('           (gleiche Uhr vorausgesetzt; ohne Compositor und Monitor)');
   return lines;
 }
+
+/** Lines for the Messwerte panel about the bridge's own RTP reception (low-latency mode). */
+export function rtpLines(
+  info: { own: boolean; transport?: string; codec?: string; note?: string } | null | undefined,
+  st: { packets: number; lost: number; reordered: number; droppedUnits: number } | null | undefined,
+): string[] {
+  if (!info) return [];
+  if (!info.own) return [`Empfang    ${info.note ?? 'ffmpeg-RTSP'}`];
+  const codec = info.codec === 'hevc' ? 'HEVC' : 'H.264';
+  const line = [`Empfang    RTP eigen · ${codec} · ${(info.transport ?? 'tcp').toUpperCase()}`];
+  if (st) line.push(`           ${st.packets} Pakete · ${st.lost} verloren · ${st.reordered} umsortiert · ${st.droppedUnits} Bilder verworfen (Warten auf Keyframe)`);
+  return line;
+}

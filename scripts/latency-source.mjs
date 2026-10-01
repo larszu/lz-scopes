@@ -16,11 +16,14 @@ import { fileURLToPath } from 'node:url';
 import { drawStamp } from '../server/stamp.mjs';
 import { ffmpegCandidates } from '../server/index.mjs';
 
-export function startLatencySource(target, { width = 1280, height = 720, fps = 25, ffmpeg = ffmpegCandidates()[0] } = {}) {
+// `codec` 'h264' (x264) or 'hevc' (x265), `bframes` > 0 for a source with reordering (tests
+// of the own RTP reception, docs/research/rtp-eigenempfang.md)
+export function startLatencySource(target, { width = 1280, height = 720, fps = 25, ffmpeg = ffmpegCandidates()[0], codec = 'h264', bframes = 0 } = {}) {
   if (!ffmpeg) throw new Error('ffmpeg nicht gefunden');
   const fmt = /^rtsp/i.test(target) ? ['-f', 'rtsp', '-rtsp_transport', 'tcp'] : /^rtmp/i.test(target) ? ['-f', 'flv'] : /^srt|^udp/i.test(target) ? ['-f', 'mpegts'] : [];
   const ff = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${width}x${height}`, '-r', String(fps), '-i', 'pipe:0',
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-bf', '0', '-g', String(fps), '-pix_fmt', 'yuv420p',
+    ...(codec === 'hevc' ? ['-c:v', 'libx265', '-preset', 'ultrafast', '-tune', 'zerolatency', '-x265-params', `bframes=${bframes}:log-level=error`] : ['-c:v', 'libx264', '-preset', 'ultrafast', ...(bframes ? [] : ['-tune', 'zerolatency']), '-bf', String(bframes)]),
+    '-g', String(fps), '-pix_fmt', 'yuv420p',
     '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', ...fmt, target], { stdio: ['pipe', 'ignore', 'inherit'] });
   ff.stdin.on('error', () => {});
   const frame = new Uint8Array(width * height * 4);
@@ -53,7 +56,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (!target) { console.error('Ziel angeben, z. B. rtsp://127.0.0.1:8554/latency'); process.exit(1); }
   const opt = (k) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : undefined; };
   const [width, height] = (opt('size') ?? '1280x720').split('x').map(Number);
-  const src = startLatencySource(target, { width, height, fps: Number(opt('fps') ?? 25) });
+  const src = startLatencySource(target, { width, height, fps: Number(opt('fps') ?? 25), codec: opt('codec') ?? 'h264', bframes: Number(opt('bframes') ?? 0) });
   console.log(`Latenz-Testbild ${width}×${height} → ${target} (Strg+C beendet)`);
   process.on('SIGINT', () => { src.stop(); process.exit(0); });
 }

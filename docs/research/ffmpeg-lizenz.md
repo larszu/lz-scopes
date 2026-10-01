@@ -26,7 +26,7 @@ Aus `server/*.mjs`: rawvideo, Decoder H.264/HEVC/ProRes/MJPEG, `libx264` (H.264-
 | BtbN/FFmpeg-Builds, `autobuild-2026-09-30-13-08`, `n9.0.2-17-g2a571b6068` win64-gpl(-shared) | Windows | `--enable-gpl --enable-version3`, **kein nonfree**, libsrt, x264, x265; Skripte MIT, alle Abhängigkeiten per Commit gepinnt (Repo-Stand `6c9aec5`); Monatsend-Builds bleiben erhalten (Release-Liste reicht bis `autobuild-2024-10-31`), Tagesbuilds werden nach rund zwei Wochen gelöscht. GitHub liefert SHA-256 je Asset. |
 | BtbN linux64-gpl, gleiches Autobuild | Linux | wie oben, nur für CI/Tests |
 | Gyan.dev 9.0.2 essentials (GyanD/codexffmpeg, dauerhafte Releases) | Windows | GPLv3, kein nonfree, libsrt – aber die Build-Skripte sind nicht öffentlich, „Source Code“ verweist nur auf den FFmpeg-Commit. Deshalb BtbN. |
-| evermeet.cx / osxexperts | macOS | aus `ffmpeg-static`-Binaries abgeleitet: x64 ohne nonfree, arm64 **mit** nonfree; kein SRT. Nicht verwendet. |
+| evermeet.cx / osxexperts | macOS | Seiten nicht geöffnet. Die macOS-Binaries von ffmpeg-static (oben) zeigen: x64 ohne nonfree, arm64 **mit** nonfree, beide ohne SRT. Nicht verwendet. |
 | Homebrew-Bottle | macOS | dynamisch gelinkt gegen Dutzende Homebrew-Dylibs unter `/opt/homebrew`, nicht verschiebbar – für ein App-Bundle ungeeignet. |
 | Eigener Build in CI | beide | sauberste Lösung (nur ffmpeg + x264 + x265 + srt + TLS, kleiner, exakte Quellen), aber eigener Pflegeaufwand. Offen, siehe unten. |
 

@@ -22,6 +22,10 @@ ffmpeg -rtsp_transport tcp -i <url> -an -map 0:v:0 \
 
 `in_color_matrix` immer explizit setzen, sonst wandelt swscale ungetaggte HD-Streams mit BT.601. Kommt der Browser nicht hinterher, Bilder verwerfen statt puffern (`ws.bufferedAmount`).
 
+## Ganze Bilder, Interlace
+
+Jede Binärnachricht enthält genau ein vollständiges Bild (Bridge: `server/frames.mjs`, Test `test/frames.test.ts`). Teile zweier Bilder in einer Nachricht gibt es nicht; der Client tauscht das Bild nur als Ganzes aus. Bei interlaced Quellen (ffprobe `field_order` tt/bb/tb/bt bzw. DeckLink/NDI-Helfer `interlaced`) enthält ein Bild beide Halbbilder verwoben; die Bridge skaliert feldweise (`scale=…:interl=1`), damit die Halbbilder nicht vertikal vermischt werden, und meldet `"interlaced": true` im `info`.
+
 ## Y′CbCr unbeschnitten (`format=yuv`)
 
 Opt-in über `/stream?url=…&format=yuv` (setzt `depth` auf 16). Die Bridge wandelt dann nicht nach R′G′B′, sondern skaliert Y′CbCr 4:4:4 ohne Range- und Matrixwandlung. Codes unter Schwarz und über Weiß (Sub-Black, Super-White, BT.2111 −7 %/109 %) kommen unverändert an; die Umrechnung nach R′G′B′ macht der Client (Shader), ohne zu begrenzen.

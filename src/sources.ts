@@ -64,6 +64,8 @@ export interface StreamInfo {
   format?: 'rgb' | 'yuv';
   /** format 'yuv': quantisation range and bit depth of the source codes */
   yuvRange?: 'limited' | 'full'; bits?: number;
+  /** the source is interlaced: each frame carries both fields woven, scaled field by field */
+  interlaced?: boolean;
   /** why the bridge sent something other than requested */
   note?: string;
   /** start time code of the container (ffprobe tag, e.g. MOV tmcd) and the stream's start time in s */

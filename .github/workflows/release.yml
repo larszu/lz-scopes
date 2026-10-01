@@ -3,8 +3,12 @@ name: Release
 # Tag v* → Windows (nsis + portable) and macOS (universal dmg + zip), attached
 # directly to the GitHub release. No workflow artifacts: a full account artifact
 # quota made uploads fail elsewhere (pi-media-station), so each job uploads to the
-# release itself. Private repo: every run costs Actions minutes (macOS ×10) –
-# build locally first (npm run dist:mac), tag once.
+# release itself. The repo is public, Actions minutes are free; workflow_dispatch is a
+# dry run (build + checks, nothing attached).
+#
+# ffmpeg: the redistributable builds of scripts/ffmpeg-builds.json (no nonfree, GPLv3,
+# with libsrt), SHA-256-checked; the job `sources` attaches the corresponding source
+# (GPLv3 section 6d). Research: docs/research/ffmpeg-lizenz.md.
 
 on:
   push:
@@ -22,9 +26,14 @@ jobs:
         include:
           - os: windows-latest
             build_args: --win
+            ffmpeg: win32-x64
           - os: macos-latest
             build_args: --mac --universal
+            ffmpeg: darwin-universal
     runs-on: ${{ matrix.os }}
+    env:
+      # the ffmpeg tests must not be skipped here (test/shippedFfmpeg.ts)
+      LZS_FFMPEG_REQUIRED: '1'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -36,11 +45,11 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: npm version "${GITHUB_REF#refs/tags/v}" --no-git-tag-version --allow-same-version
+      - name: ffmpeg (redistributable build, SHA-256 and configure checked)
+        run: node scripts/ffmpeg-fetch.mjs ${{ matrix.ffmpeg }}
+      # includes the shipped ffmpeg on this OS: licence, SRT, v210/HEVC 10 over TCP and SRT
       - run: npm test
       - run: npm run build
-      - name: Universal ffmpeg (macOS)
-        if: runner.os == 'macOS'
-        run: node scripts/ffmpeg-universal.mjs
       - name: NDI helper (macOS, universal; loads the user's NDI runtime, ships nothing of NDI)
         if: runner.os == 'macOS'
         run: node scripts/build-helpers.mjs ndi
@@ -53,6 +62,23 @@ jobs:
       - name: List release/
         shell: bash
         run: ls -lh release/
+      - name: ffmpeg inside the packaged app
+        shell: bash
+        run: |
+          set -eu
+          if [ "$RUNNER_OS" = macOS ]; then
+            dir="$(ls -d release/mac-universal/*.app)/Contents/Resources/ffmpeg"
+            lipo -archs "$dir/ffmpeg"
+            exe="$dir/ffmpeg"
+          else
+            dir="release/win-unpacked/resources/ffmpeg"
+            exe="$dir/ffmpeg.exe"
+          fi
+          ls -la "$dir" "$dir/licenses"
+          "$exe" -hide_banner -L | head -3
+          if "$exe" -hide_banner -version | grep -q -- --enable-nonfree; then echo "nonfree ffmpeg im Paket"; exit 1; fi
+          "$exe" -hide_banner -protocols | grep -qw srt
+          echo "ffmpeg im Paket: weitergebbar (kein nonfree), mit SRT"
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
@@ -65,8 +91,23 @@ jobs:
             release/*.blockmap
             release/latest*.yml
 
+  sources:
+    # corresponding source of the shipped ffmpeg builds as release assets (GPLv3 section 6d)
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - run: node scripts/ffmpeg-fetch.mjs --source
+      - name: Attach to release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: vendor/ffmpeg/sources/*
+
   check:
-    needs: build
+    needs: [build, sources]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -78,7 +119,7 @@ jobs:
           assets="$(gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name')"
           echo "$assets"
           fehlt=0
-          for p in '\.exe$' '\.dmg$' '\.zip$' '^latest\.yml$' '^latest-mac\.yml$'; do
+          for p in '\.exe$' '\.dmg$' '\.zip$' '^latest\.yml$' '^latest-mac\.yml$' '^ffmpeg-9\.0\.2\.tar\.xz$' '^BtbN-FFmpeg-Builds'; do
             if echo "$assets" | grep -qE "$p"; then echo "ok    $p"; else echo "FEHLT $p"; fehlt=1; fi
           done
           exit $fehlt

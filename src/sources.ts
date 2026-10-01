@@ -5,6 +5,7 @@ import { patternById, renderPattern } from './patterns';
 import { AudioAnalysis } from './audio/analysis';
 import { AudioTap, StreamMonitor, generator, measurementConstraints } from './audio/io';
 import { GRID_H, GRID_W, History, gridFromData, summarise } from './history';
+import { lineExtremes, neutralCast, type LineExtremes, type NeutralCast } from './minmax';
 import { r103Check, rgbDecoder, yuvDecoder, type Decode, type R103Result, type YuvCoding } from './ycbcr';
 import { debugFlags, openFrameSocket, workerAvailable, type FrameSocket } from './frameLink';
 import { GpuStats } from './gpuStats';
@@ -170,6 +171,41 @@ export class Source {
   monitorError = '';
   private lastFrame: { px: ArrayLike<number>; w: number; h: number; step: number; scale: number; roi: [number, number, number, number][] | null; decode: Decode } | null = null;
   private r103Cache = new Map<string, { key: string; at: number; res: R103Result }>();
+  private cpuCache: { seq: string; f: { px: ArrayLike<number>; w: number; h: number; decode: Decode } | null } = { seq: '', f: null };
+  private cpuCanvas: HTMLCanvasElement | null = null;
+  /** The current frame on the CPU: raw data, or a readback of the element (at most 960 px wide), once per frame. */
+  cpuFrame() {
+    const seq = `${this.frameSeq}:${this.width}x${this.height}`;
+    if (this.cpuCache.seq === seq) return this.cpuCache.f;
+    let f: { px: ArrayLike<number>; w: number; h: number; decode: Decode } | null = null;
+    if (this.data) f = { px: this.data, w: this.width, h: this.height, decode: this.decoder() };
+    else if (this.element && this.width) {
+      const w = Math.min(960, this.width), h = Math.max(1, Math.round((this.height * w) / this.width));
+      this.cpuCanvas ??= document.createElement('canvas');
+      const c = this.cpuCanvas; if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      const ctx = c.getContext('2d', { willReadFrequently: true })!;
+      try { ctx.drawImage(this.element, 0, 0, w, h); f = { px: ctx.getImageData(0, 0, w, h).data, w, h, decode: rgbDecoder(255) }; } catch { f = null; }
+    }
+    this.cpuCache = { seq, f };
+    return f;
+  }
+  private extremes: { seq: string; v: LineExtremes | null } = { seq: '', v: null };
+  /** Min/max Y′ per picture line (minmax.ts), once per frame. */
+  lineExtremes(): LineExtremes | null {
+    const seq = `${this.frameSeq}:${this.colorspace}`;
+    if (this.extremes.seq !== seq) { const f = this.cpuFrame(); this.extremes = { seq, v: f ? lineExtremes(f.px, f.w, f.h, f.decode, this.colorspace) : null }; }
+    return this.extremes.v;
+  }
+  private neutral: { key: string; v: NeutralCast | null } = { key: '', v: null };
+  /** Mean cast of the near-neutral pixels (minmax.ts), once per frame and setting. */
+  neutralCast(threshold: number, lo: number, hi: number): NeutralCast | null {
+    const key = `${this.frameSeq}:${this.colorspace}:${threshold}:${lo}:${hi}`;
+    if (this.neutral.key !== key) {
+      const f = this.cpuFrame();
+      this.neutral = { key, v: f ? neutralCast(f.px, f.w, f.h, Math.max(1, Math.round(Math.sqrt((f.w * f.h) / 60000))), f.decode, this.colorspace, threshold, lo, hi) : null };
+    }
+    return this.neutral.v;
+  }
   /** timeline panel (history.ts): ten samples per second while a timeline shows this source */
   readonly history = new History();
   private historyAt = 0;

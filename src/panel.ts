@@ -10,6 +10,13 @@ import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/pa
 import type { DisplayParams, PictureMode, PictureParams, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
 import type { Source } from './sources';
 import { barRefs, nearest, type DeRef } from './deltae';
+import { castName, drawMinMax } from './minmax';
+
+const NEUTRAL_RANGES = { all: [0.02, 0.98], shadows: [0.02, 0.3], mids: [0.3, 0.7], highlights: [0.7, 0.98] } as const;
+export const neutralParams = (p: PanelState) => {
+  const [lo, hi] = NEUTRAL_RANGES[p.neutral?.range ?? 'all'];
+  return { threshold: (p.neutral?.threshold ?? 5) / 100, lo, hi };
+};
 import { drawTimeline, type TimelineSpan } from './history';
 import { CUBE_SPACE_ID, DEFAULT_CUBE, cubeNits, cubeQOf, cubeRotation, type CubeSettings } from './cube';
 import { DEFAULT_CRT, PHOSPHORS, type CrtSettings } from './crt';
@@ -46,6 +53,10 @@ export interface PanelState {
   clock?: Partial<ClockOptions>;
   /** scatter scopes: analogue beam look (crt.ts) */
   crt?: Partial<CrtSettings>;
+  /** Min/Max per line: limits ('r103' −5/105 %, 'legal' 0/100 %) and up to 4 target lines in % */
+  minmax?: { limits?: 'r103' | 'legal'; targets?: number[] };
+  /** picture 'neutral' overlay: chroma threshold in % and Y′ range */
+  neutral?: { threshold?: number; range?: 'all' | 'shadows' | 'mids' | 'highlights' };
   /** channel plot: channel pair (graticule.ts CHANNEL_PAIRS) */
   pair?: number;
   /** timeline: shown time span in seconds */
@@ -278,6 +289,9 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     }
   } else if (p.scope === 'cie') {
     drawCieGraticule(ctx, r, src.colorspace, { uv: p.cieUv, gamut: src.gamut });
+  } else if (p.scope === 'minmax') {
+    const lim = p.minmax?.limits === 'legal' ? [0, 1] : [-0.05, 1.05];
+    drawMinMax(ctx, r, src.lineExtremes(), { lo: lim[0], hi: lim[1], targets: (p.minmax?.targets ?? []).slice(0, 4).map((t) => t / 100) });
   } else if (p.scope === 'satlum') {
     drawSatLumGraticule(ctx, r);
   } else if (p.scope === 'chplot') {
@@ -300,6 +314,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     const pic = (s: Source, rgcOn = !!p.rgc): PictureParams => ({
       mode: p.picture, bands: FALSE_COLOR_PRESETS[o.falsePreset] ?? [], zebra: o.zebra, zebraLow: o.zebraLow,
       roi: s.activeRois(), skin: o.skin, display: displayParams(s, o.display, o.hdrPreview), warn: warnMatrix(s, p.gamutTarget),
+      ...(p.picture === 'neutral' ? { neutral: neutralParams(p) } : {}),
       ...(rgcOn ? { rgc: { toAp1: gamutConvert(GAMUTS[s.gamut], GAMUTS.ap1), fromAp1: gamutConvert(GAMUTS.ap1, GAMUTS[s.gamut]) } } : {}),
     });
     const ab = p.ab && p.ab.mode !== 'off' ? p.ab : null;
@@ -369,6 +384,12 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
         ctx.fillStyle = col; ctx.fillRect(r.x + 6, y - 4, 8, 8);
         ctx.fillStyle = '#ddd'; ctx.fillText(label, r.x + 18, y);
       });
+    }
+    if (p.picture === 'neutral') {
+      const np = neutralParams(p), nc = src.neutralCast(np.threshold, np.lo, np.hi);
+      const lines = [`Fast neutral (< ${(np.threshold * 100).toFixed(0)} % Sättigung, Y′ ${(np.lo * 100).toFixed(0)}–${(np.hi * 100).toFixed(0)} %)`,
+        nc ? `${(nc.share * 100).toFixed(1)} % der Fläche · Stich ${(nc.amount * 100).toFixed(2)} %${nc.amount > 0.002 ? ` Richtung ${castName(nc.deg, src.colorspace)}` : ' (neutral)'}` : 'keine CPU-Daten'];
+      drawTextBox(ctx, r.x + 6, r.y + r.h - 6 - lines.length * 15 - 8, lines);
     }
     if (p.picture === 'gamut') {
       const legend: [string, string][] = [

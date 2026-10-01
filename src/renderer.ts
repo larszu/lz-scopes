@@ -19,8 +19,8 @@ export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector
 const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7, diamond: 8, cube: 9, satlum: 10, chplot: 11 };
 const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1, diamond: 2, cube: 1, satlum: 1, chplot: 1 };
 
-export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'gamut' | 'r103';
-const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5, gamut: 6, r103: 7 };
+export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'gamut' | 'r103' | 'neutral';
+const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5, gamut: 6, r103: 7, neutral: 8 };
 
 /** Region of interest in source pixels [x0, y0, x1, y1) and skin-tone detection window. */
 export type Roi = [number, number, number, number] | null;
@@ -241,6 +241,7 @@ ${RGC_GLSL}
 uniform ivec2 uSize; uniform int uMode; uniform vec2 uK;
 uniform vec4 uBand[12]; uniform int uBands;
 uniform float uZebra, uZebraLow;
+uniform vec4 uNeutral;
 uniform int uDisp;
 uniform mat3 uGamut, uWarn, uTo2020, uFrom2020;
 uniform vec3 uSkin;
@@ -297,6 +298,20 @@ void main() {
     if (l) c = vec3(0.15, 0.3, 1.0);
   } else if (uMode == 4) {
     c = vec3(Y);
+  } else if (uMode == 8) {
+    // neutral check (minmax.ts): near-neutral pixels in Y′ range shown in their cast, amplified
+    float kr2 = uK.x, kb2 = uK.y;
+    float cb = (rgb.b - Y) / (2.0 * (1.0 - kb2)), cr = (rgb.r - Y) / (2.0 * (1.0 - kr2));
+    float s = length(vec2(cb, cr)) / 0.5;
+    c = vec3(dot(c, vec3(0.2126, 0.7152, 0.0722)) * 0.3);
+    if (Y >= uNeutral.y && Y <= uNeutral.z && s < uNeutral.x) {
+      if (s < 0.004) c = vec3(0.55);
+      else {
+        vec2 d = normalize(vec2(cb, cr)) * 0.22;
+        float yy = 0.6, R = yy + 2.0 * (1.0 - kr2) * d.y, B = yy + 2.0 * (1.0 - kb2) * d.x;
+        c = clamp(vec3(R, (yy - kr2 * R - kb2 * B) / (1.0 - kr2 - kb2), B), 0.0, 1.0);
+      }
+    }
   } else if (uMode == 6) {
     // gamut warning: distance d = (max - c)/max in the target gamut; d > 1 = a channel is negative
     vec3 t = uWarn * rgcLin(toLinear(rgb));
@@ -347,6 +362,8 @@ export interface DisplayParams {
 }
 export interface PictureParams {
   mode: PictureMode; bands: FalseColorBand[]; zebra: number; zebraLow: number; roi: Rois; skin: SkinRange; display: DisplayParams;
+  /** neutral overlay: chroma threshold (|CbCr|/0.5) and Y′ range */
+  neutral?: { threshold: number; lo: number; hi: number };
   /** gamut warning: row-major 3×3 source linear → target gamut linear */
   warn?: number[];
   /** ACES 1.3 RGC preview (rgc.ts): row-major source linear → AP1 and back */
@@ -805,6 +822,7 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
     gl.uniform2f(this.u(prog, 'uK'), kr, kb);
     gl.uniform1f(this.u(prog, 'uZebra'), p.zebra);
     gl.uniform1f(this.u(prog, 'uZebraLow'), p.zebraLow);
+    gl.uniform4f(this.u(prog, 'uNeutral'), p.neutral?.threshold ?? 0.05, p.neutral?.lo ?? 0.02, p.neutral?.hi ?? 0.98, 0);
     if (r103) gl.uniform4f(this.u(prog, 'uR103'), R103.prefLo - R103.tol, R103.prefHi + R103.tol, R103.totalLo - R103.tol, R103.totalHi + R103.tol);
     this.linearUniforms(prog, src);
     gl.uniform1i(this.u(prog, 'uDisp'), p.display.curve);

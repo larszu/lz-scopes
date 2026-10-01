@@ -6,7 +6,7 @@ import {
   type Colorspace, type GamutId, type Transfer,
 } from './color';
 import { CIE_VIEW, CIE_VIEW_UV, WAVE_MAX, WAVE_MIN, type Rect } from './renderer';
-import { latencyLines } from './latency';
+import { latencyLines, rtpLines } from './latency';
 import type { Source } from './sources';
 import { CUBE_SPACE_LABELS, SIGNAL_SPACES, cubeProject, cubeRotation, cubeWireframe, qFromChl, qFromHsv, qFromIctcp, qFromLab, qFromRgb, qFromXyz, qFromYcc, type CubeSettings } from './cube';
 
@@ -576,7 +576,7 @@ export function statsLines(src: Source, displayFps: number): string[] {
     }
   }
   if (st) lines.push(`Statistik  ${src.statsPerf.path === 'gpu' ? 'GPU, volle Auflösung' : 'CPU, unterabgetastet'} · ${src.statsPerf.ms.toFixed(2)} ms Hauptthread`);
-  lines.push(...latencyLines(src.latency.summary(), src.kind === 'stream' && src.lowLatency));
+  lines.push(...latencyLines(src.latency.summary(), src.kind === 'stream' && src.lowLatency), ...rtpLines(src.rtpInfo, src.rtpStats));
   lines.push('', ...r103Lines(src));
   return lines;
 }

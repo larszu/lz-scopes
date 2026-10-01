@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error plain JS module
 import { ageStats, ffmpegArgs } from '../server/index.mjs';
 import { LatencyMeter, latencyLines } from '../src/latency';
-import { lowLatencyWidth } from '../src/sources';
+import { DEFAULT_LOW_LATENCY, effectiveWidth, mergeLowLatency } from '../src/lowLatency';
 
 // Low-latency mode (docs/research/low-latency.md)
 
@@ -55,12 +55,18 @@ describe('Latenzstufen', () => {
   });
 });
 
-describe('Analysebreite im Low-Latency-Modus', () => {
-  it('begrenzt auf 640 px, kleinere Wahl bleibt', () => {
-    expect(lowLatencyWidth(960, true)).toBe(640);
-    expect(lowLatencyWidth(0, true)).toBe(640); // nativ
-    expect(lowLatencyWidth(640, true)).toBe(640);
-    expect(lowLatencyWidth(1920, false)).toBe(1920);
+describe('Low-Latency-Einstellungen', () => {
+  it('Analysebreite: Obergrenze nur im Modus, kleinere Wahl bleibt, 0 = keine Grenze', () => {
+    expect(effectiveWidth(960, true, 640)).toBe(640);
+    expect(effectiveWidth(0, true, 640)).toBe(640); // nativ
+    expect(effectiveWidth(480, true, 640)).toBe(480);
+    expect(effectiveWidth(1920, false, 640)).toBe(1920);
+    expect(effectiveWidth(1920, true, 0)).toBe(1920);
+    expect(effectiveWidth(960, true, 320)).toBe(320);
+  });
+  it('eigene Werte der Quelle vor globalen, sonst Vorgaben', () => {
+    expect(mergeLowLatency(undefined, undefined)).toEqual(DEFAULT_LOW_LATENCY);
+    expect(mergeLowLatency({ width: 480, statsMs: 500 }, { statsMs: 250, ownRtp: false })).toEqual({ width: 480, drawOnArrive: true, ownRtp: false, statsMs: 250 });
   });
 });
 

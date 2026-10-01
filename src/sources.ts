@@ -10,6 +10,7 @@ import { r103Check, rgbDecoder, yuvDecoder, type Decode, type R103Result, type Y
 import { debugFlags, openFrameSocket, workerAvailable, type FrameSocket } from './frameLink';
 import { GpuStats } from './gpuStats';
 import { LatencyMeter } from './latency';
+import { effectiveWidth, mergeLowLatency, type LowLatencyConfig } from './lowLatency';
 import { meanLuma } from './luma';
 
 export { meanLuma };
@@ -54,9 +55,13 @@ export interface SourceSettings {
   codec?: 'raw' | 'h264';
   /** low-latency mode (docs/research/low-latency.md): undefined = follow the global switch */
   lowLatency?: boolean;
+  /** this source's own low-latency settings; missing fields follow the global ones */
+  ll?: Partial<LowLatencyConfig>;
 }
 
 export interface StreamInfo {
+  /** bridge: own RTP reception in use, or why not (low-latency mode) */
+  rtp?: { own: boolean; transport?: string; codec?: string; note?: string };
   width: number; height: number; sourceWidth: number; sourceHeight: number; depth: 8 | 16; fps: number;
   codec?: string; pixFmt?: string; decodeMatrix?: string; transfer?: string; primaries?: string; matrix?: string; range?: string;
   /** protocol 2 (audio=1): header on every binary message */
@@ -114,12 +119,6 @@ export function bridgeInputParams(url: string, set: SourceSettings): Record<stri
   if (set.decodeMatrix && set.decodeMatrix !== 'auto') q.matrix = set.decodeMatrix;
   if (set.decodeRange && set.decodeRange !== 'auto') q.range = set.decodeRange;
   return q;
-}
-
-/** Low-latency mode caps the analysis width (measured: 960 → 640 px ≈ −19 ms, docs/research/low-latency.md). */
-export const LOW_LATENCY_WIDTH = 640;
-export function lowLatencyWidth(width: number, low: boolean): number {
-  return low && (width === 0 || width > LOW_LATENCY_WIDTH) ? LOW_LATENCY_WIDTH : width;
 }
 
 export const DEFAULT_SETTINGS: SourceSettings = { transfer: 'auto', colorspace: 'auto', gamut: 'auto', hlgLw: 1000, width: 960, fps: 0, depth: 8, transport: 'tcp', audio: true };
@@ -315,9 +314,17 @@ export class Source {
   readonly latency = new LatencyMeter();
   /** global low-latency switch (main.ts); a source's own setting overrides it */
   static globalLowLatency = false;
+  /** global low-latency settings (Settings menu) */
+  static globalLowLatencyConfig: Partial<LowLatencyConfig> = {};
   /** a bridge frame arrived (main.ts draws at once in low-latency mode) */
   static onArrive: ((s: Source) => void) | null = null;
   get lowLatency(): boolean { return this.settings.lowLatency ?? Source.globalLowLatency; }
+  /** effective low-latency settings of this source */
+  get llConfig(): LowLatencyConfig { return mergeLowLatency(Source.globalLowLatencyConfig, this.settings.ll); }
+  /** own RTP reception: how the bridge received this stream (info message), null = ffmpeg's RTSP */
+  get rtpInfo() { return this.info?.rtp ?? null; }
+  /** own RTP reception counters from the bridge's stats (1 s) */
+  rtpStats: { transport: string; packets: number; lost: number; reordered: number; accessUnits: number; droppedUnits: number } | null = null;
   private patternTimer: ReturnType<typeof setInterval> | null = null;
   private media: MediaStream | null = null;
   private objectUrl: string | null = null;
@@ -382,13 +389,16 @@ export class Source {
     this.url = url;
     this.set('connecting', 'Verbinde …');
     const { fps, depth, transport } = this.settings;
-    const width = lowLatencyWidth(this.settings.width, this.lowLatency);
+    const ll = this.llConfig;
+    const width = effectiveWidth(this.settings.width, this.lowLatency, ll.width);
     const q = new URLSearchParams({ url, width: String(width), fps: String(fps), depth: String(depth), transport });
     if (this.settings.audio !== false) q.set('audio', '1');
     for (const [k, v] of Object.entries(bridgeInputParams(url, this.settings))) q.set(k, v);
     // H.264 (#16) is 8 bit 4:2:0 and excludes the unclipped Y′CbCr path (#7)
     if (this.settings.codec === 'h264' && workerAvailable()) q.set('codec', 'h264');
     else if (this.settings.yuv) { q.set('format', 'yuv'); q.set('depth', '16'); }
+    if (this.lowLatency && ll.ownRtp) q.set('rtp', 'own');
+    this.rtpStats = null;
     this.connectFrames(`${bridge}/stream?${q}`, false);
   }
 
@@ -420,6 +430,7 @@ export class Source {
         } else if (msg.type === 'stats') {
           this.dropped = msg.dropped;
           this.latency.onBridgeStats(msg.stampAge);
+          this.rtpStats = msg.rtp ?? null;
           if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', msg.message);
         } else if (msg.type === 'error' || msg.type === 'end') {
           this.set(msg.type === 'end' ? 'ended' : 'error', msg.message);

@@ -35,6 +35,7 @@ export { ffmpegCandidates, ffmpegInfo };
 import { FlvH264Demuxer } from './flv.mjs';
 import { handleOut10 } from './out10.mjs';
 import { readStamp, stampAge } from './stamp.mjs';
+import { startOwnRtp } from './rtsp.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -354,7 +355,7 @@ export function outputSize(w, h, maxWidth) {
  * (parsed by PtsTracker); needs `-loglevel info`. Not in 'split' mode: two ffmpeg
  * processes open two sessions whose timestamps cannot be compared.
  */
-export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', pts = false, device = {}, pixFmt = '', log = 'error', codec = 'raw', gop = 50 }) {
+export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', pts = false, device = {}, pixFmt = '', log = 'error', codec = 'raw', gop = 50, ownInput = null }) {
   const test = url in TEST_PATTERNS;
   const withPts = pts && audio !== 'split';
   // time code (#28) and PTS (#24) both read showinfo output; level+info keeps the error lines recognisable
@@ -366,13 +367,15 @@ export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video =
   const vfPts = needShowinfo ? `${vf},showinfo=checksum=0` : vf;
   // codec 'h264' (#16): 8-bit 4:2:0 H.264 in FLV framing for remote bridges; no B-frames, no
   // lookahead, every packet flushed at once. `vf` must then produce yuv420p.
-  const vid = codec === 'h264'
-    ? ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vfPts, '-fps_mode', 'passthrough', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
-      '-bf', '0', '-g', String(gop), '-pix_fmt', 'yuv420p', '-flush_packets', '1', '-f', 'flv', 'pipe:1']
-    // '-threads 1' (encoder): ffmpeg's rawvideo encoder is frame-threaded and then hands each
-    // frame out only when the next one comes in – one frame interval of latency for a memcpy
-    // (measured, docs/research/low-latency.md)
-    : ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vfPts, '-fps_mode', 'passthrough', '-pix_fmt', pixFmt || (depth === 16 ? 'rgba64le' : 'rgba'), '-threads', '1', '-f', 'rawvideo', 'pipe:1'];
+  const vid = videoOut({ codec, vfPts, depth, pixFmt, gop });
+  // own RTP reception (server/rtsp.mjs): the picture comes as Matroska on stdin; sound, if
+  // wanted, from a second ffmpeg with its own RTSP session (like 'split', no common PTS)
+  if (ownInput && video) {
+    return {
+      main: [...head.filter((x) => x !== '-nostdin'), ...ownInput, ...vid],
+      audio: audio === 'none' ? null : [...head, ...inputArgs(url, transport, { audio: true, video: false, device }), ...pcm(audioMap(url), 'pipe:1')],
+    };
+  }
   if (!video) return { main: [...head, ...inputArgs(url, transport, { audio: true, video: false, device }), ...pcm(test ? '0:a:0' : audioMap(url), 'pipe:1')], audio: null };
   if (audio === 'fd3') return { main: [...head, ...inputArgs(url, transport, { audio: true, device }), ...vid, ...pcm(audioMap(url), 'pipe:3')], audio: null };
   if (audio === 'split') {
@@ -382,6 +385,16 @@ export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video =
     };
   }
   return { main: [...head, ...inputArgs(url, transport, { device }), ...vid], audio: null };
+}
+
+function videoOut({ codec, vfPts, depth, pixFmt, gop }) {
+  return codec === 'h264'
+    ? ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vfPts, '-fps_mode', 'passthrough', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
+      '-bf', '0', '-g', String(gop), '-pix_fmt', 'yuv420p', '-flush_packets', '1', '-f', 'flv', 'pipe:1']
+    // '-threads 1' (encoder): ffmpeg's rawvideo encoder is frame-threaded and then hands each
+    // frame out only when the next one comes in – one frame interval of latency for a memcpy
+    // (measured, docs/research/low-latency.md)
+    : ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vfPts, '-fps_mode', 'passthrough', '-pix_fmt', pixFmt || (depth === 16 ? 'rgba64le' : 'rgba'), '-threads', '1', '-f', 'rawvideo', 'pipe:1'];
 }
 
 /**
@@ -569,10 +582,23 @@ async function startStream(ws, params) {
   const ffmpeg = await ffmpegFor(url);
   if (!ffmpeg) return fail(ws, noFfmpegMessage(url));
 
+  // own RTP reception (low-latency mode, server/rtsp.mjs): access units end at the RTP
+  // marker bit instead of one frame later in ffmpeg's parser; ffmpeg's RTSP is the fallback
+  let own = null, ownNote = '';
+  if (params.get('rtp') === 'own' && video) {
+    if (!/^rtsp:\/\//i.test(url)) ownNote = 'RTP-Eigenempfang nur für rtsp:// – ffmpeg empfängt';
+    else {
+      try { own = await startOwnRtp(url, { transport: transport === 'udp' ? 'udp' : 'tcp', width: info.width, height: info.height }); } catch (e) { ownNote = `RTP-Eigenempfang nicht möglich (${e.message}) – ffmpeg empfängt`; }
+      if (ws.readyState !== ws.OPEN) { own?.client.stop(); return; }
+    }
+  }
+
   const proto = wantAudio || h264 ? 2 : 1;
   const { audio: _probed, ...videoInfo } = info;
   const msg = { type: 'info', ...videoInfo, decodeMatrix, sourceWidth: info.width, sourceHeight: info.height, sourceFps: info.fps, width, height, depth: outDepth, fps: video ? (fpsLimit || info.fps) : 0 };
   if (interlaced) Object.assign(msg, { interlaced: true });
+  if (own) msg.rtp = { own: true, transport: own.info.transport, codec: own.info.codec };
+  else if (ownNote) msg.rtp = { own: false, note: ownNote };
   if (h264 && video) Object.assign(msg, { transport: 'h264', range: 'tv' });
   else if (yp?.yuv) Object.assign(msg, { format: 'yuv', yuvRange: yp.range, bits: yp.bits });
   else if (yp) Object.assign(msg, { format: 'rgb', note: yp.note });
@@ -587,7 +613,8 @@ async function startStream(ws, params) {
   }
   ws.send(JSON.stringify(msg));
 
-  let sent = 0, dropped = 0, frameNo = 0, stderr = '', closed = false, split = process.env.LZS_AUDIO_SPLIT === '1';
+  // own reception: the sound needs a second ffmpeg with its own session ('split')
+  let sent = 0, dropped = 0, frameNo = 0, stderr = '', closed = false, split = process.env.LZS_AUDIO_SPLIT === '1' || !!own;
   const procs = new Set();
   const packetizer = audioInfo ? new AudioPacketizer(audioInfo.sampleRate, audioInfo.channels, (buf) => { if (ws.readyState === ws.OPEN) ws.send(buf, { binary: true }); }) : null;
 
@@ -660,14 +687,14 @@ async function startStream(ws, params) {
     // PTS (#24) only on the raw path: H.264 packets carry the bridge clock (#16) instead
     const withPts = proto === 2 && video && !!audioInfo && mode === 'fd3' && !h264;
     const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: audioInfo ? mode : 'none', pts: withPts, device, pixFmt: yp?.yuv ? 'ayuv64le' : '', log: wantTc ? 'level+info' : 'error',
-      codec: h264 ? 'h264' : 'raw', gop: Math.max(10, Math.round((fpsLimit || info.fps || 25) * 2)) });
+      codec: h264 ? 'h264' : 'raw', gop: Math.max(10, Math.round((fpsLimit || info.fps || 25) * 2)), ownInput: own?.inputArgs ?? null });
     const fd3 = mode === 'fd3' && video && !!audioInfo;
     pts = withPts ? new PtsTracker(audioInfo.sampleRate, (index, t) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'apts', index, pts: t })); }) : null;
     const t0 = Date.now();
     let audioBytes = 0;
     const onAudio = (c) => { audioBytes += c.length; packetizer.push(c); };
-    const spawnOne = (a, withFd3, tracker) => {
-      const p = spawn(ffmpeg, a, { stdio: withFd3 ? ['ignore', 'pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const spawnOne = (a, withFd3, tracker, stdin = 'ignore') => {
+      const p = spawn(ffmpeg, a, { stdio: withFd3 ? [stdin, 'pipe', 'pipe', 'pipe'] : [stdin, 'pipe', 'pipe'], windowsHide: true });
       procs.add(p);
       // time code (#28): showinfo side data; PTS (#24): PtsTracker; errors go to the stderr tail
       const tc = wantTc ? new ShowinfoTracker((m) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); }, (e) => { stderr = (stderr + '\n' + e).slice(-2000); }) : null;
@@ -682,7 +709,8 @@ async function startStream(ws, params) {
       });
       return p;
     };
-    const main = spawnOne(args.main, fd3, pts);
+    const main = spawnOne(args.main, fd3, pts, own ? 'pipe' : 'ignore');
+    if (own) own.attach(main.stdin);
     main.stdout.on('data', video ? onVideo : onAudio);
     if (fd3) main.stdio[3].on('data', onAudio);
     let side = null;
@@ -712,9 +740,11 @@ async function startStream(ws, params) {
     const st = { type: 'stats', sent, dropped };
     if (stampAges.length) { st.stampAge = ageStats(stampAges); stampAges.length = 0; }
     if (packetizer) Object.assign(st, { audioSent: packetizer.packets, audioDropped: 0, audioGaps: 0, audioSplit: split, pts: !!pts });
+    if (own) st.rtp = own.client.report();
     ws.send(JSON.stringify(st));
   }, 1000);
-  ws.on('close', () => { clearInterval(stats); clearInterval(ptsTimer); closed = true; for (const p of procs) p.kill('SIGKILL'); });
+  own?.client.on('error', (e) => { stderr = (stderr + `\nRTP-Eigenempfang: ${e.message}`).slice(-2000); });
+  ws.on('close', () => { clearInterval(stats); clearInterval(ptsTimer); closed = true; own?.client.stop(); for (const p of procs) p.kill('SIGKILL'); });
 }
 
 /** mean/min/max of stamp ages (ms) for the stats message */

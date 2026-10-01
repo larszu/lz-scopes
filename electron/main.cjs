@@ -54,13 +54,30 @@ async function createWindow() {
     return list.map((s) => ({ id: s.id, name: s.name, thumb: s.thumbnail.toDataURL() }));
   });
   // Web Bluetooth (Opple Light Master, #11): without this handler Electron cancels every
-  // requestDevice(). The page filters by name, so take the first device the scan finds;
-  // cancel after 20 s. UNTESTED: no Light Master was available.
-  let btTimer = null;
+  // requestDevice(). Chromium fires the event again whenever the scan finds more devices; the
+  // list goes to the page (lzs:bt-devices), where the user picks one (lzs:bt-select). A
+  // remembered device can be picked in advance (lzs:bt-prefer): it is taken as soon as the scan
+  // sees it. The scan is cancelled after 60 s. Checked with a Light Master 3 (30.09.2026).
+  // Chromium cancels requestDevice() at once when the window is not focused.
+  let bt = null;
+  let btPrefer = null;
+  const btSend = (m) => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send('lzs:bt-devices', m); };
+  const btFinish = (id) => {
+    if (!bt) return false;
+    const b = bt; bt = null; clearTimeout(b.timer);
+    btSend({ devices: [], scanning: false, done: true });
+    b.callback(id || '');
+    return true;
+  };
+  ipcMain.handle('lzs:bt-select', (_e, id) => btFinish(String(id || '')));
+  ipcMain.handle('lzs:bt-prefer', (_e, id) => { btPrefer = id ? String(id) : null; });
   mainWindow.webContents.on('select-bluetooth-device', (event, devices, callback) => {
     event.preventDefault();
-    if (devices.length) { clearTimeout(btTimer); btTimer = null; callback(devices[0].deviceId); return; }
-    if (!btTimer) btTimer = setTimeout(() => { btTimer = null; callback(''); }, 20000);
+    if (!bt) bt = { callback, found: new Map(), timer: setTimeout(() => { btPrefer = null; btFinish(''); }, 60000) };
+    bt.callback = callback;
+    for (const d of devices) bt.found.set(d.deviceId, d.deviceName || '');
+    if (btPrefer && bt.found.has(btPrefer)) { const id = btPrefer; btPrefer = null; btFinish(id); return; }
+    btSend({ devices: [...bt.found].map(([id, name]) => ({ id, name })), scanning: true });
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith(origin) && url.includes('view=')) {

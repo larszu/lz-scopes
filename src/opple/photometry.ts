@@ -110,6 +110,8 @@ export interface Reading {
   battery: number | null;
   temperature: number | null;
   ts: number;
+  /** key of the meter that took it (src/opple/store.ts); unset for single readings */
+  device?: string;
 }
 
 /** Raw measurement + unit calibration → photometric reading. */

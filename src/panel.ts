@@ -14,6 +14,7 @@ import { CUBE_SPACE_ID, DEFAULT_CUBE, cubeNits, cubeQOf, cubeRotation, type Cube
 import { DEFAULT_CRT, PHOSPHORS, type CrtSettings } from './crt';
 import { STAGE_LABELS, autoPeaks, baseOf, chainOf, stageView, type Stage } from './chain';
 import { clockOpts, drawClockOverlay, drawClockPanel, type ClockOptions } from './clock/panel';
+import { drawLightPanel, isLight, lightSignature, type LightPanelOptions } from './opple/scopes';
 
 export interface PanelState {
   scope: ScopeType; sourceId: string; gain: number; colorize: boolean; zoom: number;
@@ -55,6 +56,8 @@ export interface PanelState {
   rgc?: boolean;
   /** picture: compact time of day / source time code in the corner */
   clockOverlay?: boolean;
+  /** light scopes (Opple Light Master, src/opple/scopes.ts) */
+  light?: Partial<LightPanelOptions>;
 }
 
 /** CRT settings of a panel with defaults; null = digital display. */
@@ -165,6 +168,7 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
   // clocks run: redraw at 25 Hz
   const tick = p.scope === 'clock' || (p.scope === 'picture' && p.clockOverlay) ? `|t${Math.floor(performance.now() / 40)}` : '';
   if (p.scope === 'clock') return `C|${src?.id}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}${tick}`;
+  if (isLight(p.scope)) return `${lightSignature(p.scope, p.light, body.w, body.h)}|${body.x},${body.y}`;
   if (isAudio(p.scope)) {
     const a = src?.audio;
     return `A|${src?.id}:${a ? `${a.version}:${a.paused}:${a.stale}` : `${src?.status}:${src?.message}`}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}`;
@@ -203,6 +207,11 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   if (p.scope === 'clock') {
     renderer.clearRect(body);
     drawClockPanel(ctx, clockOpts(p.clock), src, body.w, body.h);
+    return;
+  }
+  if (isLight(p.scope)) {
+    renderer.clearRect(body);
+    drawLightPanel(ctx, p.scope, p.light, body.w, body.h);
     return;
   }
   if (src) src = stageView(src, p.stage ?? o.stage ?? 'signal');

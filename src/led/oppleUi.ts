@@ -3,7 +3,8 @@
 
 import type { XY } from '../color';
 import { PatchSequencer, sendPatch } from '../patchSequencer';
-import { oppleMeter } from '../opple/ui';
+import { oppleMeter, pickerBox } from '../opple/ui';
+import { lightStore } from '../opple/store';
 import type { FlickerResult } from '../opple/protocol';
 import { drawCabinetMap, stackCanvases } from './map';
 import {
@@ -49,6 +50,7 @@ function download(name: string, blob: Blob) {
 }
 
 export function mountMeterCheck(box: HTMLElement, host: MeterCheckHost) {
+  const picker = pickerBox();
   const results: MeterResults = new Map();
   let points: 'all' | 'full' | 'list' = 'all', list = '', white = 100, gray = 0, primaries = true;
   let auto = false, settle = 1500, avgN = 3, distance = 'Distanzstück 5 cm, senkrecht';
@@ -128,13 +130,14 @@ export function mountMeterCheck(box: HTMLElement, host: MeterCheckHost) {
     const corr = correction();
     const whiteOpts: [string, string][] = measured.filter((p) => results.get(p)?.W).map((p) => [p, p]);
     box.replaceChildren(
-      h('p', { class: 'note' }, 'Trendmessgerät, kein Kolorimeter: Der Light Master misst Beleuchtungsstärke mit Filterkanälen. Für schmalbandige LED-Primärfarben sind die Farbwerte nur Näherungen, absolute Werte (lx, abgeleitete cd/m²) sind nicht normgerecht. Geeignet für relative Uniformität (Cabinet gegen Cabinet, gleicher Abstand) und die Tendenz des Weißpunkts. Ungeprüft: kein Gerät vorhanden – getestet nur mit synthetischen Messwerten und aufgezeichneten Paketen.'),
+      h('p', { class: 'note' }, 'Trendmessgerät, kein Kolorimeter: Der Light Master misst Beleuchtungsstärke mit Filterkanälen. Für schmalbandige LED-Primärfarben sind die Farbwerte nur Näherungen, absolute Werte (lx, abgeleitete cd/m²) sind nicht normgerecht. Geeignet für relative Uniformität (Cabinet gegen Cabinet, gleicher Abstand) und die Tendenz des Weißpunkts. Verbindung und Messung sind mit einem Light Master 3 geprüft; der Ablauf an einer LED-Wand ist ungeprüft (nur synthetische Messwerte). Gemessen wird mit dem ersten verbundenen Gerät.'),
       h('div', { class: 'row' },
         h('b', {}, status()),
         oppleMeter.state === 'connected'
           ? h('button', { onclick: () => { oppleMeter.disconnect(); render(); } }, 'Trennen')
-          : h('button', { class: 'primary', onclick: () => { oppleMeter.connect().catch(() => {}).finally(render); } }, 'Light Master verbinden …'),
+          : h('button', { class: 'primary', onclick: () => { lightStore().connectNew().catch(() => {}).finally(render); } }, 'Light Master suchen …'),
         h('button', { title: 'Messfelder erscheinen in jedem offenen Testbild-Ausgabefenster', onclick: host.openOutput }, '⧉ Ausgabefenster öffnen')),
+      picker,
       h('div', { class: 'row' },
         lab('Messpunkte', sel(points, [['all', 'alle Cabinets'], ['list', 'Auswahl'], ['full', 'Vollfläche (ein Punkt)']], (v) => { points = v as typeof points; render(); })),
         points === 'list' ? (() => { const i = h('input', { value: list, placeholder: 'C1-R1, C5-R3 …', style: 'width:160px' }) as HTMLInputElement; i.onchange = () => { list = i.value; }; return i; })() : '',

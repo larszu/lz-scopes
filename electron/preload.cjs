@@ -12,6 +12,12 @@ contextBridge.exposeInMainWorld('lzsDesktop', {
     restore: (id) => ipcRenderer.invoke('lzs:profile-restore', id),
     ddc: (id, code, value) => ipcRenderer.invoke('lzs:ddc-set', id, code, value),
   },
+  /** Web Bluetooth device list (Opple Light Master, #11): scan results, pick one, pre-select a remembered id. */
+  bluetooth: {
+    onDevices: (cb) => { const f = (_e, m) => cb(m); ipcRenderer.on('lzs:bt-devices', f); return () => ipcRenderer.removeListener('lzs:bt-devices', f); },
+    select: (id) => ipcRenderer.invoke('lzs:bt-select', id),
+    prefer: (id) => ipcRenderer.invoke('lzs:bt-prefer', id),
+  },
   /** Release a folder to the bridge's watch-folder input (native dialog); → { name, url } or null. */
   watchFolder: () => ipcRenderer.invoke('lzs:watch-folder'),
 });

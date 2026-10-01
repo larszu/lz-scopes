@@ -30,6 +30,7 @@ Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen
 | `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `qclog`, `hist`, `stats`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `clock`) |
 | `panel.maximize` | `panel`, `mode` `toggle`\|`on`\|`off`; `off` ohne `panel` = zurück |
 | `freeze` | `mode` `toggle`\|`on`\|`off` |
+| `qc.clear` | – (QC-Protokoll leeren; Zustand `qc`: `active`, `total`, `last`) |
 | `roi.clear` | `source` optional (ohne = alle): Messrahmen und Messpunkt löschen |
 | `pattern.select` | `pattern` (id oder Name), `source` optional (sonst erste Testbild-Quelle) |
 | `pattern.next`, `pattern.prev` | `source` optional |

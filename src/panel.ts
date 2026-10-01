@@ -3,13 +3,18 @@
 
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, mul3, rgbToXyzMatrix, bandRange, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId, type HdrPreview } from './color';
 import {
-  drawChannelPlotGraticule, drawCubeGraticule, drawDiamondGraticule, drawSatLumGraticule, diamondPoint, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
+  drawChannelPlotGraticule, drawCubeGraticule, drawLutVolume, drawDiamondGraticule, drawSatLumGraticule, diamondPoint, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
   WAVE_ZOOMS, channelLayout, isAudio, isWaveform, plotRect, type WaveChannels, type WaveOpts, type WaveZoom, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
 import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/panels';
 import type { DisplayParams, PictureMode, PictureParams, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
 import type { Source } from './sources';
 import { barRefs, nearest, type DeRef } from './deltae';
+import { LUTS, applyLut } from './lut';
+import { lutVolume } from './cube';
+
+/** LUT volume of the last drawn cube panel (recomputed when LUT, version or lattice change). */
+let lutVolCache: { key: string; pts: { inp: number[]; out: number[] }[] } = { key: '', pts: [] };
 import { QC_TYPES, drawQcLog, qcLog, type QcType } from './qclog';
 import { castName, drawMinMax } from './minmax';
 
@@ -62,6 +67,8 @@ export interface PanelState {
   pair?: number;
   /** QC log: event types shown */
   qcTypes?: QcType[];
+  /** timeline: one sample per new picture instead of 10 Hz; raster width */
+  everyFrame?: boolean; grid?: number;
   /** timeline: shown time span in seconds */
   span?: TimelineSpan;
   /** vectorscope, CIE, diamond, 3D volume (digital): persistence in ms, −1 = infinite (trace history) */
@@ -265,7 +272,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     return;
   }
   const probeRgb = src.probe ? src.readPixel(src.probe.x, src.probe.y) : null;
-  const mode = SCATTER[p.scope];
+  const mode = p.scope === 'cube' && p.cube?.lutOnly && p.cube?.lut ? undefined : SCATTER[p.scope];
   if (mode) {
     const crt = crtOf(p);
     const cube = p.scope === 'cube' ? { ...DEFAULT_CUBE, ...p.cube } : null;
@@ -308,6 +315,12 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     drawChannelPlotGraticule(ctx, r, p.pair ?? 0);
   } else if (p.scope === 'cube') {
     const c = { ...DEFAULT_CUBE, ...p.cube };
+    const lut = c.lut ? LUTS.get(c.lut) : undefined;
+    if (lut) {
+      const key = `${lut.name}#${lut.version}:${c.lutGrid ?? 17}`;
+      if (lutVolCache.key !== key) lutVolCache = { key, pts: lutVolume((rgb) => applyLut(lut, rgb), c.lutGrid ?? 17) };
+      drawLutVolume(ctx, r, c, lutVolCache.pts, (rgb) => cubeQOf(c.space, rgb, src), !!c.lutInput);
+    }
     drawCubeGraticule(ctx, r, c, src.gamut, cubeNits(src.transfer), probeRgb ? cubeQOf(c.space, probeRgb, src) : null, src.colorspace);
   } else if (p.scope === 'diamond') {
     drawDiamondGraticule(ctx, r);

@@ -27,6 +27,7 @@ export function buildCommand(actionId: string, o: Options): Command {
     case 'panel_scope': return clean({ cmd: 'panel.scope', panel: ref(o.panel) ?? 1, scope: o.scope })
     case 'panel_maximize': return clean({ cmd: 'panel.maximize', panel: ref(o.panel), mode: o.mode ?? 'toggle' })
     case 'freeze': return { cmd: 'freeze', mode: o.mode ?? 'toggle' }
+    case 'qc_clear': return { cmd: 'qc.clear' }
     case 'roi_clear': return clean({ cmd: 'roi.clear', source: ref(o.source) })
     case 'pattern_select': return clean({ cmd: 'pattern.select', pattern: text(o.pattern), source: ref(o.source) })
     case 'pattern_next': return clean({ cmd: 'pattern.next', source: ref(o.source) })

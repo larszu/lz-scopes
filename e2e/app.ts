@@ -156,16 +156,27 @@ export function which(bin: string): string | null {
   return null;
 }
 
-/** mediamtx on free ports with RTSP only (no RTMP/HLS/WebRTC/SRT listeners). */
-export async function startMediamtx(bin: string): Promise<{ rtsp: number; stop: () => void; proc: ChildProcess }> {
+/**
+ * The ffmpeg the desktop app ships, fetched for this machine (npm run ffmpeg:fetch,
+ * vendor/ffmpeg/<target>/); the bridge of the test app takes it before any system ffmpeg.
+ */
+export const SHIPPED_FFMPEG = ((): string | null => {
+  const target = process.platform === 'darwin' ? 'darwin-universal' : `${process.platform}-${process.arch}`;
+  const f = join(ROOT, 'vendor', 'ffmpeg', target, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+  return existsSync(f) ? f : null;
+})();
+
+/** mediamtx on free ports: RTSP (TCP), with `srt` also an SRT listener (UDP). */
+export async function startMediamtx(bin: string, opts: { srt?: boolean } = {}): Promise<{ rtsp: number; srt: number; stop: () => void; proc: ChildProcess }> {
   const rtsp = await freePort();
+  const srt = opts.srt ? await freePort() : 0;
   const dir = mkdtempSync(join(tmpdir(), 'lzs-mtx-'));
   const cfg = join(dir, 'mediamtx.yml');
   writeFileSync(cfg, [
     'logLevel: warn',
     `rtspAddress: 127.0.0.1:${rtsp}`,
     'rtspTransports: [tcp]',
-    'rtmp: no', 'hls: no', 'webrtc: no', 'srt: no', 'moq: no', 'api: no', 'metrics: no', 'pprof: no', 'playback: no',
+    'rtmp: no', 'hls: no', 'webrtc: no', ...(srt ? ['srt: yes', `srtAddress: 127.0.0.1:${srt}`] : ['srt: no']), 'moq: no', 'api: no', 'metrics: no', 'pprof: no', 'playback: no',
     'paths:', '  all_others:',
   ].join('\n'));
   // cwd = temp dir: mediamtx writes auto.crt/auto.key into its working directory
@@ -177,5 +188,5 @@ export async function startMediamtx(bin: string): Promise<{ rtsp: number; stop: 
     s.once('error', () => ok(true)); // port taken = mediamtx listens
     s.listen(rtsp, '127.0.0.1', () => s.close(() => ok(false)));
   }), 15_000, `mediamtx startet nicht ${err}`);
-  return { rtsp, proc, stop: () => { proc.kill('SIGKILL'); rmSync(dir, { recursive: true, force: true }); } };
+  return { rtsp, srt, proc, stop: () => { proc.kill('SIGKILL'); rmSync(dir, { recursive: true, force: true }); } };
 }

@@ -589,7 +589,7 @@ async function startStream(ws, params) {
     if (!/^rtsp:\/\//i.test(url)) ownNote = 'RTP-Eigenempfang nur für rtsp:// – ffmpeg empfängt';
     else {
       try { own = await startOwnRtp(url, { transport: transport === 'udp' ? 'udp' : 'tcp', width: info.width, height: info.height }); } catch (e) { ownNote = `RTP-Eigenempfang nicht möglich (${e.message}) – ffmpeg empfängt`; }
-      if (ws.readyState !== ws.OPEN) { own?.client.stop(); return; }
+      if (ws.readyState !== ws.OPEN) { own?.stop(); return; }
     }
   }
 
@@ -740,11 +740,11 @@ async function startStream(ws, params) {
     const st = { type: 'stats', sent, dropped };
     if (stampAges.length) { st.stampAge = ageStats(stampAges); stampAges.length = 0; }
     if (packetizer) Object.assign(st, { audioSent: packetizer.packets, audioDropped: 0, audioGaps: 0, audioSplit: split, pts: !!pts });
-    if (own) st.rtp = own.client.report();
+    if (own) st.rtp = own.report();
     ws.send(JSON.stringify(st));
   }, 1000);
-  own?.client.on('error', (e) => { stderr = (stderr + `\nRTP-Eigenempfang: ${e.message}`).slice(-2000); });
-  ws.on('close', () => { clearInterval(stats); clearInterval(ptsTimer); closed = true; own?.client.stop(); for (const p of procs) p.kill('SIGKILL'); });
+  own?.on('error', (e) => { stderr = (stderr + `\nRTP-Eigenempfang: ${e.message}`).slice(-2000); });
+  ws.on('close', () => { clearInterval(stats); clearInterval(ptsTimer); closed = true; own?.stop(); for (const p of procs) p.kill('SIGKILL'); });
 }
 
 /** mean/min/max of stamp ages (ms) for the stats message */

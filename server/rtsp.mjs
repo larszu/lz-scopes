@@ -204,6 +204,9 @@ export class RtspClient extends EventEmitter {
     if (udp) {
       const [rtp, rtcp] = udp;
       this.udp = udp;
+      // large receive buffer for key-frame bursts (1080p50: ~100 packets at once); the system may cap it
+      try { rtp.setRecvBufferSize(8 * 1024 * 1024); } catch { /* capped below */ }
+      try { this.stats.udpBuffer = rtp.getRecvBufferSize(); } catch { /* unknown */ }
       rtp.on('message', (m) => this.onRtp(m));
       rtcp.on('message', () => {});
       const serverRtcp = Number(/server_port=\d+-(\d+)/.exec(setup.headers.transport ?? '')?.[1] ?? 0);
@@ -231,7 +234,8 @@ export class RtspClient extends EventEmitter {
   report() {
     return {
       transport: this.transport, packets: this.stats.packets, lost: this.reorder?.lost ?? 0, reordered: this.reorder?.reordered ?? 0,
-      accessUnits: this.depack?.aus ?? 0, droppedUnits: this.depack?.dropped ?? 0,
+      late: this.reorder?.late ?? 0, accessUnits: this.depack?.aus ?? 0, droppedUnits: this.depack?.dropped ?? 0,
+      ...(this.stats.udpBuffer ? { udpBuffer: this.stats.udpBuffer } : {}),
     };
   }
 
@@ -256,36 +260,109 @@ function pickChallenge(h) {
   return /^\s*Basic/i.test(h) ? 'Basic' : null;
 }
 
+/** Loss over the last seconds above which UDP gives way to TCP (camera test 01.10.: 20 % on a routed Wi-Fi path). */
+export const UDP_LOSS_LIMIT = 0.02;
+
+/**
+ * Should a UDP session give way to TCP? `a`/`b` are two report() snapshots a few seconds
+ * apart. True when more than UDP_LOSS_LIMIT of the expected packets were lost or more than a
+ * quarter of the frames had to be dropped.
+ */
+export function udpTooLossy(a, b) {
+  const got = b.packets - a.packets, lost = b.lost - a.lost;
+  const aus = b.accessUnits - a.accessUnits, dropped = b.droppedUnits - a.droppedUnits;
+  if (got + lost < 50) return false;
+  return lost / (got + lost) > UDP_LOSS_LIMIT || (aus + dropped > 10 && dropped / (aus + dropped) > 0.25);
+}
+
 /**
  * Own reception as ffmpeg input: starts the RTSP session and returns the ffmpeg input
  * arguments (Matroska on stdin) plus `attach(stdin)`, which writes the header and then one
  * SimpleBlock per access unit. Throws when the session cannot be set up (→ ffmpeg fallback).
+ * Over UDP the loss is watched; above UDP_LOSS_LIMIT the session is replaced by one over
+ * TCP (interleaved) without restarting ffmpeg – time stamps continue, the next block is a
+ * key frame. Events: 'error', 'switch' (message).
  */
-export async function startOwnRtp(url, { transport = 'tcp', width = 0, height = 0 } = {}) {
-  const client = new RtspClient(url, { transport });
+export async function startOwnRtp(url, { transport = 'tcp', width = 0, height = 0, autoTcp = true } = {}) {
+  const first = new RtspClient(url, { transport });
   let info;
-  try { info = await client.start(); } catch (e) { client.stop(); throw e; }
-  const config = Buffer.concat(info.params.flatMap((p) => [Buffer.from([0, 0, 0, 1]), p]));
-  let detach = () => {};
-  return {
-    client, info,
+  try { info = await first.start(); } catch (e) { first.stop(); throw e; }
+  return new OwnRtp(url, first, info, { width, height, autoTcp });
+}
+
+export class OwnRtp extends EventEmitter {
+  constructor(url, client, info, { width, height, autoTcp, connectTcp = null }) {
+    super();
+    /** opens the replacement TCP session (tests pass a fake) */
+    this.connectTcp = connectTcp ?? (async () => { const c = new RtspClient(url, { transport: 'tcp' }); await c.start(); return c; });
+    this.url = url; this.info = { ...info }; this.width = width; this.height = height;
+    this.config = Buffer.concat(info.params.flatMap((p) => [Buffer.from([0, 0, 0, 1]), p]));
+    this.switched = null; this.stopped = false;
     // the header carries the parameter sets: no probing needed
-    inputArgs: ['-fflags', 'nobuffer', '-flags', 'low_delay', '-probesize', '32', '-analyzeduration', '0', '-f', 'matroska', '-i', 'pipe:0'],
-    /** Feed one ffmpeg (again after a restart: new header, from the next key frame on). */
-    attach(stdin) {
-      detach();
-      const mkv = new MkvWriter({ codec: info.codec, config, width, height });
-      let started = false;
-      stdin.on('error', () => {});
-      stdin.write(mkv.header());
-      const onAu = (au) => {
-        if (!started && !au.key) return;
-        started = true;
-        if (stdin.writable) stdin.write(mkv.block(au.data, au.ms, au.key));
-      };
-      const onEnd = () => stdin.end();
-      client.on('au', onAu); client.on('end', onEnd);
-      detach = () => { client.off('au', onAu); client.off('end', onEnd); };
-    },
-  };
+    this.inputArgs = ['-fflags', 'nobuffer', '-flags', 'low_delay', '-probesize', '32', '-analyzeduration', '0', '-f', 'matroska', '-i', 'pipe:0'];
+    this.sinks = new Set();
+    /** time line across a transport switch: ms of the last block and the offset of the current client */
+    this.lastMs = 0; this.offset = 0; this.frameMs = 20;
+    this.use(client);
+    if (autoTcp && client.transport === 'udp') {
+      let prev = client.report();
+      this.watch = setInterval(() => {
+        const now = this.client.report();
+        if (this.client.transport === 'udp' && udpTooLossy(prev, now)) {
+          const lost = now.lost - prev.lost, got = now.packets - prev.packets;
+          this.toTcp(`UDP verlor ${Math.round((100 * lost) / (lost + got))} % der Pakete → TCP`);
+        }
+        prev = now;
+      }, 3000);
+    }
+  }
+  use(client) {
+    this.client = client;
+    let firstMs = null;
+    client.on('au', (au) => {
+      if (firstMs === null) { firstMs = au.ms; this.offset = this.sinks.size && this.lastMs ? this.lastMs + this.frameMs - au.ms : 0; }
+      const ms = au.ms + this.offset;
+      if (ms > this.lastMs) this.frameMs = Math.min(100, Math.max(5, ms - this.lastMs || this.frameMs));
+      this.lastMs = ms;
+      for (const f of this.sinks) f({ ...au, ms });
+    });
+    client.on('error', (e) => { if (this.client === client) this.emit('error', e); });
+    client.on('end', () => { if (this.client === client && !this.stopped) this.end(); });
+  }
+  async toTcp(why) {
+    if (this.switching || this.stopped) return;
+    this.switching = true;
+    const old = this.client;
+    try {
+      const c = await this.connectTcp();
+      if (this.stopped) { c.stop(); return; }
+      this.client = null;
+      old.stop();
+      this.use(c);
+      this.info.transport = 'tcp';
+      this.switched = why;
+      this.emit('switch', why);
+      clearInterval(this.watch);
+    } catch (e) {
+      this.emit('error', new Error(`Wechsel auf TCP gescheitert: ${e.message}`));
+    } finally { this.switching = false; }
+  }
+  end() { for (const e of this.ends ?? []) e(); }
+  /** Counters for the stats message: those of the current session plus the switch note. */
+  report() { return { ...(this.client?.report() ?? {}), switched: this.switched }; }
+  /** Feed one ffmpeg (again after a restart: new header, from the next key frame on). */
+  attach(stdin) {
+    this.sinks.clear();
+    const mkv = new MkvWriter({ codec: this.info.codec, config: this.config, width: this.width, height: this.height });
+    let started = false;
+    stdin.on('error', () => {});
+    stdin.write(mkv.header());
+    this.sinks.add((au) => {
+      if (!started && !au.key) return;
+      started = true;
+      if (stdin.writable) stdin.write(mkv.block(au.data, au.ms, au.key));
+    });
+    this.ends = [() => stdin.end()];
+  }
+  stop() { this.stopped = true; clearInterval(this.watch); this.client?.stop(); }
 }

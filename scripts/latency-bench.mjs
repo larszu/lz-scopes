@@ -52,7 +52,7 @@ export async function pull(ffmpeg, url, { input = [], vf = 'scale=960:540:flags=
   if (own) { try { rtp = await startOwnRtp(url, { transport: own }); } catch (e) { return { ages: [], err: e.message }; } }
   const a = [...q, ...(rtp ? rtp.inputArgs : [...input, '-nostdin', '-i', url]), '-map', '0:v:0', '-an', '-vf', vf, ...raw];
   const p = spawn(ffmpeg, a, { stdio: [rtp ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
-  if (rtp) { rtp.attach(p.stdin); p.on('close', () => rtp.client.stop()); }
+  if (rtp) { rtp.attach(p.stdin); p.on('close', () => rtp.stop()); }
   const size = width * height * 4, ages = [];
   let buf = Buffer.alloc(0), t0 = 0, err = '';
   p.stderr.on('data', (d) => { err += d; });

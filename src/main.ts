@@ -34,6 +34,7 @@ import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as brid
 import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
 import { LOW_LATENCY_WIDTH, lowLatencyWidth, Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
+import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
 
 // ---------------------------------------------------------------- state
 
@@ -159,6 +160,7 @@ app.innerHTML = `
       <details class="bridge"><summary>Bridge</summary>
         <label>Adresse <input id="bridge" placeholder="leer = dieser Server"></label>
         <p class="hint">RTSP, SRT, HLS und andere Netzwerkquellen dekodiert die Bridge mit ffmpeg: Desktop-App oder <code>npm start</code>. Im Browser allein gehen Testbilder, Kamera, Bildschirm und Dateien.</p>
+        <p class="hint" id="ffmpeg-info">ffmpeg: wird abgefragt …</p>
       </details>
       <details class="help"><summary>Tastatur</summary>
         <p><kbd>1</kbd>–<kbd>6</kbd> Layout · <kbd>Leertaste</kbd> Einfrieren · <kbd>F</kbd> Vollbild · <kbd>S</kbd> PNG · <kbd>B</kbd> Seitenleiste ·
@@ -286,7 +288,17 @@ $('#led').onclick = () => openLedTool({
 $('#full').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen());
 const bridgeInput = $<HTMLInputElement>('#bridge');
 bridgeInput.value = state.bridge;
-bridgeInput.onchange = () => { state.bridge = bridgeInput.value; save(); };
+// which ffmpeg the bridge runs (origin, version, licence, SRT) – read by the bridge from the binary
+let bridgeHealth: BridgeHealth | null = null;
+async function refreshFfmpegInfo() {
+  bridgeHealth = await fetchBridgeHealth(bridgeUrl().replace(/^ws/, 'http'));
+  const el = $('#ffmpeg-info');
+  el.textContent = bridgeFfmpegText(bridgeHealth);
+  el.title = bridgeHealth?.ffmpeg?.path ?? '';
+  if (sources.some((x) => x.kind === 'stream' && /^srt:/i.test(x.url))) renderSources();
+}
+bridgeInput.onchange = () => { state.bridge = bridgeInput.value; save(); refreshFfmpegInfo(); };
+refreshFfmpegInfo();
 
 function toggleFreeze() {
   frozen = !frozen;
@@ -355,6 +367,7 @@ function renderSources() {
             h('button', { class: 'mini', title: `Testbild ${p}`, onclick: () => { urlIn.value = `test:${p}`; connect(); } }, p)),
             deviceButton(bridgeUi), deckLinkButton(bridgeUi), ndiButton(bridgeUi), folderButton(bridgeUi, (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop?.watchFolder))),
         ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
+        ...(sourceFfmpegText(s.url, bridgeHealth) ? [h('p', { class: 'hint', 'data-ffmpeg-source': '' }, sourceFfmpegText(s.url, bridgeHealth))] : []),
       );
     } else if (s.kind === 'pattern') {
       card.append(...patternControls(s));
@@ -1350,6 +1363,12 @@ async function renderOutputMenu() {
     if (!state.scenes.some((s) => s.id === state.activeScene)) state.activeScene = state.scenes[0].id;
     save(); renderOutputMenu();
   };
+  // which ffmpeg pushes, and for srt:// whether it can (bridge /api/health)
+  const pushHint = h('span', { class: 'hint', 'data-ffmpeg-push': '' }, '');
+  const targetIn = txt('target', 'optional: rtmp:// srt:// rtsp:// udp://');
+  const showPush = () => { pushHint.textContent = pushFfmpegText(out.target, bridgeHealth); pushHint.title = bridgeHealth?.ffmpegSrt?.path ?? bridgeHealth?.ffmpeg?.path ?? ''; };
+  targetIn.addEventListener('input', showPush);
+  refreshFfmpegInfo().then(showPush);
   const open = [...liveOutputs().entries()];
   $('#outbody').replaceChildren(
     row('Inhalt', select(out.view, [['grid', 'Gesamtansicht (Layout)'], ['panel', 'Einzelnes Panel'], ['clean', 'Quellbild sauber'], ['overlay', 'Bild + Scope-Overlay']], (v) => (out.view = v))),
@@ -1362,7 +1381,8 @@ async function renderOutputMenu() {
     row('Ausgang', select('', screens, (v) => (out.display = v)), h('label', { class: 'inline' }, fsBox, 'Vollbild')),
     row('Name', txt('name', 'optional, für Companion, z. B. beamer')),
     row('Stream-Name', txt('stream', 'optional, z. B. scopes → /out/scopes.mjpeg')),
-    row('Push an', txt('target', 'optional: rtmp:// srt:// rtsp:// udp://')),
+    row('Push an', targetIn),
+    row('', pushHint),
     h('div', { class: 'mrow' }, h('span', {}, ''), h('button', { class: 'primary', onclick: () => openOutputView(out) }, 'Ausgabe öffnen')),
     ...(open.length ? [h('div', { class: 'mtitle' }, 'Offen'), ...open.map(([n, o]) => h('div', { class: 'mrow' },
       h('span', {}, n), h('span', { class: 'hint' }, `${o.view}${o.view === 'overlay' ? ` · ${state.scenes.find((s) => s.id === o.scene)?.name ?? ''}` : ''}${outApi(o.win)?.stream() ? ` · Stream ${outApi(o.win)!.stream()}` : ''}`),

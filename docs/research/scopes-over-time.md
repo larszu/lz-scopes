@@ -39,3 +39,10 @@ In den geöffneten OmniScope-Seiten gibt es **keinen** Zeitverlauf-Scope (keine 
 | Snapshot / Text Display | teilweise (Standbild, PNG-Export, Overlay-Szenen) |
 | 3D LUT / ICC Profile als Scope | LUTs in der Kette, keine LUT-Volumenansicht |
 | Stream-Deck-Steuerung | Steuer-API (HTTP/WebSocket) vorhanden, keine fertige Stream-Deck-Anbindung |
+
+## Umsetzung #67, Teil 1 (Scatter-Scopes)
+
+- **3D-Farbvolumen**: zusätzlich Y′CbCr (3D-Waveform wie OmniScope „HectorScope“), HSV-Zylinder, CIE XYZ, CIE LCh (abgerollt: Farbton als Achse, entspricht OmniScopes „CHL“); Pan (⇧-Ziehen), Zoom (Mausrad), Doppelklick = Ausgangsansicht.
+- **Sättigung über Luma** (OmniScope „Sat / Lum“): x = Y′, y = |CbCr| / 0,5; Farbe der Pixel optional.
+- **Kanal-Plot** (OmniScope „Channel Plot“): R′/G′, R′/B′, G′/B′, Y′/Cb, Y′/Cr, Cb/Cr; Diagonale = gleiche Kanäle.
+- Nachleuchten auch für diese Scopes.

@@ -15,9 +15,9 @@ import { BLUR_FS, CRT_DISPLAY_FS, CRT_FS, CRT_VS_MAIN, PERSIST_FS, PHOSPHORS, be
 /** Beam segments per CRT scope and frame (each is a quad, far more fill than a point). */
 const CRT_BUDGET = 150_000;
 
-export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'skin' | 'diamond' | 'cube';
-const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7, diamond: 8, cube: 9 };
-const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1, diamond: 2, cube: 1 };
+export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'skin' | 'diamond' | 'cube' | 'satlum' | 'chplot';
+const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7, diamond: 8, cube: 9, satlum: 10, chplot: 11 };
+const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1, diamond: 2, cube: 1, satlum: 1, chplot: 1 };
 
 export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'gamut' | 'r103';
 const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5, gamut: 6, r103: 7 };
@@ -82,7 +82,7 @@ const FETCH = (k: TexKind) => (k === 'yuv' ? YUV_FETCH_GLSL : k === '16'
 const SAMPLE_GLSL = (k: TexKind) => `
 ${FETCH(k)}
 uniform ivec2 uSize;
-uniform int uStep, uCols, uMode, uColorize, uCieUv, uSecN;
+uniform int uStep, uCols, uMode, uColorize, uCieUv, uSecN, uPair;
 uniform ivec4 uSec; // section per trace instance (-1 = hidden channel)
 uniform vec2 uK;
 uniform float uZoom, uIntensity, uWMin, uWMax, uPointSize;
@@ -146,9 +146,18 @@ bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
     float a = ch == 0 ? rgb.b : rgb.r, s = a + rgb.g;
     pos = vec2(a - rgb.g, ch == 0 ? s : -s) * vec2(0.92, 0.46);
     if (uColorize == 1) col = srcCol;
+  } else if (uMode == 10) {
+    // saturation over luma (graticule.ts drawSatLumGraticule): x = Y′, y = |CbCr| / 0.5 (0…120 %)
+    pos = vec2(waveY(Y), length(vec2(cb, cr)) / 0.5 / 1.2 * 2.0 - 1.0);
+    if (uColorize == 1) col = srcCol;
+  } else if (uMode == 11) {
+    // channel plot: two channels against each other (Cb/Cr shifted by +0.5)
+    vec2 v = uPair == 0 ? rgb.rg : uPair == 1 ? rgb.rb : uPair == 2 ? rgb.gb : uPair == 3 ? vec2(Y, cb + 0.5) : uPair == 4 ? vec2(Y, cr + 0.5) : vec2(cb + 0.5, cr + 0.5);
+    pos = vec2(waveY(v.x), waveY(v.y));
+    if (uColorize == 1) col = srcCol;
   } else if (uMode == 9) {
     // 3D colour volume (cube.ts): rotated, orthographic
-    pos = (uRot * cubeQ(rgb)).xy * ${CUBE_SCALE.toFixed(4)};
+    pos = (uRot * cubeQ(rgb)).xy * ${CUBE_SCALE.toFixed(4)} * uView.x + uView.yz;
     if (uColorize == 1) col = srcCol;
   } else if (uMode == 5) {
     pos = vec2(cb, cr) * 2.0 * 0.9 * uZoom;
@@ -322,7 +331,9 @@ export interface ScatterParams {
   range?: [number, number];
   sec?: number[]; secN?: number;
   /** 3D volume (cube.ts): space id, row-major rotation, source → BT.2020, source white XYZ, cd/m² of 1.0 */
-  cube?: { space: number; rot: number[]; to2020: number[]; white: number[]; nits: number };
+  cube?: { space: number; rot: number[]; to2020: number[]; white: number[]; nits: number; view?: { zoom: number; panX: number; panY: number } };
+  /** channel plot: 0 R/G, 1 R/B, 2 G/B, 3 Y/Cb, 4 Y/Cr, 5 Cb/Cr */
+  pair?: number;
   /** digital display: persistence τ in ms (trace history; −1 = infinite), as in the CRT mode */
   persist?: number;
   /** analogue beam look (crt.ts) */
@@ -571,7 +582,7 @@ export class Renderer {
     const acc = this.accum(key, vp.w, vp.h);
     const kind = this.texKind(src, t);
     const crt = p.crt?.on ? p.crt : null;
-    const wave = p.mode !== 'vector' && p.mode !== 'cie' && p.mode !== 'diamond' && p.mode !== 'cube';
+    const wave = p.mode !== 'vector' && p.mode !== 'cie' && p.mode !== 'diamond' && p.mode !== 'cube' && p.mode !== 'satlum' && p.mode !== 'chplot';
     // Normalise so that the display brightness does not depend on source or panel size.
     const sections = p.mode === 'parade' || p.mode === 'yrgb' ? p.secN ?? (p.mode === 'yrgb' ? 4 : 3) : p.mode === 'ycbcr' ? 3 : 1;
     let stepX: number, stepY: number;
@@ -624,6 +635,7 @@ export class Renderer {
       gl.uniform1f(this.u(prog, 'uWMax'), p.range?.[1] ?? WAVE_MAX);
       const sec = p.sec ?? [0, 1, 2, 3];
       gl.uniform4i(this.u(prog, 'uSec'), sec[0], sec[1], sec[2], sec[3] ?? 3);
+      gl.uniform1i(this.u(prog, 'uPair'), p.pair ?? 0);
       gl.uniform1i(this.u(prog, 'uSecN'), p.secN ?? (p.mode === 'yrgb' ? 4 : 3));
       // GLSL mat3 is column-major
       gl.uniformMatrix3fv(this.u(prog, 'uToXYZ'), false, colMajor(rgbToXyzMatrix(GAMUTS[src.gamut])));
@@ -638,6 +650,7 @@ export class Renderer {
         gl.uniformMatrix3fv(this.u(prog, 'uTo2020'), false, colMajor(p.cube.to2020));
         gl.uniform3fv(this.u(prog, 'uWhiteXYZ'), p.cube.white);
         gl.uniform1f(this.u(prog, 'uCubeNits'), p.cube.nits);
+        gl.uniform3f(this.u(prog, 'uView'), p.cube.view?.zoom ?? 1, p.cube.view?.panX ?? 0, p.cube.view?.panY ?? 0);
       }
       gl.bindVertexArray(this.vao);
       if (crt) {

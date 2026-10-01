@@ -9,7 +9,7 @@ import {
 } from './chain';
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
-import { SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOMS, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
+import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOMS, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
 import { DEFAULT_SKIN, ROI_CLOSE, defaultPanel as panel, drawPanel, panelSignature, roiCloseBox, type DrawOptions, type PanelState, type Tint } from './panel';
 import type { OutputHost, OutputWindowApi } from './outputView';
 import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } from './scene';
@@ -717,7 +717,7 @@ function panelSettings(p: PanelState): Node[] {
     c.onchange = () => { p[key] = c.checked; save(); refreshHeads(); };
     return h('label', { class: 'inline' }, c, label);
   };
-  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube';
+  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot';
   if (scatter) {
     const gain = h('input', { type: 'range', min: -3, max: 3, step: 0.1, value: Math.log2(p.gain), title: 'Doppelklick = Standard' }) as HTMLInputElement;
     gain.oninput = () => { p.gain = 2 ** Number(gain.value); save(); };
@@ -757,12 +757,17 @@ function panelSettings(p: PanelState): Node[] {
     row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
     rows.push(h('p', { class: 'hint' }, 'Wofür: Der Würfel zeigt das ganze Farbvolumen auf einmal – wo die Pixel im Gamut liegen, welche Ecken (Primär-/Sekundärfarben, Weiß, Schwarz) angefahren oder abgeschnitten werden, wie sich Farben verteilen und ob ein Farbstich die Graue Achse verschiebt. Vectorscope und Diamond zeigen jeweils nur eine Projektion (Farbton/Sättigung bzw. zwei Kanalpaare) und verlieren dabei die Helligkeit bzw. den dritten Kanal.'));
   }
+  if (p.scope === 'chplot') {
+    row('Kanäle', select(String(p.pair ?? 0), CHANNEL_PAIRS.map((n, i) => [String(i), n] as [string, string]), (v) => { p.pair = Number(v); save(); }));
+    row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
+  }
+  if (p.scope === 'satlum') row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
   if (p.scope === 'timeline') {
     row('Zeitraum', select(String(p.span ?? 10), [['10', '10 s'], ['60', '1 min'], ['300', '5 min']], (v) => { p.span = Number(v) as PanelState['span']; save(); }));
     row('', h('button', { class: 'mini', onclick: () => panelSource(p)?.history.clear() }, 'Verlauf löschen'));
     rows.push(h('p', { class: 'hint' }, 'Zehnmal pro Sekunde ein 96×54-Raster des Bildes: oben die mittlere Farbe (Movie-Barcode), darunter Farbtonanteile über die Zeit (Vectorscope-Verlauf, hell = viel von diesem Farbton), Sättigung (Mittel und 95 %) und Luma (Bereich min–max, Linie = Mittel). Neueste Werte rechts.'));
   }
-  if ((p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube') && !p.crt?.on) {
+  if ((p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot') && !p.crt?.on) {
     row('Nachleuchten', select(String(p.persist ?? 0), [['0', 'aus'], ['300', '0,3 s'], ['1000', '1 s'], ['3000', '3 s'], ['10000', '10 s'], ['-1', 'unendlich']], (v) => { p.persist = Number(v); save(); },
       'Spur der letzten Bilder: ältere Werte verblassen mit exp(−t/τ), „unendlich“ hält alles (Bewegung und Ausreißer über die Zeit sichtbar)'));
   }
@@ -971,13 +976,26 @@ function attachCubeDrag(p: PanelState, body: HTMLElement) {
   body.addEventListener('pointermove', (e) => {
     if (!last || p.scope !== 'cube') return;
     const c = { ...DEFAULT_CUBE, ...p.cube };
-    const yaw = ((c.yaw + (e.clientX - last.x) * 0.5 + 540) % 360) - 180;
-    const pitch = Math.max(-90, Math.min(90, c.pitch + (e.clientY - last.y) * 0.5));
-    p.cube = { ...c, yaw, pitch };
+    if (e.shiftKey) {
+      // pan in clip units of the plot (square, side ≈ smaller body edge)
+      const b = body.getBoundingClientRect(), s = Math.max(10, Math.min(b.width, b.height) - 16);
+      p.cube = { ...c, panX: (c.panX ?? 0) + ((e.clientX - last.x) * 2) / s, panY: (c.panY ?? 0) - ((e.clientY - last.y) * 2) / s };
+    } else {
+      const yaw = ((c.yaw + (e.clientX - last.x) * 0.5 + 540) % 360) - 180;
+      const pitch = Math.max(-90, Math.min(90, c.pitch + (e.clientY - last.y) * 0.5));
+      p.cube = { ...c, yaw, pitch };
+    }
     last = { x: e.clientX, y: e.clientY };
   });
   body.addEventListener('pointerup', () => { if (last) { last = null; save(); } });
-  body.addEventListener('dblclick', () => { if (p.scope === 'cube') { const c = { ...DEFAULT_CUBE, ...p.cube }; p.cube = { ...c, yaw: DEFAULT_CUBE.yaw, pitch: DEFAULT_CUBE.pitch }; save(); } });
+  body.addEventListener('wheel', (e) => {
+    if (p.scope !== 'cube') return;
+    e.preventDefault();
+    const c = { ...DEFAULT_CUBE, ...p.cube };
+    p.cube = { ...c, zoom: Math.max(0.3, Math.min(8, (c.zoom ?? 1) * (e.deltaY < 0 ? 1.12 : 1 / 1.12))) };
+    save();
+  }, { passive: false });
+  body.addEventListener('dblclick', () => { if (p.scope === 'cube') { const c = { ...DEFAULT_CUBE, ...p.cube }; p.cube = { ...c, yaw: DEFAULT_CUBE.yaw, pitch: DEFAULT_CUBE.pitch, zoom: 1, panX: 0, panY: 0 }; save(); } });
 }
 
 function attachSkinDrag(p: PanelState, body: HTMLElement) {

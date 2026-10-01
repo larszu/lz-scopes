@@ -7,12 +7,13 @@
 //   v210     uncompressed 4:2:2 10 bit in NUT           – bit-exact, ~1.1 Gbit/s at 1080p25
 //   prores   prores_ks 422 HQ in NUT                    – 10 bit, visually lossless
 //
-// ffmpeg-static 5.3.0 (the ffmpeg the desktop app ships) has all four encoders, but no SRT:
-// srt:// needs an ffmpeg with libsrt ($FFMPEG or Homebrew), picked here when there is one.
+// The shipped ffmpeg (scripts/ffmpeg-builds.json) has all four encoders and libsrt; for
+// srt:// the first candidate with SRT is taken (server/ffmpeg.mjs).
 // The bridge repeats the newest frame at the stream's frame rate, so ffmpeg gets an even
 // input clock even when the window draws slower.
 
 import { spawn } from 'node:child_process';
+import { ffmpegFor, noFfmpegMessage } from './ffmpeg.mjs';
 
 export const CODECS10 = {
   hevc10: { args: (fps) => ['-c:v', 'libx265', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p10le', '-x265-params', `repeat-headers=1:keyint=${fps * 2}:log-level=error`], mux: 'ts' },
@@ -54,28 +55,16 @@ export function out10Args({ w, h, fps, codec, target, full, matrix, transfer }) 
   if (f.error) throw new Error(f.error);
   const trc = transfer === 'pq' ? 'smpte2084' : transfer === 'hlg' ? 'arib-std-b67' : 'bt709';
   const prim = matrix === '2020' ? 'bt2020' : 'bt709', space = matrix === '2020' ? 'bt2020nc' : 'bt709';
+  const tags = ['-color_range', full ? 'pc' : 'tv', '-colorspace', space, '-color_primaries', prim, '-color_trc', trc];
   return [
     '-hide_banner', '-loglevel', 'error',
-    '-f', 'rawvideo', '-pix_fmt', 'yuv422p10le', '-video_size', `${w}x${h}`, '-framerate', String(fps), '-i', 'pipe:0',
+    // Tags on the input as well: ffmpeg 7+ negotiates range and matrix, and with an untagged
+    // input it converts to the output tags (measured with 9.0.1/9.0.2: Y′ 4 → 199) – no longer exact.
+    '-f', 'rawvideo', '-pix_fmt', 'yuv422p10le', '-video_size', `${w}x${h}`, '-framerate', String(fps), ...tags, '-i', 'pipe:0',
     ...CODECS10[codec].args(fps),
-    '-color_range', full ? 'pc' : 'tv', '-colorspace', space, '-color_primaries', prim, '-color_trc', trc,
+    ...tags,
     '-f', f.format, target,
   ];
-}
-
-const srtCache = new Map();
-/** Does this ffmpeg list srt among its output protocols? */
-function hasSrt(ffmpeg) {
-  if (!srtCache.has(ffmpeg)) {
-    srtCache.set(ffmpeg, new Promise((ok) => {
-      let out = '';
-      const p = spawn(ffmpeg, ['-hide_banner', '-protocols'], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
-      p.stdout.on('data', (d) => { out += d; });
-      p.on('error', () => ok(false));
-      p.on('close', () => ok(/^\s*srt\s*$/m.test(out.split(/Output:/)[1] ?? '')));
-    }));
-  }
-  return srtCache.get(ffmpeg);
 }
 
 /**
@@ -89,15 +78,10 @@ export function handleOut10(ws, q, ffmpegs) {
   const f = out10Format(target, codec);
   if (f.error) { msg('error', f.error); ws.close(); return; }
   let ff = null, key = '', last = null, closed = false, err = '';
-  const pick = async () => {
-    if (!/^srt:/i.test(target)) return ffmpegs[0];
-    for (const c of ffmpegs) if (await hasSrt(c)) return c;
-    return null;
-  };
   const start = async (meta) => {
-    const ffmpeg = await pick();
+    const ffmpeg = await ffmpegFor(target, ffmpegs);
     if (closed) return;
-    if (!ffmpeg) { msg('error', ffmpegs.length ? 'kein ffmpeg mit SRT gefunden (ffmpeg-static hat keins) – FFMPEG setzen oder Homebrew-ffmpeg installieren' : 'ffmpeg nicht gefunden'); return; }
+    if (!ffmpeg) { msg('error', noFfmpegMessage(target, ffmpegs)); return; }
     const args = out10Args({ ...meta, fps, codec, target });
     const p = spawn(ffmpeg, args, { stdio: ['pipe', 'ignore', 'pipe'], windowsHide: true });
     ff = p;

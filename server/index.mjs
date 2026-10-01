@@ -18,7 +18,7 @@ import { createInterface } from 'node:readline';
 import { readTiff, toRgba } from './tiff.mjs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
-import { basename, delimiter, dirname, extname, join, normalize, resolve, sep } from 'node:path';
+import { basename, dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { FrameAssembler } from './frames.mjs';
@@ -29,6 +29,9 @@ import { resolveFolder, startFolderStream, watchRoots } from './folder.mjs';
 import { handleMeterSocket, meterInfo } from './meter.mjs';
 import { PtpMonitor, RtpMonitor, ipv4Interfaces, isMulticastV4, nowUtcNs } from './ptp.mjs';
 import { taiMinusUtc } from './leap.mjs';
+import { ffmpegCandidates, ffmpegFor, ffmpegInfo, noFfmpegMessage } from './ffmpeg.mjs';
+
+export { ffmpegCandidates, ffmpegInfo };
 import { FlvH264Demuxer } from './flv.mjs';
 import { handleOut10 } from './out10.mjs';
 import { readStamp, stampAge } from './stamp.mjs';
@@ -43,27 +46,7 @@ let DEV = args.includes('--dev');
 let CONTROL_TOKEN = arg('control-token', process.env.LZS_CONTROL_TOKEN ?? '');
 let DIST = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
 
-/**
- * Where ffmpeg lives: $FFMPEG, the bundled ffmpeg-static (desktop app; outside the
- * asar archive), then PATH plus the Homebrew prefixes – an app started from the
- * Finder does not inherit the shell's PATH.
- */
-export function ffmpegCandidates(env = process.env) {
-  const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
-  const list = [];
-  if (env.FFMPEG) list.push(env.FFMPEG);
-  try {
-    const bundled = createRequire(import.meta.url)('ffmpeg-static');
-    if (bundled) list.push(String(bundled).replace(`app.asar${process.platform === 'win32' ? '\\' : '/'}`, `app.asar.unpacked${process.platform === 'win32' ? '\\' : '/'}`));
-  } catch { /* not installed */ }
-  const dirs = (env.PATH ?? '').split(delimiter).filter(Boolean);
-  if (process.platform === 'darwin') dirs.push('/opt/homebrew/bin', '/usr/local/bin');
-  if (process.platform === 'linux') dirs.push('/usr/bin', '/usr/local/bin');
-  for (const d of dirs) list.push(join(d, exe));
-  return [...new Set(list)].filter((f) => existsSync(f));
-}
-
-/** ffprobe next to each ffmpeg, then $FFPROBE. ffmpeg-static ships none – see parseFfmpegBanner. */
+/** $FFPROBE, then ffprobe next to each ffmpeg (the shipped build has one; without it: parseFfmpegBanner). */
 export function ffprobeCandidates(ffmpegs, env = process.env) {
   const list = [];
   if (env.FFPROBE) list.push(env.FFPROBE);
@@ -582,8 +565,9 @@ async function startStream(ws, params) {
   // time code of every source frame (before scale/fps): showinfo side data, see ShowinfoTracker
   const wantTc = video && params.get('tc') !== '0';
   if (wantTc) vf.unshift('showinfo=checksum=0');
-  const ffmpeg = ffmpegCandidates()[0];
-  if (!ffmpeg) return fail(ws, 'ffmpeg nicht gefunden – installieren (brew install ffmpeg) oder FFMPEG setzen');
+  // srt:// needs an ffmpeg with libsrt (the shipped one has it)
+  const ffmpeg = await ffmpegFor(url);
+  if (!ffmpeg) return fail(ws, noFfmpegMessage(url));
 
   const proto = wantAudio || h264 ? 2 : 1;
   const { audio: _probed, ...videoInfo } = info;
@@ -953,8 +937,13 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
 const server = createServer((req, res) => {
   const path = new URL(req.url ?? '/', 'http://x').pathname;
   if (path === '/api/health') {
-    res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
-    return res.end(JSON.stringify({ ok: true, name: 'lz-scopes-bridge', patterns: Object.keys(TEST_PATTERNS) }));
+    // which ffmpeg runs, read from the binary: origin, version, licence, SRT (UI: Bridge, output menu)
+    const cands = ffmpegCandidates();
+    return Promise.all([ffmpegInfo(cands[0]), ffmpegFor('srt://x', cands)]).then(async ([ffmpeg, srtBin]) => {
+      res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
+      const srt = srtBin && srtBin !== ffmpeg?.path ? await ffmpegInfo(srtBin) : null;
+      res.end(JSON.stringify({ ok: true, name: 'lz-scopes-bridge', patterns: Object.keys(TEST_PATTERNS), ffmpeg, ...(srt ? { ffmpegSrt: srt } : {}) }));
+    });
   }
   const mj = /^\/out\/([\w-]+)\.mjpeg$/.exec(path);
   if (mj) return serveMjpeg(mj[1], res);
@@ -1029,11 +1018,12 @@ outWss.on('connection', (ws, req) => {
   const out = outputs.get(name) ?? { frame: null, clients: new Set(), ff: null, target: '' };
   outputs.set(name, out);
   const msg = (type, message) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type, message }));
-  if (target) {
-    const fmt = pushFormat(target);
-    const ffmpeg = ffmpegCandidates()[0];
-    if (!fmt) msg('error', 'Push-Ziel nur rtmp(s)://, srt://, rtsp://, udp://');
-    else if (!ffmpeg) msg('error', 'ffmpeg nicht gefunden');
+  const fmt = target ? pushFormat(target) : null;
+  if (target && !fmt) msg('error', 'Push-Ziel nur rtmp(s)://, srt://, rtsp://, udp://');
+  // srt:// needs an ffmpeg with libsrt (the shipped one has it); frames before the start are only kept as MJPEG
+  if (fmt) ffmpegFor(target).then((ffmpeg) => {
+    if (ws.readyState !== ws.OPEN) return;
+    if (!ffmpeg) msg('error', noFfmpegMessage(target));
     else {
       out.ff = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'mjpeg', '-i', 'pipe:0',
         '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-g', String(fps * 2), '-f', fmt, target],
@@ -1044,7 +1034,7 @@ outWss.on('connection', (ws, req) => {
       out.ff.on('close', (code) => { if (code) msg('error', `Push beendet: ${err.trim().split('\n').pop() ?? code}`); out.ff = null; });
       out.ff.stdin.on('error', () => {});
     }
-  }
+  });
   msg('live', `/out/${name}.mjpeg${target ? ` → ${target}` : ''}`);
   ws.on('message', (data, isBinary) => {
     if (!isBinary) return;

@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_THEME, HUD_STYLE, THEMES, isTheme } from '../src/theme';
 
-const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+// CRLF on a Windows checkout – the block search below expects \n
+const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 /** first `:root {` block = neutral skin and the shared tokens */
 const neutralBlock = css.slice(css.indexOf(':root {'), css.indexOf("}\n/* skin \"lzm\""));
 const neutralPart = neutralBlock.slice(neutralBlock.indexOf('/* skin "neutral"'))

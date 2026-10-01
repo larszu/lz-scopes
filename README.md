@@ -83,7 +83,7 @@ Get the installer from the [latest release](https://github.com/larszu/lz-scopes/
 | macOS (Apple Silicon and Intel) | `LZ Scopes-<version>-universal.dmg` or `.zip` |
 | Windows 10/11 (x64) | `LZ Scopes-<version>-x64.exe` (installer) or `-portable.exe` |
 
-The desktop app contains the bridge and ffmpeg, so RTSP and other network sources work right away. macOS builds are ad-hoc signed: on first start, right-click and choose *Open*.
+The desktop app contains the bridge and a redistributable ffmpeg 9.0.2 (GPLv3, with SRT; licences and source: [THIRD_PARTY.md](THIRD_PARTY.md)), so RTSP, SRT and other network sources work right away without a system ffmpeg. The *Bridge* section shows which ffmpeg runs. macOS builds are ad-hoc signed: on first start, right-click and choose *Open*.
 
 **Web edition:** <https://larszu.github.io/lz-scopes/>. Test patterns, camera, screen and files work there. RTSP, SRT and other network streams need the desktop app or `npm start`, because a browser cannot open them.
 
@@ -99,21 +99,22 @@ Keys: `1`-`6` layout, `C` measuring stage (signal / after CST / after LUT), `Spa
 
 ## Build from source
 
-Requires [Node.js](https://nodejs.org/) 20+ and, for network streams without the desktop app, `ffmpeg` and `ffprobe` in the `PATH` (`brew install ffmpeg`).
+Requires [Node.js](https://nodejs.org/) 20+. `npm run ffmpeg:fetch` downloads the same ffmpeg the app ships (SHA-256-checked, into `vendor/ffmpeg/`); without it the bridge uses `$FFMPEG` or an ffmpeg from the `PATH`.
 
 ```bash
 npm install
+npm run ffmpeg:fetch         # ffmpeg/ffprobe of the desktop app for this machine (tests and npm start use it)
 npm run dev                  # UI http://localhost:4191, bridge on 4192
 npm run build && npm start   # production, everything on http://127.0.0.1:4192
 npm test                     # colour maths, statistics, bridge input validation
-npm run test:e2e             # desktop app via Playwright: waveform pixels, RTSP (mediamtx), outputs/MJPEG, layouts, CST/LUT stages
+npm run test:e2e             # desktop app via Playwright: waveform pixels, RTSP and SRT (mediamtx), outputs/MJPEG, 10-bit/SRT push, layouts, CST/LUT stages
 npm run typecheck
 npm run dist:mac             # or dist:win: desktop app with bridge and ffmpeg
 ```
 
-CI (`ci.yml`) runs types, unit tests, build and the E2E tests on every PR and push to main. The RTSP test is skipped without `mediamtx`/`ffmpeg`.
+CI (`ci.yml`) runs types, unit tests, build and the E2E tests on every PR and push to main, and tests the shipped ffmpeg builds on macOS and Windows (licence, SRT, 10-bit push). The RTSP/SRT receive tests are skipped without `mediamtx`.
 
-Release: push a tag `v*`; `release.yml` builds Windows and macOS and attaches the installers to the release.
+Release: push a tag `v*`; `release.yml` builds Windows and macOS, checks the ffmpeg inside the packages and attaches the installers and the ffmpeg source archives to the release. `workflow_dispatch` is a dry run.
 
 ## Audio
 

@@ -14,6 +14,7 @@ import { DEFAULT_SKIN, ROI_CLOSE, defaultPanel as panel, drawPanel, panelSignatu
 import type { OutputHost, OutputWindowApi } from './outputView';
 import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } from './scene';
 import { connectRemote } from './remote';
+import { DEFAULT_QC, QC_LABELS, QC_TYPES, evaluate as evaluateQc, frameFingerprint, qcLog, toCsv, type QcSettings } from './qclog';
 import { CUBE_SPACE_LABELS, DEFAULT_CUBE, type CubeSettings, type CubeSpace } from './cube';
 import { DEFAULT_CRT, PERSIST_CHOICES, PHOSPHORS, type CrtSettings, type Phosphor } from './crt';
 import type { Command } from '../server/control.mjs';
@@ -61,6 +62,8 @@ interface Persisted {
   /** tone generator settings (never saved as running) and output device */
   gen?: Partial<GenConfig>;
   genSink?: string;
+  /** QC log thresholds (qclog.ts) */
+  qc?: Partial<QcSettings>;
   /** ΔE reference at the probe point (panel.ts deLines) */
   deRef?: string;
   /** low-latency mode for all bridge streams without their own setting (docs/research/low-latency.md) */
@@ -799,6 +802,28 @@ function panelSettings(p: PanelState): Node[] {
     row('Ziellinien', t);
   }
   if (p.scope === 'satlum') row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
+  if (p.scope === 'qclog') {
+    const q = { ...DEFAULT_QC, ...state.qc };
+    const setQc = (patch: Partial<QcSettings>) => { state.qc = { ...q, ...patch }; Object.assign(q, patch); save(); };
+    const on = h('input', { type: 'checkbox', checked: q.on }) as HTMLInputElement;
+    on.onchange = () => setQc({ on: on.checked });
+    row('Prüfen', h('label', { class: 'inline' }, on, 'alle laufenden Quellen, 4× pro Sekunde'));
+    const shown = new Set(p.qcTypes ?? QC_TYPES);
+    rows.push(h('div', { class: 'mrow' }, ...QC_TYPES.map((t) => {
+      const c = h('input', { type: 'checkbox', checked: shown.has(t) }) as HTMLInputElement;
+      c.onchange = () => { if (c.checked) shown.add(t); else shown.delete(t); p.qcTypes = QC_TYPES.filter((x) => shown.has(x)); save(); };
+      return h('label', { class: 'inline' }, c, QC_LABELS[t]);
+    })));
+    row('Clipping ab', numIn(q.clip * 100, 0.1, 10, (v) => setQc({ clip: v / 100 })), '% der Pixel');
+    row('Schwarzbild unter', numIn(q.black * 100, 0.5, 10, (v) => setQc({ black: v / 100 })), '% Y′');
+    row('Stille unter', numIn(-q.silenceDb, 30, 90, (v) => setQc({ silenceDb: -v })), '−dBFS');
+    row('Standbild ab', numIn(q.freezeMs / 1000, 0.5, 30, (v) => setQc({ freezeMs: v * 1000 })), 's');
+    row('', h('button', { class: 'mini', onclick: () => {
+      const blob = new Blob([toCsv(qcLog.events, p.qcTypes ?? QC_TYPES)], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `lz-scopes-qc-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    } }, 'CSV exportieren'), h('button', { class: 'mini', onclick: () => qcLog.clear() }, 'Leeren'));
+  }
   if (p.scope === 'timeline') {
     row('Zeitraum', select(String(p.span ?? 10), [['10', '10 s'], ['60', '1 min'], ['300', '5 min']], (v) => { p.span = Number(v) as PanelState['span']; save(); }));
     row('', h('button', { class: 'mini', onclick: () => panelSource(p)?.history.clear() }, 'Verlauf löschen'));
@@ -1151,7 +1176,29 @@ function updateTransport() {
 
 // ---------------------------------------------------------------- render loop
 
-let lastStats = 0;
+let lastStats = 0, lastQc = 0;
+/** freeze detection per source: last fingerprint and since when it is unchanged */
+const qcFreeze = new Map<string, { fp: string; since: number }>();
+/** QC log (qclog.ts): four checks per second on every live source */
+function runQc(now: number) {
+  const s0 = { ...DEFAULT_QC, ...state.qc };
+  if (!s0.on) return;
+  for (const s of sources) {
+    if (s.status !== 'live' || !s.ready) { qcLog.closeSource(s.id); continue; }
+    const { kr, kb } = LUMA[s.colorspace]; s.updateStats(kr, kb);
+    const live = s.kind === 'stream' || s.kind === 'webcam' || s.kind === 'screen' || (s.kind === 'file' && !!s.video && !s.video.paused);
+    // freeze check only where pictures are expected to change
+    const f = live ? s.cpuFrame() : null, fp = f ? frameFingerprint(f.px, f.w, f.h, f.decode) : '';
+    const fz = qcFreeze.get(s.id);
+    if (!fz || fz.fp !== fp) qcFreeze.set(s.id, { fp, since: now });
+    const a = s.audio && !s.audio.stale ? s.audio : null;
+    let peak: number | null = null;
+    if (a) { let tp = 0; for (let c = 0; c < a.channels; c++) tp = Math.max(tp, a.level.truePeakOver(c, s0.silenceMs)); peak = tp > 0 ? 20 * Math.log10(tp) : -Infinity; }
+    // R 103 only means something on the unclipped Y′CbCr path (R′G′B′ sources are clipped to 0–100 %)
+    const cond = evaluateQc({ stats: s.stats, r103: s.yuv ? s.r103Stats() : null, peakDb: peak, unchangedMs: now - (qcFreeze.get(s.id)?.since ?? now), freezeApplies: live && !s.frozen }, s0);
+    qcLog.update(s.id, s.name, cond, s.tc?.tc ?? null);
+  }
+}
 let needClear = true;
 const panelSigs = new Map<number, string>();
 
@@ -1187,6 +1234,7 @@ function drawAll(now: number) {
   updateTransport();
 
   // CPU statistics every 100 ms; low-latency sources at their own rate (fewer main-thread stalls)
+  if (now - lastQc > 250) { lastQc = now; runQc(now); }
   if (now - lastStats > 100) {
     lastStats = now;
     const used = new Set(openViews().map((v) => panelSource(state.panels[v.idx])).filter(Boolean) as Source[]);

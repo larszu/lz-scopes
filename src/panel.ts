@@ -10,6 +10,7 @@ import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/pa
 import type { DisplayParams, PictureMode, PictureParams, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
 import type { Source } from './sources';
 import { barRefs, nearest, type DeRef } from './deltae';
+import { QC_TYPES, drawQcLog, qcLog, type QcType } from './qclog';
 import { castName, drawMinMax } from './minmax';
 
 const NEUTRAL_RANGES = { all: [0.02, 0.98], shadows: [0.02, 0.3], mids: [0.3, 0.7], highlights: [0.7, 0.98] } as const;
@@ -59,6 +60,8 @@ export interface PanelState {
   neutral?: { threshold?: number; range?: 'all' | 'shadows' | 'mids' | 'highlights' };
   /** channel plot: channel pair (graticule.ts CHANNEL_PAIRS) */
   pair?: number;
+  /** QC log: event types shown */
+  qcTypes?: QcType[];
   /** timeline: shown time span in seconds */
   span?: TimelineSpan;
   /** vectorscope, CIE, diamond, 3D volume (digital): persistence in ms, −1 = infinite (trace history) */
@@ -184,7 +187,9 @@ function drawAbLabels(ctx: CanvasRenderingContext2D, r: Rect, ab: NonNullable<Pa
 
 export function panelSignature(p: PanelState, src: Source | null, body: Rect, o: DrawOptions) {
   // clocks run: redraw at 25 Hz
-  const tick = p.scope === 'clock' || (p.scope === 'picture' && p.clockOverlay) ? `|t${Math.floor(performance.now() / 40)}` : '';
+  const tick = p.scope === 'clock' || (p.scope === 'picture' && p.clockOverlay) ? `|t${Math.floor(performance.now() / 40)}`
+    // QC log: new events, and the durations of active ones once a second
+    : p.scope === 'qclog' ? `|q${qcLog.version}:${Math.floor(Date.now() / 1000)}` : '';
   if (p.scope === 'clock') return `C|${src?.id}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}${tick}`;
   if (isLight(p.scope)) return `${lightSignature(p.scope, p.light, body.w, body.h)}|${body.x},${body.y}`;
   if (isAudio(p.scope)) {
@@ -220,6 +225,11 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     const empty = src ? (src.kind === 'stream' && src.settings.audio === false ? 'Ton ist für diese Quelle aus (Quelle → Ton)'
       : src.status === 'live' ? 'Kein Ton in dieser Quelle' : (src.message || 'Keine Daten – Quelle starten')) : (o.emptyText ?? 'Links eine Quelle hinzufügen');
     drawAudioPanel(ctx, p.scope, src?.audio ?? null, body.w, body.h, p.audio, empty, p);
+    return;
+  }
+  if (p.scope === 'qclog') {
+    renderer.clearRect(body);
+    drawQcLog(ctx, body.w, body.h, qcLog, p.qcTypes ?? QC_TYPES);
     return;
   }
   if (p.scope === 'timeline') {

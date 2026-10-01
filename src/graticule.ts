@@ -10,14 +10,14 @@ import { latencyLines, rtpLines } from './latency';
 import type { Source } from './sources';
 import { CUBE_SPACE_LABELS, SIGNAL_SPACES, cubeProject, cubeRotation, cubeWireframe, qFromChl, qFromHsv, qFromIctcp, qFromLab, qFromRgb, qFromXyz, qFromYcc, type CubeSettings } from './cube';
 
-export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'timeline' | 'hist' | 'stats'
+export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'hist' | 'stats'
   | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock'
   | 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map' | 'light-spectrum' | 'light-swatch';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits';
 
 export const SCOPE_LABELS: Record<ScopeType, string> = {
   picture: 'Bild', 'wf-luma': 'Waveform Luma', 'wf-color': 'Waveform Farbe', 'wf-skin': 'Waveform Hauttöne', 'wf-rgb': 'Waveform RGB', parade: 'RGB-Parade', yrgb: 'YRGB-Parade',
-  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', diamond: 'Diamond (Gamut)', cube: '3D-Farbvolumen', satlum: 'Sättigung über Luma', chplot: 'Kanal-Plot', timeline: 'Zeitverlauf', hist: 'Histogramm', stats: 'Messwerte',
+  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', diamond: 'Diamond (Gamut)', cube: '3D-Farbvolumen', satlum: 'Sättigung über Luma', chplot: 'Kanal-Plot', minmax: 'Min/Max je Zeile', timeline: 'Zeitverlauf', hist: 'Histogramm', stats: 'Messwerte',
   'audio-meter': 'Audio Pegel & Lautheit', 'audio-loudness': 'Audio Lautheitsverlauf', 'audio-spectrum': 'Audio Spektrum', 'audio-phase': 'Audio Goniometer', 'audio-check': 'Audio Ident & A/V-Versatz',
   clock: 'Uhr / Timecode',
   // Opple Light Master (src/opple/scopes.ts, LIGHT_LABELS)
@@ -46,6 +46,7 @@ export function plotRect(scope: ScopeType, w: number, h: number, aspect = 16 / 9
     const s = Math.max(10, Math.min(w - 36, h - 24));
     return { x: (w - s + 24) / 2, y: (h - s - 16) / 2, w: s, h: s };
   }
+  if (scope === 'minmax') return { x: 44, y: 8, w: Math.max(10, w - 52), h: Math.max(10, h - 26) };
   if (scope === 'satlum') return { x: 44, y: 8, w: Math.max(10, w - 52), h: Math.max(10, h - 26) };
   if (scope === 'chplot') {
     const s = Math.max(10, Math.min(w - 52, h - 30));

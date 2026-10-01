@@ -792,6 +792,12 @@ function panelSettings(p: PanelState): Node[] {
     row('Kanäle', select(String(p.pair ?? 0), CHANNEL_PAIRS.map((n, i) => [String(i), n] as [string, string]), (v) => { p.pair = Number(v); save(); }));
     row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
   }
+  if (p.scope === 'minmax') {
+    row('Grenzen', select(p.minmax?.limits ?? 'r103', [['r103', 'EBU R 103 −5/105 %'], ['legal', 'Legal 0/100 %']], (v) => { p.minmax = { ...p.minmax, limits: v as 'r103' }; save(); }));
+    const t = h('input', { class: 'url', value: (p.minmax?.targets ?? []).join(', '), placeholder: 'Ziellinien in %, z. B. 18, 75 (max. 4)' }) as HTMLInputElement;
+    t.onchange = () => { p.minmax = { ...p.minmax, targets: t.value.split(/[,; ]+/).map(Number).filter((v) => Number.isFinite(v)).slice(0, 4) }; save(); };
+    row('Ziellinien', t);
+  }
   if (p.scope === 'satlum') row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
   if (p.scope === 'timeline') {
     row('Zeitraum', select(String(p.span ?? 10), [['10', '10 s'], ['60', '1 min'], ['300', '5 min']], (v) => { p.span = Number(v) as PanelState['span']; save(); }));
@@ -876,7 +882,7 @@ function panelSettings(p: PanelState): Node[] {
     row('HDR10-Kennwerte', h('button', { class: 'mini', title: 'MaxCLL/MaxFALL (CTA-861.3) neu zählen – nur bei PQ-Quellen, nur ganze Bilder', onclick: () => { panelSource(p)?.resetLightLevel(); } }, 'MaxCLL/MaxFALL zurücksetzen'));
   }
   if (p.scope === 'picture') {
-    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung'], ['r103', 'EBU R 103']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
+    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung'], ['r103', 'EBU R 103'], ['neutral', 'Neutral (Farbstich)']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
     const ab = p.ab ?? { mode: 'off' as const, b: 'stage:cst', pos: 0.5, gain: 4 };
     const setAb = (patch: Partial<NonNullable<PanelState['ab']>>, rebuild = false) => {
       p.ab = { ...ab, ...patch }; Object.assign(ab, patch); save(); refreshHeads();
@@ -901,6 +907,10 @@ function panelSettings(p: PanelState): Node[] {
     const rgcBox = h('input', { type: 'checkbox', checked: !!p.rgc }) as HTMLInputElement;
     rgcBox.onchange = () => { p.rgc = rgcBox.checked; save(); refreshHeads(); };
     row('Gamut-Kompression', h('label', { class: 'inline', title: 'Vorschau der ACES-1.3-Reference-Gamut-Compression (in ACEScg). Wirkt auf Bild und Gamut-Warnung, nicht auf die Scopes.' }, rgcBox, 'ACES 1.3 (Vorschau)'));
+    if (p.picture === 'neutral') {
+      row('Schwelle', select(String(p.neutral?.threshold ?? 5), [['2', '2 %'], ['5', '5 %'], ['10', '10 %']], (v) => { p.neutral = { ...p.neutral, threshold: Number(v) }; save(); }, 'Pixel mit weniger Sättigung (|CbCr|/0,5) gelten als fast neutral; ihr Stich wird verstärkt in Farbe gezeigt, exakt Neutrales grau'));
+      row('Bereich', select(p.neutral?.range ?? 'all', [['all', 'alles'], ['shadows', 'Schatten'], ['mids', 'Mitten'], ['highlights', 'Lichter']], (v) => { p.neutral = { ...p.neutral, range: v as 'all' }; save(); }));
+    }
     if (p.picture === 'gamut') row('Zielgamut', select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, 'Markiert Pixel, die im Zielgamut negative Anteile hätten'));
     if (p.picture === 'false') row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); }));
     if (p.picture === 'zebra') row('Zebra ab', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%');

@@ -46,3 +46,8 @@ In den geöffneten OmniScope-Seiten gibt es **keinen** Zeitverlauf-Scope (keine 
 - **Sättigung über Luma** (OmniScope „Sat / Lum“): x = Y′, y = |CbCr| / 0,5; Farbe der Pixel optional.
 - **Kanal-Plot** (OmniScope „Channel Plot“): R′/G′, R′/B′, G′/B′, Y′/Cb, Y′/Cr, Cb/Cr; Diagonale = gleiche Kanäle.
 - Nachleuchten auch für diese Scopes.
+
+## Umsetzung #67, Teil 2 (Min/Max, Neutral)
+
+- **Min/Max je Zeile** (OmniScope „Min Max“): je Bildzeile dunkelstes und hellstes Y′ (bis 540 Zeilen, oben = Zeile 1), Grenzen R 103 −5/105 % oder legal 0/100 % (Überschreitungen rot), bis zu 4 Ziellinien, Min/Max-Anzeige.
+- **Neutral** (OmniScope „Neutral Scope“) als Bild-Overlay: Pixel unter der Sättigungsschwelle (2/5/10 %, Standard 5 %) im gewählten Tonbereich (alles/Schatten/Mitten/Lichter) in ihrem verstärkten Farbstich, exakt Neutrales grau, Rest dunkel; dazu Flächenanteil und mittlerer Stich mit Richtung.

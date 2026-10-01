@@ -126,7 +126,7 @@ test('Low-Latency-Modus: Stufen je Konfiguration', async () => {
     console.log(`| ${c.name} | ${recv.get(c.name)} | ${f(avg(v, 'total'))} | ${runs.map(f).join(' / ')} | ${f(min)}–${f(max)} | ${f(avg(v, 'toBridge'))} | ${f(avg(v, 'bridgeToApp'))} | ${f(avg(v, 'handoff'))} | ${f(avg(v, 'wait'))} | ${f(avg(v, 'draw'))} |`);
     // CI renders WebGL in software: a slow configuration may draw no stamped frame within a 2-s window
     if (!process.env.CI) expect(v.length).toBeGreaterThan(0);
-    if (v.length) expect(avg(v, 'total')).toBeLessThan(5000);
+    if (v.length) expect(avg(v, 'total')).toBeLessThan(process.env.CI ? 20_000 : 5000);
   }
   expect(CONFS.filter((c) => rows.get(c.name)!.length).length).toBeGreaterThan(CONFS.length / 2);
   // the panel head shows the mode with the measured value

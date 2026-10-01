@@ -7,6 +7,7 @@ import { bt709Oetf, hlgFromNits, pqEncode, type Colorspace } from './color';
 import { LED_PATTERNS } from './led/patterns';
 import { avCalibration } from './audio/avcal';
 import { CodeRaster, NOTE_16, PATTERNS_16, PLUGE_16, drawRaster, plugeBoxes, plugeRaster, toFrame16, type Frame16 } from './patterns16';
+import { smpteLzRaster } from './egg';
 import { ramp10Labels, ramp10Raster } from './deep';
 
 export interface PatternDef {
@@ -454,6 +455,13 @@ const LZ = [
 for (const [n, slug, name] of LZ) {
   PATTERNS.push({ id: `lz-${n}`, name: `${n} ${name}`, group: 'LZ Displaytest', src: `patterns/lz-display/lz_${n}_${slug}_1920x1080.png` });
 }
+
+// start pattern: SMPTE 75 % with the hidden signature in the waveform (egg.ts), right after the original
+PATTERNS.splice(PATTERNS.findIndex((p) => p.id === 'smpte75') + 1, 0, {
+  id: 'smpte75-lz', name: 'SMPTE 75 % Balken + PLUGE (LZ)', group: 'Farbe',
+  note: 'Wie SMPTE 75 %, aber im Schwarzfeld steht zwischen 0,8 und 3,8 % eine Signatur – in der Waveform lesbar (am besten mit der Schwarz-Lupe). Balken und PLUGE unverändert; Scopes bekommen exakte 10-bit-Codes.',
+  draw: (c, w, h) => drawRaster(c, smpteLzRaster(w, h), false), frame16: (w, h) => toFrame16(smpteLzRaster(w, h), false, h > 576 ? '709' : '601'),
+});
 
 // 16-bit patterns (issue #7): BT.2111-3 HDR bars, and exact frames for the BT.814 PLUGE
 for (const p of PATTERNS_16) {

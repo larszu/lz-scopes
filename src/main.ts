@@ -71,7 +71,7 @@ function load(): Persisted {
   const base: Persisted = {
     layout: 'lc', panels: DEFAULT_SCOPES.map(panel), unit: 'percent', tint: 'green', falsePreset: 'ARRI', zebra: 0.95, zebraLow: 0,
     maxSamples: 1_000_000, bridge: '', sidebar: true, skin: { ...DEFAULT_SKIN }, display: 'auto', theme: DEFAULT_THEME, targets: [], scenes: [defaultScene()], activeScene: '', layoutName: '',
-    sources: [{ kind: 'pattern', name: 'Testbild', url: '', settings: { transfer: 'auto', colorspace: 'auto', width: 960, fps: 0, depth: 8, transport: 'tcp' }, pattern: { id: 'smpte75', width: 1920, height: 1080, label: '' } }],
+    sources: [{ kind: 'pattern', name: 'Testbild', url: '', settings: { transfer: 'auto', colorspace: 'auto', width: 960, fps: 0, depth: 8, transport: 'tcp' }, pattern: { id: 'smpte75-lz', width: 1920, height: 1080, label: '' } }],
   };
   try {
     const s = JSON.parse(localStorage.getItem(STORE_KEY) ?? 'null');

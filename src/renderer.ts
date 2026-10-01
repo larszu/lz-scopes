@@ -323,6 +323,8 @@ export interface ScatterParams {
   sec?: number[]; secN?: number;
   /** 3D volume (cube.ts): space id, row-major rotation, source → BT.2020, source white XYZ, cd/m² of 1.0 */
   cube?: { space: number; rot: number[]; to2020: number[]; white: number[]; nits: number };
+  /** digital display: persistence τ in ms (trace history; −1 = infinite), as in the CRT mode */
+  persist?: number;
   /** analogue beam look (crt.ts) */
   crt?: CrtSettings;
 }
@@ -585,8 +587,9 @@ export class Renderer {
     const cols = Math.ceil(t.w / stepX), rows = Math.ceil(t.h / stepY);
     const n = crt ? Math.max(1, cols - 1) * rows : cols * rows;
     const area = (vp.w / sections) * vp.h;
-    const dot = !crt && !wave ? Math.max(1, Math.round(this.dpr)) : 1;
-    const intensity = ((wave ? 0.9 : 0.6) * area) / n / (dot * dot);
+    // the 3D volume spreads the points thinly: bigger dots and more weight so colours stay visible
+    const dot = !crt && !wave ? Math.max(1, Math.round(this.dpr)) * (p.mode === 'cube' ? 3 : 1) : 1;
+    const intensity = ((wave ? 0.9 : 0.6) * area) / n / (dot * dot) * (p.mode === 'cube' ? 6 : 1);
 
     // Only re-scatter when the frame or a parameter changed; otherwise reuse the accumulation.
     const sig = `${src.id}:${src.frameSeq}:${t.w}x${t.h}:${acc.w}x${acc.h}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${chainOf(src)?.sig ?? ''}:${JSON.stringify(baseOf(src).yuv)}:${baseOf(src).colorspace}:${this.dpr}:${JSON.stringify(p)}`;
@@ -652,6 +655,8 @@ export class Renderer {
 
     let shown = acc.tex, glow: WebGLTexture | null = null;
     if (crt) ({ shown, glow } = this.crtPasses(key, acc, crt, fresh));
+    // digital display with persistence (trace history): the same time-based mix as the CRT
+    else if (p.persist) shown = this.crtPasses(key, acc, { on: true, phosphor: 'P31', persist: p.persist, glow: 0, beam: 1 }, fresh).shown;
     else this.settling.delete(key);
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -673,7 +678,7 @@ export class Renderer {
     } else {
       const dp = this.program('display', QUAD_VS, DISPLAY_FS);
       gl.useProgram(dp);
-      gl.bindTexture(gl.TEXTURE_2D, acc.tex);
+      gl.bindTexture(gl.TEXTURE_2D, shown);
       gl.uniform1i(this.u(dp, 'uAcc'), 0);
       gl.uniform1f(this.u(dp, 'uGain'), p.gain);
       gl.uniform3f(this.u(dp, 'uTint'), 1, 1, 1);

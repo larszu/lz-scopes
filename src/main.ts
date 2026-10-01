@@ -755,6 +755,16 @@ function panelSettings(p: PanelState): Node[] {
       'R′G′B′-Würfel des Signals, CIELAB (D65, L* nach oben) oder ICtCp (BT.2100, I nach oben). Drehen: im Panel ziehen, Doppelklick = Ausgangsansicht'));
     row('Drahtgitter', select(c.gamut, [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => setCube({ gamut: v as CubeSettings['gamut'] }), 'Zielgamut als Drahtgitter (CIELAB und ICtCp; im R′G′B′-Würfel ist es der 0–100-%-Würfel)'));
     row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
+    rows.push(h('p', { class: 'hint' }, 'Wofür: Der Würfel zeigt das ganze Farbvolumen auf einmal – wo die Pixel im Gamut liegen, welche Ecken (Primär-/Sekundärfarben, Weiß, Schwarz) angefahren oder abgeschnitten werden, wie sich Farben verteilen und ob ein Farbstich die Graue Achse verschiebt. Vectorscope und Diamond zeigen jeweils nur eine Projektion (Farbton/Sättigung bzw. zwei Kanalpaare) und verlieren dabei die Helligkeit bzw. den dritten Kanal.'));
+  }
+  if (p.scope === 'timeline') {
+    row('Zeitraum', select(String(p.span ?? 10), [['10', '10 s'], ['60', '1 min'], ['300', '5 min']], (v) => { p.span = Number(v) as PanelState['span']; save(); }));
+    row('', h('button', { class: 'mini', onclick: () => panelSource(p)?.history.clear() }, 'Verlauf löschen'));
+    rows.push(h('p', { class: 'hint' }, 'Zehnmal pro Sekunde ein 96×54-Raster des Bildes: oben die mittlere Farbe (Movie-Barcode), darunter Farbtonanteile über die Zeit (Vectorscope-Verlauf, hell = viel von diesem Farbton), Sättigung (Mittel und 95 %) und Luma (Bereich min–max, Linie = Mittel). Neueste Werte rechts.'));
+  }
+  if ((p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube') && !p.crt?.on) {
+    row('Nachleuchten', select(String(p.persist ?? 0), [['0', 'aus'], ['300', '0,3 s'], ['1000', '1 s'], ['3000', '3 s'], ['10000', '10 s'], ['-1', 'unendlich']], (v) => { p.persist = Number(v); save(); },
+      'Spur der letzten Bilder: ältere Werte verblassen mit exp(−t/τ), „unendlich“ hält alles (Bewegung und Ausreißer über die Zeit sichtbar)'));
   }
   if (p.scope === 'cie') row('Diagramm', check('cieUv', 'CIE 1976 u′v′ statt 1931 xy'));
   if (scatter) {
@@ -1122,6 +1132,8 @@ function drawAll(now: number) {
     const used = new Set(openViews().map((v) => panelSource(state.panels[v.idx])).filter(Boolean) as Source[]);
     used.forEach((s) => { const { kr, kb } = LUMA[s.colorspace]; s.updateStats(kr, kb); });
   }
+  // timeline panels: 10 samples per second of their sources (history.ts)
+  for (const v of openViews()) { const p = state.panels[v.idx]; if (p.scope === 'timeline') panelSource(p)?.sampleHistory(now); }
 
   // CRT persistence still fading: redraw those panels although nothing else changed
   for (const k of renderer.settling) panelSigs.delete(Number(k.slice(1)));

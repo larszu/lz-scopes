@@ -19,7 +19,7 @@ Ergebnis: **keine Geheimnisse, keine Zugangsdaten, keine privaten IPs, keine Anl
 | `docs/research/*.md`: Zusammenfassungen mit Links, kein längeres Fremdzitat; einzige wörtliche Stelle ist ein Halbsatz aus § 69e UrhG (Gesetzestext, gemeinfrei) | unkritisch |
 | `docs/research/img/vma-audioanalyser.png`, `vma-audiogenerator.png`: Screenshots der Fremdsoftware VMA | **Urheberrecht Dritter, vor dem Veröffentlichen entfernen oder durch eigene Aufnahmen ersetzen** (eingebunden in `docs/research/audio.md`, Zeilen 15 und 37) |
 | `docs/research/*.md` nennen Fragen „Welche Eingänge nutzt Lars wirklich?" und `docs/cable-planner-integration.md` den Abschnitt „Offen für Lars" | keine sensiblen Daten, lesen sich aber wie interne Notizen; vor dem Veröffentlichen prüfen, ob sie so stehen bleiben sollen |
-| Fremdkomponenten | ffmpeg-static (GPL) in der Desktop-App, dockview MIT, MediaPipe und BlazeFace Apache-2.0: siehe [THIRD_PARTY.md](../THIRD_PARTY.md) |
+| Fremdkomponenten | ffmpeg 9.0.2 (GPLv3, ohne nonfree, mit SRT; Builds und Quelltext-Pflichten in docs/research/ffmpeg-lizenz.md) in der Desktop-App, dockview MIT, MediaPipe und BlazeFace Apache-2.0: siehe [THIRD_PARTY.md](../THIRD_PARTY.md) |
 | LZ-Displaytestbilder | eigenes Werk |
 
 ## Schritte

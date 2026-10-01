@@ -1,13 +1,13 @@
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { createServer } from 'node:net';
-import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 import { validateCommand } from '../server/control.mjs';
 import { handleOut10, out10Args, out10Format, parseFrame10 } from '../server/out10.mjs';
 import { OUT10_HEADER, frame10Buffer } from '../src/deep';
+import { shippedFfmpeg } from './shippedFfmpeg';
 
-const ffmpeg = createRequire(import.meta.url)('ffmpeg-static') as string;
+const ffmpeg = shippedFfmpeg ?? '';
 
 function testFrame(w: number, h: number) {
   const f = frame10Buffer({ w, h, full: false, colorspace: '709', transfer: 'sdr' });
@@ -19,10 +19,11 @@ function testFrame(w: number, h: number) {
 
 const freePort = () => new Promise<number>((ok) => { const s = createServer().listen(0, '127.0.0.1', () => { const p = (s.address() as { port: number }).port; s.close(() => ok(p)); }); });
 
-/** Listening ffmpeg: first frame of the stream as raw yuv422p10le, plus its log. */
-function receive(port: number, fmt: string, extra: string[] = []) {
+/** Listening ffmpeg: first frame of the stream as raw yuv422p10le, plus its log. `proto` tcp or srt. */
+function receive(port: number, fmt: string, extra: string[] = [], proto: 'tcp' | 'srt' = 'tcp') {
+  const url = proto === 'srt' ? `srt://127.0.0.1:${port}?mode=listener` : `tcp://127.0.0.1:${port}?listen=1`;
   return new Promise<{ raw: Buffer; log: string }>((ok, fail) => {
-    const p = spawn(ffmpeg, ['-hide_banner', '-f', fmt, '-i', `tcp://127.0.0.1:${port}?listen=1`, '-frames:v', '1', ...extra, '-f', 'rawvideo', '-pix_fmt', 'yuv422p10le', 'pipe:1']);
+    const p = spawn(ffmpeg, ['-hide_banner', '-f', fmt, '-i', url, '-frames:v', '1', ...extra, '-f', 'rawvideo', '-pix_fmt', 'yuv422p10le', 'pipe:1']);
     const out: Buffer[] = []; let log = '';
     p.stdout.on('data', (d) => out.push(d)); p.stderr.on('data', (d) => { log += d; });
     p.on('error', fail);
@@ -66,13 +67,13 @@ describe('10-bit output: formats and arguments', () => {
   });
 });
 
-describe('10-bit output through ffmpeg-static', () => {
-  it('v210: every code arrives unchanged (bit-exact)', async () => {
+describe.skipIf(!shippedFfmpeg)('10-bit output through the shipped ffmpeg', () => {
+  it.each(['tcp', 'srt'] as const)('v210 over %s: every code arrives unchanged (bit-exact)', async (proto) => {
     const w = 192, h = 108, f = testFrame(w, h), port = await freePort();
-    const rx = receive(port, 'nut');
+    const rx = receive(port, 'nut', [], proto);
     await new Promise((r) => setTimeout(r, 400));
     const ws = fakeWs();
-    handleOut10(ws, new URLSearchParams({ target: `tcp://127.0.0.1:${port}`, codec: 'v210', fps: '25' }), [ffmpeg]);
+    handleOut10(ws, new URLSearchParams({ target: `${proto}://127.0.0.1:${port}`, codec: 'v210', fps: '25' }), [ffmpeg]);
     ws.emit('message', Buffer.from(f.buf), true);
     const { raw, log } = await rx;
     ws.close();
@@ -84,14 +85,13 @@ describe('10-bit output through ffmpeg-static', () => {
     expect(ws.sent.some((m) => m.includes('live'))).toBe(true);
   }, 30_000);
 
-  // The Linux build of ffmpeg-static 6.0 crashes (SIGSEGV) as the HEVC receiver in CI – seen
-  // 30.09.2026; the sender side ran. Checked on macOS only.
-  it.skipIf(process.platform === 'linux')('hevc10: HEVC Main 10 with BT.709 tags', async () => {
+  // (ffmpeg-static 6.0 for Linux crashed here as the HEVC receiver; the shipped build does not)
+  it.each(['tcp', 'srt'] as const)('hevc10 over %s: HEVC Main 10 with BT.709 tags', async (proto) => {
     const w = 192, h = 108, port = await freePort();
-    const rx = receive(port, 'mpegts');
+    const rx = receive(port, 'mpegts', [], proto);
     await new Promise((r) => setTimeout(r, 400));
     const ws = fakeWs();
-    handleOut10(ws, new URLSearchParams({ target: `tcp://127.0.0.1:${port}`, codec: 'hevc10', fps: '25' }), [ffmpeg]);
+    handleOut10(ws, new URLSearchParams({ target: `${proto}://127.0.0.1:${port}`, codec: 'hevc10', fps: '25' }), [ffmpeg]);
     ws.emit('message', Buffer.from(testFrame(w, h).buf), true);
     const { log } = await rx;
     ws.close();

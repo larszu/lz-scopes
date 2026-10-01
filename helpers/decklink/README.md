@@ -6,7 +6,7 @@ Nimmt von einer Blackmagic DeckLink-Karte oder einem UltraStudio auf und schreib
 
 ## Warum ein eigener Helfer
 
-ffmpeg kann DeckLink selbst (`-f decklink`), aber nur mit `--enable-decklink`, und das steht in ffmpegs `configure` unter `EXTERNAL_LIBRARY_NONFREE_LIST`. Ein solches ffmpeg darf nicht weitergegeben werden. Die Desktop-App liefert ein freies ffmpeg aus (ffmpeg-static) und für DeckLink diesen Helfer.
+ffmpeg kann DeckLink selbst (`-f decklink`), aber nur mit `--enable-decklink`, und das steht in ffmpegs `configure` unter `EXTERNAL_LIBRARY_NONFREE_LIST`. Ein solches ffmpeg darf nicht weitergegeben werden. Die Desktop-App liefert ein weitergebbares ffmpeg ohne nonfree aus (siehe [THIRD_PARTY.md](../../THIRD_PARTY.md)) und für DeckLink diesen Helfer.
 
 ## Bauen
 

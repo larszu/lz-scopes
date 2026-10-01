@@ -50,7 +50,7 @@
 - **Unclipped Y′CbCr and EBU R 103.** Bridge mode *16 bit Y′CbCr* sends Y′CbCr 4:4:4 without range conversion; the shader converts to R′G′B′ with the source matrix, so values below 0 % and above 100 % survive. EBU R 103 v3.0 check with its measurement filter (1/16…1/16 × 1/4-1/2-1/4): share outside −5/105 % and outside 4-1019 in the Messwerte panel (reported above 1 % of the area) and as picture overlay.
 - **Built-in test patterns.** About 40 generated patterns from PLUGE (ITU-R BT.814-4, SDR and HDR, with real −2 %), ITU-R BT.2111-3 HDR bars (HLG narrow, PQ narrow, PQ full, exact 10-bit codes as 16-bit frames) and SMPTE bars to PQ wedges and EBU R 95 safe areas, plus 20 LZ display test images, at preset or free resolutions. Open any of them full screen on a monitor, projector or capture.
 - **LED wall check.** Wall/cabinet setup, cabinet grid with IDs, pixel-mapping, scroll, free-level, low-level, shutter/genlock, moiré and patch-sequencer patterns in wall resolution; camera-based relative check after a 4-point rectification: per-cabinet heatmap, seam profiles, before/after, viewing-angle series, scan-line index, dead-pixel search, CSV/PNG report, and an Unreal-style 3×3 camera matrix. With the Opple Light Master (untested, trend meter only): per-cabinet luminance/Δu′v′/CCT map, white point actual/target/Δ with RGB gain hints, flicker, joint CSV/PNG report. The wall itself is calibrated in its processor (Brompton, NovaStar, Colorlight); not yet tried on a real wall.
-- **Light meter.** Opple Light Master 3 / 4 over Web Bluetooth, several at once, each with a remembered name: lux, CCT, Duv, xy, history, CSV. Own light scopes for the dock: chromaticity (CIE 1976/1931 with Planckian locus and isotherms), a "vectorscope of the light" around a target white (CIELUV hue/saturation, mired and CTO/CTB gel suggestion), the 6/8 filter channels (not a spectrum), time course, and a measuring grid built point by point (uniformity, Δu′v′, comparison of two lights). The meter gives one value at one place, no image. No pairing needed (it never shows up in the system's Bluetooth settings): switch it on, click *Find Light Master* and pick it from the list. Tested with a Light Master 3 in the desktop app; the Light Master 4, flicker and several meters at once only without a second device. Not suitable for display calibration (illuminance sensor without display correction, see the research).
+- **Light meter.** Opple Light Master 3 / 4 over Web Bluetooth, several at once, each with a remembered name: lux, CCT, Duv, xy, history, CSV. Own light scopes for the dock: chromaticity (CIE 1976/1931 with Planckian locus and isotherms), a "vectorscope of the light" around a target white (CIELUV hue/saturation, mired and CTO/CTB gel suggestion), the 6/8 filter channels (not a spectrum), time course, and a measuring grid built point by point (uniformity, Δu′v′, comparison of two lights). The meter gives one value at one place, no image. No pairing needed (it never shows up in the system's Bluetooth settings): switch it on, click *Find Light Master* and pick it from the list. Tested with a Light Master 3 in the desktop app; the Light Master 4, flicker and several meters at once only without a second device. Not suitable for display calibration (illuminance sensor without display correction, see the research). Also: a colour patch showing the measured chromaticity (with Duv) on the display (sRGB/P3, out-of-gamut marked), a wavelength view (Opple: filter channels, not a spectrum; spectrometers: the real spectrum), and further meters behind one interface: spectrometers/colorimeters via ArgyllCMS `spotread` on the bridge (spectrum, CRI/TLCI/TM-30 as computed by ArgyllCMS; untested) and spectrum files (Argyll .sp, CSV). Gel suggestions use Lee/Rosco manufacturer data, including Lee plus/minus green.
 - **Your layout.** Dock, stack and resize panels by drag and drop, keep layout configurations as JSON.
 - **Face tracking.** Skin-tone waveform that follows a detected face; pick which face to track (MediaPipe BlazeFace, runs locally).
 - **Vectorscope tools.** Zoom, gamut boundaries and colour-match targets; per-scope settings behind the gear icon.
@@ -83,7 +83,7 @@ Get the installer from the [latest release](https://github.com/larszu/lz-scopes/
 | macOS (Apple Silicon and Intel) | `LZ Scopes-<version>-universal.dmg` or `.zip` |
 | Windows 10/11 (x64) | `LZ Scopes-<version>-x64.exe` (installer) or `-portable.exe` |
 
-The desktop app contains the bridge and ffmpeg, so RTSP and other network sources work right away. macOS builds are ad-hoc signed: on first start, right-click and choose *Open*.
+The desktop app contains the bridge and a redistributable ffmpeg 9.0.2 (GPLv3, with SRT; licences and source: [THIRD_PARTY.md](THIRD_PARTY.md)), so RTSP, SRT and other network sources work right away without a system ffmpeg. The *Bridge* section shows which ffmpeg runs. macOS builds are ad-hoc signed: on first start, right-click and choose *Open*.
 
 **Web edition:** <https://larszu.github.io/lz-scopes/>. Test patterns, camera, screen and files work there. RTSP, SRT and other network streams need the desktop app or `npm start`, because a browser cannot open them.
 
@@ -99,21 +99,22 @@ Keys: `1`-`6` layout, `C` measuring stage (signal / after CST / after LUT), `Spa
 
 ## Build from source
 
-Requires [Node.js](https://nodejs.org/) 20+ and, for network streams without the desktop app, `ffmpeg` and `ffprobe` in the `PATH` (`brew install ffmpeg`).
+Requires [Node.js](https://nodejs.org/) 20+. `npm run ffmpeg:fetch` downloads the same ffmpeg the app ships (SHA-256-checked, into `vendor/ffmpeg/`); without it the bridge uses `$FFMPEG` or an ffmpeg from the `PATH`.
 
 ```bash
 npm install
+npm run ffmpeg:fetch         # ffmpeg/ffprobe of the desktop app for this machine (tests and npm start use it)
 npm run dev                  # UI http://localhost:4191, bridge on 4192
 npm run build && npm start   # production, everything on http://127.0.0.1:4192
 npm test                     # colour maths, statistics, bridge input validation
-npm run test:e2e             # desktop app via Playwright: waveform pixels, RTSP (mediamtx), outputs/MJPEG, layouts, CST/LUT stages
+npm run test:e2e             # desktop app via Playwright: waveform pixels, RTSP and SRT (mediamtx), outputs/MJPEG, 10-bit/SRT push, layouts, CST/LUT stages
 npm run typecheck
 npm run dist:mac             # or dist:win: desktop app with bridge and ffmpeg
 ```
 
-CI (`ci.yml`) runs types, unit tests, build and the E2E tests on every PR and push to main. The RTSP test is skipped without `mediamtx`/`ffmpeg`.
+CI (`ci.yml`) runs types, unit tests, build and the E2E tests on every PR and push to main, and tests the shipped ffmpeg builds on macOS and Windows (licence, SRT, 10-bit push). The RTSP/SRT receive tests are skipped without `mediamtx`.
 
-Release: push a tag `v*`; `release.yml` builds Windows and macOS and attaches the installers to the release.
+Release: push a tag `v*`; `release.yml` builds Windows and macOS, checks the ffmpeg inside the packages and attaches the installers and the ffmpeg source archives to the release. `workflow_dispatch` is a dry run.
 
 ## Audio
 

@@ -9,11 +9,17 @@
 // scan sees it.
 
 import { OppleMeter, permittedDevices, type BtDevice } from './meter';
+import { ArgyllLightMeter, readingFromSpectrum, type LightDevice } from './drivers';
+import { parseArgyllSp, parseSpectrumCsv, type SpectrumUnit } from './spectrum';
 import type { Reading } from './photometry';
 import { cellKey, type Gel, type GridCell } from './lightScience';
 
 export interface KnownDevice {
   key: string;
+  /** driver; unset = Opple (older entries) */
+  driver?: 'opple' | 'argyll';
+  /** ArgyllCMS instrument port (spotread -c) */
+  port?: number;
   /** name the device advertises (LMaster_xxxx, LightMaster, SigMesh …) */
   name: string;
   alias: string;
@@ -46,7 +52,9 @@ export class LightStore extends EventTarget {
   version = 0;
   known: KnownDevice[] = load<KnownDevice[]>(LS_DEVICES, []);
   /** connected or connecting meters by device key */
-  meters = new Map<string, OppleMeter>();
+  meters = new Map<string, LightDevice>();
+  /** bridge WebSocket base for ArgyllCMS (set by the app) */
+  bridgeWs: () => string = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
   history: Reading[] = [];
   points: LightPoint[] = load<LightPoint[]>(LS_POINTS, []);
   opts: LightOptions = { cols: 3, rows: 3, cursor: [0, 0], ref: null, cmp: null, gelMaker: 'Lee', avg: 3, ...load<Partial<LightOptions>>(LS_OPTS, {}) };
@@ -82,7 +90,7 @@ export class LightStore extends EventTarget {
     return new OppleMeter();
   }
 
-  private attach(m: OppleMeter, key: string) {
+  private attach(m: LightDevice, key: string) {
     if ((m as unknown as { __lzs?: boolean }).__lzs) return;
     (m as unknown as { __lzs?: boolean }).__lzs = true;
     m.addEventListener('reading', (e) => {
@@ -122,8 +130,44 @@ export class LightStore extends EventTarget {
   pick(id: string) { this.picked = id; this.picker = null; this.changed(); return desktopBluetooth()?.select(id); }
   cancelPick() { this.picker = null; this.changed(); return desktopBluetooth()?.select(''); }
 
+  /** Spectrometer/colorimeter through ArgyllCMS spotread on the bridge (ungeprüft). */
+  async connectArgyll(port?: number) {
+    this.message = '';
+    const existing = this.known.find((d) => d.driver === 'argyll' && (d.port ?? 0) === (port ?? 0));
+    const k: KnownDevice = existing ?? { key: `ar-${Date.now().toString(36)}`, driver: 'argyll', port, name: `ArgyllCMS${port ? ` Port ${port}` : ''}`, alias: `Spektrometer${port ? ` ${port}` : ''}` };
+    if (!existing) { this.known.push(k); this.saveKnown(); }
+    const m = new ArgyllLightMeter(this.bridgeWs, port);
+    this.attach(m, k.key);
+    this.meters.set(k.key, m); this.changed();
+    try {
+      await m.connect();
+      k.last = Date.now(); this.saveKnown();
+      this.active = k.key; this.changed();
+    } catch (e) {
+      this.meters.delete(k.key);
+      this.message = m.message || (e as Error).message;
+      this.changed();
+      throw e;
+    }
+  }
+
+  /** Spectrum file (Argyll .sp or two-column CSV) → reading in the history and a point. */
+  importSpectrum(text: string, name: string, csvUnit: SpectrumUnit = 'relativ') {
+    const sp = /\.sp$/i.test(name) || /SPECTRAL_BANDS/.test(text) ? parseArgyllSp(text) : parseSpectrumCsv(text, csvUnit);
+    if (!sp) throw new Error(`${name}: kein Spektrum erkannt (Argyll .sp oder zwei Spalten Wellenlänge, Wert mit gleichem Abstand)`);
+    const r = readingFromSpectrum(sp, 'datei');
+    r.device = `Datei ${name}`;
+    this.history.push(r);
+    const p: LightPoint = { id: `p${Date.now().toString(36)}`, label: name.replace(/\.[^.]+$/, ''), reading: r };
+    this.points.push(p);
+    if (!this.opts.ref) this.opts.ref = p.id; else this.opts.cmp = p.id;
+    this.savePoints(); this.saveOpts(); this.changed();
+    return r;
+  }
+
   /** Reconnect a remembered device (Chrome: without chooser if permitted; Electron: auto-pick its id). */
   async reconnect(k: KnownDevice) {
+    if (k.driver === 'argyll') return this.connectArgyll(k.port);
     this.message = '';
     const m = this.freeMeter();
     this.attach(m, k.key);

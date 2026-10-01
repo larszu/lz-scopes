@@ -1,7 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { createRequire } from 'node:module';
-import { type App, expectOk, freePort, launchApp, until } from './app';
+import { type App, SHIPPED_FFMPEG, expectOk, freePort, launchApp, until, which } from './app';
 
 // 10-bit output windows (src/deep.ts): the pattern window draws on a float16 canvas, the
 // scope windows ask for a RGBA16F WebGL buffer, and a 10-bit stream reaches ffmpeg with
@@ -12,7 +11,8 @@ let a: App;
 test.beforeAll(async () => { a = await launchApp(); });
 test.afterAll(async () => { await a?.close(); });
 
-const ffmpeg = createRequire(import.meta.url)('ffmpeg-static') as string;
+// receiver: the shipped build (npm run ffmpeg:fetch), else a system ffmpeg
+const ffmpeg = SHIPPED_FFMPEG ?? which('ffmpeg') ?? 'ffmpeg';
 
 async function openWindow(q: string): Promise<Page> {
   const before = a.app.windows().length;

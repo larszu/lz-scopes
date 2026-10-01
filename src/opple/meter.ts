@@ -57,6 +57,7 @@ const TIMEOUT = 3000;
 export type MeterState = 'idle' | 'requesting' | 'connecting' | 'calibrating' | 'connected' | 'error';
 
 export class OppleMeter extends EventTarget {
+  readonly driver = 'opple' as const;
   state: MeterState = 'idle';
   message = '';
   model: Model | null = null;
@@ -114,7 +115,7 @@ export class OppleMeter extends EventTarget {
         try { this.calibration = parseCalibration(await this.command(OPCODE.REQ_CAL, OPCODE.RES_CAL)); } catch { /* retry */ }
       }
       const first = await this.measure(4000);
-      this.model = first.model;
+      this.model = first.model as Model;
       this.status('connected', `${this.model === 'lm4' ? 'Light Master 4' : 'Light Master 3'} verbunden${this.calibration ? '' : ' (ohne Kalibrierfaktoren – Werte ungenauer)'}`);
       this.emit(first);
     } catch (e) {

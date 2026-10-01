@@ -227,7 +227,8 @@ describe('spotread bridge', () => {
     expect(w.file).toMatch(/korrektur\.ccss$/);
   });
   it('looks for spotread.exe on Windows and in the PATH', () => {
-    expect(spotreadCandidates({ PATH: '/x/bin' }, 'linux')[0]).toBe('/x/bin/spotread');
+    // path.join of the test machine: backslashes when the suite runs on Windows
+    expect(spotreadCandidates({ PATH: '/x/bin' }, 'linux')[0].replace(/\\/g, '/')).toBe('/x/bin/spotread');
     expect(spotreadCandidates({ Path: 'C:\\Argyll\\bin' }, 'win32').some((p: string) => p.endsWith('spotread.exe'))).toBe(true);
   });
 });

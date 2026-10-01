@@ -1,0 +1,69 @@
+{
+  "_doc": "ffmpeg builds the desktop app ships (and the tests use). No --enable-nonfree anywhere; scripts/ffmpeg-fetch.mjs checks the configure line of every binary. Research and licence duties: docs/research/ffmpeg-lizenz.md. Update: new URL + SHA-256 here, then npm run ffmpeg:fetch.",
+  "targets": {
+    "darwin-arm64": {
+      "version": "9.0.2",
+      "provider": "Martin Riedl build server (static, GPLv3)",
+      "page": "https://ffmpeg.martin-riedl.de/",
+      "buildScript": "https://git.martin-riedl.de/ffmpeg/build-script",
+      "files": [
+        { "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip", "sha256": "c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924", "take": { "ffmpeg": "ffmpeg" } },
+        { "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffprobe.zip", "sha256": "fcbe839537485eaee7a7a8bc5cbc0f90d53617e80943e8a5b2e31cb851197ea6", "take": { "ffprobe": "ffprobe" } }
+      ]
+    },
+    "darwin-x64": {
+      "version": "9.0.2",
+      "provider": "Martin Riedl build server (static, GPLv3)",
+      "page": "https://ffmpeg.martin-riedl.de/",
+      "buildScript": "https://git.martin-riedl.de/ffmpeg/build-script",
+      "files": [
+        { "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffmpeg.zip", "sha256": "7c6b4125b191cbf773832dc51f424cf2b6bb7da43007d1e066f95909e47cacd4", "take": { "ffmpeg": "ffmpeg" } },
+        { "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffprobe.zip", "sha256": "2322438ed2f6319a691291b247d09c69dcaa3a982460d1f269a7e1af335cfdfd", "take": { "ffprobe": "ffprobe" } }
+      ]
+    },
+    "win32-x64": {
+      "version": "n9.0.2-17-g2a571b6068",
+      "provider": "BtbN/FFmpeg-Builds win64-gpl-shared (GPLv3, month-end autobuild)",
+      "page": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-30-13-08",
+      "buildScript": "https://github.com/BtbN/FFmpeg-Builds",
+      "files": [
+        {
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-shared-9.0.zip",
+          "sha256": "3da6c7b60bb9ccd73ec5b5e815ba804a0879eb362ba0e3beebce50174c022696",
+          "take": {
+            "ffmpeg.exe": "ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-shared-9.0/bin/ffmpeg.exe",
+            "ffprobe.exe": "ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-shared-9.0/bin/ffprobe.exe",
+            "*.dll": "ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-shared-9.0/bin/*.dll"
+          }
+        }
+      ]
+    },
+    "linux-x64": {
+      "_doc": "not shipped (no Linux app); CI and local tests only",
+      "version": "n9.0.2-17-g2a571b6068",
+      "provider": "BtbN/FFmpeg-Builds linux64-gpl (GPLv3, month-end autobuild)",
+      "page": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-30-13-08",
+      "buildScript": "https://github.com/BtbN/FFmpeg-Builds",
+      "files": [
+        {
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-9.0.tar.xz",
+          "sha256": "68ee646831adaae2495618346f3bba94ff207ff83bbd34d643e7004730d66269",
+          "take": {
+            "ffmpeg": "ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-9.0/bin/ffmpeg",
+            "ffprobe": "ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-9.0/bin/ffprobe"
+          }
+        }
+      ]
+    }
+  },
+  "universal": { "darwin-universal": ["darwin-arm64", "darwin-x64"] },
+  "sources": {
+    "_doc": "Corresponding source attached to every release (GPLv3 section 6d, release.yml). SHA-256 where the file is byte-stable; GitHub/Gitea commit archives are not.",
+    "files": [
+      { "name": "ffmpeg-9.0.2.tar.xz", "for": "macOS: FFmpeg 9.0.2", "url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz", "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e" },
+      { "name": "martin-riedl-build-script-6a611e1.tar.gz", "for": "macOS: build scripts, library versions and download URLs (commit of 20.09.2026 = FFmpeg 9.0.2 build)", "url": "https://git.martin-riedl.de/ffmpeg/build-script/archive/6a611e19870e197bc37c6e4c7fccddebd3715466.tar.gz" },
+      { "name": "ffmpeg-n9.0.2-17-g2a571b6068.tar.gz", "for": "Windows: FFmpeg release/9.0 at 2a571b6068", "url": "https://github.com/FFmpeg/FFmpeg/archive/2a571b606854520cf89804d8030c8b328e621689.tar.gz" },
+      { "name": "BtbN-FFmpeg-Builds-6c9aec5.tar.gz", "for": "Windows: build scripts with pinned dependency commits (state of the 30.09.2026 autobuild)", "url": "https://github.com/BtbN/FFmpeg-Builds/archive/6c9aec5fc9a72ec3abedd1fa84db141fa18cf52b.tar.gz" }
+    ]
+  }
+}

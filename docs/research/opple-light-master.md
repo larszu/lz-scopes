@@ -38,7 +38,7 @@ Stand: 30.09.2026. Ergänzt Teil B von [led-wall-und-messgeraete.md](led-wall-un
 
 ## Nachtrag 01.10.2026 – Licht-Ansichten, mehrere Geräte, Display-Eignung
 
-Geöffnete Quellen (30.09./01.10.): [Opple Light Master III User Guide (DarkSky, PDF)](https://darksky.org/app/uploads/bsk-pdf-manager/2022/12/Opple-Light-Master-III-User-Guide.pdf), [1lumen-Test LM3 Pro](https://1lumen.com/gear-review/opple-light-master-3-pro/), [Sekonic C-800 (sekonicindustrial.com)](https://www.sekonicindustrial.com/c-800), [UPRtek MK350S Premium](https://www.uprtek.com/en/product/spectrometers/mk350s-premium), Wikipedia [„Mired“](https://en.wikipedia.org/wiki/Mired), [„CIELUV“](https://en.wikipedia.org/wiki/CIELUV), [„Color rendering index“](https://en.wikipedia.org/wiki/Color_rendering_index), [„Color gel“](https://en.wikipedia.org/wiki/Color_gel) (Quelltext), [Mired Shift Gel Table (Dan Berens, PDF)](https://www.danberens.co.uk/uploads/3/0/0/6/30067935/mired_shift_gel_and_camera_filter_tables.pdf), [ArgyllCMS Instrumente](https://www.argyllcms.com/doc/instruments.html), [Calibrite Display Pro HL](https://calibrite.com/us/product/display-pro-hl/), [Datacolor SpyderPro](https://www.datacolor.com/spyder/products/spyder-pro/). Nicht erreichbar bzw. nicht geöffnet: opple.eu-Produktseite (404), Datenblätter von Lee und Rosco.
+Geöffnete Quellen (30.09./01.10.): [Opple Light Master III User Guide (DarkSky, PDF)](https://darksky.org/app/uploads/bsk-pdf-manager/2022/12/Opple-Light-Master-III-User-Guide.pdf), [1lumen-Test LM3 Pro](https://1lumen.com/gear-review/opple-light-master-3-pro/), [Sekonic C-800 (sekonicindustrial.com)](https://www.sekonicindustrial.com/c-800), [UPRtek MK350S Premium](https://www.uprtek.com/en/product/spectrometers/mk350s-premium), Wikipedia [„Mired“](https://en.wikipedia.org/wiki/Mired), [„CIELUV“](https://en.wikipedia.org/wiki/CIELUV), [„Color rendering index“](https://en.wikipedia.org/wiki/Color_rendering_index), [„Color gel“](https://en.wikipedia.org/wiki/Color_gel) (Quelltext), [Mired Shift Gel Table (Dan Berens, PDF)](https://www.danberens.co.uk/uploads/3/0/0/6/30067935/mired_shift_gel_and_camera_filter_tables.pdf), [ArgyllCMS Instrumente](https://www.argyllcms.com/doc/instruments.html), [Calibrite Display Pro HL](https://calibrite.com/us/product/display-pro-hl/), [Datacolor SpyderPro](https://www.datacolor.com/spyder/products/spyder-pro/). Nicht erreichbar: opple.eu-Produktseite (404).
 
 ### Was der LM3 physikalisch liefert
 
@@ -65,7 +65,7 @@ Geöffnete Quellen (30.09./01.10.): [Opple Light Master III User Guide (DarkSky,
 
 *▦ Licht-Ansichten* legt die fünf Panels als eigenes Layout an. Doppelklick macht ein Panel groß, *⧉ Ausgabe → Panel* zeigt es auf einem anderen Bildschirm (Ausgabefenster lesen die Messwerte des Hauptfensters).
 
-**Vergleich zweier Lichter, Folien:** Mired M = 10⁶/T, Korrektur = 10⁶/T_Ziel − 10⁶/T_Quelle; Folien addieren sich in Mired (Wikipedia „Mired“, Beispiel 5700 K/3200 K ≈ −137 → CTB, im Test geprüft). Folienwerte (Lee 200–287, Rosco Cinegel 3202–3420) aus der Tabelle von Dan Berens, einer **Sekundärquelle**. Vorgeschlagen werden eine oder zwei Folien desselben Herstellers mit dem kleinsten Rest. **Grün/Magenta** nur als Richtung (Plus/Minus Green): Die Wirkung dieser Folien in Duv ist nicht belegt.
+**Vergleich zweier Lichter, Folien:** Mired M = 10⁶/T, Korrektur = 10⁶/T_Ziel − 10⁶/T_Quelle; Folien addieren sich in Mired (Wikipedia „Mired“, Beispiel 5700 K/3200 K ≈ −137 → CTB, im Test geprüft). Folienwerte zuerst aus der Tabelle von Dan Berens (Sekundärquelle), am 01.10. gegen die Hersteller geprüft (Abschnitt „Folien“ im nächsten Nachtrag). Vorgeschlagen werden eine oder zwei Folien desselben Herstellers mit dem kleinsten Rest.
 
 **Weggelassen: CRI, TLCI, TM-30.** CRI wird aus der spektralen Leistungsverteilung berechnet; die Testfarben sind in 5-nm-Schritten tabelliert, und die Abtastung muss fein genug für Spitzen im Spektrum sein (Wikipedia „Color rendering index“). TLCI und TM-30 brauchen ebenfalls ein Spektrum. Aus 6 Filterkanälen müsste man ein Spektrum mit einem Modell schätzen (so macht es die Opple-App); das Ergebnis wäre eine Modellannahme, keine Messung. Die Filterkurven des LM3 sind nicht veröffentlicht.
 
@@ -92,3 +92,52 @@ Geöffnete Quellen (30.09./01.10.): [Opple Light Master III User Guide (DarkSky,
 - Offen: eine Messung mit aufgelegtem Sensor. Nach den Punkten 1–3 ist zu erwarten: Weiß und helle Graustufen als relative Tendenz brauchbar, Schwarz und Farbort nicht.
 
 **Folgerung:** Der Light Master wird im Kalibrierdialog (#9) **nicht** als Messquelle angeboten. Für Displays taugt er höchstens als Tendenzanzeige für den Weißpunkt bei hellem Vollfeld. Eine Kalibrierung, eine Verifikation (ΔE) oder eine Uniformitätsprüfung nach ISO 14861 ist damit nicht seriös.
+
+## Nachtrag 01.10.2026 (2) – Farbfläche, Wellenlängen, weitere Messgeräte, Folien
+
+Geöffnet: [ArgyllCMS spotread](https://www.argyllcms.com/doc/spotread.html), ArgyllCMS-Quellen 3.5.0 (`spectro/spotread.c`, `xicc/xspect.c`, GPL/AGPL – nur als Fakten zum Ausgabeformat gelesen, kein Code übernommen), [ams-OSRAM AS7341 Datenblatt DS000504 v3-00](https://look.ams-osram.com/m/24266a3e584de4db/original/AS7341-DS000504.pdf), Lee-Produktseiten `leefilters.com/colour/<nummer>-…/` (200, 201, 202, 203, 204, 205, 206, 218, 223, 281, 285, 287, 244–249, 278, 279), Rosco-Produktseiten `us.rosco.com/en/products/filters/r3202…`, `r3407…`, `r3408…`, `r3409…`, `r3410…`, `r3411…`, `r3420…`, [Rosco Color Correction Kit (PDF)](https://us.rosco.com/sites/default/files/content/resource/2016-08/RoscoColorCorrectionKitData.pdf), [UPRtek MK350D](https://www.uprtek.com/en/product/spectrometers/mk350d), Wikipedia-Vorlage [„Color temperature white points“](https://en.wikipedia.org/wiki/Template:Color_temperature_white_points). Suchergebnisse ohne geöffnete Seite sind unten als solche markiert.
+
+### Farbfläche (Scope „Licht: Farbfläche“)
+
+- Der gemessene Farbort xy (mit Duv, nicht nur die CCT) wird mit Y = 1 nach XYZ und mit der inversen RGB→XYZ-Matrix der Display-Primärfarben in lineares RGB gerechnet. sRGB hat die Rec.709-Primärfarben, Display P3 die von P3-D65; beide haben Weiß D65 und die sRGB-Kurve (Primärfarben in `src/color.ts`). Danach wird so skaliert, dass der größte Kanal 1 ist (Helligkeit normiert). Es gibt keinen Weißabgleich: Die Fläche zeigt die absolute Farbe des Lichts so, als wäre das D65-Weiß des Displays neutral.
+- Negative Kanäle bedeuten: außerhalb des Display-Gamuts. Die Fläche wird dann schraffiert, die Farbe auf 0 abgeschnitten und der Text sagt es. Daneben steht als Vergleich der Planck-Ort bei gleicher CCT, so wird der Duv-Anteil sichtbar.
+- Die Panel-Overlays werden jetzt im Farbraum des Displays angelegt (`colorSpace: 'display-p3'`, wenn Display P3 erkannt bzw. gewählt ist). Die Farbfläche liest den Farbraum der Zeichenfläche aus und rechnet damit, sodass sie auch auf einer sRGB-Fläche ehrlich bleibt. Das stimmt nur bei kalibriertem Display mit aktiver Farbverwaltung; die Fläche sagt das.
+
+### Wellenlängen-Monitor (Scope „Licht: Wellenlängen“)
+
+- **Spektrometer** (ArgyllCMS oder Datei): echtes Spektrum, relative Intensität über der Wellenlänge 380–780 nm, nach Wellenlänge eingefärbt, mit Spitzenwert und Einheit. Das Spektrum des Referenzpunkts erscheint gestrichelt.
+- **Opple:** die Filterkanäle als Punkte an der Mittenwellenlänge, Höhe = kalibrierter Zählwert relativ zum stärksten Kanal, beschriftet „Filterkanäle, kein Spektrum“. Beim LM4 zeigt ein Balken die Halbwertsbreite laut AS7341-Datenblatt (F1–F8: 415/26, 445/30, 480/36, 515/39, 555/39, 590/40, 630/50, 680/52 nm, Figure 7; dass der LM4 einen AS7341 enthält, steht in sunday-light-meter). Die Filterbreiten des LM3 sind nicht veröffentlicht.
+- **Keine geschätzte Spektralkurve:** Eine Rekonstruktion bräuchte die spektralen Empfindlichkeiten aller Kanäle samt Diffusor. ams nennt nur Mitte und Halbwertsbreite und schreibt, die Parameter gelten mit dem Diffusor des Referenzaufbaus (AN001054, oben). Für den LM3 fehlt beides. Eine Kurve wäre eine Annahme.
+
+### Gemeinsame Messgeräte-Schnittstelle
+
+`src/opple/drivers.ts`, Schnittstelle `LightDevice` (Zustand, Messen, Mitteln, Abfrageschleife, Trennen). Treiber:
+
+| Treiber | Weg | Daten | Stand |
+|---|---|---|---|
+| Opple Light Master 3/4 | Web Bluetooth | 6/8 Filterkanäle → XYZ | LM3 geprüft |
+| ArgyllCMS `spotread -a -s` | Bridge (`server/meter.mjs`, schon für #9), getrennter Prozess | XYZ, Beleuchtungsstärke, Spektrum; CRI Ra/R1–R14, TLCI Qa, TM-30 Rf/Rg so, wie ArgyllCMS sie berechnet | **ungeprüft** (kein ArgyllCMS, kein Gerät) |
+| Spektrum-Datei | Datei-Auswahl | Argyll `.sp` (CGATS, `spotread -O`) oder zwei Spalten Wellenlänge/Wert | mit Testdateien geprüft |
+
+ArgyllCMS (spotread.html und `spotread.c`):
+- `-a` misst im Umgebungsmodus, absolut, „include the various color temperatures and Color Rendering Index“. Ohne Umgebungsmodus misst das Gerät emissiv; dann fehlt die Zeile „Ambient = … Lux“, und LZ Scopes zeigt cd/m² statt lx.
+- `-s` druckt das Spektrum: „Spectrum from A to B nm in N steps“, danach eine Zeile mit Werten.
+- Einheiten: Ambient mW/(m²·nm), Emission mW/(m²·sr·nm).
+- Im Umgebungsmodus ist die Ausgabe von CCT, CRI, TLCI und TM-30 eingeschaltet (`-T` schaltet sie dort ab). TLCI und TM-30 gibt es nur bei spektral messenden Geräten. „(Caution)“ markiert Werte, an denen ArgyllCMS zweifelt; die UI zeigt das als „(Vorsicht)“.
+- **CRI, TLCI und TM-30 rechnet LZ Scopes nicht selbst.** Es zeigt die Werte von ArgyllCMS mit Quellenangabe. Für Spektrum-Dateien gibt es deshalb nur XYZ, CCT und Duv, kein CRI.
+- Lizenz wie bei #9: ArgyllCMS (AGPL) wird nicht mitgeliefert und nicht gelinkt, nur ein installiertes `spotread` als eigener Prozess aufgerufen. Geräte laut [Instrumentliste](https://www.argyllcms.com/doc/instruments.html): i1Pro 1–3, ColorMunki, JETI specbos 1211/1201 und spectraval, Klein K10-A, i1Display/ColorMunki Display (ohne Spektrum), Spyder.
+
+XYZ aus einem Spektrum: Summe über die CIE-1931-2°-Normspektralwerte in 5-nm-Schritten mal 683 lm/W (Tabelle aus sunday-light-meter, MIT, jetzt `src/opple/cmf.ts`). Geprüft: Spektrum gleicher Energie → x = y = 1/3; Planck 2856 K → Normlichtart A (0,4476/0,4074); 1 mW/(m²·nm) flach → ≈ 73 lx.
+
+**Nicht angebunden, mit Begründung:**
+- **Sekonic C-800:** kein SDK gefunden, nur „C-800 Utility“. **C-7000:** „SDK for remote control“ nur auf Antrag über den Händler ([led-wall-und-messgeraete.md](led-wall-und-messgeraete.md)). Lizenz und Protokoll sind damit nicht öffentlich.
+- **UPRtek MK350:** Die MK350D-Seite nennt „SDK (Systems Developer's Kit) and … Modbus interface“ und den Export auf microSD „in excel compatible format“. SDK und Lizenz stehen nicht öffentlich, das Exportformat ist nicht dokumentiert. Weg: Export in zwei Spalten umwandeln und als CSV laden. Laut Suchergebnis (Seite nicht geöffnet) liefert UPRtek das SDK als DLL.
+- **Asensetek Lighting Passport:** kein öffentliches SDK gefunden (frühere Recherche).
+- **Konica Minolta CL-200A:** Die Bedienungsanleitung ist bei Konica Minolta öffentlich. Die „Communication Specifications“ fand die Suche nur als Kopie auf einer Drittseite (nicht geöffnet). Das Gerät braucht laut Suchergebnis einen eigenen USB-Treiber, Web Serial geht damit voraussichtlich nicht. Nicht gebaut.
+- **JETI, Klein:** über ArgyllCMS abgedeckt; die eigenen JETI-SDKs nicht recherchiert.
+
+### Folien gegen die Hersteller geprüft
+
+- **Lee** (Produktseiten, Feld „Mired Shift“): 200 −274, 201 −137, 281 −112, 202 −78, 203 −35, 218 −18, 223 +26, 206 +64, 205 +109, 285 +124, 204 +159, 287 +312. Das stimmt mit der Tabelle von Dan Berens überein.
+- **Rosco** gibt auf den Produktseiten die Umrechnung an, nicht immer Mired: 3202 „Boosts 3200K to 5500K“ → −131 (stimmt), 3407 „Converts 5500K to 2900K“ → +163 (Tabelle: +167), 3408 → +81, 3409 „5500K to 4500K“ → +40 (Tabelle +42), 3410 „5500K to 4900K“ → +22 (Tabelle +20), 3411 „5500K to 3200K“ → +131, 3420 „Mired Shift +320“. LZ Scopes nimmt jetzt die aus den Rosco-Angaben gerechneten Werte. Die Rosco-CTB außer 3202 (3203, 3204, 3206, 3208, 3216, 3220) waren unter den geratenen Adressen nicht zu finden und bleiben aus der Sekundärtabelle (im Code markiert).
+- **Grün/Magenta:** Lee nennt für jede Folie den Farbort des gefilterten Lichts unter Kunstlicht (3200 K) und Tageslicht (Source C). Daraus rechnet LZ Scopes die Duv-Verschiebung: Duv(gefiltert) − Duv(Quelle), Source C x 0,31006 y 0,31616 (Wikipedia-Vorlage, CIE 15:2004), Kunstlicht = Planck 3200 K. Ergebnis (Kunstlicht/Tageslicht): 244 Plus Green +0,0195/+0,0279, 245 ½ +0,0106/+0,0152, 246 ¼ +0,0056/+0,0083, 278 ⅛ +0,0026/+0,0042, 279 ⅛ Minus −0,0036/−0,0038, 249 ¼ −0,0057/−0,0060, 248 ½ −0,0111/−0,0144, 247 Minus Green −0,0197/−0,0299. Der Vergleich A→B schlägt jetzt die passende Lee-Folie vor. Für Rosco-Grünfolien fehlen veröffentlichte Farborte, hier gibt es keinen Vorschlag.

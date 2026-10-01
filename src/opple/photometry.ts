@@ -12,6 +12,7 @@
 // LED primaries (LED walls) the colour values are a trend indicator, not a reference.
 
 import type { Calibration, Measurement, Model } from './protocol';
+import type { Spectrum } from './spectrum';
 
 export const LM3_WAVELENGTHS = [450, 500, 550, 570, 600, 650];
 export const LM4_WAVELENGTHS = [415, 445, 480, 515, 555, 590, 630, 680];
@@ -94,7 +95,7 @@ export function duvFromUv(u: number, v: number) {
 }
 
 export interface Reading {
-  model: Model;
+  model: Model | 'argyll' | 'datei';
   /** illuminance in lx (Y of the meter's XYZ) */
   lux: number;
   X: number; Y: number; Z: number;
@@ -112,6 +113,13 @@ export interface Reading {
   ts: number;
   /** key of the meter that took it (src/opple/store.ts); unset for single readings */
   device?: string;
+  /** spectrometers (drivers.ts): measured spectrum and what ArgyllCMS computed from it */
+  spectrum?: Spectrum;
+  cri?: { ra: number; r9: number; r: number[]; caution: boolean };
+  tlci?: { qa: number; caution: boolean };
+  tm30?: { rf: number; rg: number; caution: boolean };
+  /** 'cd/m²' when the instrument measured luminance (no ambient mode); default lx */
+  quantity?: 'lx' | 'cd/m²';
 }
 
 /** Raw measurement + unit calibration → photometric reading. */

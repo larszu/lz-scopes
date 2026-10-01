@@ -20,6 +20,8 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      LZS_FFMPEG_REQUIRED: '1'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -27,6 +29,8 @@ jobs:
           node-version: '24'
           cache: 'npm'
       - run: npm ci
+      # same builder as the Windows app (BtbN, GPLv3, libsrt); Linux is not shipped
+      - run: node scripts/ffmpeg-fetch.mjs linux-x64
       - run: npx tsc --noEmit
       - run: npx tsc -p e2e --noEmit
       - run: npm test
@@ -46,6 +50,8 @@ jobs:
           node-version: '24'
           cache: 'npm'
       - run: npm ci
+      # the bridge takes vendor/ffmpeg before the system one (SRT spec, 10-bit spec)
+      - run: node scripts/ffmpeg-fetch.mjs linux-x64
       - name: ffmpeg, Xvfb, mediamtx
         run: |
           sudo apt-get update -q
@@ -54,3 +60,27 @@ jobs:
           mediamtx --version
       # Electron downloads its binary on first use; WebGL runs in SwiftShader (slow, see e2e/playwright.config.ts)
       - run: xvfb-run -a npm run test:e2e
+
+  # The ffmpeg builds the installers ship, run on their own OS: licence (no nonfree), SRT,
+  # v210/HEVC 10 over TCP and SRT (test/ffmpeg.test.ts, test/out10.test.ts).
+  ffmpeg-desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            ffmpeg: darwin-universal
+          - os: windows-latest
+            ffmpeg: win32-x64
+    runs-on: ${{ matrix.os }}
+    env:
+      LZS_FFMPEG_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: node scripts/ffmpeg-fetch.mjs ${{ matrix.ffmpeg }}
+      - run: npx vitest run test/ffmpeg.test.ts test/out10.test.ts

@@ -88,7 +88,7 @@ The desktop app contains the bridge and ffmpeg, so RTSP and other network source
 
 ## Quick start
 
-1. Start the app. The first source is a test pattern (SMPTE 75 % bars); all panels follow it.
+1. Start the app. The first source is a test pattern (SMPTE 75 % bars, the „(LZ)“ variant: look at its black field in the waveform with the black magnifier); all panels follow it.
 2. Pick another source per panel: *Test pattern*, *Camera*, *Screen*, *File* or *Stream*.
 3. For a stream enter the URL (for example `rtsp://user:pass@host:554/stream`) and connect. Resolution, frame rate, 8 / 16 bit, TCP / UDP, transfer and colour space are set per stream, *auto* reads the metadata.
 4. Drag a rectangle in the picture to measure only that area. Click sets a measurement point that is marked in waveform and vectorscope.

@@ -57,7 +57,7 @@ Installer im [neuesten Release](https://github.com/larszu/lz-scopes/releases/lat
 
 ## Schnellstart
 
-1. App starten. Die erste Quelle ist ein Testbild (SMPTE 75 %), alle Panels folgen ihr.
+1. App starten. Die erste Quelle ist ein Testbild (SMPTE 75 %, Variante „(LZ)“ – deren Schwarzfeld lohnt einen Blick in die Waveform mit der Schwarz-Lupe), alle Panels folgen ihr.
 2. Pro Panel eine andere Quelle wählen: *Testbild*, *Kamera*, *Bildschirm*, *Datei* oder *Stream*.
 3. Für einen Stream die URL eintragen (z. B. `rtsp://user:pass@host:554/stream`) und verbinden.
 4. Im Bild einen Rahmen ziehen, um nur diesen Bereich zu messen.

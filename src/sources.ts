@@ -4,6 +4,7 @@ import type { ChainSettings, Compiled } from './chain';
 import { patternById, renderPattern } from './patterns';
 import { AudioAnalysis } from './audio/analysis';
 import { AudioTap, StreamMonitor, generator, measurementConstraints } from './audio/io';
+import { GRID_H, GRID_W, History, gridFromData, summarise } from './history';
 import { r103Check, rgbDecoder, yuvDecoder, type Decode, type R103Result, type YuvCoding } from './ycbcr';
 import { debugFlags, openFrameSocket, workerAvailable, type FrameSocket } from './frameLink';
 import { GpuStats } from './gpuStats';
@@ -169,6 +170,25 @@ export class Source {
   monitorError = '';
   private lastFrame: { px: ArrayLike<number>; w: number; h: number; step: number; scale: number; roi: [number, number, number, number][] | null; decode: Decode } | null = null;
   private r103Cache = new Map<string, { key: string; at: number; res: R103Result }>();
+  /** timeline panel (history.ts): ten samples per second while a timeline shows this source */
+  readonly history = new History();
+  private historyAt = 0;
+  private historyCanvas: HTMLCanvasElement | null = null;
+  sampleHistory(now = performance.now()) {
+    if (!this.ready || now - this.historyAt < 100) return;
+    this.historyAt = now;
+    let pts: number[][];
+    if (this.data) pts = gridFromData(this.data, this.width, this.height, this.decoder());
+    else {
+      this.historyCanvas ??= document.createElement('canvas');
+      const c = this.historyCanvas; c.width = GRID_W; c.height = GRID_H;
+      const ctx = c.getContext('2d', { willReadFrequently: true })!;
+      try { ctx.drawImage(this.element!, 0, 0, GRID_W, GRID_H); } catch { return; }
+      const d = ctx.getImageData(0, 0, GRID_W, GRID_H).data;
+      pts = Array.from({ length: GRID_W * GRID_H }, (_, i) => [d[i * 4] / 255, d[i * 4 + 1] / 255, d[i * 4 + 2] / 255]);
+    }
+    this.history.push(summarise(pts, this.colorspace, now));
+  }
 
   /** Reads a pixel of the raw frame (`data`) as normalised R′G′B′: Y′CbCr decoded with the source matrix. */
   decoder(): Decode {
@@ -701,6 +721,7 @@ export class Source {
     this.audio = null;
     if (this.videoEl) { this.videoEl.pause(); this.videoEl.srcObject = null; this.videoEl = null; }
     if (this.objectUrl) { URL.revokeObjectURL(this.objectUrl); this.objectUrl = null; }
+    this.history.clear();
     this.element = null; this.data = null; this.yuv = null; this.info = null; this.tc = null; this.width = 0; this.height = 0; this.stats = null;
     this.fps = 0; this.dropped = 0;
     if (this.status !== 'idle') this.set('idle');

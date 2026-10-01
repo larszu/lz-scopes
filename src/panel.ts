@@ -10,6 +10,7 @@ import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/pa
 import type { DisplayParams, PictureMode, PictureParams, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
 import type { Source } from './sources';
 import { barRefs, nearest, type DeRef } from './deltae';
+import { drawTimeline, type TimelineSpan } from './history';
 import { CUBE_SPACE_ID, DEFAULT_CUBE, cubeNits, cubeQOf, cubeRotation, type CubeSettings } from './cube';
 import { DEFAULT_CRT, PHOSPHORS, type CrtSettings } from './crt';
 import { STAGE_LABELS, autoPeaks, baseOf, chainOf, stageView, type Stage } from './chain';
@@ -45,6 +46,10 @@ export interface PanelState {
   clock?: Partial<ClockOptions>;
   /** scatter scopes: analogue beam look (crt.ts) */
   crt?: Partial<CrtSettings>;
+  /** timeline: shown time span in seconds */
+  span?: TimelineSpan;
+  /** vectorscope, CIE, diamond, 3D volume (digital): persistence in ms, −1 = infinite (trace history) */
+  persist?: number;
   /** 3D colour volume: space, rotation, wire-frame gamut */
   cube?: Partial<CubeSettings>;
   /**
@@ -174,7 +179,7 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
     return `A|${src?.id}:${a ? `${a.version}:${a.paused}:${a.stale}` : `${src?.status}:${src?.message}`}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}`;
   }
   if (src) src = stageView(src, p.stage ?? o.stage ?? 'signal');
-  const s = src ? `${chainOf(src)?.sig ?? ''}:${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${src.faceMode}:${src.faces.map((f) => f.id + '/' + f.box.join(',')).join(';')}:${[...src.faceSel].join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}` : '-';
+  const s = src ? `${chainOf(src)?.sig ?? ''}:${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${src.faceMode}:${src.faces.map((f) => f.id + '/' + f.box.join(',')).join(';')}:${[...src.faceSel].join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}${p.scope === 'timeline' ? `h${src.history.version}` : ''}` : '-';
   const bs = p.scope === 'picture' && src && p.ab && p.ab.mode !== 'off' ? abSource(p.ab.b, src, p, o) : null;
   const abSig = bs ? `|B${bs.id}:${bs.frameSeq}:${bs.status}:${chainOf(bs)?.sig ?? ''}` : '';
   const { displayFps, ...rest } = o;
@@ -202,6 +207,16 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     const empty = src ? (src.kind === 'stream' && src.settings.audio === false ? 'Ton ist für diese Quelle aus (Quelle → Ton)'
       : src.status === 'live' ? 'Kein Ton in dieser Quelle' : (src.message || 'Keine Daten – Quelle starten')) : (o.emptyText ?? 'Links eine Quelle hinzufügen');
     drawAudioPanel(ctx, p.scope, src?.audio ?? null, body.w, body.h, p.audio, empty, p);
+    return;
+  }
+  if (p.scope === 'timeline') {
+    renderer.clearRect(body);
+    if (!src || !src.ready) {
+      ctx.fillStyle = '#6b7078'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(src ? (src.message || 'Keine Daten – Quelle starten') : (o.emptyText ?? 'Links eine Quelle hinzufügen'), body.w / 2, body.h / 2);
+      return;
+    }
+    drawTimeline(ctx, { x: 4, y: 6, w: body.w - 8, h: body.h - 8 }, src.history, src.colorspace, p.span ?? 10);
     return;
   }
   if (p.scope === 'clock') {
@@ -233,6 +248,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     const cube = p.scope === 'cube' ? { ...DEFAULT_CUBE, ...p.cube } : null;
     renderer.drawScatter(key, src, abs, {
       ...(crt ? { crt } : {}),
+      ...(!crt && p.persist && !isWaveform(p.scope) ? { persist: p.persist } : {}),
       ...(cube ? { cube: {
         space: CUBE_SPACE_ID[cube.space], rot: cubeRotation(cube.yaw, cube.pitch), to2020: gamutConvert(GAMUTS[src.gamut], GAMUTS['2020']),
         white: mul3(rgbToXyzMatrix(GAMUTS[src.gamut]), [1, 1, 1]), nits: cubeNits(src.transfer),

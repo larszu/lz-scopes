@@ -10,14 +10,14 @@ import { latencyLines } from './latency';
 import type { Source } from './sources';
 import { CUBE_SPACE_LABELS, cubeProject, cubeRotation, cubeWireframe, qFromIctcp, qFromLab, qFromRgb, type CubeSettings } from './cube';
 
-export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'hist' | 'stats'
+export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'timeline' | 'hist' | 'stats'
   | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock'
   | 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits';
 
 export const SCOPE_LABELS: Record<ScopeType, string> = {
   picture: 'Bild', 'wf-luma': 'Waveform Luma', 'wf-color': 'Waveform Farbe', 'wf-skin': 'Waveform Hauttöne', 'wf-rgb': 'Waveform RGB', parade: 'RGB-Parade', yrgb: 'YRGB-Parade',
-  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', diamond: 'Diamond (Gamut)', cube: '3D-Farbvolumen', hist: 'Histogramm', stats: 'Messwerte',
+  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', diamond: 'Diamond (Gamut)', cube: '3D-Farbvolumen', timeline: 'Zeitverlauf', hist: 'Histogramm', stats: 'Messwerte',
   'audio-meter': 'Audio Pegel & Lautheit', 'audio-loudness': 'Audio Lautheitsverlauf', 'audio-spectrum': 'Audio Spektrum', 'audio-phase': 'Audio Goniometer', 'audio-check': 'Audio Ident & A/V-Versatz',
   clock: 'Uhr / Timecode',
   // Opple Light Master (src/opple/scopes.ts, LIGHT_LABELS)
@@ -599,22 +599,58 @@ export function r103Lines(src: Source): string[] {
 export function drawCubeGraticule(ctx: CanvasRenderingContext2D, r: Rect, c: CubeSettings, srcGamut: GamutId, nits: number, probe: number[] | null) {
   const rot = cubeRotation(c.yaw, c.pitch);
   const P = (q: number[]): [number, number] => { const [x, y] = cubeProject(rot, q); return [r.x + (x * 0.5 + 0.5) * r.w, r.y + (0.5 - y * 0.5) * r.h]; };
+  const line = (pts: number[][], style: string, width = 1, dash: number[] = []) => {
+    ctx.strokeStyle = style; ctx.lineWidth = width; ctx.setLineDash(dash);
+    ctx.beginPath(); pts.forEach((q, i) => { const [x, y] = P(q); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }); ctx.stroke();
+  };
+  const STRONG = 'rgba(235, 220, 170, 0.85)', SOFT = 'rgba(210, 190, 120, 0.3)';
+  // small panels: only end and middle ticks are labelled
+  const dense = Math.min(r.w, r.h) < 320;
   ctx.save();
-  ctx.lineWidth = 1; ctx.strokeStyle = GRID;
-  for (const line of cubeWireframe(c.space, c.space === 'rgb' ? srcGamut : c.gamut, srcGamut, nits)) {
-    ctx.beginPath(); line.forEach((q, i) => { const [x, y] = P(q); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }); ctx.stroke();
+  ctx.font = FONT; ctx.fillStyle = LABEL; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  const label = (t: string, q: number[], dx = 0, dy = 0) => { const [x, y] = P(q); ctx.fillText(t, x + dx, y + dy); };
+  /** axis with ticks: values along a line q(v), tick labels next to it */
+  const axis = (q: (v: number) => number[], vals: number[], fmt: (v: number) => string, name: string, namePos: number) => {
+    line([q(vals[0]), q(vals[vals.length - 1])], STRONG, 1.5);
+    for (const v of vals) {
+      const [x, y] = P(q(v));
+      ctx.fillStyle = STRONG; ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+      if (dense && v !== vals[0] && v !== vals[vals.length - 1] && Math.abs(v) !== 50 && v !== 0.5) continue;
+      ctx.fillStyle = LABEL; ctx.fillText(fmt(v), x + 12, y - 7);
+    }
+    ctx.fillStyle = '#f0e6c8'; label(name, q(namePos));
+  };
+  const steps = [0, 0.25, 0.5, 0.75, 1];
+  if (c.space === 'rgb') {
+    // faint 25 % grid on the three faces through black, strong cube edges
+    for (const t of [0.25, 0.5, 0.75]) {
+      line([qFromRgb([t, 0, 0]), qFromRgb([t, 1, 0]), qFromRgb([t, 1, 1])], SOFT, 1, [2, 3]);
+      line([qFromRgb([0, t, 0]), qFromRgb([1, t, 0]), qFromRgb([1, t, 1])], SOFT, 1, [2, 3]);
+      line([qFromRgb([0, 0, t]), qFromRgb([1, 0, t]), qFromRgb([1, 1, t])], SOFT, 1, [2, 3]);
+    }
+    for (const l of cubeWireframe('rgb', srcGamut, srcGamut, nits)) line(l, STRONG, 1.5);
+    line([qFromRgb([0, 0, 0]), qFromRgb([1, 1, 1])], 'rgba(235,235,235,0.5)', 1, [4, 3]);
+    const pct = (v: number) => `${Math.round(v * 100)}`;
+    axis((v) => qFromRgb([v, 0, 0]), steps, pct, 'R′ %', 1.14);
+    axis((v) => qFromRgb([0, v, 0]), steps, pct, 'G′ %', 1.14);
+    axis((v) => qFromRgb([0, 0, v]), steps, pct, 'B′ %', 1.14);
+    label('Weiß', qFromRgb([1.06, 1.06, 1.06]));
+  } else if (c.space === 'lab') {
+    for (const l of cubeWireframe('lab', c.gamut, srcGamut, nits)) line(l, STRONG, 1.5);
+    // chroma rings 50 and 100 at L* 50, the a*/b* axes through L* 50
+    for (const ch of [50, 100]) line(Array.from({ length: 49 }, (_, i) => qFromLab([50, ch * Math.cos((i / 48) * 2 * Math.PI), ch * Math.sin((i / 48) * 2 * Math.PI)])), SOFT, 1, [2, 3]);
+    axis((v) => qFromLab([v, 0, 0]), [0, 25, 50, 75, 100], (v) => `${v}`, 'L*', 112);
+    axis((v) => qFromLab([50, v, 0]), [-100, -50, 0, 50, 100], (v) => (v ? `${v}` : ''), 'a*', 122);
+    axis((v) => qFromLab([50, 0, v]), [-100, -50, 0, 50, 100], (v) => (v ? `${v}` : ''), 'b*', 122);
+  } else {
+    for (const l of cubeWireframe('ictcp', c.gamut, srcGamut, nits)) line(l, STRONG, 1.5);
+    axis((v) => qFromIctcp([v, 0, 0]), [0, 0.25, 0.5, 0.75, 1], (v) => v.toFixed(2), 'I', 1.08);
+    axis((v) => qFromIctcp([0.4, v, 0]), [-0.25, 0, 0.25], (v) => (v ? v.toFixed(2) : ''), 'CT', 0.32);
+    axis((v) => qFromIctcp([0.4, 0, v]), [-0.25, 0, 0.25], (v) => (v ? v.toFixed(2) : ''), 'CP', 0.32);
   }
-  // neutral axis
-  ctx.strokeStyle = GRID_DIM; ctx.setLineDash([3, 3]);
-  const axis = c.space === 'rgb' ? [qFromRgb([0, 0, 0]), qFromRgb([1, 1, 1])] : c.space === 'lab' ? [qFromLab([0, 0, 0]), qFromLab([100, 0, 0])] : [qFromIctcp([0, 0, 0]), qFromIctcp([1, 0, 0])];
-  ctx.beginPath(); ctx.moveTo(...P(axis[0])); ctx.lineTo(...P(axis[1])); ctx.stroke(); ctx.setLineDash([]);
-  ctx.fillStyle = LABEL; ctx.font = FONT; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-  const lab = (t: string, q: number[]) => { const [x, y] = P(q); ctx.fillText(t, x, y); };
-  if (c.space === 'rgb') { lab('R', qFromRgb([1.12, 0, 0])); lab('G', qFromRgb([0, 1.12, 0])); lab('B', qFromRgb([0, 0, 1.12])); lab('W', qFromRgb([1.08, 1.08, 1.08])); }
-  else if (c.space === 'lab') { lab('+a*', qFromLab([50, 140, 0])); lab('+b*', qFromLab([50, 0, 140])); lab('L* 100', qFromLab([108, 0, 0])); }
-  else { lab('+CT', qFromIctcp([0.5, 0.55, 0])); lab('+CP', qFromIctcp([0.5, 0, 0.55])); lab('I', qFromIctcp([1.05, 0, 0])); }
+  ctx.setLineDash([]);
   if (probe) { ctx.strokeStyle = '#00dcff'; ctx.lineWidth = 1.5; const [x, y] = P(probe); ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.stroke(); }
-  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  ctx.fillText(`${CUBE_SPACE_LABELS[c.space]}${c.space === 'rgb' ? '' : ` · Drahtgitter ${GAMUTS[c.gamut].name}`}`, r.x + 4, r.y + 4);
+  ctx.fillStyle = LABEL; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText(`${CUBE_SPACE_LABELS[c.space]}${c.space === 'rgb' ? ' · 0–100 %' : ` · Drahtgitter ${GAMUTS[c.gamut].name}`} · ziehen = drehen`, r.x + 4, r.y + r.h - 4);
   ctx.restore();
 }

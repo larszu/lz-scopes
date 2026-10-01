@@ -6,7 +6,8 @@
 //   GET  /api/meter        → { found, path, instruments: [{ port, name }] }
 //   WS   /meter            ← { cmd: 'open', port?, displayType?, correction?: { name, text }, skipCal? }
 //                          ← { cmd: 'read' } | { cmd: 'key', key } | { cmd: 'close' }
-//                          → { type: 'status' | 'ready' | 'reading' | 'error' | 'log' | 'closed', … }
+//                          → { type: 'status' | 'ready' | 'reading' | 'light' | 'error' | 'log' | 'closed', … }
+//                            'light' (ambient only): { xyz, lux?, cct?, duv?, spectrum?, cri?, tlci?, tm30? }
 
 import { spawn } from 'node:child_process';
 import { existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
@@ -50,9 +51,14 @@ export function parseInstruments(usage) {
   return out;
 }
 
-/** Validated spotread arguments (no shell, nothing free-form). */
-export function spotreadArgs({ port, displayType, correctionFile, skipCal } = {}) {
-  const a = ['-e'];
+/**
+ * Validated spotread arguments (no shell, nothing free-form). `ambient` = light-meter use (#11):
+ * `-a` ambient (illuminance, falls back to emissive when the instrument has no ambient mode) and
+ * `-s` print the spectrum; in ambient mode spotread then also prints CCT, CRI, TLCI and TM-30
+ * when the instrument measures spectrally (argyllcms.com/doc/spotread.html, -a/-s/-T).
+ */
+export function spotreadArgs({ port, displayType, correctionFile, skipCal, ambient } = {}) {
+  const a = ambient ? ['-a', '-s'] : ['-e'];
   if (port !== undefined && port !== null && port !== '') {
     const p = Number(port);
     if (!Number.isInteger(p) || p < 1 || p > 99) throw new Error('ungültiger Port');
@@ -80,6 +86,43 @@ export function writeCorrection(c) {
   return { file, dir };
 }
 
+/**
+ * Collects the lines spotread prints for one ambient/spectral reading and returns a 'light' event
+ * when the next prompt appears. Line formats as printed by spotread.c of ArgyllCMS 3.5.0 (read as
+ * facts, no code taken): "Spectrum from A to B nm in N steps", then one line "v, v, …";
+ * " Result is XYZ: X Y Z, …"; " Ambient = L Lux, CCT = TK (Duv d)"; " Color Rendering Index (Ra) =
+ * r [ R9 = r9 ]" and "  R1  = …" lines; " Television Lighting Consistency Index 2012 (Qa) = q";
+ * " IES TM-30-15 Rf = f Rg = g CCT = T Duv = d". "(Caution)" marks values ArgyllCMS doubts.
+ */
+export class LightAccumulator {
+  constructor() { this.cur = null; this.wantSpectrum = null; }
+  /** @returns {object[]} events */
+  feed(line) {
+    const out = [];
+    let m;
+    if ((m = /Spectrum from\s+([\d.]+)\s+to\s+([\d.]+)\s+nm in\s+(\d+)\s+steps/.exec(line))) {
+      this.wantSpectrum = { start: Number(m[1]), end: Number(m[2]), n: Number(m[3]) };
+      return out;
+    }
+    if (this.wantSpectrum && /^\s*-?\d/.test(line) && line.includes(',')) {
+      const values = line.split(',').map((v) => Number(v.trim()));
+      if (values.length === this.wantSpectrum.n && values.every(Number.isFinite)) {
+        this.cur = { ...(this.cur ?? {}), spectrum: { start: this.wantSpectrum.start, end: this.wantSpectrum.end, values } };
+      }
+      this.wantSpectrum = null;
+      return out;
+    }
+    if ((m = /Result is XYZ:\s*(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)/.exec(line))) this.cur = { ...(this.cur ?? {}), xyz: [Number(m[1]), Number(m[2]), Number(m[3])] };
+    else if ((m = /Ambient = ([\d.]+) Lux(?:, CCT = (\d+)K \(Duv (-?[\d.]+)\))?/.exec(line))) this.cur = { ...(this.cur ?? {}), lux: Number(m[1]), ...(m[2] ? { cct: Number(m[2]), duv: Number(m[3]) } : {}) };
+    else if ((m = /Color Rendering Index \(Ra\) = (-?[\d.]+) \[ R9 = (-?[\d.]+) \](.*)/.exec(line))) this.cur = { ...(this.cur ?? {}), cri: { ra: Number(m[1]), r9: Number(m[2]), r: [], caution: /Caution/.test(m[3]) } };
+    else if (this.cur?.cri && /^\s*R\d+\s*=/.test(line)) { for (const r of line.matchAll(/R(\d+)\s*=\s*(-?[\d.]+)/g)) this.cur.cri.r[Number(r[1]) - 1] = Number(r[2]); }
+    else if ((m = /Consistency Index 2012 \(Qa\) = (-?[\d.]+)(.*)/.exec(line))) this.cur = { ...(this.cur ?? {}), tlci: { qa: Number(m[1]), caution: /Caution/.test(m[2]) } };
+    else if ((m = /TM-30-15 Rf = (-?[\d.]+) Rg = (-?[\d.]+)(.*)/.exec(line))) this.cur = { ...(this.cur ?? {}), tm30: { rf: Number(m[1]), rg: Number(m[2]), caution: /Caution/.test(m[3]) } };
+    else if (/key to take a reading/i.test(line) && this.cur?.xyz) { out.push({ type: 'light', ...this.cur }); this.cur = null; }
+    return out;
+  }
+}
+
 let usageCache = null;
 export async function meterInfo() {
   const path = findSpotread();
@@ -102,7 +145,7 @@ export async function meterInfo() {
 /** One WebSocket client = at most one spotread process. */
 export function handleMeterSocket(ws) {
   /** @type {import('node:child_process').ChildProcess | null} */
-  let proc = null, corr = null, buf = '';
+  let proc = null, corr = null, buf = '', acc = null;
   const send = (o) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(o)); };
   const cleanup = () => {
     if (proc) { try { proc.stdin?.write('q'); } catch { /* closed */ } const p = proc; setTimeout(() => p.kill(), 1500); proc = null; }
@@ -117,7 +160,8 @@ export function handleMeterSocket(ws) {
         const path = findSpotread();
         if (!path) return send({ type: 'error', message: 'ArgyllCMS nicht gefunden (spotread). Installieren oder LZS_ARGYLL_BIN setzen – oder Werte manuell eingeben.' });
         corr = writeCorrection(msg.correction);
-        const args = spotreadArgs({ port: msg.port, displayType: msg.displayType, correctionFile: corr?.file, skipCal: !!msg.skipCal });
+        const args = spotreadArgs({ port: msg.port, displayType: msg.displayType, correctionFile: corr?.file, skipCal: !!msg.skipCal, ambient: !!msg.ambient });
+        acc = msg.ambient ? new LightAccumulator() : null;
         send({ type: 'status', message: `Starte ${path} ${args.join(' ')}` });
         proc = spawn(path, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
         const onData = (d) => {
@@ -126,8 +170,8 @@ export function handleMeterSocket(ws) {
           // complete lines only (a number may be cut between chunks); the prompt has no newline
           const lines = (buf + t).split(/\r?\n/);
           buf = lines.pop().slice(-4000);
-          for (const l of lines) for (const e of parseSpotread(l)) send(e);
-          if (/key to take a reading/i.test(buf)) { for (const e of parseSpotread(buf)) send(e); buf = ''; }
+          for (const l of lines) { for (const e of parseSpotread(l)) send(e); if (acc) for (const e of acc.feed(l)) send(e); }
+          if (/key to take a reading/i.test(buf)) { for (const e of parseSpotread(buf)) send(e); if (acc) for (const e of acc.feed(buf)) send(e); buf = ''; }
         };
         proc.stdout.on('data', onData); proc.stderr.on('data', onData);
         proc.on('error', (e) => send({ type: 'error', message: `spotread: ${e.message}` }));

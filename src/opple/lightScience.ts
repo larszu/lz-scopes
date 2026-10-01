@@ -4,11 +4,12 @@
 // - CIE 1976 u′v′ = 4X/(X+15Y+3Z), 9Y/(X+15Y+3Z), saturation s_uv = 13·√(Δu′² + Δv′²),
 //   hue h_uv = atan2(Δv′, Δu′): Wikipedia "CIELUV" (citing CIE 15.2 and Poynton 2003).
 // - mired M = 10⁶ K / T and the gel shift 10⁶/T_target − 10⁶/T_source: Wikipedia "Mired".
-// - Gel mired values: "Mired Shift Gel Table", Dan Berens (PDF, danberens.co.uk), a secondary
-//   table; the manufacturers' own data sheets were not opened.
+// - Gel mired values: Lee product pages, Rosco product descriptions (see GELS); green gels from
+//   Lee's stated chromaticities.
 // - Planckian locus: Krystek approximation in src/calib/colorimetry.ts.
 
 import { cctDuv, planckUv } from '../calib/colorimetry';
+import { GAMUTS, gammaInverse, inv3, mul3, rgbToXyzMatrix } from '../color';
 import type { Reading } from './photometry';
 
 export type XY = [number, number];
@@ -71,35 +72,78 @@ export const mired = (T: number) => 1e6 / T;
 /** Mired shift a gel must add to turn a source of T_source into T_target (+ = warmer/CTO, − = bluer/CTB). */
 export const miredShift = (tSource: number, tTarget: number) => 1e6 / tTarget - 1e6 / tSource;
 
-export interface Gel { maker: 'Lee' | 'Rosco'; name: string; mired: number }
-/** CTO/CTB gels with their mired shift ("Mired Shift Gel Table", Dan Berens – secondary source). */
+export interface Gel { maker: 'Lee' | 'Rosco'; name: string; mired: number; /** where the mired value comes from */ src: 'Lee' | 'Rosco' | 'Tabelle' }
+/**
+ * CTO/CTB gels with their mired shift. Lee: product pages leefilters.com/colour/… (opened
+ * 01.10.2026, "Mired Shift"). Rosco: from the conversion stated on us.rosco.com/en/products/
+ * filters/… (e.g. 3407 "Converts 5500K to 2900K" → +163; 3420 "Mired Shift +320"); Rosco CTBs
+ * other than 3202 from the secondary table of Dan Berens ('Tabelle').
+ */
 export const GELS: Gel[] = [
-  { maker: 'Lee', name: '200 Double CT Blue', mired: -274 },
-  { maker: 'Lee', name: '201 Full CT Blue', mired: -137 },
-  { maker: 'Lee', name: '281 Three Quarter CT Blue', mired: -112 },
-  { maker: 'Lee', name: '202 Half CT Blue', mired: -78 },
-  { maker: 'Lee', name: '203 Quarter CT Blue', mired: -35 },
-  { maker: 'Lee', name: '218 Eighth CT Blue', mired: -18 },
-  { maker: 'Lee', name: '223 Eighth CT Orange', mired: 26 },
-  { maker: 'Lee', name: '206 Quarter CT Orange', mired: 64 },
-  { maker: 'Lee', name: '205 Half CT Orange', mired: 109 },
-  { maker: 'Lee', name: '285 Three Quarter CT Orange', mired: 124 },
-  { maker: 'Lee', name: '204 Full CT Orange', mired: 159 },
-  { maker: 'Lee', name: '287 Double CT Orange', mired: 312 },
-  { maker: 'Rosco', name: 'Cinegel 3220 Double CTB', mired: -260 },
-  { maker: 'Rosco', name: 'Cinegel 3202 Full CTB', mired: -131 },
-  { maker: 'Rosco', name: 'Cinegel 3203 3/4 CTB', mired: -100 },
-  { maker: 'Rosco', name: 'Cinegel 3204 1/2 CTB', mired: -68 },
-  { maker: 'Rosco', name: 'Cinegel 3206 1/3 CTB', mired: -49 },
-  { maker: 'Rosco', name: 'Cinegel 3208 1/4 CTB', mired: -30 },
-  { maker: 'Rosco', name: 'Cinegel 3216 1/8 CTB', mired: -12 },
-  { maker: 'Rosco', name: 'Roscosun 3410 1/8 CTO', mired: 20 },
-  { maker: 'Rosco', name: 'Roscosun 3409 1/4 CTO', mired: 42 },
-  { maker: 'Rosco', name: 'Roscosun 3408 1/2 CTO', mired: 81 },
-  { maker: 'Rosco', name: 'Roscosun 3411 3/4 CTO', mired: 131 },
-  { maker: 'Rosco', name: 'Roscosun 3407 CTO', mired: 167 },
-  { maker: 'Rosco', name: 'Roscosun 3420 Double CTO', mired: 320 },
+  { maker: 'Lee', name: '200 Double CT Blue', mired: -274, src: 'Lee' },
+  { maker: 'Lee', name: '201 Full CT Blue', mired: -137, src: 'Lee' },
+  { maker: 'Lee', name: '281 Three Quarter CT Blue', mired: -112, src: 'Lee' },
+  { maker: 'Lee', name: '202 Half CT Blue', mired: -78, src: 'Lee' },
+  { maker: 'Lee', name: '203 Quarter CT Blue', mired: -35, src: 'Lee' },
+  { maker: 'Lee', name: '218 Eighth CT Blue', mired: -18, src: 'Lee' },
+  { maker: 'Lee', name: '223 Eighth CT Orange', mired: 26, src: 'Lee' },
+  { maker: 'Lee', name: '206 Quarter CT Orange', mired: 64, src: 'Lee' },
+  { maker: 'Lee', name: '205 Half CT Orange', mired: 109, src: 'Lee' },
+  { maker: 'Lee', name: '285 Three Quarter CT Orange', mired: 124, src: 'Lee' },
+  { maker: 'Lee', name: '204 Full CT Orange', mired: 159, src: 'Lee' },
+  { maker: 'Lee', name: '287 Double CT Orange', mired: 312, src: 'Lee' },
+  { maker: 'Rosco', name: 'Cinegel 3220 Double CTB', mired: -260, src: 'Tabelle' },
+  // "Boosts 3200K to 5500K": 10⁶/5500 − 10⁶/3200 = −131
+  { maker: 'Rosco', name: 'Cinegel 3202 Full CTB', mired: -131, src: 'Rosco' },
+  { maker: 'Rosco', name: 'Cinegel 3203 3/4 CTB', mired: -100, src: 'Tabelle' },
+  { maker: 'Rosco', name: 'Cinegel 3204 1/2 CTB', mired: -68, src: 'Tabelle' },
+  { maker: 'Rosco', name: 'Cinegel 3206 1/3 CTB', mired: -49, src: 'Tabelle' },
+  { maker: 'Rosco', name: 'Cinegel 3208 1/4 CTB', mired: -30, src: 'Tabelle' },
+  { maker: 'Rosco', name: 'Cinegel 3216 1/8 CTB', mired: -12, src: 'Tabelle' },
+  // "Converts 5500K to 4900K / 4500K / 3800K / 3200K / 2900K"
+  { maker: 'Rosco', name: 'Roscosun 3410 1/8 CTO', mired: 22, src: 'Rosco' },
+  { maker: 'Rosco', name: 'Roscosun 3409 1/4 CTO', mired: 40, src: 'Rosco' },
+  { maker: 'Rosco', name: 'Roscosun 3408 1/2 CTO', mired: 81, src: 'Rosco' },
+  { maker: 'Rosco', name: 'Roscosun 3411 3/4 CTO', mired: 131, src: 'Rosco' },
+  { maker: 'Rosco', name: 'Roscosun 3407 CTO', mired: 163, src: 'Rosco' },
+  { maker: 'Rosco', name: 'Roscosun 3420 Double CTO', mired: 320, src: 'Rosco' },
 ];
+
+/**
+ * Lee plus/minus green gels: chromaticity of the filtered light as Lee states it (product pages,
+ * "Tungsten" 3200 K and "Daylight (Source C)"). The green/magenta effect in Duv is derived from it:
+ * Duv(filtered) − Duv(source); Source C x 0.31006 y 0.31616 (Wikipedia, template "Color
+ * temperature white points", CIE 15:2004), tungsten = Planckian 3200 K.
+ */
+export interface GreenGel { name: string; tungsten: XY; daylight: XY }
+export const GREEN_GELS: GreenGel[] = [
+  { name: '244 Plus Green', tungsten: [0.421, 0.447], daylight: [0.324, 0.388] },
+  { name: '245 Half Plus Green', tungsten: [0.423, 0.425], daylight: [0.319, 0.355] },
+  { name: '246 Quarter Plus Green', tungsten: [0.424, 0.413], daylight: [0.315, 0.337] },
+  { name: '278 Eighth Plus Green', tungsten: [0.425, 0.406], daylight: [0.313, 0.327] },
+  { name: '279 Eighth Minus Green', tungsten: [0.43, 0.393], daylight: [0.312, 0.311] },
+  { name: '249 Quarter Minus Green', tungsten: [0.433, 0.389], daylight: [0.312, 0.307] },
+  { name: '248 Half Minus Green', tungsten: [0.441, 0.378], daylight: [0.317, 0.297] },
+  { name: '247 Minus Green', tungsten: [0.457, 0.359], daylight: [0.325, 0.279] },
+];
+const SOURCE_C: XY = [0.31006, 0.31616];
+
+/** Duv shift of a green gel on a tungsten (≤ 4500 K) or daylight source. */
+export function greenGelShift(g: GreenGel, cctSource: number) {
+  const day = cctSource > 4500;
+  const src: XY = day ? SOURCE_C : planckXy(3200);
+  return cctDuv(day ? g.daylight : g.tungsten).duv - cctDuv(src).duv;
+}
+
+/** Lee green gel whose Duv shift best cancels `dDuv` (B − A; > 0 → B greener → minus green). */
+export function suggestGreenGel(dDuv: number, cctSource: number) {
+  if (Math.abs(dDuv) < 0.002) return null;
+  const want = -dDuv;
+  return GREEN_GELS.map((g) => ({ gel: g, shift: greenGelShift(g, cctSource) }))
+    .filter((x) => Math.sign(x.shift) === Math.sign(want))
+    .map((x) => ({ ...x, residual: want - x.shift }))
+    .sort((a, b) => Math.abs(a.residual) - Math.abs(b.residual))[0] ?? null;
+}
 
 export interface GelSuggestion { gels: Gel[]; mired: number; residual: number; resultK: number }
 
@@ -136,6 +180,8 @@ export interface Comparison {
   /** green/magenta: B minus A in Duv; > 0 → B is greener → Minus Green on B */
   dDuv: number;
   gels: GelSuggestion[];
+  /** Lee green gel for B (null when |ΔDuv| < 0.002) */
+  green: ReturnType<typeof suggestGreenGel>;
 }
 
 /** Compare light B against reference A (gel suggestions are for B, to match A). */
@@ -147,13 +193,16 @@ export function compareLights(a: Reading, b: Reading, maker: Gel['maker'] = 'Lee
     stops: a.lux > 0 && b.lux > 0 ? Math.log2(b.lux / a.lux) : NaN,
     dDuv: cb.duv - ca.duv,
     gels: Math.abs(shift) < 5 ? [] : suggestGels(cb.cct, ca.cct, maker),
+    green: suggestGreenGel(cb.duv - ca.duv, cb.cct),
   };
 }
 
-/** Plain-language direction of a green/magenta difference (no gel strength: not documented). */
-export function greenMagentaHint(dDuv: number) {
+/** Plain-language green/magenta difference with the Lee gel that comes closest. */
+export function greenMagentaHint(dDuv: number, cctSource = 3200) {
   if (Math.abs(dDuv) < 0.002) return 'Grün/Magenta passt (|ΔDuv| < 0,002)';
-  return dDuv > 0 ? `B ist grüner (ΔDuv ${fmt(dDuv, 4)}) → Minus Green auf B` : `B ist magentastichiger (ΔDuv ${fmt(dDuv, 4)}) → Plus Green auf B`;
+  const g = suggestGreenGel(dDuv, cctSource);
+  const what = dDuv > 0 ? `B ist grüner (ΔDuv ${fmt(dDuv, 4)}) → Minus Green auf B` : `B ist magentastichiger (ΔDuv ${fmt(dDuv, 4)}) → Plus Green auf B`;
+  return g ? `${what}: Lee ${g.gel.name} (ΔDuv ${fmt(g.shift, 4)}, Rest ${fmt(g.residual, 4)})` : what;
 }
 const fmt = (v: number, d: number) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(d).replace('.', ',');
 
@@ -195,4 +244,24 @@ export function seriesStats(values: number[]) {
   const mean = values.reduce((a, b) => a + b, 0) / n;
   const sd = n > 1 ? Math.sqrt(values.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)) : 0;
   return { mean, sd, cv: mean !== 0 ? sd / Math.abs(mean) : NaN, n };
+}
+
+// ---------------------------------------------------------------- colour on the display
+
+/**
+ * The measured chromaticity as a display colour: XYZ (Y = 1) → linear RGB of the display primaries
+ * (sRGB = Rec.709 primaries, Display P3 = P3-D65; both D65, both with the sRGB transfer curve), then
+ * scaled so the largest channel is 1 (brightness normalised). No chromatic adaptation: the patch
+ * shows the absolute colour of the light, as if the display's D65 white were neutral. Negative
+ * channels = outside the display gamut; they are clipped to 0 and reported.
+ */
+export function displayColour(xy: XY, space: 'srgb' | 'display-p3') {
+  const g = GAMUTS[space === 'display-p3' ? 'p3' : '709'];
+  const M = inv3(rgbToXyzMatrix(g));
+  const lin = mul3(M, [xy[0] / xy[1], 1, (1 - xy[0] - xy[1]) / xy[1]]);
+  const mx = Math.max(...lin);
+  const n = lin.map((v) => v / mx);
+  const outOfGamut = n.some((v) => v < -1e-3);
+  const rgb = n.map((v) => gammaInverse('srgb', Math.max(0, Math.min(1, v)))) as [number, number, number];
+  return { rgb, linear: n, outOfGamut, css: `color(${space} ${rgb.map((v) => v.toFixed(4)).join(' ')})` };
 }

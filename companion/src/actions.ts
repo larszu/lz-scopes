@@ -12,7 +12,7 @@ export const SCOPES: { id: string; label: string }[] = [
   { id: 'clock', label: 'Uhr / Timecode' },
   { id: 'audio-check', label: 'Audio Ident & A/V-Versatz' },
   { id: 'light-cie', label: 'Licht: Farbort (CIE)' }, { id: 'light-vector', label: 'Licht: Vectorscope' },
-  { id: 'light-bands', label: 'Licht: Filterkanäle' }, { id: 'light-trend', label: 'Licht: Zeitverlauf' }, { id: 'light-map', label: 'Licht: Messfeld' },
+  { id: 'light-bands', label: 'Licht: Filterkanäle' }, { id: 'light-trend', label: 'Licht: Zeitverlauf' }, { id: 'light-map', label: 'Licht: Messfeld' }, { id: 'light-spectrum', label: 'Licht: Wellenlängen' }, { id: 'light-swatch', label: 'Licht: Farbfläche' },
 ]
 const SIGNALS = [
   { id: '', label: 'unverändert' }, { id: 'sine', label: 'Sinus' }, { id: 'ebu-ident', label: 'EBU-Stereo-Ident' }, { id: 'glits', label: 'GLITS' },

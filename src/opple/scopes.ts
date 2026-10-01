@@ -9,16 +9,18 @@ import { SPECTRAL_LOCUS } from '../color';
 import { cctDuv } from '../calib/colorimetry';
 import { FONT, GRID, GRID_DIM, LABEL } from '../graticule';
 import type { Reading } from './photometry';
+import { filterBands, peakOf, wavelengthAt } from './spectrum';
 import {
-  cellKey, compareLights, deltaUvPrime, gridStats, isothermXy, lightVector, miredShift, planckXy, seriesStats, suggestGels, xyToUvPrime, type XY,
+  cellKey, compareLights, displayColour, deltaUvPrime, gridStats, isothermXy, lightVector, miredShift, planckXy, seriesStats, suggestGels, xyToUvPrime, type XY,
 } from './lightScience';
 import { lightStore, type LightStore } from './store';
 
-export type LightScope = 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map';
-export const LIGHT_SCOPES: LightScope[] = ['light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map'];
+export type LightScope = 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map' | 'light-spectrum' | 'light-swatch';
+/** order of the light layout (3 per row); 'light-bands' stays available in the scope menu */
+export const LIGHT_SCOPES: LightScope[] = ['light-cie', 'light-vector', 'light-swatch', 'light-spectrum', 'light-trend', 'light-map'];
 export const LIGHT_LABELS: Record<LightScope, string> = {
   'light-cie': 'Licht: Farbort (CIE)', 'light-vector': 'Licht: Vectorscope', 'light-bands': 'Licht: Filterkanäle',
-  'light-trend': 'Licht: Zeitverlauf', 'light-map': 'Licht: Messfeld',
+  'light-trend': 'Licht: Zeitverlauf', 'light-map': 'Licht: Messfeld', 'light-spectrum': 'Licht: Wellenlängen', 'light-swatch': 'Licht: Farbfläche',
 };
 export const isLight = (s: string): s is LightScope => s.startsWith('light-');
 
@@ -103,6 +105,8 @@ export function drawLightPanel(ctx: CanvasRenderingContext2D, scope: LightScope,
     else if (scope === 'light-cie') drawCie(ctx, s, o, list, w, h);
     else if (scope === 'light-vector') drawVector(ctx, s, o, list, w, h);
     else if (scope === 'light-bands') drawBands(ctx, s, o, list, w, h);
+    else if (scope === 'light-spectrum') drawSpectrum(ctx, s, o, list, w, h);
+    else if (scope === 'light-swatch') drawSwatch(ctx, s, list, w, h);
     else drawTrend(ctx, s, o, list, w, h);
   }
   ctx.restore();
@@ -448,4 +452,110 @@ function drawMap(ctx: CanvasRenderingContext2D, s: LightStore, o: LightPanelOpti
       `Mired für B ${sgn(cmp.shift, 0)}${cmp.gels[0] ? ` → ${cmp.gels[0].gels.map((g) => g.name).join(' + ')}` : ''}`,
     ], 'right');
   }
+}
+
+// ---------------------------------------------------------------- wavelength monitor
+
+/** Approximate display colour of a wavelength (for drawing only; piecewise linear, own). */
+export function wavelengthColour(nm: number, a = 1) {
+  let r = 0, g = 0, b = 0;
+  if (nm < 440) { r = (440 - nm) / 60; b = 1; } else if (nm < 490) { g = (nm - 440) / 50; b = 1; } else if (nm < 510) { g = 1; b = (510 - nm) / 20; }
+  else if (nm < 580) { r = (nm - 510) / 70; g = 1; } else if (nm < 645) { r = 1; g = (645 - nm) / 65; } else r = 1;
+  const f = nm < 420 ? 0.3 + (0.7 * (nm - 380)) / 40 : nm > 700 ? 0.3 + (0.7 * (780 - nm)) / 80 : 1;
+  const c = (v: number) => Math.round(255 * Math.pow(Math.max(0, Math.min(1, v * f)), 0.8));
+  return `rgba(${c(r)},${c(g)},${c(b)},${a})`;
+}
+
+function drawSpectrum(ctx: CanvasRenderingContext2D, s: LightStore, o: LightPanelOptions, list: Reading[], w: number, h: number) {
+  const last = [...list].reverse().find((r) => r.spectrum) ?? list[list.length - 1];
+  const extraLines = last.cri || last.tlci || last.tm30 ? 2 : 0;
+  const pad = { l: 44, r: 12, t: 22 + extraLines * 13, b: 30 };
+  const aw = w - pad.l - pad.r, ah = h - pad.t - pad.b;
+  const X = (nm: number) => pad.l + ((nm - 380) / 400) * aw, Y = (v: number) => pad.t + ah - v * ah;
+  ctx.font = FONT;
+  for (let nm = 400; nm <= 780; nm += 50) {
+    ctx.strokeStyle = GRID_DIM; ctx.beginPath(); ctx.moveTo(X(nm), pad.t); ctx.lineTo(X(nm), pad.t + ah); ctx.stroke();
+    ctx.fillStyle = LABEL; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(`${nm}`, X(nm), pad.t + ah + 6);
+  }
+  for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+    ctx.strokeStyle = t === 0 || t === 1 ? GRID : GRID_DIM; ctx.beginPath(); ctx.moveTo(pad.l, Y(t)); ctx.lineTo(pad.l + aw, Y(t)); ctx.stroke();
+    ctx.fillStyle = LABEL; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(`${Math.round(t * 100)} %`, pad.l - 4, Y(t));
+  }
+  for (let nm = 380; nm < 780; nm += 2) { ctx.fillStyle = wavelengthColour(nm, 0.9); ctx.fillRect(X(nm), pad.t + ah + 1, Math.ceil(X(nm + 2) - X(nm)), 3); }
+  ctx.fillStyle = LABEL; ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.fillText('nm', w - 4, pad.t + ah + 18);
+  const refPoint = s.point(s.opts.ref), ref = refPoint?.reading;
+  let title: string;
+  if (last.spectrum) {
+    const sp = last.spectrum, pk = peakOf(sp), max = pk.value || 1;
+    for (let i = 0; i < sp.values.length - 1; i++) {
+      const x0 = X(wavelengthAt(sp, i)), x1 = X(wavelengthAt(sp, i + 1));
+      ctx.fillStyle = wavelengthColour(wavelengthAt(sp, i), 0.55);
+      ctx.beginPath(); ctx.moveTo(x0, Y(0)); ctx.lineTo(x0, Y(Math.max(0, sp.values[i]) / max)); ctx.lineTo(x1, Y(Math.max(0, sp.values[i + 1]) / max)); ctx.lineTo(x1, Y(0)); ctx.fill();
+    }
+    const curve = (sp2: NonNullable<Reading['spectrum']>) => {
+      const m2 = Math.max(...sp2.values) || 1;
+      ctx.beginPath();
+      sp2.values.forEach((v, i) => { const x = X(wavelengthAt(sp2, i)), y = Y(Math.max(0, v) / m2); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+      ctx.stroke();
+    };
+    ctx.strokeStyle = '#e8e8e8'; ctx.lineWidth = 1.5; curve(sp); ctx.lineWidth = 1;
+    if (ref?.spectrum && ref !== last) { ctx.strokeStyle = REF; ctx.setLineDash([4, 3]); curve(ref.spectrum); ctx.setLineDash([]); }
+    title = `${s.label(last.device ?? '')} · Spektrum ${de(sp.start, 0)}–${de(sp.end, 0)} nm, ${sp.values.length} Werte · Spitze ${de(pk.nm, 0)} nm${sp.unit !== 'relativ' ? ` = ${de(pk.value, 3)} ${sp.unit}` : ' (relativ)'}${ref?.spectrum && ref !== last ? ` · gestrichelt: „${refPoint!.label}“` : ''}`;
+  } else if (last.bands.length) {
+    const fb = filterBands(last.model === 'lm4' ? 'lm4' : 'lm3', last.wavelengths);
+    const max = Math.max(1e-9, ...last.bands);
+    last.bands.forEach((v, i) => {
+      const b = fb[i], x = X(b.nm), y = Y(v / max), col = wavelengthColour(b.nm);
+      ctx.strokeStyle = col; ctx.fillStyle = col;
+      ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(x, Y(0)); ctx.lineTo(x, y); ctx.stroke(); ctx.setLineDash([]);
+      if (b.fwhm) { ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(X(b.nm - b.fwhm / 2), y); ctx.lineTo(X(b.nm + b.fwhm / 2), y); ctx.stroke(); ctx.lineWidth = 1; }
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = LABEL; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(`${b.nm}`, x, y - 6);
+    });
+    title = `${s.label(last.device ?? '')} · ${last.bands.length} Filterkanäle, kein Spektrum · Höhe = kalibrierter Zählwert relativ zum stärksten Kanal${last.model === 'lm4' ? ' · Balken = Halbwertsbreite (AS7341-Datenblatt)' : ' · Filterbreiten des LM3 nicht veröffentlicht'}`;
+  } else title = 'Keine Kanal- oder Spektraldaten';
+  ctx.fillStyle = LABEL; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.font = FONT;
+  ctx.fillText(title, 6, 4);
+  if (extraLines) {
+    const c = (b: boolean) => (b ? ' (Vorsicht)' : '');
+    const l1 = [last.cri ? `CRI Ra ${de(last.cri.ra, 1)} · R9 ${de(last.cri.r9, 1)}${c(last.cri.caution)}` : '', last.tlci ? `TLCI Qa ${de(last.tlci.qa, 1)}${c(last.tlci.caution)}` : '', last.tm30 ? `TM-30-15 Rf ${de(last.tm30.rf, 1)} Rg ${de(last.tm30.rg, 1)}${c(last.tm30.caution)}` : ''].filter(Boolean).join(' · ');
+    ctx.fillText(`${l1} – berechnet von ArgyllCMS`, 6, 17);
+    if (last.cri?.r.length) ctx.fillText(last.cri.r.map((v, i) => `R${i + 1} ${de(v, 0)}`).join(' '), 6, 30);
+  }
+  void o;
+}
+
+// ---------------------------------------------------------------- colour patch
+
+function drawSwatch(ctx: CanvasRenderingContext2D, s: LightStore, list: Reading[], w: number, h: number) {
+  const last = list[list.length - 1];
+  const attr = (ctx as CanvasRenderingContext2D & { getContextAttributes?: () => { colorSpace?: string } }).getContextAttributes?.();
+  const space = attr?.colorSpace === 'display-p3' ? 'display-p3' : 'srgb';
+  const cd = cctDuv([last.x, last.y]);
+  const meas = displayColour([last.x, last.y], space);
+  const planck = cd.inRange ? displayColour(planckXy(cd.cct), space) : null;
+  const pad = 8, top = 8, bottom = 52;
+  const pw = w - 2 * pad, ph = Math.max(20, h - top - bottom);
+  const split = planck ? pw * 0.72 : pw;
+  ctx.fillStyle = meas.css; ctx.fillRect(pad, top, split, ph);
+  if (planck) { ctx.fillStyle = planck.css; ctx.fillRect(pad + split + 2, top, pw - split - 2, ph); }
+  if (meas.outOfGamut) {
+    ctx.save(); ctx.beginPath(); ctx.rect(pad, top, split, ph); ctx.clip();
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 2;
+    for (let x = -ph; x < split; x += 14) { ctx.beginPath(); ctx.moveTo(pad + x, top + ph); ctx.lineTo(pad + x + ph, top); ctx.stroke(); }
+    ctx.restore();
+  }
+  const lum = (c: number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  ctx.font = '600 13px system-ui'; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+  ctx.fillStyle = lum(meas.linear.map((v) => Math.max(0, v))) > 0.45 ? '#111' : '#f2f2f2';
+  ctx.fillText('gemessen (mit Duv)', pad + 8, top + 8);
+  if (planck) { ctx.fillStyle = lum(planck.linear) > 0.45 ? '#111' : '#f2f2f2'; ctx.font = '11px system-ui'; ctx.fillText('Planck, gleiche CCT', pad + split + 8, top + 8); }
+  ctx.font = FONT; ctx.fillStyle = LABEL; ctx.textBaseline = 'top';
+  ctx.fillText(`${s.label(last.device ?? '')} · CCT ${de(cd.cct, 0)} K · Duv ${sgn(cd.duv, 4)} · x ${de(last.x, 4)} y ${de(last.y, 4)}`, pad, top + ph + 6);
+  ctx.fillStyle = meas.outOfGamut ? '#ffb44a' : LABEL;
+  ctx.fillText(meas.outOfGamut
+    ? `Außerhalb des Display-Gamuts (${space === 'display-p3' ? 'Display P3' : 'sRGB'}): schraffiert, gezeigt wird die abgeschnittene Farbe`
+    : `Display ${space === 'display-p3' ? 'P3' : 'sRGB'} · Helligkeit normiert · ohne Weißabgleich (Display-Weiß = D65)`, pad, top + ph + 19);
+  ctx.fillStyle = 'rgba(230,215,170,0.55)';
+  ctx.fillText('Stimmt nur bei kalibriertem Display und aktiver Farbverwaltung · Filtersensor: Trendmessung', pad, top + ph + 32);
 }

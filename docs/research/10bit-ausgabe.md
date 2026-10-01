@@ -74,7 +74,7 @@ Umsetzung (`server/out10.mjs`): Das Fenster rechnet die Codes selbst nach Y′Cb
 
 RTMP ist ausgeschlossen: ffmpeg 6.0 meldet „Video codec hevc not compatible with flv“ (gemessen).
 
-**Lizenz:** `libx265` ist GPL wie das schon genutzte `libx264`; der Weg läuft über die Kommandozeile wie bisher (THIRD_PARTY.md). **Befund dabei:** `ffmpeg -L` des mitgelieferten ffmpeg-static meldet „This version of ffmpeg has nonfree parts compiled in. Therefore it is not legally redistributable.“ (Build mit `--enable-nonfree`). Das betrifft die ausgelieferte Desktop-App insgesamt, nicht nur diese Funktion – **Entscheidung für Lars**.
+**Lizenz:** `libx265` ist GPL wie das schon genutzte `libx264`; der Weg läuft über die Kommandozeile wie bisher (THIRD_PARTY.md). **Befund dabei:** `ffmpeg -L` des mitgelieferten ffmpeg-static meldet „This version of ffmpeg has nonfree parts compiled in. Therefore it is not legally redistributable.“ (Build mit `--enable-nonfree`). Das betrifft die ausgelieferte Desktop-App insgesamt, nicht nur diese Funktion. **Erledigt 30.09.2026:** die App liefert jetzt GPLv3-Builds ohne nonfree mit libsrt ([ffmpeg-lizenz.md](ffmpeg-lizenz.md)); ab ffmpeg 7 müssen die Farb-Tags auch am Eingang stehen, sonst rechnet ffmpeg um (gemessen, `server/out10.mjs`).
 
 ## DeckLink-Ausgabe (nächster Schritt, nicht gebaut)
 

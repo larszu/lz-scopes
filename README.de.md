@@ -51,7 +51,7 @@ Vorbilder: VMA Scope, Nobe OmniScope, HDRScopes, LiveScopes.tv, openrv-web.
 
 ## Download und Installation
 
-Installer im [neuesten Release](https://github.com/larszu/lz-scopes/releases/latest): macOS als Universal-`.dmg`/`.zip` (Apple Silicon und Intel), Windows als Installer und portable `.exe`. Die Desktop-App bringt Bridge und ffmpeg mit, RTSP und andere Netzwerkquellen funktionieren sofort. Die macOS-Builds sind ad-hoc signiert: beim ersten Start Rechtsklick, *Öffnen*.
+Installer im [neuesten Release](https://github.com/larszu/lz-scopes/releases/latest): macOS als Universal-`.dmg`/`.zip` (Apple Silicon und Intel), Windows als Installer und portable `.exe`. Die Desktop-App bringt Bridge und ein weitergebbares ffmpeg 9.0.2 mit (GPLv3, mit SRT; Lizenzen und Quelltext: [THIRD_PARTY.md](THIRD_PARTY.md)), RTSP, SRT und andere Netzwerkquellen funktionieren sofort, ohne System-ffmpeg. Welches ffmpeg läuft, steht unter *Bridge*. Die macOS-Builds sind ad-hoc signiert: beim ersten Start Rechtsklick, *Öffnen*.
 
 **Web-Fassung:** <https://larszu.github.io/lz-scopes/>. Dort gehen Testbilder, Kamera, Bildschirm und Dateien. RTSP, SRT und andere Netzwerkstreams brauchen die Desktop-App oder `npm start`, weil ein Browser sie nicht öffnen kann.
 
@@ -72,7 +72,7 @@ npm run dev        # UI http://localhost:4191, Bridge auf 4192
 npm run build && npm start   # alles auf http://127.0.0.1:4192
 ```
 
-Voraussetzung für Netzwerkquellen ohne Desktop-App: `ffmpeg` und `ffprobe` im `PATH` (`brew install ffmpeg`). Ohne Bridge funktionieren nur Testbilder, Kamera, Bildschirm und Dateien.
+Für Netzwerkquellen ohne Desktop-App: `npm run ffmpeg:fetch` lädt dasselbe ffmpeg, das die App mitliefert (SHA-256-geprüft, nach `vendor/ffmpeg/`); sonst nimmt die Bridge `$FFMPEG` oder ein ffmpeg aus dem `PATH`. Ohne Bridge funktionieren nur Testbilder, Kamera, Bildschirm und Dateien.
 
 ## Quellen
 
@@ -246,7 +246,7 @@ Konfiguration: `--port`/`PORT` (4192; nicht 4190 – steht auf der Sperrliste de
 
 ## Desktop-App
 
-`npm run dist:mac` bzw. `npm run dist:win` baut die App mit eingebetteter Bridge und mitgeliefertem ffmpeg (Mac: Universal). Release: Tag `v*` → `release.yml` baut Windows und macOS und hängt die Installer ans Release. Das mitgelieferte ffmpeg ist GPL-lizenziert, siehe [THIRD_PARTY.md](THIRD_PARTY.md).
+`npm run dist:mac` bzw. `npm run dist:win` baut die App mit eingebetteter Bridge und mitgeliefertem ffmpeg (Mac: Universal). Release: Tag `v*` → `release.yml` baut Windows und macOS, prüft das ffmpeg im Paket und hängt Installer und ffmpeg-Quelltext ans Release; `workflow_dispatch` ist ein Probelauf. Das mitgelieferte ffmpeg ist GPLv3 ohne nonfree-Teile, siehe [THIRD_PARTY.md](THIRD_PARTY.md) und [docs/research/ffmpeg-lizenz.md](docs/research/ffmpeg-lizenz.md).
 
 ## Offene Punkte
 
@@ -271,7 +271,7 @@ npm run test:e2e  # Desktop-App per Playwright: Waveform-Pixel, RTSP über media
 npm --prefix companion ci && npm run companion:test && npm run companion:build   # Companion-Modul
 ```
 
-Die CI (`ci.yml`) prüft bei jedem PR und Push auf main Typen, Unit-Tests, Build und E2E; der RTSP-Test wird ohne `mediamtx`/`ffmpeg` übersprungen.
+Die CI (`ci.yml`) prüft bei jedem PR und Push auf main Typen, Unit-Tests, Build und E2E und testet die mitgelieferten ffmpeg-Builds auf macOS und Windows (Lizenz, SRT, 10-bit-Push); die RTSP-/SRT-Empfangstests werden ohne `mediamtx` übersprungen.
 
 Zum Ausprobieren mit echtem RTSP: `brew install mediamtx`, dann `mediamtx` starten und z. B. `ffmpeg -re -f lavfi -i testsrc2=size=1920x1080:rate=25 -c:v libx264 -f rtsp rtsp://127.0.0.1:8554/test` veröffentlichen.
 

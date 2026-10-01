@@ -1331,7 +1331,7 @@ function lowLatencyFields(cfg: Partial<LowLatencyConfig>, inherit: boolean, set:
 const LL_FIELD_HINTS: Record<string, string> = {
   'Analysebreite': 'Obergrenze der Analysebreite. Weniger Pixel: weniger Daten durch Pipe, WebSocket und Textur – aber weniger Abtastpunkte in den Scopes.',
   'Zeichnen bei Ankunft': 'Zeichnet ein Bild sofort statt im nächsten Bildschirmtakt. Gewinn gemessen bis „Zeichnung abgeschickt“; ob der Monitor es früher zeigt, hängt vom Compositor ab (ungeprüft). Mehr Zeichenarbeit bei mehreren Quellen.',
-  'RTP-Eigenempfang': 'rtsp://: die Bridge empfängt RTP selbst (H.264/HEVC, TCP oder UDP) und gibt jedes Bild beim RTP-Markerbit weiter – ffmpegs RTSP-Eingang hält eines zurück. Ton kommt dann über eine zweite Sitzung ohne gemeinsamen Zeitstempel (A/V-Versatz nicht messbar). Was nicht unterstützt wird, empfängt ffmpeg wie bisher.',
+  'RTP-Eigenempfang': 'rtsp://: die Bridge empfängt RTP selbst (H.264/HEVC, TCP oder UDP) und gibt jedes Bild beim RTP-Markerbit weiter – ffmpegs RTSP-Eingang hält eines zurück. Über UDP verworfene Bilder (Paketverlust) warten auf den nächsten Keyframe; ab 2 % Verlust wechselt die Bridge selbst auf TCP. Ton kommt dann über eine zweite Sitzung ohne gemeinsamen Zeitstempel (A/V-Versatz nicht messbar). Was nicht unterstützt wird, empfängt ffmpeg wie bisher.',
   'Statistik': 'Wie oft Histogramm- und Clip-Werte auf der CPU berechnet werden. Seltener = weniger Arbeit im Hauptthread, Messwerte reagieren träger.',
 };
 

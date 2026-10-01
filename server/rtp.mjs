@@ -36,16 +36,22 @@ export class ReorderBuffer {
   constructor(onPacket, { window = 64, maxWaitMs = 30 } = {}) {
     this.onPacket = onPacket; this.window = window; this.maxWaitMs = maxWaitMs;
     this.next = null; this.held = new Map();
-    this.lost = 0; this.reordered = 0; this.duplicates = 0;
+    /** lost: given up; reordered: arrived after a later one but in time; late: arrived after being given up; duplicates: twice */
+    this.lost = 0; this.reordered = 0; this.late = 0; this.duplicates = 0;
+    this.highest = null;
   }
   push(pkt, now = Date.now()) {
     if (this.window === 0) { this.onPacket(pkt, false); return; }
     if (this.next === null) this.next = pkt.seq;
     const d = seqDiff(this.next, pkt.seq);
-    if (d < 0) { this.duplicates++; return; } // late or repeated: already skipped or delivered
+    if (d < 0) { // already delivered, or given up as lost
+      if (this.skipped?.has(pkt.seq)) { this.late++; this.skipped.delete(pkt.seq); } else this.duplicates++;
+      return;
+    }
     if (d > 0x4000) { this.reset(pkt); return; } // sender restarted
     if (this.held.has(pkt.seq)) { this.duplicates++; return; }
-    if (d > 0) this.reordered++; // arrived ahead of a missing one
+    if (this.highest !== null && seqDiff(this.highest, pkt.seq) < 0) this.reordered++; // fills a gap
+    else this.highest = pkt.seq;
     this.held.set(pkt.seq, { pkt, at: now });
     this.drain(now);
   }
@@ -68,11 +74,15 @@ export class ReorderBuffer {
       let skip = Infinity;
       for (const s of this.held.keys()) skip = Math.min(skip, seqDiff(this.next, s));
       this.lost += skip;
+      // remember what was given up (bounded) to tell late arrivals from duplicates
+      this.skipped ??= new Set();
+      for (let k = 0; k < Math.min(skip, 256); k++) this.skipped.add((this.next + k) & 0xffff);
+      if (this.skipped.size > 1024) this.skipped = new Set([...this.skipped].slice(-512));
       this.next = (this.next + skip) & 0xffff;
       this.gap = true;
     }
   }
-  reset(pkt) { this.held.clear(); this.next = pkt.seq; this.gap = true; this.push(pkt); }
+  reset(pkt) { this.held.clear(); this.next = pkt.seq; this.highest = null; this.gap = true; this.push(pkt); }
 }
 
 const SC = Buffer.from([0, 0, 0, 1]);

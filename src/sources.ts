@@ -9,7 +9,7 @@ import { lineExtremes, neutralCast, type LineExtremes, type NeutralCast } from '
 import { r103Check, rgbDecoder, yuvDecoder, type Decode, type R103Result, type YuvCoding } from './ycbcr';
 import { debugFlags, openFrameSocket, workerAvailable, type FrameSocket } from './frameLink';
 import { GpuStats } from './gpuStats';
-import { LatencyMeter } from './latency';
+import { LatencyMeter, type RtpStats } from './latency';
 import { effectiveWidth, mergeLowLatency, type LowLatencyConfig } from './lowLatency';
 import { meanLuma } from './luma';
 
@@ -324,7 +324,7 @@ export class Source {
   /** own RTP reception: how the bridge received this stream (info message), null = ffmpeg's RTSP */
   get rtpInfo() { return this.info?.rtp ?? null; }
   /** own RTP reception counters from the bridge's stats (1 s) */
-  rtpStats: { transport: string; packets: number; lost: number; reordered: number; accessUnits: number; droppedUnits: number } | null = null;
+  rtpStats: RtpStats | null = null;
   private patternTimer: ReturnType<typeof setInterval> | null = null;
   private media: MediaStream | null = null;
   private objectUrl: string | null = null;

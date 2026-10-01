@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error plain JS module
 import { Depacketizer, ReorderBuffer, RtpClock, parseRtp, seqDiff } from '../server/rtp.mjs';
 // @ts-expect-error plain JS module
-import { RtspClient, RtspStreamParser, authorization, parseSdp } from '../server/rtsp.mjs';
+import { OwnRtp, RtspClient, RtspStreamParser, authorization, parseSdp, udpTooLossy } from '../server/rtsp.mjs';
 // @ts-expect-error plain JS module
 import { MkvWriter, vint } from '../server/mkv.mjs';
 
@@ -135,8 +135,10 @@ describe('Umsortierpuffer (UDP)', () => {
     r.drain(40); // waited long enough: 1 counts as lost
     expect(got.at(-1)).toEqual([2, true]);
     expect(r.lost).toBe(1);
-    expect(r.reordered).toBeGreaterThanOrEqual(1);
-    r.push(pk(1), 50); // too late
+    expect(r.reordered).toBe(1); // 65535 after 0
+    r.push(pk(1), 50); // too late: given up already
+    expect(r.late).toBe(1);
+    r.push(pk(2), 60); // delivered already
     expect(r.duplicates).toBe(1);
   });
 });
@@ -217,6 +219,43 @@ describe('RTSP-Sitzung gegen einen Prüfserver (TCP interleaved, Digest)', () =>
     c.stop();
     srv.close();
     expect(seen.slice(0, 5)).toEqual(['OPTIONS', 'DESCRIBE', 'DESCRIBE', 'SETUP', 'PLAY']);
+  });
+});
+
+describe('UDP-Verlust → TCP', () => {
+  const rep = (packets: number, lost: number, accessUnits = 0, droppedUnits = 0) => ({ packets, lost, accessUnits, droppedUnits });
+  it('schaltet ab 2 % Paketverlust oder einem Viertel verworfener Bilder', () => {
+    expect(udpTooLossy(rep(0, 0), rep(1000, 10))).toBe(false); // 1 %
+    expect(udpTooLossy(rep(0, 0), rep(1000, 30))).toBe(true); // 2.9 %
+    expect(udpTooLossy(rep(0, 0), rep(1000, 0, 60, 30))).toBe(true);
+    expect(udpTooLossy(rep(0, 0), rep(20, 20))).toBe(false); // too few packets to judge
+    // camera test 01.10. (routed Wi-Fi): 653 packets and 139 lost in one second
+    expect(udpTooLossy(rep(0, 0), rep(653, 139, 3, 36))).toBe(true);
+  });
+  it('wechselt ohne ffmpeg-Neustart: Zeitachse läuft weiter, erst ab Keyframe', async () => {
+    const { EventEmitter } = await import('node:events');
+    const fake = (transport: string) => Object.assign(new EventEmitter(), { transport, stopped: false, report: () => rep(0, 0), stop() { this.stopped = true; } });
+    const udp = fake('udp'), tcp = fake('tcp');
+    const own = new OwnRtp('rtsp://x/y', udp, { codec: 'h264', params: [], transport: 'udp' }, { width: 0, height: 0, autoTcp: false, connectTcp: async () => tcp });
+    const writes: Buffer[] = [];
+    own.attach({ writable: true, on() {}, write: (b: Buffer) => writes.push(b), end() {} });
+    const blocks = () => writes.length - 1;
+    const au = (ms: number, key: boolean) => ({ data: Buffer.from([0, 0, 0, 1, key ? 0x65 : 0x41]), key, ms });
+    udp.emit('au', au(0, true)); udp.emit('au', au(20, false)); udp.emit('au', au(40, false));
+    expect(blocks()).toBe(3);
+    const notes: string[] = [];
+    own.on('switch', (m: string) => notes.push(m));
+    await own.toTcp('UDP verlor 20 % der Pakete → TCP');
+    expect(udp.stopped).toBe(true);
+    expect(own.report().switched).toContain('TCP');
+    // the new session starts its clock at 0 again; its first AU continues the time line
+    const seen: number[] = [];
+    own.sinks.add((a: { ms: number }) => seen.push(a.ms));
+    tcp.emit('au', au(0, true)); tcp.emit('au', au(20, false));
+    expect(seen).toEqual([60, 80]);
+    expect(blocks()).toBe(5);
+    expect(notes).toHaveLength(1);
+    own.stop();
   });
 });
 

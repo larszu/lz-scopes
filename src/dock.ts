@@ -88,6 +88,15 @@ export function createDock(el: HTMLElement, host: DockHost) {
         }
       });
     },
+    /** Replace the layout by the given panels in rows of `cols` (e.g. the light scopes). */
+    showGrid(idxs: number[], cols: number) {
+      api.clear();
+      idxs.forEach((idx, i) => {
+        if (i === 0) add(idx);
+        else if (i < cols) add(idx, idxs[i - 1], 'right');
+        else add(idx, idxs[i - cols], 'below');
+      });
+    },
     /** Add a panel next to the active one (or at the end). */
     addPanel(idx: number) {
       const active = api.activePanel;

@@ -11,7 +11,8 @@ import type { Source } from './sources';
 import { CUBE_SPACE_LABELS, cubeProject, cubeRotation, cubeWireframe, qFromIctcp, qFromLab, qFromRgb, type CubeSettings } from './cube';
 
 export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'hist' | 'stats'
-  | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock';
+  | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock'
+  | 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits';
 
 export const SCOPE_LABELS: Record<ScopeType, string> = {
@@ -19,6 +20,9 @@ export const SCOPE_LABELS: Record<ScopeType, string> = {
   ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', diamond: 'Diamond (Gamut)', cube: '3D-Farbvolumen', hist: 'Histogramm', stats: 'Messwerte',
   'audio-meter': 'Audio Pegel & Lautheit', 'audio-loudness': 'Audio Lautheitsverlauf', 'audio-spectrum': 'Audio Spektrum', 'audio-phase': 'Audio Goniometer', 'audio-check': 'Audio Ident & A/V-Versatz',
   clock: 'Uhr / Timecode',
+  // Opple Light Master (src/opple/scopes.ts, LIGHT_LABELS)
+  'light-cie': 'Licht: Farbort (CIE)', 'light-vector': 'Licht: Vectorscope', 'light-bands': 'Licht: Filterkanäle',
+  'light-trend': 'Licht: Zeitverlauf', 'light-map': 'Licht: Messfeld',
 };
 
 export const isAudio = (s: ScopeType) => s.startsWith('audio-');
@@ -26,10 +30,10 @@ export const isAudio = (s: ScopeType) => s.startsWith('audio-');
 export const isWaveform = (s: ScopeType) => s === 'wf-luma' || s === 'wf-color' || s === 'wf-skin' || s === 'wf-rgb' || s === 'parade' || s === 'yrgb' || s === 'ycbcr';
 export const sections = (s: ScopeType) => (s === 'parade' || s === 'ycbcr' ? 3 : s === 'yrgb' ? 4 : 1);
 
-const GRID = 'rgba(210, 190, 120, 0.42)';
-const GRID_DIM = 'rgba(210, 190, 120, 0.16)';
-const LABEL = 'rgba(230, 215, 170, 0.85)';
-const FONT = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+export const GRID = 'rgba(210, 190, 120, 0.42)';
+export const GRID_DIM = 'rgba(210, 190, 120, 0.16)';
+export const LABEL = 'rgba(230, 215, 170, 0.85)';
+export const FONT = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
 
 /** Plot area inside a panel body (CSS px), shared by WebGL and the overlay. */
 export function plotRect(scope: ScopeType, w: number, h: number, aspect = 16 / 9): Rect {

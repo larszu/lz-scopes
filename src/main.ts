@@ -27,6 +27,7 @@ import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
 import { openLedTool } from './led/ui';
 import { mountOpple } from './opple/ui';
+import { isLight, LIGHT_SCOPES, lightPanelSettings } from './opple/panelSettings';
 import { ledSettings, pictureSize } from './led/wall';
 import { Renderer, type PictureMode, type SkinRange } from './renderer';
 import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
@@ -664,9 +665,9 @@ function fillHead(v: PanelView) {
     select(p.scope, Object.entries(SCOPE_LABELS) as [string, string][], (val) => {
       p.scope = val as ScopeType; if (val === 'vector' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
     }),
-    sources.length > 1 ? select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), 'Quelle – alle nicht angehefteten Panels folgen') : '',
+    sources.length > 1 && !isLight(p.scope) ? select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), 'Quelle – alle nicht angehefteten Panels folgen') : '',
     stageChip(p),
-    sources.length > 1 ? h('button', { class: `icon pin ${p.pin ? 'on' : ''}`, title: p.pin ? 'Angeheftet: behält seine Quelle' : 'Anheften: Panel behält seine Quelle, wenn andere umschalten', onclick: () => { p.pin = !p.pin; save(); fillHead(v); } }, '📌') : '',
+    sources.length > 1 && !isLight(p.scope) ? h('button', { class: `icon pin ${p.pin ? 'on' : ''}`, title: p.pin ? 'Angeheftet: behält seine Quelle' : 'Anheften: Panel behält seine Quelle, wenn andere umschalten', onclick: () => { p.pin = !p.pin; save(); fillHead(v); } }, '📌') : '',
     h('div', { class: 'opts' },
       latencyChip(p),
       roiChip(p),
@@ -679,7 +680,7 @@ function fillHead(v: PanelView) {
 
 /** Measuring stage in the panel head, honest about stages that have nothing to apply. */
 function stageChip(p: PanelState): Node | string {
-  if (isAudio(p.scope) || p.scope === 'clock') return '';
+  if (isAudio(p.scope) || p.scope === 'clock' || isLight(p.scope)) return '';
   const n = stageNote(panelSource(p), p.stage ?? state.stage ?? 'signal');
   return n.text ? h('span', { class: `stagechip${n.warn ? ' warn' : ''}`, title: 'Messpunkt in der CST/LUT-Kette (⚙ → Messpunkt, Taste C)' }, n.text) : '';
 }
@@ -700,6 +701,7 @@ function addScopePanel() {
 /** Settings of one measuring tool, shown in its ⚙ menu. */
 function panelSettings(p: PanelState): Node[] {
   if (isAudio(p.scope)) return audioPanelSettings(p, save);
+  if (isLight(p.scope)) return lightPanelSettings(p, save);
   if (p.scope === 'clock') {
     return clockPanelSettings(p, save, sources, () => {
       const v = [...views.values()].find((x) => state.panels[x.idx] === p);
@@ -880,7 +882,7 @@ function refreshHeads() { views.forEach(fillHead); }
 /** Header chip while a ROI is active: shows it and switches it off with one click. */
 function roiChip(p: PanelState): Node | string {
   const s = panelSource(p);
-  if (!s) return '';
+  if (!s || isLight(p.scope)) return '';
   const n = s.activeRois().length;
   const label = s.faceTrack ? `☺ ${s.faceMode === 'all' ? 'alle Gesichter' : n ? `${n} Gesicht${n > 1 ? 'er' : ''}` : 'Gesicht anklicken'} ✕` : '▭ Rahmen ✕';
   if (!s.faceTrack && !s.roi) return '';
@@ -1663,7 +1665,19 @@ for (const saved of state.sources) {
   if (s.kind === 'audio' && s.audioIn.mode === 'generator') s.startAudio();
   if (s.kind === 'audio' && s.audioIn.mode === 'bridge' && s.audioIn.bridgeUrl) s.startAudio(undefined, bridgeUrl());
 }
-mountOpple($('#opple'));
+mountOpple($('#opple'), {
+  /** light scopes as their own layout (top: diagram, vectorscope, channels; bottom: time course, grid) */
+  openScopes: () => {
+    const idxs = LIGHT_SCOPES.map((scope) => {
+      const i = state.panels.findIndex((p) => p.scope === scope);
+      if (i >= 0) return i;
+      state.panels.push(panel(scope));
+      return state.panels.length - 1;
+    });
+    state.layoutName = ''; save();
+    dock.showGrid(idxs, 3);
+  },
+});
 mountGenerator($('#gen'), state.gen, state.genSink ?? '', (cfg, sink) => { state.gen = cfg; state.genSink = sink; save(); }, () => addAudioSource('generator'), () => {
   // A/V offset measured at a bridge source (median), for the calibration of the outputs
   for (const s of sources) {

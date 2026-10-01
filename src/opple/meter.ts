@@ -6,8 +6,9 @@
 // read the unit calibration (0x0A04), then poll measurements (0x0A00). Written anew and
 // reduced (no auto-reconnect, no advertisement watch).
 //
-// UNTESTED WITH A DEVICE: no Light Master was available while this was written. The
-// parsing is tested with frames recorded by the MIT projects (test/opple.test.ts).
+// Checked with a real Light Master 3 (30.09.2026, test/oppleLm3Live.test.ts). LM4 and flicker are
+// tested only with recorded/synthetic frames. Several meters: one OppleMeter per device
+// (src/opple/store.ts).
 
 import {
   FlickerAssembler, MessageAssembler, NUS_RX, NUS_SERVICE, NUS_TX, OPCODE, buildCommand, encapsulate, flickerMetrics, flickerRequestBody, opcodeOf,
@@ -26,8 +27,8 @@ interface BtCharacteristic extends EventTarget {
 }
 interface BtService { getCharacteristic(uuid: string): Promise<BtCharacteristic> }
 interface BtServer { connected: boolean; getPrimaryService(uuid: string): Promise<BtService>; disconnect(): void }
-interface BtDevice extends EventTarget { id: string; name?: string; gatt?: { connected: boolean; connect(): Promise<BtServer>; disconnect(): void } }
-interface Bluetooth { requestDevice(o: unknown): Promise<BtDevice> }
+export interface BtDevice extends EventTarget { id: string; name?: string; gatt?: { connected: boolean; connect(): Promise<BtServer>; disconnect(): void } }
+interface Bluetooth { requestDevice(o: unknown): Promise<BtDevice>; getDevices?(): Promise<BtDevice[]> }
 const bluetooth = () => (navigator as Navigator & { bluetooth?: Bluetooth }).bluetooth;
 
 /** Advertised names: LM4 = "SigMesh", LM3 = "LightMaster" (sunday-light-meter README / meter.js). */
@@ -40,6 +41,14 @@ export function bluetoothSupport(): { ok: boolean; reason: string } {
   if (typeof navigator === 'undefined' || !bluetooth()) return { ok: false, reason: 'Dieser Browser hat kein Web Bluetooth (Chrome/Edge oder die Desktop-App nehmen; Safari und Firefox können es nicht).' };
   if (typeof window !== 'undefined' && window.isSecureContext === false) return { ok: false, reason: 'Web Bluetooth braucht https oder localhost.' };
   return { ok: true, reason: '' };
+}
+
+/**
+ * Devices this origin may use without a chooser (Chrome with the permissions backend). Electron and
+ * browsers without getDevices() return [] – there the app remembers devices itself (store.ts).
+ */
+export async function permittedDevices(): Promise<BtDevice[]> {
+  try { return (await bluetooth()?.getDevices?.()) ?? []; } catch { return []; }
 }
 
 const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join(' ');
@@ -75,13 +84,16 @@ export class OppleMeter extends EventTarget {
     if (this.frames.length > 300) this.frames.splice(0, this.frames.length - 300);
   }
 
-  /** Must run inside a user gesture (button click). */
-  async connect() {
+  /** Web Bluetooth id of the connected device (origin-scoped, not the radio address). */
+  get deviceId() { return this.device?.id ?? ''; }
+
+  /** Must run inside a user gesture (button click) unless a permitted `device` is passed. */
+  async connect(device?: BtDevice) {
     const sup = bluetoothSupport();
     if (!sup.ok) { this.status('error', sup.reason); throw new Error(sup.reason); }
-    this.status('requesting', 'Light Master im Auswahldialog wählen …');
+    this.status('requesting', device ? `Verbinde mit ${device.name ?? 'Light Master'} …` : 'Light Master in der Liste wählen …');
     try {
-      this.device = await bluetooth()!.requestDevice(REQUEST_OPTIONS);
+      this.device = device ?? await bluetooth()!.requestDevice(REQUEST_OPTIONS);
       this.deviceName = this.device.name ?? 'Light Master';
       this.device.addEventListener('gattserverdisconnected', this.onGone);
       this.status('connecting', `Verbinde mit ${this.deviceName} …`);

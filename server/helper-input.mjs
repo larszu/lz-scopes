@@ -11,6 +11,7 @@
 // same scale step as for streams, so matrix/range handling is identical.
 
 import { spawn } from 'node:child_process';
+import { FrameAssembler } from './frames.mjs';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -110,29 +111,26 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
   const fpsLimit = Math.min(60, Math.max(0, Number(params.get('fps') ?? 0) || 0));
   const opts = ctx.deviceOptions(params);
   const helper = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-  let ff = null, fmt = null, outBytes = 0, pending = [], pendingBytes = 0, sent = 0, dropped = 0, closed = false, stderr = '', status = '';
+  let ff = null, fmt = null, outBytes = 0, asm = null, sent = 0, dropped = 0, closed = false, stderr = '', status = '';
 
   const stopFf = () => { if (ff) { ff.stdin.destroy(); ff.kill('SIGKILL'); ff = null; } };
-  const onOut = (chunk) => {
-    pending.push(chunk); pendingBytes += chunk.length;
-    while (pendingBytes >= outBytes) {
-      const all = pending.length === 1 ? pending[0] : Buffer.concat(pending, pendingBytes);
-      const frame = all.subarray(0, outBytes), rest = all.subarray(outBytes);
-      pending = rest.length ? [rest] : []; pendingBytes = rest.length;
-      if (ws.readyState !== ws.OPEN) return;
-      if (ws.bufferedAmount < outBytes * 2) { ws.send(frame, { binary: true }); sent++; } else dropped++;
-    }
+  const sendFrame = (frame) => {
+    if (ws.readyState !== ws.OPEN) return;
+    if (ws.bufferedAmount < outBytes * 2) { ws.send(frame, { binary: true }); sent++; } else dropped++;
   };
+  // whole frames only (frames.mjs)
+  const onOut = (chunk) => asm?.push(chunk);
   const startFf = (info) => {
     stopFf();
     const f = helperFormat(info);
     if (f.error) return ctx.fail(ws, f.error);
     fmt = f;
     const { width, height } = ctx.outputSize(f.width, f.height, maxWidth);
-    outBytes = width * height * 4 * (depth / 8); pending = []; pendingBytes = 0;
+    outBytes = width * height * 4 * (depth / 8); asm = new FrameAssembler(outBytes, sendFrame);
     const tags = { matrix: info.matrix ?? 'unknown', range: info.range ?? 'unknown', height: f.height };
     const { decodeMatrix, decodeRange } = ctx.applyDecodeOverride(ctx.decodeParams(tags), opts);
-    const vf = [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}`];
+    // interlaced signal (helper INFO): DeckLink delivers both fields woven in one frame; scale field by field
+    const vf = [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}${info.interlaced ? ':interl=1' : ''}`];
     if (fpsLimit) vf.push(`fps=${fpsLimit}`);
     ff = spawn(ctx.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', ...f.input, '-vf', vf.join(','), '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-threads', '1', '-f', 'rawvideo', 'pipe:1'],
       { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
@@ -147,6 +145,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
         codec: `${label}${info.name ? ` · ${info.name}` : ''}`, pixFmt: info.pixel, decodeMatrix,
         transfer: info.transfer ?? 'unknown', primaries: info.primaries ?? 'unknown', matrix: info.matrix ?? 'unknown', range: info.range ?? 'unknown',
         ...(info.timecode ? { timecode: info.timecode } : {}),
+        ...(info.interlaced ? { interlaced: true } : {}),
       }));
     }
   };

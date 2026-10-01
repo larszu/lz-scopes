@@ -21,6 +21,7 @@ import { createRequire } from 'node:module';
 import { basename, delimiter, dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
+import { FrameAssembler } from './frames.mjs';
 import { COMMANDS, controlAccess, validateCommand } from './control.mjs';
 import { applyDecodeOverride, deviceInputArgs, deviceOptions, formatListArgs, parseDeviceUrl, parseFormatList, pickPixfmt } from './devices.mjs';
 import { helperList, helperPath, startHelperStream } from './helper-input.mjs';
@@ -278,7 +279,7 @@ async function probe(url, transport, device = {}) {
   }
   const FFPROBE = probes[0];
   const a = ['-v', 'error', '-analyzeduration', '1000000', '-probesize', '2000000', '-show_entries',
-    'stream=codec_type,width,height,codec_name,avg_frame_rate,r_frame_rate,color_transfer,color_primaries,color_space,color_range,pix_fmt,sample_rate,channels,channel_layout,start_time:stream_tags=timecode:format_tags=timecode',
+    'stream=codec_type,width,height,codec_name,avg_frame_rate,r_frame_rate,color_transfer,color_primaries,color_space,color_range,pix_fmt,field_order,sample_rate,channels,channel_layout,start_time:stream_tags=timecode:format_tags=timecode',
     '-of', 'json'];
   if (/^rtsps?:/i.test(url)) a.push('-rtsp_transport', transport === 'udp' ? 'udp' : 'tcp');
   a.push('-i', url);
@@ -308,6 +309,7 @@ async function probe(url, transport, device = {}) {
           fps: Math.round((rate(s.avg_frame_rate) || rate(s.r_frame_rate)) * 100) / 100,
           transfer: s.color_transfer ?? 'unknown', primaries: s.color_primaries ?? 'unknown',
           matrix: s.color_space ?? 'unknown', range: s.color_range ?? 'unknown', audio,
+          ...(s.field_order && s.field_order !== 'unknown' ? { fieldOrder: s.field_order } : {}),
         });
       } catch (e) { fail(new Error(err.trim().split('\n').pop() || e.message)); }
     });
@@ -349,6 +351,9 @@ export function yuvParams(info, decodeMatrix, decodeRange) {
     scale: `in_color_matrix=${m}:out_color_matrix=${m}:in_range=${range}:out_range=${range}`,
   };
 }
+
+/** ffprobe field_order: tt/bb/tb/bt = interlaced (two fields woven into one frame), progressive otherwise. */
+export const isInterlaced = (fieldOrder) => ['tt', 'bb', 'tb', 'bt'].includes(String(fieldOrder ?? ''));
 
 /** Output size: fit into maxWidth keeping aspect, even dimensions. */
 export function outputSize(w, h, maxWidth) {
@@ -569,6 +574,10 @@ async function startStream(ws, params) {
     // H.264: stay in Y'CbCr with the source matrix, narrow range; the browser converts with decodeMatrix (src/yuv.ts)
     ? [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}:out_color_matrix=${decodeMatrix}:out_range=limited`, 'format=yuv420p']
     : [yp?.yuv ? `scale=${width}:${height}:flags=area:${yp.scale}` : `scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}`];
+  // interlaced sources: scale each field on its own (swscale interl) so the two fields of a
+  // frame are not blended vertically; the frame itself stays one picture (both fields woven)
+  const interlaced = isInterlaced(info.fieldOrder);
+  if (interlaced) vf[0] = vf[0].replace(/^scale=([^,]*)/, 'scale=$1:interl=1');
   if (fpsLimit) vf.push(`fps=${fpsLimit}`);
   // time code of every source frame (before scale/fps): showinfo side data, see ShowinfoTracker
   const wantTc = video && params.get('tc') !== '0';
@@ -579,6 +588,7 @@ async function startStream(ws, params) {
   const proto = wantAudio || h264 ? 2 : 1;
   const { audio: _probed, ...videoInfo } = info;
   const msg = { type: 'info', ...videoInfo, decodeMatrix, sourceWidth: info.width, sourceHeight: info.height, sourceFps: info.fps, width, height, depth: outDepth, fps: video ? (fpsLimit || info.fps) : 0 };
+  if (interlaced) Object.assign(msg, { interlaced: true });
   if (h264 && video) Object.assign(msg, { transport: 'h264', range: 'tv' });
   else if (yp?.yuv) Object.assign(msg, { format: 'yuv', yuvRange: yp.range, bits: yp.bits });
   else if (yp) Object.assign(msg, { format: 'rgb', note: yp.note });
@@ -597,7 +607,6 @@ async function startStream(ws, params) {
   const procs = new Set();
   const packetizer = audioInfo ? new AudioPacketizer(audioInfo.sampleRate, audioInfo.channels, (buf) => { if (ws.readyState === ws.OPEN) ws.send(buf, { binary: true }); }) : null;
 
-  let pending = [], pendingBytes = 0;
   // H.264: whole access units from the FLV demuxer; when the browser falls behind, skip to
   // the next key frame (a dropped delta frame would corrupt everything up to it)
   let waitKey = false;
@@ -644,18 +653,13 @@ async function startStream(ws, params) {
   };
   const onVideo = h264 ? (chunk) => {
     try { demux.push(chunk); } catch (e) { stderr += `\n${e.message}`; }
-  } : (chunk) => {
-    pending.push(chunk); pendingBytes += chunk.length;
-    while (pendingBytes >= bytesPerFrame) {
-      const all = pending.length === 1 ? pending[0] : Buffer.concat(pending, pendingBytes);
-      const frame = all.subarray(0, bytesPerFrame);
-      const rest = all.subarray(bytesPerFrame);
-      pending = rest.length ? [rest] : []; pendingBytes = rest.length;
-      if (pts) { waiting.push({ no: frameNo, frame: Buffer.from(frame), at: Date.now() }); if (waiting.length > 8) flushWaiting(true); flushWaiting(); }
-      else sendFrame(frameNo, frame, NaN);
-      frameNo++;
-    }
-  };
+  } : (chunk) => assembler.push(chunk);
+  // whole frames only (server/frames.mjs): never parts of two pictures in one message
+  const assembler = new FrameAssembler(bytesPerFrame, (frame) => {
+    if (pts) { waiting.push({ no: frameNo, frame, at: Date.now() }); if (waiting.length > 8) flushWaiting(true); flushWaiting(); }
+    else sendFrame(frameNo, frame, NaN);
+    frameNo++;
+  });
   const ptsTimer = setInterval(() => flushWaiting(), 50);
 
   const finish = (code, text) => {

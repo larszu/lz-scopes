@@ -542,6 +542,7 @@ export function statsLines(src: Source, displayFps: number): string[] {
     `Analyse    ${src.width}×${src.height}  ${src.yuv ? `16 bit Y′CbCr ${src.yuv.full ? 'full' : 'narrow'}, unbeschnitten (Quelle ${src.yuv.bits} bit)` : `${src.depth} bit R′G′B′`}`,
   ];
   if (info?.note) lines.push(`Hinweis    ${info.note}`);
+  if (info) lines.push(`Abtastung  ${info.interlaced ? 'interlaced – beide Halbbilder als ein Bild, feldweise skaliert' : 'progressiv (bzw. nicht als interlaced gemeldet)'}; Scopes messen immer ganze Bilder`);
   if (info) {
     lines.push(`Quelle     ${info.sourceWidth}×${info.sourceHeight}  ${info.codec ?? ''} ${info.pixFmt ?? ''}`);
     if (info.transport === 'h264') lines.push('Übertragung H.264 · 8 bit 4:2:0, verlustbehaftet (im Browser dekodiert)');

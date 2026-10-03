@@ -55,3 +55,9 @@ In den geöffneten OmniScope-Seiten gibt es **keinen** Zeitverlauf-Scope (keine 
 ## Umsetzung #67, Teil 3 (QC-Protokoll)
 
 Nach OmniScope „Error Logger“ (zeitgestempelte Liste von Gamut-Verletzungen, Luminanzgrenzen, Schwarzbildern, Audio-Stille …, filterbar, exportierbar), eigene Umsetzung `src/qclog.ts`: alle laufenden Quellen werden viermal pro Sekunde geprüft – R 103 (Vorzugsbereich > 1 % Fläche, Gesamtbereich; nur im Y′CbCr-Pfad aussagekräftig), Weiß-Clipping, Super-White > 100 %, Sub-Black < 0 %, Schwarzbild, Standbild (nur bei Live-Quellen und laufenden Videodateien), Ton-Stille. Ereignis = Beginn bis Ende mit Uhrzeit, Quell-Timecode (wenn vorhanden) und schlimmstem Wert; Panel „QC-Protokoll“ mit Filter, Schwellen, CSV-Export (Semikolon, UTF-8). Nicht übernommen: Blanking- und Zeilenzahlfehler, tote Pixel (bräuchten SDI-Rohdaten bzw. eine eigene Pixelanalyse).
+
+## Umsetzung #67, Teil 4 (LUT-Volumen, Zeitverlauf-Optionen, Stream Deck)
+
+- **LUT-Volumen** im 3D-Farbvolumen (Idee OmniScope „3D LUT / ICC Profile“, prism-LUT-Volumen): Eingangsgitter 9³/17³/33³ über 0…1, Ausgabe jeder geladenen LUT (`applyLut`, also 1D, 3D und Shaper) als Punktwolke in der Farbe des Ausgabewerts, wahlweise mit Eingangsgitter und ohne Bild. ICC-Profile: nicht umgesetzt (es gibt keinen ICC-Pfad in LZ Scopes).
+- **Zeitverlauf**: Abtastung „jedes Bild“ (statt 10 Hz) und Raster 96×54 / 192×108 / 384×216.
+- **Stream Deck**: über das vorhandene Bitfocus-Companion-Modul (`companion/`), das die Steuer-API nutzt: neue Scopes wählbar, Aktion „QC-Protokoll leeren“, Feedback „QC-Ereignis aktiv“, Variablen `qc_active`, `qc_last`; Steuer-API-Befehl `qc.clear`, Zustand `qc`. Ein eigenes Elgato-Plugin ist damit nicht nötig.

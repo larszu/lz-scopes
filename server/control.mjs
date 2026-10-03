@@ -30,6 +30,7 @@ export const COMMANDS = {
   'panel.scope': 'Messwerkzeug eines Panels: panel, scope',
   'panel.maximize': 'Panel groß: panel, mode toggle|on|off (off ohne panel = zurück)',
   'freeze': 'Einfrieren: mode toggle|on|off',
+  'qc.clear': 'QC-Protokoll leeren',
   'roi.clear': 'Messrahmen und Messpunkt löschen: source (optional; ohne = alle)',
   'pattern.select': 'Testbild wählen: pattern (id oder Name), source (optional)',
   'pattern.next': 'Nächstes Testbild: source (optional)',
@@ -112,6 +113,7 @@ export function validateCommand(raw) {
       if (out.panel === undefined && out.mode !== 'off') errors.push('panel fehlt');
       break;
     case 'freeze': check(optMode()); break;
+    case 'qc.clear': break;
     case 'roi.clear': check(optRef('source')); break;
     case 'pattern.select': check(reqRef('pattern')); check(optRef('source')); break;
     case 'pattern.next': case 'pattern.prev': check(optRef('source')); break;

@@ -33,6 +33,8 @@ export interface CubeSettings {
   space: CubeSpace; yaw: number; pitch: number; gamut: '709' | 'p3' | '2020';
   /** view: zoom factor and pan in clip units */
   zoom?: number; panX?: number; panY?: number;
+  /** LUT volume: name of a loaded LUT, lattice size, show the input lattice too, hide the picture */
+  lut?: string; lutGrid?: number; lutInput?: boolean; lutOnly?: boolean;
 }
 export const DEFAULT_CUBE: CubeSettings = { space: 'rgb', yaw: 35, pitch: 25, gamut: '709', zoom: 1, panX: 0, panY: 0 };
 
@@ -171,4 +173,18 @@ export function cubeQOf(space: CubeSpace, rgb: number[], s: { transfer: Transfer
   if (space === 'chl') return qFromChl(lchOf(xyzToLab(mul3(M, lin), W)));
   const m = gamutConvert(GAMUTS[s.gamut], GAMUTS['2020']);
   return qFromIctcp(rgb2020ToIctcp(mul3(m, lin).map((v) => Math.max(0, v) * cubeNits(s.transfer))));
+}
+
+/**
+ * LUT volume (issue #67; idea: OmniScope "3D LUT / ICC Profile" scope, prism's LUT volume view):
+ * an n³ lattice over the input domain 0…1 and the LUT's output for every lattice point.
+ * Works for 1D, 3D and shaper+3D LUTs alike, since it goes through applyLut.
+ */
+export function lutVolume(apply: (rgb: number[]) => number[], n = 17): { inp: number[]; out: number[] }[] {
+  const pts: { inp: number[]; out: number[] }[] = [];
+  for (let b = 0; b < n; b++) for (let g = 0; g < n; g++) for (let r = 0; r < n; r++) {
+    const inp = [r / (n - 1), g / (n - 1), b / (n - 1)];
+    pts.push({ inp, out: apply(inp) });
+  }
+  return pts;
 }

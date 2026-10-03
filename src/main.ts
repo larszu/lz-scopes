@@ -15,6 +15,7 @@ import type { OutputHost, OutputWindowApi } from './outputView';
 import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } from './scene';
 import { connectRemote } from './remote';
 import { DEFAULT_QC, QC_LABELS, QC_TYPES, evaluate as evaluateQc, frameFingerprint, qcLog, toCsv, type QcSettings } from './qclog';
+import { GRIDS } from './history';
 import { CUBE_SPACE_LABELS, DEFAULT_CUBE, type CubeSettings, type CubeSpace } from './cube';
 import { DEFAULT_CRT, PERSIST_CHOICES, PHOSPHORS, type CrtSettings, type Phosphor } from './crt';
 import type { Command } from '../server/control.mjs';
@@ -789,6 +790,16 @@ function panelSettings(p: PanelState): Node[] {
       'R′G′B′-Würfel des Signals, CIELAB (D65, L* nach oben) oder ICtCp (BT.2100, I nach oben). Drehen: im Panel ziehen, Doppelklick = Ausgangsansicht'));
     row('Drahtgitter', select(c.gamut, [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => setCube({ gamut: v as CubeSettings['gamut'] }), 'Zielgamut als Drahtgitter (CIELAB und ICtCp; im R′G′B′-Würfel ist es der 0–100-%-Würfel)'));
     row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
+    row('LUT-Volumen', select(c.lut ?? '', [['', 'aus'], ...[...LUTS.keys()].map((n) => [n, n] as [string, string])], (v) => setCube({ lut: v || undefined }),
+      'Ausgabe einer geladenen LUT für ein Eingangsgitter als Punktwolke (in der Farbe des Ausgabewerts); LUTs auf eine Quellenkarte ziehen'));
+    if (c.lut) {
+      row('Gitter', select(String(c.lutGrid ?? 17), [['9', '9³'], ['17', '17³'], ['33', '33³']], (v) => setCube({ lutGrid: Number(v) })));
+      const inp = h('input', { type: 'checkbox', checked: !!c.lutInput }) as HTMLInputElement;
+      inp.onchange = () => setCube({ lutInput: inp.checked });
+      const only = h('input', { type: 'checkbox', checked: !!c.lutOnly }) as HTMLInputElement;
+      only.onchange = () => setCube({ lutOnly: only.checked });
+      row('', h('label', { class: 'inline' }, inp, 'Eingangsgitter'), h('label', { class: 'inline' }, only, 'nur LUT (ohne Bild)'));
+    }
     rows.push(h('p', { class: 'hint' }, 'Wofür: Der Würfel zeigt das ganze Farbvolumen auf einmal – wo die Pixel im Gamut liegen, welche Ecken (Primär-/Sekundärfarben, Weiß, Schwarz) angefahren oder abgeschnitten werden, wie sich Farben verteilen und ob ein Farbstich die Graue Achse verschiebt. Vectorscope und Diamond zeigen jeweils nur eine Projektion (Farbton/Sättigung bzw. zwei Kanalpaare) und verlieren dabei die Helligkeit bzw. den dritten Kanal.'));
   }
   if (p.scope === 'chplot') {
@@ -826,6 +837,10 @@ function panelSettings(p: PanelState): Node[] {
   }
   if (p.scope === 'timeline') {
     row('Zeitraum', select(String(p.span ?? 10), [['10', '10 s'], ['60', '1 min'], ['300', '5 min']], (v) => { p.span = Number(v) as PanelState['span']; save(); }));
+    const ef = h('input', { type: 'checkbox', checked: !!p.everyFrame }) as HTMLInputElement;
+    ef.onchange = () => { p.everyFrame = ef.checked; save(); };
+    row('Abtastung', h('label', { class: 'inline', title: 'Aus: zehnmal pro Sekunde. An: jedes neue Bild (z. B. Videodatei beim Abspielen oder Bild für Bild)' }, ef, 'jedes Bild'));
+    row('Raster', select(String(p.grid ?? 96), GRIDS.map((g) => [String(g), `${g}×${Math.round((g * 9) / 16)}`] as [string, string]), (v) => { p.grid = Number(v); save(); }, 'Feiner = genauere Mittelwerte, mehr Rechenzeit'));
     row('', h('button', { class: 'mini', onclick: () => panelSource(p)?.history.clear() }, 'Verlauf löschen'));
     rows.push(h('p', { class: 'hint' }, 'Zehnmal pro Sekunde ein 96×54-Raster des Bildes: oben die mittlere Farbe (Movie-Barcode), darunter Farbtonanteile über die Zeit (Vectorscope-Verlauf, hell = viel von diesem Farbton), Sättigung (Mittel und 95 %) und Luma (Bereich min–max, Linie = Mittel). Neueste Werte rechts.'));
   }
@@ -1246,7 +1261,7 @@ function drawAll(now: number) {
     });
   }
   // timeline panels: 10 samples per second of their sources (history.ts)
-  for (const v of openViews()) { const p = state.panels[v.idx]; if (p.scope === 'timeline') panelSource(p)?.sampleHistory(now); }
+  for (const v of openViews()) { const p = state.panels[v.idx]; if (p.scope === 'timeline') panelSource(p)?.sampleHistory(now, { everyFrame: !!p.everyFrame, grid: p.grid }); }
 
   // CRT persistence still fading: redraw those panels although nothing else changed
   for (const k of renderer.settling) panelSigs.delete(Number(k.slice(1)));
@@ -1645,6 +1660,9 @@ function execute(c: Command): unknown {
     case 'freeze':
       if (mode(frozen) !== frozen) toggleFreeze();
       return { frozen };
+    case 'qc.clear':
+      qcLog.clear();
+      return { qc: 0 };
     case 'roi.clear':
       for (const s of c.source !== undefined ? [need(findSource(c.source), `Quelle ${c.source} nicht gefunden`)] : sources) { s.probe = null; s.roi = null; s.faceMode = 'off'; }
       refreshHeads();
@@ -1795,6 +1813,11 @@ function controlState() {
     pattern: pat ? { id: pat.pattern.id, name: patternById(pat.pattern.id).name } : null,
     patterns: PATTERNS.map((p) => ({ id: p.id, name: p.name })),
     playing: vid?.video ? !vid.video.paused || !!vid.reverseSpeed : null,
+    // QC log (qclog.ts): active events, total, latest event text
+    qc: (() => {
+      const ev = qcLog.events, last = ev[ev.length - 1];
+      return { active: ev.filter((e) => e.end === null).length, total: ev.length, last: last ? `${last.source}: ${QC_LABELS[last.type]}` : '' };
+    })(),
     /** latency of stamped test pictures (scripts/latency-source.mjs), ms, last 2 s; null = no stamps */
     latency: act?.latency.summary() ?? null,
     /** how the bridge receives the stream (own RTP reception or ffmpeg, low-latency mode) */

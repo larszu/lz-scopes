@@ -731,3 +731,24 @@ export function drawChannelPlotGraticule(ctx: CanvasRenderingContext2D, r: Rect,
   ctx.fillText(`${ny} (senkrecht) über ${nx}${pair < 3 ? ' · Diagonale = gleiche Kanäle' : ''}`, r.x + 4, r.y + 4);
   ctx.restore();
 }
+
+/**
+ * LUT volume points on the overlay: output of every lattice point in its own colour (and the
+ * input lattice as small grey dots), projected like the picture's volume.
+ */
+export function drawLutVolume(ctx: CanvasRenderingContext2D, r: Rect, c: CubeSettings, pts: { inp: number[]; out: number[] }[], q: (rgb: number[]) => number[], showInput: boolean) {
+  const rot = cubeRotation(c.yaw, c.pitch), view = { zoom: c.zoom ?? 1, panX: c.panX ?? 0, panY: c.panY ?? 0 };
+  const P = (v: number[]): [number, number] => { const [x, y] = cubeProject(rot, v, view); return [r.x + (x * 0.5 + 0.5) * r.w, r.y + (0.5 - y * 0.5) * r.h]; };
+  ctx.save();
+  if (showInput) {
+    ctx.fillStyle = 'rgba(200,200,200,0.35)';
+    for (const p of pts) { const [x, y] = P(q(p.inp)); ctx.fillRect(x - 0.5, y - 0.5, 1.5, 1.5); }
+  }
+  const cl = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255);
+  for (const p of pts) {
+    const [x, y] = P(q(p.out));
+    ctx.fillStyle = `rgb(${cl(p.out[0])},${cl(p.out[1])},${cl(p.out[2])})`;
+    ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+  }
+  ctx.restore();
+}

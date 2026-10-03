@@ -4,7 +4,7 @@ import type { ChainSettings, Compiled } from './chain';
 import { patternById, renderPattern } from './patterns';
 import { AudioAnalysis } from './audio/analysis';
 import { AudioTap, StreamMonitor, generator, measurementConstraints } from './audio/io';
-import { GRID_H, GRID_W, History, gridFromData, summarise } from './history';
+import { GRID_W, History, gridFromData, summarise } from './history';
 import { lineExtremes, neutralCast, type LineExtremes, type NeutralCast } from './minmax';
 import { r103Check, rgbDecoder, yuvDecoder, type Decode, type R103Result, type YuvCoding } from './ycbcr';
 import { debugFlags, openFrameSocket, workerAvailable, type FrameSocket } from './frameLink';
@@ -209,18 +209,25 @@ export class Source {
   readonly history = new History();
   private historyAt = 0;
   private historyCanvas: HTMLCanvasElement | null = null;
-  sampleHistory(now = performance.now()) {
-    if (!this.ready || now - this.historyAt < 100) return;
-    this.historyAt = now;
+  private historySeq = -1;
+  /**
+   * @param everyFrame one sample per new picture (e.g. video files) instead of ten per second
+   * @param grid raster width (height = width · 9/16): 96 standard, finer for more exact means
+   */
+  sampleHistory(now = performance.now(), opts: { everyFrame?: boolean; grid?: number } = {}) {
+    if (!this.ready) return;
+    if (opts.everyFrame ? this.frameSeq === this.historySeq : now - this.historyAt < 100) return;
+    this.historyAt = now; this.historySeq = this.frameSeq;
+    const gw = opts.grid ?? GRID_W, gh = Math.max(1, Math.round((gw * 9) / 16));
     let pts: number[][];
-    if (this.data) pts = gridFromData(this.data, this.width, this.height, this.decoder());
+    if (this.data) pts = gridFromData(this.data, this.width, this.height, this.decoder(), gw, gh);
     else {
       this.historyCanvas ??= document.createElement('canvas');
-      const c = this.historyCanvas; c.width = GRID_W; c.height = GRID_H;
+      const c = this.historyCanvas; if (c.width !== gw || c.height !== gh) { c.width = gw; c.height = gh; }
       const ctx = c.getContext('2d', { willReadFrequently: true })!;
-      try { ctx.drawImage(this.element!, 0, 0, GRID_W, GRID_H); } catch { return; }
-      const d = ctx.getImageData(0, 0, GRID_W, GRID_H).data;
-      pts = Array.from({ length: GRID_W * GRID_H }, (_, i) => [d[i * 4] / 255, d[i * 4 + 1] / 255, d[i * 4 + 2] / 255]);
+      try { ctx.drawImage(this.element!, 0, 0, gw, gh); } catch { return; }
+      const d = ctx.getImageData(0, 0, gw, gh).data;
+      pts = Array.from({ length: gw * gh }, (_, i) => [d[i * 4] / 255, d[i * 4 + 1] / 255, d[i * 4 + 2] / 255]);
     }
     this.history.push(summarise(pts, this.colorspace, now));
   }

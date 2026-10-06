@@ -28,7 +28,7 @@ Stand: 30.09.2026. Ergänzt Teil B von [led-wall-und-messgeraete.md](led-wall-un
 
 - **Gerät:** Seit 30.09. mit einem Light Master 3 geprüft (`test/oppleLm3Live.test.ts`). LM4 ungeprüft. Mitgeschnittene Rahmen lassen sich per „Rohdaten kopieren“ für Tests sichern.
 - **Modell:** LM3 oder LM4? Beides wird am Nutzdatenumfang erkannt.
-- **Koeffizienten:** Die Matrizen stammen aus der OPPLE-Smart-App (über MIT-Projekte veröffentlicht). Ob sie in einem öffentlichen, ggf. kommerziell genutzten Programm verwendet werden dürfen, ist nicht geklärt (Urheberrecht an Zahlen fraglich, App-AGB nicht gelesen) – Entscheidung von Lars.
+- **Koeffizienten:** Die Matrizen stammen aus der dekompilierten OPPLE-Smart-App und sind über MIT-Projekte veröffentlicht (LM4: opple-bridge; LM3: open-light-master → sunday-light-meter). Lars hat am 06.10.2026 entschieden, sie zu veröffentlichen; eine Erlaubnis von Opple liegt nicht vor (Herkunft: [led-wall-und-messgeraete.md](led-wall-und-messgeraete.md) C.6).
 - Für LED-Wand-Primärfarben nur Trendmesser (Filtersensor, feste Matrizen).
 
 ## Nachtrag 30.09.2026 – Flimmern und LED-Wand

@@ -1,5 +1,5 @@
-// Scopes over time ("Zeitverlauf", issue: cube rework / OmniScope gaps). Ten times a second a
-// coarse grid of the picture (96 × 54 points) is reduced to: mean colour (one column of a movie
+// Scopes over time ("Zeitverlauf", issue: cube rework / OmniScope gaps). Ten times a second (or
+// for every new picture) a grid of the picture (96 × 54 points, finer selectable) is reduced to: mean colour (one column of a movie
 // barcode), Y′ min / mean / max, mean and 95th-percentile saturation and a hue histogram. The
 // timeline panel draws these as lanes, newest on the right – a vectorscope and waveform history
 // in a few rows. Research and sources: docs/research/scopes-over-time.md.
@@ -9,6 +9,8 @@ import type { Decode } from './ycbcr';
 
 export const HUE_BINS = 24;
 export const GRID_W = 96, GRID_H = 54;
+/** selectable grids (width; height = width · 9/16) */
+export const GRIDS = [96, 192, 384] as const;
 
 export interface HistorySample {
   /** performance.now() in ms */
@@ -53,12 +55,12 @@ export function summarise(points: number[][], cs: Colorspace, t: number): Histor
 }
 
 /** Grid points of a raw frame (bridge data / 16-bit patterns). */
-export function gridFromData(px: ArrayLike<number>, w: number, h: number, decode: Decode): number[][] {
+export function gridFromData(px: ArrayLike<number>, w: number, h: number, decode: Decode, gw = GRID_W, gh = GRID_H): number[][] {
   const out: number[][] = [];
-  for (let gy = 0; gy < GRID_H; gy++) {
-    const y = Math.min(h - 1, Math.floor(((gy + 0.5) / GRID_H) * h));
-    for (let gx = 0; gx < GRID_W; gx++) {
-      const x = Math.min(w - 1, Math.floor(((gx + 0.5) / GRID_W) * w));
+  for (let gy = 0; gy < gh; gy++) {
+    const y = Math.min(h - 1, Math.floor(((gy + 0.5) / gh) * h));
+    for (let gx = 0; gx < gw; gx++) {
+      const x = Math.min(w - 1, Math.floor(((gx + 0.5) / gw) * w));
       out.push(decode(px, (y * w + x) * 4));
     }
   }

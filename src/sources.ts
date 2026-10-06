@@ -4,11 +4,13 @@ import type { ChainSettings, Compiled } from './chain';
 import { patternById, renderPattern } from './patterns';
 import { AudioAnalysis } from './audio/analysis';
 import { AudioTap, StreamMonitor, generator, measurementConstraints } from './audio/io';
-import { GRID_H, GRID_W, History, gridFromData, summarise } from './history';
+import { GRID_W, History, gridFromData, summarise } from './history';
+import { lineExtremes, neutralCast, type LineExtremes, type NeutralCast } from './minmax';
 import { r103Check, rgbDecoder, yuvDecoder, type Decode, type R103Result, type YuvCoding } from './ycbcr';
 import { debugFlags, openFrameSocket, workerAvailable, type FrameSocket } from './frameLink';
 import { GpuStats } from './gpuStats';
-import { LatencyMeter } from './latency';
+import { LatencyMeter, type RtpStats } from './latency';
+import { effectiveWidth, mergeLowLatency, type LowLatencyConfig } from './lowLatency';
 import { meanLuma } from './luma';
 
 export { meanLuma };
@@ -53,9 +55,13 @@ export interface SourceSettings {
   codec?: 'raw' | 'h264';
   /** low-latency mode (docs/research/low-latency.md): undefined = follow the global switch */
   lowLatency?: boolean;
+  /** this source's own low-latency settings; missing fields follow the global ones */
+  ll?: Partial<LowLatencyConfig>;
 }
 
 export interface StreamInfo {
+  /** bridge: own RTP reception in use, or why not (low-latency mode) */
+  rtp?: { own: boolean; transport?: string; codec?: string; note?: string };
   width: number; height: number; sourceWidth: number; sourceHeight: number; depth: 8 | 16; fps: number;
   codec?: string; pixFmt?: string; decodeMatrix?: string; transfer?: string; primaries?: string; matrix?: string; range?: string;
   /** protocol 2 (audio=1): header on every binary message */
@@ -115,12 +121,6 @@ export function bridgeInputParams(url: string, set: SourceSettings): Record<stri
   return q;
 }
 
-/** Low-latency mode caps the analysis width (measured: 960 → 640 px ≈ −19 ms, docs/research/low-latency.md). */
-export const LOW_LATENCY_WIDTH = 640;
-export function lowLatencyWidth(width: number, low: boolean): number {
-  return low && (width === 0 || width > LOW_LATENCY_WIDTH) ? LOW_LATENCY_WIDTH : width;
-}
-
 export const DEFAULT_SETTINGS: SourceSettings = { transfer: 'auto', colorspace: 'auto', gamut: 'auto', hlgLw: 1000, width: 960, fps: 0, depth: 8, transport: 'tcp', audio: true };
 
 let nextId = 1;
@@ -170,22 +170,64 @@ export class Source {
   monitorError = '';
   private lastFrame: { px: ArrayLike<number>; w: number; h: number; step: number; scale: number; roi: [number, number, number, number][] | null; decode: Decode } | null = null;
   private r103Cache = new Map<string, { key: string; at: number; res: R103Result }>();
+  private cpuCache: { seq: string; f: { px: ArrayLike<number>; w: number; h: number; decode: Decode } | null } = { seq: '', f: null };
+  private cpuCanvas: HTMLCanvasElement | null = null;
+  /** The current frame on the CPU: raw data, or a readback of the element (at most 960 px wide), once per frame. */
+  cpuFrame() {
+    const seq = `${this.frameSeq}:${this.width}x${this.height}`;
+    if (this.cpuCache.seq === seq) return this.cpuCache.f;
+    let f: { px: ArrayLike<number>; w: number; h: number; decode: Decode } | null = null;
+    if (this.data) f = { px: this.data, w: this.width, h: this.height, decode: this.decoder() };
+    else if (this.element && this.width) {
+      const w = Math.min(960, this.width), h = Math.max(1, Math.round((this.height * w) / this.width));
+      this.cpuCanvas ??= document.createElement('canvas');
+      const c = this.cpuCanvas; if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      const ctx = c.getContext('2d', { willReadFrequently: true })!;
+      try { ctx.drawImage(this.element, 0, 0, w, h); f = { px: ctx.getImageData(0, 0, w, h).data, w, h, decode: rgbDecoder(255) }; } catch { f = null; }
+    }
+    this.cpuCache = { seq, f };
+    return f;
+  }
+  private extremes: { seq: string; v: LineExtremes | null } = { seq: '', v: null };
+  /** Min/max Y′ per picture line (minmax.ts), once per frame. */
+  lineExtremes(): LineExtremes | null {
+    const seq = `${this.frameSeq}:${this.colorspace}`;
+    if (this.extremes.seq !== seq) { const f = this.cpuFrame(); this.extremes = { seq, v: f ? lineExtremes(f.px, f.w, f.h, f.decode, this.colorspace) : null }; }
+    return this.extremes.v;
+  }
+  private neutral: { key: string; v: NeutralCast | null } = { key: '', v: null };
+  /** Mean cast of the near-neutral pixels (minmax.ts), once per frame and setting. */
+  neutralCast(threshold: number, lo: number, hi: number): NeutralCast | null {
+    const key = `${this.frameSeq}:${this.colorspace}:${threshold}:${lo}:${hi}`;
+    if (this.neutral.key !== key) {
+      const f = this.cpuFrame();
+      this.neutral = { key, v: f ? neutralCast(f.px, f.w, f.h, Math.max(1, Math.round(Math.sqrt((f.w * f.h) / 60000))), f.decode, this.colorspace, threshold, lo, hi) : null };
+    }
+    return this.neutral.v;
+  }
   /** timeline panel (history.ts): ten samples per second while a timeline shows this source */
   readonly history = new History();
   private historyAt = 0;
   private historyCanvas: HTMLCanvasElement | null = null;
-  sampleHistory(now = performance.now()) {
-    if (!this.ready || now - this.historyAt < 100) return;
-    this.historyAt = now;
+  private historySeq = -1;
+  /**
+   * @param everyFrame one sample per new picture (e.g. video files) instead of ten per second
+   * @param grid raster width (height = width · 9/16): 96 standard, finer for more exact means
+   */
+  sampleHistory(now = performance.now(), opts: { everyFrame?: boolean; grid?: number } = {}) {
+    if (!this.ready) return;
+    if (opts.everyFrame ? this.frameSeq === this.historySeq : now - this.historyAt < 100) return;
+    this.historyAt = now; this.historySeq = this.frameSeq;
+    const gw = opts.grid ?? GRID_W, gh = Math.max(1, Math.round((gw * 9) / 16));
     let pts: number[][];
-    if (this.data) pts = gridFromData(this.data, this.width, this.height, this.decoder());
+    if (this.data) pts = gridFromData(this.data, this.width, this.height, this.decoder(), gw, gh);
     else {
       this.historyCanvas ??= document.createElement('canvas');
-      const c = this.historyCanvas; c.width = GRID_W; c.height = GRID_H;
+      const c = this.historyCanvas; if (c.width !== gw || c.height !== gh) { c.width = gw; c.height = gh; }
       const ctx = c.getContext('2d', { willReadFrequently: true })!;
-      try { ctx.drawImage(this.element!, 0, 0, GRID_W, GRID_H); } catch { return; }
-      const d = ctx.getImageData(0, 0, GRID_W, GRID_H).data;
-      pts = Array.from({ length: GRID_W * GRID_H }, (_, i) => [d[i * 4] / 255, d[i * 4 + 1] / 255, d[i * 4 + 2] / 255]);
+      try { ctx.drawImage(this.element!, 0, 0, gw, gh); } catch { return; }
+      const d = ctx.getImageData(0, 0, gw, gh).data;
+      pts = Array.from({ length: gw * gh }, (_, i) => [d[i * 4] / 255, d[i * 4 + 1] / 255, d[i * 4 + 2] / 255]);
     }
     this.history.push(summarise(pts, this.colorspace, now));
   }
@@ -279,9 +321,17 @@ export class Source {
   readonly latency = new LatencyMeter();
   /** global low-latency switch (main.ts); a source's own setting overrides it */
   static globalLowLatency = false;
+  /** global low-latency settings (Settings menu) */
+  static globalLowLatencyConfig: Partial<LowLatencyConfig> = {};
   /** a bridge frame arrived (main.ts draws at once in low-latency mode) */
   static onArrive: ((s: Source) => void) | null = null;
   get lowLatency(): boolean { return this.settings.lowLatency ?? Source.globalLowLatency; }
+  /** effective low-latency settings of this source */
+  get llConfig(): LowLatencyConfig { return mergeLowLatency(Source.globalLowLatencyConfig, this.settings.ll); }
+  /** own RTP reception: how the bridge received this stream (info message), null = ffmpeg's RTSP */
+  get rtpInfo() { return this.info?.rtp ?? null; }
+  /** own RTP reception counters from the bridge's stats (1 s) */
+  rtpStats: RtpStats | null = null;
   private patternTimer: ReturnType<typeof setInterval> | null = null;
   private media: MediaStream | null = null;
   private objectUrl: string | null = null;
@@ -346,13 +396,16 @@ export class Source {
     this.url = url;
     this.set('connecting', 'Verbinde …');
     const { fps, depth, transport } = this.settings;
-    const width = lowLatencyWidth(this.settings.width, this.lowLatency);
+    const ll = this.llConfig;
+    const width = effectiveWidth(this.settings.width, this.lowLatency, ll.width);
     const q = new URLSearchParams({ url, width: String(width), fps: String(fps), depth: String(depth), transport });
     if (this.settings.audio !== false) q.set('audio', '1');
     for (const [k, v] of Object.entries(bridgeInputParams(url, this.settings))) q.set(k, v);
     // H.264 (#16) is 8 bit 4:2:0 and excludes the unclipped Y′CbCr path (#7)
     if (this.settings.codec === 'h264' && workerAvailable()) q.set('codec', 'h264');
     else if (this.settings.yuv) { q.set('format', 'yuv'); q.set('depth', '16'); }
+    if (this.lowLatency && ll.ownRtp) q.set('rtp', 'own');
+    this.rtpStats = null;
     this.connectFrames(`${bridge}/stream?${q}`, false);
   }
 
@@ -384,6 +437,7 @@ export class Source {
         } else if (msg.type === 'stats') {
           this.dropped = msg.dropped;
           this.latency.onBridgeStats(msg.stampAge);
+          this.rtpStats = msg.rtp ?? null;
           if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', msg.message);
         } else if (msg.type === 'error' || msg.type === 'end') {
           this.set(msg.type === 'end' ? 'ended' : 'error', msg.message);

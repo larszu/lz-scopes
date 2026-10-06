@@ -3,13 +3,26 @@
 
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, mul3, rgbToXyzMatrix, bandRange, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId, type HdrPreview } from './color';
 import {
-  drawCubeGraticule, drawDiamondGraticule, diamondPoint, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
+  drawChannelPlotGraticule, drawCubeGraticule, drawLutVolume, drawDiamondGraticule, drawSatLumGraticule, diamondPoint, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
   WAVE_ZOOMS, channelLayout, isAudio, isWaveform, plotRect, type WaveChannels, type WaveOpts, type WaveZoom, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
 import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/panels';
 import type { DisplayParams, PictureMode, PictureParams, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
 import type { Source } from './sources';
 import { barRefs, nearest, type DeRef } from './deltae';
+import { LUTS, applyLut } from './lut';
+import { lutVolume } from './cube';
+
+/** LUT volume of the last drawn cube panel (recomputed when LUT, version or lattice change). */
+let lutVolCache: { key: string; pts: { inp: number[]; out: number[] }[] } = { key: '', pts: [] };
+import { QC_TYPES, drawQcLog, qcLog, type QcType } from './qclog';
+import { castName, drawMinMax } from './minmax';
+
+const NEUTRAL_RANGES = { all: [0.02, 0.98], shadows: [0.02, 0.3], mids: [0.3, 0.7], highlights: [0.7, 0.98] } as const;
+export const neutralParams = (p: PanelState) => {
+  const [lo, hi] = NEUTRAL_RANGES[p.neutral?.range ?? 'all'];
+  return { threshold: (p.neutral?.threshold ?? 5) / 100, lo, hi };
+};
 import { drawTimeline, type TimelineSpan } from './history';
 import { CUBE_SPACE_ID, DEFAULT_CUBE, cubeNits, cubeQOf, cubeRotation, type CubeSettings } from './cube';
 import { DEFAULT_CRT, PHOSPHORS, type CrtSettings } from './crt';
@@ -46,6 +59,16 @@ export interface PanelState {
   clock?: Partial<ClockOptions>;
   /** scatter scopes: analogue beam look (crt.ts) */
   crt?: Partial<CrtSettings>;
+  /** Min/Max per line: limits ('r103' −5/105 %, 'legal' 0/100 %) and up to 4 target lines in % */
+  minmax?: { limits?: 'r103' | 'legal'; targets?: number[] };
+  /** picture 'neutral' overlay: chroma threshold in % and Y′ range */
+  neutral?: { threshold?: number; range?: 'all' | 'shadows' | 'mids' | 'highlights' };
+  /** channel plot: channel pair (graticule.ts CHANNEL_PAIRS) */
+  pair?: number;
+  /** QC log: event types shown */
+  qcTypes?: QcType[];
+  /** timeline: one sample per new picture instead of 10 Hz; raster width */
+  everyFrame?: boolean; grid?: number;
   /** timeline: shown time span in seconds */
   span?: TimelineSpan;
   /** vectorscope, CIE, diamond, 3D volume (digital): persistence in ms, −1 = infinite (trace history) */
@@ -171,7 +194,9 @@ function drawAbLabels(ctx: CanvasRenderingContext2D, r: Rect, ab: NonNullable<Pa
 
 export function panelSignature(p: PanelState, src: Source | null, body: Rect, o: DrawOptions) {
   // clocks run: redraw at 25 Hz
-  const tick = p.scope === 'clock' || (p.scope === 'picture' && p.clockOverlay) ? `|t${Math.floor(performance.now() / 40)}` : '';
+  const tick = p.scope === 'clock' || (p.scope === 'picture' && p.clockOverlay) ? `|t${Math.floor(performance.now() / 40)}`
+    // QC log: new events, and the durations of active ones once a second
+    : p.scope === 'qclog' ? `|q${qcLog.version}:${Math.floor(Date.now() / 1000)}` : '';
   if (p.scope === 'clock') return `C|${src?.id}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}${tick}`;
   if (isLight(p.scope)) return `${lightSignature(p.scope, p.light, body.w, body.h)}|${body.x},${body.y}`;
   if (isAudio(p.scope)) {
@@ -189,13 +214,13 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
 }
 
 export const defaultPanel = (scope: ScopeType): PanelState => ({
-  scope, sourceId: '', gain: 1, colorize: scope === 'vector' || scope === 'cie' || scope === 'cube', zoom: 1, picture: 'normal', hist: 'rgb', log: false,
+  scope, sourceId: '', gain: 1, colorize: scope === 'vector' || scope === 'cie' || scope === 'cube' || scope === 'satlum' || scope === 'chplot', zoom: 1, picture: 'normal', hist: 'rgb', log: false,
 });
 
 const PARADE: ScopeType[] = ['parade', 'yrgb', 'wf-rgb'];
 
 const SCATTER: Partial<Record<ScopeType, ScatterMode>> = {
-  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie', diamond: 'diamond', cube: 'cube',
+  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie', diamond: 'diamond', cube: 'cube', satlum: 'satlum', chplot: 'chplot',
 };
 
 /**
@@ -207,6 +232,11 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     const empty = src ? (src.kind === 'stream' && src.settings.audio === false ? 'Ton ist für diese Quelle aus (Quelle → Ton)'
       : src.status === 'live' ? 'Kein Ton in dieser Quelle' : (src.message || 'Keine Daten – Quelle starten')) : (o.emptyText ?? 'Links eine Quelle hinzufügen');
     drawAudioPanel(ctx, p.scope, src?.audio ?? null, body.w, body.h, p.audio, empty, p);
+    return;
+  }
+  if (p.scope === 'qclog') {
+    renderer.clearRect(body);
+    drawQcLog(ctx, body.w, body.h, qcLog, p.qcTypes ?? QC_TYPES);
     return;
   }
   if (p.scope === 'timeline') {
@@ -242,16 +272,18 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     return;
   }
   const probeRgb = src.probe ? src.readPixel(src.probe.x, src.probe.y) : null;
-  const mode = SCATTER[p.scope];
+  const mode = p.scope === 'cube' && p.cube?.lutOnly && p.cube?.lut ? undefined : SCATTER[p.scope];
   if (mode) {
     const crt = crtOf(p);
     const cube = p.scope === 'cube' ? { ...DEFAULT_CUBE, ...p.cube } : null;
     renderer.drawScatter(key, src, abs, {
       ...(crt ? { crt } : {}),
       ...(!crt && p.persist && !isWaveform(p.scope) ? { persist: p.persist } : {}),
+      ...(p.scope === 'chplot' ? { pair: p.pair ?? 0 } : {}),
       ...(cube ? { cube: {
         space: CUBE_SPACE_ID[cube.space], rot: cubeRotation(cube.yaw, cube.pitch), to2020: gamutConvert(GAMUTS[src.gamut], GAMUTS['2020']),
         white: mul3(rgbToXyzMatrix(GAMUTS[src.gamut]), [1, 1, 1]), nits: cubeNits(src.transfer),
+        view: { zoom: cube.zoom ?? 1, panX: cube.panX ?? 0, panY: cube.panY ?? 0 },
       } } : {}),
       mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: crt ? [...PHOSPHORS[crt.phosphor].color] as [number, number, number] : [...TINTS[o.tint]] as [number, number, number],
       maxSamples: o.maxSamples, roi: src.activeRois(), skin: o.skin, cieUv: p.scope === 'cie' && !!p.cieUv,
@@ -274,9 +306,22 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     }
   } else if (p.scope === 'cie') {
     drawCieGraticule(ctx, r, src.colorspace, { uv: p.cieUv, gamut: src.gamut });
+  } else if (p.scope === 'minmax') {
+    const lim = p.minmax?.limits === 'legal' ? [0, 1] : [-0.05, 1.05];
+    drawMinMax(ctx, r, src.lineExtremes(), { lo: lim[0], hi: lim[1], targets: (p.minmax?.targets ?? []).slice(0, 4).map((t) => t / 100) });
+  } else if (p.scope === 'satlum') {
+    drawSatLumGraticule(ctx, r);
+  } else if (p.scope === 'chplot') {
+    drawChannelPlotGraticule(ctx, r, p.pair ?? 0);
   } else if (p.scope === 'cube') {
     const c = { ...DEFAULT_CUBE, ...p.cube };
-    drawCubeGraticule(ctx, r, c, src.gamut, cubeNits(src.transfer), probeRgb ? cubeQOf(c.space, probeRgb, src) : null);
+    const lut = c.lut ? LUTS.get(c.lut) : undefined;
+    if (lut) {
+      const key = `${lut.name}#${lut.version}:${c.lutGrid ?? 17}`;
+      if (lutVolCache.key !== key) lutVolCache = { key, pts: lutVolume((rgb) => applyLut(lut, rgb), c.lutGrid ?? 17) };
+      drawLutVolume(ctx, r, c, lutVolCache.pts, (rgb) => cubeQOf(c.space, rgb, src), !!c.lutInput);
+    }
+    drawCubeGraticule(ctx, r, c, src.gamut, cubeNits(src.transfer), probeRgb ? cubeQOf(c.space, probeRgb, src) : null, src.colorspace);
   } else if (p.scope === 'diamond') {
     drawDiamondGraticule(ctx, r);
     if (probeRgb) {
@@ -292,6 +337,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     const pic = (s: Source, rgcOn = !!p.rgc): PictureParams => ({
       mode: p.picture, bands: FALSE_COLOR_PRESETS[o.falsePreset] ?? [], zebra: o.zebra, zebraLow: o.zebraLow,
       roi: s.activeRois(), skin: o.skin, display: displayParams(s, o.display, o.hdrPreview), warn: warnMatrix(s, p.gamutTarget),
+      ...(p.picture === 'neutral' ? { neutral: neutralParams(p) } : {}),
       ...(rgcOn ? { rgc: { toAp1: gamutConvert(GAMUTS[s.gamut], GAMUTS.ap1), fromAp1: gamutConvert(GAMUTS.ap1, GAMUTS[s.gamut]) } } : {}),
     });
     const ab = p.ab && p.ab.mode !== 'off' ? p.ab : null;
@@ -361,6 +407,12 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
         ctx.fillStyle = col; ctx.fillRect(r.x + 6, y - 4, 8, 8);
         ctx.fillStyle = '#ddd'; ctx.fillText(label, r.x + 18, y);
       });
+    }
+    if (p.picture === 'neutral') {
+      const np = neutralParams(p), nc = src.neutralCast(np.threshold, np.lo, np.hi);
+      const lines = [`Fast neutral (< ${(np.threshold * 100).toFixed(0)} % Sättigung, Y′ ${(np.lo * 100).toFixed(0)}–${(np.hi * 100).toFixed(0)} %)`,
+        nc ? `${(nc.share * 100).toFixed(1)} % der Fläche · Stich ${(nc.amount * 100).toFixed(2)} %${nc.amount > 0.002 ? ` Richtung ${castName(nc.deg, src.colorspace)}` : ' (neutral)'}` : 'keine CPU-Daten'];
+      drawTextBox(ctx, r.x + 6, r.y + r.h - 6 - lines.length * 15 - 8, lines);
     }
     if (p.picture === 'gamut') {
       const legend: [string, string][] = [

@@ -119,3 +119,29 @@ export function latencyLines(s: LatencySummary | null, low = false): string[] {
   lines.push('           (gleiche Uhr vorausgesetzt; ohne Compositor und Monitor)');
   return lines;
 }
+
+/** Counters of the bridge's own RTP reception (server/rtsp.mjs report()). */
+export interface RtpStats {
+  transport: string; packets: number; lost: number; reordered: number; late?: number;
+  accessUnits: number; droppedUnits: number; udpBuffer?: number; switched?: string | null;
+}
+
+/** Lines for the Messwerte panel about the bridge's own RTP reception (low-latency mode). */
+export function rtpLines(
+  info: { own: boolean; transport?: string; codec?: string; note?: string } | null | undefined,
+  st: RtpStats | null | undefined,
+): string[] {
+  if (!info) return [];
+  if (!info.own) return [`Empfang    ${info.note ?? 'ffmpeg-RTSP'}`];
+  const codec = info.codec === 'hevc' ? 'HEVC' : 'H.264';
+  const transport = (st?.transport ?? info.transport ?? 'tcp').toUpperCase();
+  const lines = [`Empfang    RTP eigen · ${codec} · ${transport}${st?.udpBuffer ? ` · Puffer ${(st.udpBuffer / 1048576).toFixed(1)} MB` : ''}`];
+  if (st?.switched) lines.push(`           ${st.switched}`);
+  if (st) {
+    const total = st.packets + st.lost;
+    const pct = total ? (100 * st.lost) / total : 0;
+    lines.push(`           ${st.packets} Pakete · ${st.lost} verloren (${pct.toFixed(pct < 1 ? 2 : 1)} %) · ${st.reordered} umsortiert · ${st.late ?? 0} zu spät`);
+    lines.push(`           ${st.accessUnits} Bilder · ${st.droppedUnits} verworfen (Lücke, dann bis zum nächsten Keyframe)`);
+  }
+  return lines;
+}

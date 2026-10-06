@@ -119,7 +119,7 @@ H.264 67 / 67 / 67. This branch, same test: raw/worker 79, H.264 67.
 | 3 | Draw on arrival instead of at the next animation frame | wait 4 → 0 ms (mean) up to "drawn" | small | **in Low Latency**; visible gain unproven (compositor) |
 | 4 | Higher source frame rate (50/60 fps) | every frame-sized hold-back halves (parser, encoder, display) | camera setting | recommendation |
 | 5 | Source encoder: no B-frames, zero-latency/low-delay profile, short GOP or intra refresh | camera-dependent, often 1–3 frames | camera setting | recommendation |
-| 6 | Own RTP/H.264 depacketiser (marker bit ends the access unit) instead of ffmpeg's parser | ≈ 40 ms (1 frame) | large | open – everything through ffmpeg keeps this frame |
+| 6 | Own RTP/H.264 depacketiser (marker bit ends the access unit) instead of ffmpeg's parser | ≈ 40 ms (1 frame) | large | **done** (H.264/HEVC, TCP/UDP): [rtp-eigenempfang.md](rtp-eigenempfang.md) |
 | 7 | Pass the camera's H.264 through (no decode/re-encode in the bridge), decode with WebCodecs and upload the `VideoFrame` directly as a texture | a few ms plus less CPU; still has #6 unless the RTP part is ours | medium–large | open |
 | 8 | Smaller raw frames on the pipe/WebSocket (e.g. 4:2:0 or 4:2:2 8 bit instead of RGBA; 16 bit Y′CbCr stays for #7) | ≈ 5–10 ms at 960 px | medium | open |
 | 9 | `desynchronized` canvas + draw on arrival | removes compositor queue (per Chrome, up to a frame) | medium: panels are 2D blits of one WebGL canvas | not built: effect cannot be measured here, may tear |
@@ -146,9 +146,17 @@ localhost, removing the time-code showinfo, `-flush_packets 1` on rawvideo, smal
 
 ## Low-latency mode (built)
 
-Per source (source card: `Latenz: global / Low Latency (≤ 640 px) / Latenz normal`) and
-globally (Settings → Low Latency). Bundles the measured measures #2 and #3; #1 applies to
-everything. The panel head shows `Low Latency · 64 ms` (only with stamped pictures; without
-them just `Low Latency`), the Messwerte panel shows the stage split. Drawbacks are named in
-the tool tip: 640 px analysis width (fewer sample points), more draw work with several
-sources, and the measurement ends before compositor and monitor.
+Per source (source card: `Latenz: global / Low Latency / Latenz normal`, plus the fields
+below with "global" as default) and globally (Settings → Low Latency). Every measure is a
+setting of its own:
+
+| Setting | Values | Default | Price |
+|---|---|---|---|
+| Analysebreite | 320 / 480 / 640 / 960 / nativ | 640 | fewer sample points |
+| Zeichnen bei Ankunft | an / aus | an | more draw work with several sources; visible gain unproven |
+| RTP-Eigenempfang | an / aus | an | sound in a second session without common PTS (no A/V offset); fallback to ffmpeg for anything unsupported |
+| Statistik | 100 / 250 / 500 / 1000 ms | 100 | slower histogram/clip values; no measurable gain with one panel |
+
+The panel head shows `Low Latency · … ms`, the source card the measured value next to the
+switch (only with stamped pictures), the Messwerte panel the stage split and how the bridge
+receives the stream (own RTP with packet counters, or ffmpeg and why).

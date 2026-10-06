@@ -29,12 +29,14 @@ export interface ScopesState {
     maxTP: number | null; paused: boolean; seconds: number; avOffsetMs: number | null; ident: string; identProblems: string[]
   } | null
   generator?: { running: boolean; signal: string; level: number; freq: number; channels: number } | null
+  /** QC log: active events, total, latest event */
+  qc?: { active: number; total: number; last: string } | null
 }
 
 export const EMPTY_STATE: ScopesState = {
   source: null, sources: [], frozen: false, clip: null, clipHigh: null, clipLow: null, yMin: null, yMax: null,
   layoutName: '', preset: '', layouts: [], presets: [], panels: [], maximized: null, scene: null, scenes: [],
-  outputs: [], pattern: null, patterns: [], playing: null, audio: null, generator: null,
+  outputs: [], pattern: null, patterns: [], playing: null, audio: null, generator: null, qc: null,
 }
 
 /** Merge a (possibly partial or malformed) state from the bridge onto the defaults. */
@@ -56,6 +58,7 @@ export function normalizeState(raw: unknown): ScopesState {
       paused: r.audio.paused === true, identProblems: arr(r.audio.identProblems),
     } : null,
     generator: r.generator && typeof r.generator === 'object' ? { ...r.generator, running: r.generator.running === true } : null,
+    qc: r.qc && typeof r.qc === 'object' ? { active: Number(r.qc.active) || 0, total: Number(r.qc.total) || 0, last: String(r.qc.last ?? '') } : null,
   }
 }
 
@@ -91,6 +94,8 @@ export function variableValues(s: ScopesState, connected: boolean): Record<strin
     ident: s.audio?.ident ?? '',
     ident_problems: (s.audio?.identProblems ?? []).join(' · '),
     generator: s.generator ? (s.generator.running ? s.generator.signal : 'aus') : '',
+    qc_active: s.qc ? String(s.qc.active) : '',
+    qc_last: s.qc?.last ?? '',
   }
 }
 
@@ -122,6 +127,8 @@ export const VARIABLES: { variableId: string; name: string }[] = [
   { variableId: 'ident', name: 'Erkannter Ident' },
   { variableId: 'ident_problems', name: 'Ident-Befunde (vertauscht, fehlt, Polarität)' },
   { variableId: 'generator', name: 'Tongenerator (Signal oder aus)' },
+  { variableId: 'qc_active', name: 'QC: aktive Ereignisse' },
+  { variableId: 'qc_last', name: 'QC: letztes Ereignis' },
 ]
 
 const same = (a: string, b: unknown) => a.toLowerCase() === String(b ?? '').trim().toLowerCase()
@@ -130,6 +137,7 @@ const same = (a: string, b: unknown) => a.toLowerCase() === String(b ?? '').trim
 export const checks = {
   connected: (_s: ScopesState, connected: boolean) => connected,
   frozen: (s: ScopesState) => s.frozen,
+  qc_active: (s: ScopesState) => (s.qc?.active ?? 0) > 0,
   source_active: (s: ScopesState, o: Record<string, unknown>) =>
     !!s.source && (String(s.source.index) === String(o.source) || s.source.id === o.source || same(s.source.name, o.source)),
   clip_above: (s: ScopesState, o: Record<string, unknown>) => s.clip !== null && s.clip > Number(o.threshold ?? 0.5),

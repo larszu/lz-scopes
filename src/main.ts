@@ -9,11 +9,13 @@ import {
 } from './chain';
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
-import { SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOMS, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
+import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOMS, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
 import { DEFAULT_SKIN, ROI_CLOSE, defaultPanel as panel, drawPanel, panelSignature, roiCloseBox, type DrawOptions, type PanelState, type Tint } from './panel';
 import type { OutputHost, OutputWindowApi } from './outputView';
 import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } from './scene';
 import { connectRemote } from './remote';
+import { DEFAULT_QC, QC_LABELS, QC_TYPES, evaluate as evaluateQc, frameFingerprint, qcLog, toCsv, type QcSettings } from './qclog';
+import { GRIDS } from './history';
 import { CUBE_SPACE_LABELS, DEFAULT_CUBE, type CubeSettings, type CubeSpace } from './cube';
 import { DEFAULT_CRT, PERSIST_CHOICES, PHOSPHORS, type CrtSettings, type Phosphor } from './crt';
 import type { Command } from '../server/control.mjs';
@@ -33,7 +35,8 @@ import { Renderer, type PictureMode, type SkinRange } from './renderer';
 import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
 import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
-import { LOW_LATENCY_WIDTH, lowLatencyWidth, Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
+import { DEFAULT_LOW_LATENCY, LL_STATS, LL_WIDTHS, describeLowLatency, effectiveWidth, type LowLatencyConfig } from './lowLatency';
+import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
 
 // ---------------------------------------------------------------- state
@@ -60,10 +63,14 @@ interface Persisted {
   /** tone generator settings (never saved as running) and output device */
   gen?: Partial<GenConfig>;
   genSink?: string;
+  /** QC log thresholds (qclog.ts) */
+  qc?: Partial<QcSettings>;
   /** ΔE reference at the probe point (panel.ts deLines) */
   deRef?: string;
   /** low-latency mode for all bridge streams without their own setting (docs/research/low-latency.md) */
   lowLatency?: boolean;
+  /** global low-latency settings (src/lowLatency.ts) */
+  ll?: Partial<LowLatencyConfig>;
 }
 
 const DEFAULT_SCOPES: ScopeType[] = ['picture', 'wf-luma', 'vector', 'parade', 'hist', 'cie', 'stats', 'yrgb', 'ycbcr'];
@@ -84,6 +91,7 @@ function load(): Persisted {
 
 const state = load();
 Source.globalLowLatency = !!state.lowLatency;
+Source.globalLowLatencyConfig = state.ll ?? {};
 // the render loop reports its draws to the latency meters (stamp → drawn, src/latency.ts)
 LatencyMeter.drawHook = true;
 if (!isTheme(state.theme)) state.theme = DEFAULT_THEME;
@@ -208,6 +216,7 @@ function settingsItems(): Node[] {
     row('', h('button', { class: 'mini', title: 'Messfelder ausgeben, Display mit Messgerät (ArgyllCMS) oder manuell prüfen, Uniformität, Bericht, 3D-LUT', onclick: openCalibrationDialog }, 'Kalibrierung / Verifikation …')),
     ...(sysProfileAvailable() ? [sysProfileSection(h, () => (state.display === 'auto' ? null : state.display))] : []),
     row('Low Latency', select(state.lowLatency ? '1' : '0', [['0', 'aus'], ['1', 'an (alle Bridge-Quellen ohne eigene Wahl)']], (v) => setGlobalLowLatency(v === '1'), LOW_LATENCY_HINT)),
+    ...lowLatencyFields(Source.globalLowLatencyConfig, false, (patch) => setGlobalLowLatencyConfig(patch)).map(([label, el]) => row(label, el)),
     row('Spurfarbe', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); })),
     row('Präzision', select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }, 'Abtastpunkte je Scope')),
     row('ΔE am Messpunkt', select(state.deRef ?? 'off', [['off', 'aus'], ['bars', 'nächster Farbbalken'], ['targets', 'nächstes eigenes Ziel'], ...state.targets.map((t) => [`target:${t.name}`, `Ziel ${t.name}`] as [string, string])],
@@ -357,15 +366,23 @@ function renderSources() {
       card.append(
         h('div', { class: 'row' }, urlIn),
         h('div', { class: 'row' },
-          select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', 'nativ']], (v) => upd({ width: Number(v) }, true), s.lowLatency && lowLatencyWidth(set.width, true) !== set.width ? `Analyseauflösung – Low Latency begrenzt auf ${LOW_LATENCY_WIDTH} px` : 'Analyseauflösung'),
+          select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', 'nativ']], (v) => upd({ width: Number(v) }, true), s.lowLatency && effectiveWidth(set.width, true, s.llConfig.width) !== set.width ? `Analyseauflösung – Low Latency begrenzt auf ${s.llConfig.width} px` : 'Analyseauflösung'),
           select(String(set.fps), [['0', 'alle fps'], ['10', '10 fps'], ['25', '25 fps'], ['30', '30 fps']], (v) => upd({ fps: Number(v) }, true), 'Bildrate begrenzen'),
           select(set.yuv ? 'yuv' : String(set.depth), [['8', '8 bit'], ['16', '16 bit'], ['yuv', '16 bit Y′CbCr']], (v) => upd(v === 'yuv' ? { depth: 16, yuv: true } : { depth: Number(v) as 8 | 16, yuv: false }, true), 'Bittiefe. 16 bit für 10-bit/HDR-Quellen; Y′CbCr = unbeschnitten ohne Range-Wandlung (Sub-Black, Super-White, R 103)'),
           select(set.transport, [['tcp', 'TCP'], ['udp', 'UDP']], (v) => upd({ transport: v as 'tcp' | 'udp' }, true), 'RTSP-Transport'),
           select(set.audio === false ? '0' : '1', [['1', 'Ton'], ['0', 'ohne Ton']], (v) => upd({ audio: v === '1' }, true), 'Ton des Streams mitmessen (Bridge-Protokoll 2)'),
           select(set.codec ?? 'raw', [['raw', 'roh'], ['h264', 'H.264 · 8 bit']], (v) => upd({ codec: v as 'raw' | 'h264' }, true), 'Übertragung Bridge → Browser: roh = unkomprimiert, exakt (8/16 bit); H.264 = für entfernte Bridges, ca. 1/50 der Datenrate, aber 8 bit 4:2:0 und verlustbehaftet')),
         h('div', { class: 'row' },
-          select(set.lowLatency === undefined ? '' : set.lowLatency ? '1' : '0', [['', `Latenz: global (${state.lowLatency ? 'Low Latency' : 'normal'})`], ['1', `Low Latency (≤ ${LOW_LATENCY_WIDTH} px)`], ['0', 'Latenz normal']],
-            (v) => { upd({ lowLatency: v === '' ? undefined : v === '1' }, true); refreshHeads(); }, LOW_LATENCY_HINT)),
+          select(set.lowLatency === undefined ? '' : set.lowLatency ? '1' : '0', [['', `Latenz: global (${state.lowLatency ? 'Low Latency' : 'normal'})`], ['1', 'Low Latency'], ['0', 'Latenz normal']],
+            (v) => { upd({ lowLatency: v === '' ? undefined : v === '1' }, true); refreshHeads(); }, LOW_LATENCY_HINT),
+          h('span', { class: 'llmeasure', 'data-llsrc': s.id, title: 'Stempel → gezeichnet, nur mit gestempeltem Testbild (scripts/latency-source.mjs)' }, latencyMeasureText(s))),
+        ...(s.lowLatency ? [h('details', { class: 'llsettings' },
+          h('summary', { title: describeLowLatency(s.llConfig) }, `Low Latency: ${describeLowLatency(s.llConfig)}`),
+          ...lowLatencyFields(set.ll ?? {}, true, (patch) => {
+            const ll: Partial<LowLatencyConfig> = { ...set.ll, ...patch };
+            for (const k of Object.keys(ll) as (keyof LowLatencyConfig)[]) if (ll[k] === undefined) delete ll[k];
+            upd({ ll }, true); refreshHeads();
+          }).map(([label, el]) => h('label', { class: 'mrow' }, h('span', {}, label), el)))] : []),
         h('div', { class: 'row' },
           running ? h('button', { onclick: () => s.stop() }, '■ Trennen') : h('button', { class: 'primary', onclick: connect }, '▶ Verbinden'),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
@@ -735,7 +752,7 @@ function panelSettings(p: PanelState): Node[] {
     c.onchange = () => { p[key] = c.checked; save(); refreshHeads(); };
     return h('label', { class: 'inline' }, c, label);
   };
-  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube';
+  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot';
   if (scatter) {
     const gain = h('input', { type: 'range', min: -3, max: 3, step: 0.1, value: Math.log2(p.gain), title: 'Doppelklick = Standard' }) as HTMLInputElement;
     gain.oninput = () => { p.gain = 2 ** Number(gain.value); save(); };
@@ -773,14 +790,61 @@ function panelSettings(p: PanelState): Node[] {
       'R′G′B′-Würfel des Signals, CIELAB (D65, L* nach oben) oder ICtCp (BT.2100, I nach oben). Drehen: im Panel ziehen, Doppelklick = Ausgangsansicht'));
     row('Drahtgitter', select(c.gamut, [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => setCube({ gamut: v as CubeSettings['gamut'] }), 'Zielgamut als Drahtgitter (CIELAB und ICtCp; im R′G′B′-Würfel ist es der 0–100-%-Würfel)'));
     row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
+    row('LUT-Volumen', select(c.lut ?? '', [['', 'aus'], ...[...LUTS.keys()].map((n) => [n, n] as [string, string])], (v) => setCube({ lut: v || undefined }),
+      'Ausgabe einer geladenen LUT für ein Eingangsgitter als Punktwolke (in der Farbe des Ausgabewerts); LUTs auf eine Quellenkarte ziehen'));
+    if (c.lut) {
+      row('Gitter', select(String(c.lutGrid ?? 17), [['9', '9³'], ['17', '17³'], ['33', '33³']], (v) => setCube({ lutGrid: Number(v) })));
+      const inp = h('input', { type: 'checkbox', checked: !!c.lutInput }) as HTMLInputElement;
+      inp.onchange = () => setCube({ lutInput: inp.checked });
+      const only = h('input', { type: 'checkbox', checked: !!c.lutOnly }) as HTMLInputElement;
+      only.onchange = () => setCube({ lutOnly: only.checked });
+      row('', h('label', { class: 'inline' }, inp, 'Eingangsgitter'), h('label', { class: 'inline' }, only, 'nur LUT (ohne Bild)'));
+    }
     rows.push(h('p', { class: 'hint' }, 'Wofür: Der Würfel zeigt das ganze Farbvolumen auf einmal – wo die Pixel im Gamut liegen, welche Ecken (Primär-/Sekundärfarben, Weiß, Schwarz) angefahren oder abgeschnitten werden, wie sich Farben verteilen und ob ein Farbstich die Graue Achse verschiebt. Vectorscope und Diamond zeigen jeweils nur eine Projektion (Farbton/Sättigung bzw. zwei Kanalpaare) und verlieren dabei die Helligkeit bzw. den dritten Kanal.'));
+  }
+  if (p.scope === 'chplot') {
+    row('Kanäle', select(String(p.pair ?? 0), CHANNEL_PAIRS.map((n, i) => [String(i), n] as [string, string]), (v) => { p.pair = Number(v); save(); }));
+    row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
+  }
+  if (p.scope === 'minmax') {
+    row('Grenzen', select(p.minmax?.limits ?? 'r103', [['r103', 'EBU R 103 −5/105 %'], ['legal', 'Legal 0/100 %']], (v) => { p.minmax = { ...p.minmax, limits: v as 'r103' }; save(); }));
+    const t = h('input', { class: 'url', value: (p.minmax?.targets ?? []).join(', '), placeholder: 'Ziellinien in %, z. B. 18, 75 (max. 4)' }) as HTMLInputElement;
+    t.onchange = () => { p.minmax = { ...p.minmax, targets: t.value.split(/[,; ]+/).map(Number).filter((v) => Number.isFinite(v)).slice(0, 4) }; save(); };
+    row('Ziellinien', t);
+  }
+  if (p.scope === 'satlum') row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
+  if (p.scope === 'qclog') {
+    const q = { ...DEFAULT_QC, ...state.qc };
+    const setQc = (patch: Partial<QcSettings>) => { state.qc = { ...q, ...patch }; Object.assign(q, patch); save(); };
+    const on = h('input', { type: 'checkbox', checked: q.on }) as HTMLInputElement;
+    on.onchange = () => setQc({ on: on.checked });
+    row('Prüfen', h('label', { class: 'inline' }, on, 'alle laufenden Quellen, 4× pro Sekunde'));
+    const shown = new Set(p.qcTypes ?? QC_TYPES);
+    rows.push(h('div', { class: 'mrow' }, ...QC_TYPES.map((t) => {
+      const c = h('input', { type: 'checkbox', checked: shown.has(t) }) as HTMLInputElement;
+      c.onchange = () => { if (c.checked) shown.add(t); else shown.delete(t); p.qcTypes = QC_TYPES.filter((x) => shown.has(x)); save(); };
+      return h('label', { class: 'inline' }, c, QC_LABELS[t]);
+    })));
+    row('Clipping ab', numIn(q.clip * 100, 0.1, 10, (v) => setQc({ clip: v / 100 })), '% der Pixel');
+    row('Schwarzbild unter', numIn(q.black * 100, 0.5, 10, (v) => setQc({ black: v / 100 })), '% Y′');
+    row('Stille unter', numIn(-q.silenceDb, 30, 90, (v) => setQc({ silenceDb: -v })), '−dBFS');
+    row('Standbild ab', numIn(q.freezeMs / 1000, 0.5, 30, (v) => setQc({ freezeMs: v * 1000 })), 's');
+    row('', h('button', { class: 'mini', onclick: () => {
+      const blob = new Blob([toCsv(qcLog.events, p.qcTypes ?? QC_TYPES)], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `lz-scopes-qc-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    } }, 'CSV exportieren'), h('button', { class: 'mini', onclick: () => qcLog.clear() }, 'Leeren'));
   }
   if (p.scope === 'timeline') {
     row('Zeitraum', select(String(p.span ?? 10), [['10', '10 s'], ['60', '1 min'], ['300', '5 min']], (v) => { p.span = Number(v) as PanelState['span']; save(); }));
+    const ef = h('input', { type: 'checkbox', checked: !!p.everyFrame }) as HTMLInputElement;
+    ef.onchange = () => { p.everyFrame = ef.checked; save(); };
+    row('Abtastung', h('label', { class: 'inline', title: 'Aus: zehnmal pro Sekunde. An: jedes neue Bild (z. B. Videodatei beim Abspielen oder Bild für Bild)' }, ef, 'jedes Bild'));
+    row('Raster', select(String(p.grid ?? 96), GRIDS.map((g) => [String(g), `${g}×${Math.round((g * 9) / 16)}`] as [string, string]), (v) => { p.grid = Number(v); save(); }, 'Feiner = genauere Mittelwerte, mehr Rechenzeit'));
     row('', h('button', { class: 'mini', onclick: () => panelSource(p)?.history.clear() }, 'Verlauf löschen'));
     rows.push(h('p', { class: 'hint' }, 'Zehnmal pro Sekunde ein 96×54-Raster des Bildes: oben die mittlere Farbe (Movie-Barcode), darunter Farbtonanteile über die Zeit (Vectorscope-Verlauf, hell = viel von diesem Farbton), Sättigung (Mittel und 95 %) und Luma (Bereich min–max, Linie = Mittel). Neueste Werte rechts.'));
   }
-  if ((p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube') && !p.crt?.on) {
+  if ((p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot') && !p.crt?.on) {
     row('Nachleuchten', select(String(p.persist ?? 0), [['0', 'aus'], ['300', '0,3 s'], ['1000', '1 s'], ['3000', '3 s'], ['10000', '10 s'], ['-1', 'unendlich']], (v) => { p.persist = Number(v); save(); },
       'Spur der letzten Bilder: ältere Werte verblassen mit exp(−t/τ), „unendlich“ hält alles (Bewegung und Ausreißer über die Zeit sichtbar)'));
   }
@@ -858,7 +922,7 @@ function panelSettings(p: PanelState): Node[] {
     row('HDR10-Kennwerte', h('button', { class: 'mini', title: 'MaxCLL/MaxFALL (CTA-861.3) neu zählen – nur bei PQ-Quellen, nur ganze Bilder', onclick: () => { panelSource(p)?.resetLightLevel(); } }, 'MaxCLL/MaxFALL zurücksetzen'));
   }
   if (p.scope === 'picture') {
-    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung'], ['r103', 'EBU R 103']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
+    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung'], ['r103', 'EBU R 103'], ['neutral', 'Neutral (Farbstich)']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
     const ab = p.ab ?? { mode: 'off' as const, b: 'stage:cst', pos: 0.5, gain: 4 };
     const setAb = (patch: Partial<NonNullable<PanelState['ab']>>, rebuild = false) => {
       p.ab = { ...ab, ...patch }; Object.assign(ab, patch); save(); refreshHeads();
@@ -883,6 +947,10 @@ function panelSettings(p: PanelState): Node[] {
     const rgcBox = h('input', { type: 'checkbox', checked: !!p.rgc }) as HTMLInputElement;
     rgcBox.onchange = () => { p.rgc = rgcBox.checked; save(); refreshHeads(); };
     row('Gamut-Kompression', h('label', { class: 'inline', title: 'Vorschau der ACES-1.3-Reference-Gamut-Compression (in ACEScg). Wirkt auf Bild und Gamut-Warnung, nicht auf die Scopes.' }, rgcBox, 'ACES 1.3 (Vorschau)'));
+    if (p.picture === 'neutral') {
+      row('Schwelle', select(String(p.neutral?.threshold ?? 5), [['2', '2 %'], ['5', '5 %'], ['10', '10 %']], (v) => { p.neutral = { ...p.neutral, threshold: Number(v) }; save(); }, 'Pixel mit weniger Sättigung (|CbCr|/0,5) gelten als fast neutral; ihr Stich wird verstärkt in Farbe gezeigt, exakt Neutrales grau'));
+      row('Bereich', select(p.neutral?.range ?? 'all', [['all', 'alles'], ['shadows', 'Schatten'], ['mids', 'Mitten'], ['highlights', 'Lichter']], (v) => { p.neutral = { ...p.neutral, range: v as 'all' }; save(); }));
+    }
     if (p.picture === 'gamut') row('Zielgamut', select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, 'Markiert Pixel, die im Zielgamut negative Anteile hätten'));
     if (p.picture === 'false') row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); }));
     if (p.picture === 'zebra') row('Zebra ab', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%');
@@ -989,13 +1057,26 @@ function attachCubeDrag(p: PanelState, body: HTMLElement) {
   body.addEventListener('pointermove', (e) => {
     if (!last || p.scope !== 'cube') return;
     const c = { ...DEFAULT_CUBE, ...p.cube };
-    const yaw = ((c.yaw + (e.clientX - last.x) * 0.5 + 540) % 360) - 180;
-    const pitch = Math.max(-90, Math.min(90, c.pitch + (e.clientY - last.y) * 0.5));
-    p.cube = { ...c, yaw, pitch };
+    if (e.shiftKey) {
+      // pan in clip units of the plot (square, side ≈ smaller body edge)
+      const b = body.getBoundingClientRect(), s = Math.max(10, Math.min(b.width, b.height) - 16);
+      p.cube = { ...c, panX: (c.panX ?? 0) + ((e.clientX - last.x) * 2) / s, panY: (c.panY ?? 0) - ((e.clientY - last.y) * 2) / s };
+    } else {
+      const yaw = ((c.yaw + (e.clientX - last.x) * 0.5 + 540) % 360) - 180;
+      const pitch = Math.max(-90, Math.min(90, c.pitch + (e.clientY - last.y) * 0.5));
+      p.cube = { ...c, yaw, pitch };
+    }
     last = { x: e.clientX, y: e.clientY };
   });
   body.addEventListener('pointerup', () => { if (last) { last = null; save(); } });
-  body.addEventListener('dblclick', () => { if (p.scope === 'cube') { const c = { ...DEFAULT_CUBE, ...p.cube }; p.cube = { ...c, yaw: DEFAULT_CUBE.yaw, pitch: DEFAULT_CUBE.pitch }; save(); } });
+  body.addEventListener('wheel', (e) => {
+    if (p.scope !== 'cube') return;
+    e.preventDefault();
+    const c = { ...DEFAULT_CUBE, ...p.cube };
+    p.cube = { ...c, zoom: Math.max(0.3, Math.min(8, (c.zoom ?? 1) * (e.deltaY < 0 ? 1.12 : 1 / 1.12))) };
+    save();
+  }, { passive: false });
+  body.addEventListener('dblclick', () => { if (p.scope === 'cube') { const c = { ...DEFAULT_CUBE, ...p.cube }; p.cube = { ...c, yaw: DEFAULT_CUBE.yaw, pitch: DEFAULT_CUBE.pitch, zoom: 1, panX: 0, panY: 0 }; save(); } });
 }
 
 function attachSkinDrag(p: PanelState, body: HTMLElement) {
@@ -1110,7 +1191,29 @@ function updateTransport() {
 
 // ---------------------------------------------------------------- render loop
 
-let lastStats = 0;
+let lastStats = 0, lastQc = 0;
+/** freeze detection per source: last fingerprint and since when it is unchanged */
+const qcFreeze = new Map<string, { fp: string; since: number }>();
+/** QC log (qclog.ts): four checks per second on every live source */
+function runQc(now: number) {
+  const s0 = { ...DEFAULT_QC, ...state.qc };
+  if (!s0.on) return;
+  for (const s of sources) {
+    if (s.status !== 'live' || !s.ready) { qcLog.closeSource(s.id); continue; }
+    const { kr, kb } = LUMA[s.colorspace]; s.updateStats(kr, kb);
+    const live = s.kind === 'stream' || s.kind === 'webcam' || s.kind === 'screen' || (s.kind === 'file' && !!s.video && !s.video.paused);
+    // freeze check only where pictures are expected to change
+    const f = live ? s.cpuFrame() : null, fp = f ? frameFingerprint(f.px, f.w, f.h, f.decode) : '';
+    const fz = qcFreeze.get(s.id);
+    if (!fz || fz.fp !== fp) qcFreeze.set(s.id, { fp, since: now });
+    const a = s.audio && !s.audio.stale ? s.audio : null;
+    let peak: number | null = null;
+    if (a) { let tp = 0; for (let c = 0; c < a.channels; c++) tp = Math.max(tp, a.level.truePeakOver(c, s0.silenceMs)); peak = tp > 0 ? 20 * Math.log10(tp) : -Infinity; }
+    // R 103 only means something on the unclipped Y′CbCr path (R′G′B′ sources are clipped to 0–100 %)
+    const cond = evaluateQc({ stats: s.stats, r103: s.yuv ? s.r103Stats() : null, peakDb: peak, unchangedMs: now - (qcFreeze.get(s.id)?.since ?? now), freezeApplies: live && !s.frozen }, s0);
+    qcLog.update(s.id, s.name, cond, s.tc?.tc ?? null);
+  }
+}
 let needClear = true;
 const panelSigs = new Map<number, string>();
 
@@ -1131,7 +1234,7 @@ function frame(now: number) {
  * the panels unchanged and skips them. Debug switch: {"drawOnArrive":false}.
  */
 Source.onArrive = (s) => {
-  if (!s.lowLatency || debugFlags().drawOnArrive === false || document.hidden) return;
+  if (!s.lowLatency || !s.llConfig.drawOnArrive || debugFlags().drawOnArrive === false || document.hidden) return;
   drawAll(performance.now());
 };
 
@@ -1145,13 +1248,20 @@ function drawAll(now: number) {
   if (needClear) { panelSigs.clear(); needClear = false; }
   updateTransport();
 
+  // CPU statistics every 100 ms; low-latency sources at their own rate (fewer main-thread stalls)
+  if (now - lastQc > 250) { lastQc = now; runQc(now); }
   if (now - lastStats > 100) {
     lastStats = now;
     const used = new Set(openViews().map((v) => panelSource(state.panels[v.idx])).filter(Boolean) as Source[]);
-    used.forEach((s) => { const { kr, kb } = LUMA[s.colorspace]; s.updateStats(kr, kb); });
+    used.forEach((s) => {
+      const every = s.kind === 'stream' && s.lowLatency ? s.llConfig.statsMs : 100;
+      if (now - (statsAt.get(s) ?? -Infinity) < every - 1) return;
+      statsAt.set(s, now);
+      const { kr, kb } = LUMA[s.colorspace]; s.updateStats(kr, kb);
+    });
   }
   // timeline panels: 10 samples per second of their sources (history.ts)
-  for (const v of openViews()) { const p = state.panels[v.idx]; if (p.scope === 'timeline') panelSource(p)?.sampleHistory(now); }
+  for (const v of openViews()) { const p = state.panels[v.idx]; if (p.scope === 'timeline') panelSource(p)?.sampleHistory(now, { everyFrame: !!p.everyFrame, grid: p.grid }); }
 
   // CRT persistence still fading: redraw those panels although nothing else changed
   for (const k of renderer.settling) panelSigs.delete(Number(k.slice(1)));
@@ -1185,6 +1295,7 @@ function drawAll(now: number) {
   }
 }
 const drawnSources = new Map<Source, number>();
+const statsAt = new WeakMap<Source, number>();
 
 /** Panel-head chip "Low Latency · 104 ms": mode plus the measured latency (stamped test pictures only). */
 function latencyChip(p: PanelState): Node | string {
@@ -1201,12 +1312,55 @@ function updateLatencyChips() {
     const s = sources.find((x) => x.id === el.dataset.src);
     if (s) el.textContent = latencyChipText(s);
   });
+  document.querySelectorAll<HTMLElement>('.llmeasure').forEach((el) => {
+    const s = sources.find((x) => x.id === el.dataset.llsrc);
+    if (s) el.textContent = latencyMeasureText(s);
+  });
+}
+/** Measured latency next to the mode switch in the source card. */
+function latencyMeasureText(s: Source) {
+  const l = s.latency.summary();
+  return l ? `gemessen ${Math.round(l.total.mean)} ms (${Math.round(l.total.min)}–${Math.round(l.total.max)})` : 'nicht gemessen';
 }
 
-const LOW_LATENCY_HINT = `Low Latency (Bridge-Quellen): Analysebreite höchstens ${LOW_LATENCY_WIDTH} px und jedes Bild wird bei Ankunft gezeichnet statt im nächsten Bildschirmtakt. `
-  + `Nachteile: weniger Abtastpunkte (${LOW_LATENCY_WIDTH}×360 statt 960×540 bei 16:9), mehr Zeichenarbeit bei mehreren Quellen. `
+/**
+ * The four low-latency settings as [label, select]. `inherit` adds a "global" choice per
+ * field (source card); without it the values are the global ones (Settings menu).
+ */
+function lowLatencyFields(cfg: Partial<LowLatencyConfig>, inherit: boolean, set: (patch: Partial<LowLatencyConfig>) => void): [string, HTMLElement][] {
+  const g = { ...DEFAULT_LOW_LATENCY, ...Source.globalLowLatencyConfig };
+  const opt = <K extends keyof LowLatencyConfig>(k: K, options: [string, string][], parse: (v: string) => LowLatencyConfig[K], label: (v: LowLatencyConfig[K]) => string) => {
+    const cur = cfg[k];
+    const list: [string, string][] = inherit ? [['', `global (${label(g[k])})`], ...options] : options;
+    return select(cur === undefined ? (inherit ? '' : String(g[k])) : String(cur), list, (v) => set({ [k]: v === '' ? undefined : parse(v) } as Partial<LowLatencyConfig>));
+  };
+  const onOff: [string, string][] = [['1', 'an'], ['0', 'aus']];
+  const yes = (v: boolean) => (v ? 'an' : 'aus');
+  return [
+    ['Analysebreite', opt('width', LL_WIDTHS, Number, (v) => (v ? `${v} px` : 'nativ'))],
+    ['Zeichnen bei Ankunft', opt('drawOnArrive', onOff, (v) => v === '1', yes)],
+    ['RTP-Eigenempfang', opt('ownRtp', onOff, (v) => v === '1', yes)],
+    ['Statistik', opt('statsMs', LL_STATS, Number, (v) => `${v} ms`)],
+  ].map(([l, el]) => { (el as HTMLElement).title = LL_FIELD_HINTS[l as string]; return [l as string, el as HTMLElement]; });
+}
+const LL_FIELD_HINTS: Record<string, string> = {
+  'Analysebreite': 'Obergrenze der Analysebreite. Weniger Pixel: weniger Daten durch Pipe, WebSocket und Textur – aber weniger Abtastpunkte in den Scopes.',
+  'Zeichnen bei Ankunft': 'Zeichnet ein Bild sofort statt im nächsten Bildschirmtakt. Gewinn gemessen bis „Zeichnung abgeschickt“; ob der Monitor es früher zeigt, hängt vom Compositor ab (ungeprüft). Mehr Zeichenarbeit bei mehreren Quellen.',
+  'RTP-Eigenempfang': 'rtsp://: die Bridge empfängt RTP selbst (H.264/HEVC, TCP oder UDP) und gibt jedes Bild beim RTP-Markerbit weiter – ffmpegs RTSP-Eingang hält eines zurück. Über UDP verworfene Bilder (Paketverlust) warten auf den nächsten Keyframe; ab 2 % Verlust wechselt die Bridge selbst auf TCP. Ton kommt dann über eine zweite Sitzung ohne gemeinsamen Zeitstempel (A/V-Versatz nicht messbar). Was nicht unterstützt wird, empfängt ffmpeg wie bisher.',
+  'Statistik': 'Wie oft Histogramm- und Clip-Werte auf der CPU berechnet werden. Seltener = weniger Arbeit im Hauptthread, Messwerte reagieren träger.',
+};
+
+function setGlobalLowLatencyConfig(patch: Partial<LowLatencyConfig>) {
+  state.ll = { ...state.ll, ...patch };
+  Source.globalLowLatencyConfig = state.ll; save();
+  for (const s of sources) if (s.kind === 'stream' && s.lowLatency && s.status !== 'idle') s.connectStream(s.url, bridgeUrl());
+  renderHeader(); renderSources(); refreshHeads();
+}
+
+const LOW_LATENCY_HINT = 'Low Latency (Bridge-Quellen): begrenzte Analysebreite, Zeichnen bei Ankunft, eigener RTP-Empfang für rtsp://, seltenere Statistik – jeweils einstellbar (global unter Einstellungen, je Quelle in der Quellenkarte). '
+  + 'Nachteile: weniger Abtastpunkte, mehr Zeichenarbeit, Ton ohne gemeinsamen Zeitstempel beim RTP-Eigenempfang. '
   + 'Gemessen wird nur bis „Zeichnung abgeschickt“ (Compositor und Monitor kommen dazu) und nur mit gestempeltem Testbild (scripts/latency-source.mjs). '
-  + 'Details und Messwerte: docs/research/low-latency.md.';
+  + 'Details und Messwerte: docs/research/low-latency.md, docs/research/rtp-eigenempfang.md.';
 
 function setGlobalLowLatency(on: boolean) {
   state.lowLatency = on; Source.globalLowLatency = on; save();
@@ -1506,6 +1660,9 @@ function execute(c: Command): unknown {
     case 'freeze':
       if (mode(frozen) !== frozen) toggleFreeze();
       return { frozen };
+    case 'qc.clear':
+      qcLog.clear();
+      return { qc: 0 };
     case 'roi.clear':
       for (const s of c.source !== undefined ? [need(findSource(c.source), `Quelle ${c.source} nicht gefunden`)] : sources) { s.probe = null; s.roi = null; s.faceMode = 'off'; }
       refreshHeads();
@@ -1656,8 +1813,15 @@ function controlState() {
     pattern: pat ? { id: pat.pattern.id, name: patternById(pat.pattern.id).name } : null,
     patterns: PATTERNS.map((p) => ({ id: p.id, name: p.name })),
     playing: vid?.video ? !vid.video.paused || !!vid.reverseSpeed : null,
+    // QC log (qclog.ts): active events, total, latest event text
+    qc: (() => {
+      const ev = qcLog.events, last = ev[ev.length - 1];
+      return { active: ev.filter((e) => e.end === null).length, total: ev.length, last: last ? `${last.source}: ${QC_LABELS[last.type]}` : '' };
+    })(),
     /** latency of stamped test pictures (scripts/latency-source.mjs), ms, last 2 s; null = no stamps */
     latency: act?.latency.summary() ?? null,
+    /** how the bridge receives the stream (own RTP reception or ffmpeg, low-latency mode) */
+    rtp: act?.rtpInfo ?? null, rtpStats: act?.rtpStats ?? null,
     /** where the statistics come from and their main-thread cost in ms */
     statsPerf: act ? { ...act.statsPerf } : null,
     audio: audioState(),

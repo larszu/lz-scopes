@@ -5,7 +5,7 @@
 // for each variant of the pull arguments. No browser, no WebSocket: only what ffmpeg adds.
 //
 //   brew install mediamtx ffmpeg
-//   node scripts/latency-bench.mjs [--seconds 8] [--runs 3] [--size 1280x720] [--fps 25] [--only name,name]
+//   node scripts/latency-bench.mjs [--seconds 8] [--runs 3] [--size 1280x720] [--fps 25] [--codec h264|hevc] [--bframes 0] [--only name,name]
 //
 // Every variant runs `runs` times in turn (A B C A B C …) so drift of the machine spreads
 // over all of them. The first second of every run is discarded (connect, key frame).
@@ -18,6 +18,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readStamp, stampAge } from '../server/stamp.mjs';
 import { startLatencySource } from './latency-source.mjs';
+import { startOwnRtp } from '../server/rtsp.mjs';
 
 const freePort = () => new Promise((ok, fail) => {
   const s = createServer();
@@ -43,11 +44,15 @@ export async function startMediamtx(bin = 'mediamtx') {
 }
 
 /** Pull `url` with `args` (input options, then the output chain) and collect stamp ages at the pipe. */
-export function pull(ffmpeg, url, { input = [], vf = 'scale=960:540:flags=area', width = 960, height = 540, seconds = 8, output = [] }) {
-  const q = ['-hide_banner', '-loglevel', 'error', '-nostdin'];
+export async function pull(ffmpeg, url, { input = [], vf = 'scale=960:540:flags=area', width = 960, height = 540, seconds = 8, output = [], own = null }) {
+  const q = ['-hide_banner', '-loglevel', 'error'];
   const raw = ['-fps_mode', 'passthrough', '-pix_fmt', 'rgba', ...output, '-f', 'rawvideo', 'pipe:1'];
-  const a = [...q, ...input, '-i', url, '-map', '0:v:0', '-an', '-vf', vf, ...raw];
-  const p = spawn(ffmpeg, a, { stdio: ['ignore', 'pipe', 'pipe'] });
+  // own: the bridge's RTSP client (server/rtsp.mjs) → Matroska on stdin instead of ffmpeg's RTSP input
+  let rtp = null;
+  if (own) { try { rtp = await startOwnRtp(url, { transport: own }); } catch (e) { return { ages: [], err: e.message }; } }
+  const a = [...q, ...(rtp ? rtp.inputArgs : [...input, '-nostdin', '-i', url]), '-map', '0:v:0', '-an', '-vf', vf, ...raw];
+  const p = spawn(ffmpeg, a, { stdio: [rtp ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+  if (rtp) { rtp.attach(p.stdin); p.on('close', () => rtp.stop()); }
   const size = width * height * 4, ages = [];
   let buf = Buffer.alloc(0), t0 = 0, err = '';
   p.stderr.on('data', (d) => { err += d; });
@@ -85,6 +90,8 @@ export const VARIANTS = {
   'ffmpeg-default': { input: PLAIN },
   'bridge-before': { input: BRIDGE },
   'bridge': { input: BRIDGE, output: ENC1 },
+  'own-rtp-tcp': { own: 'tcp', output: ENC1 },
+  'own-rtp-udp': { own: 'udp', output: ENC1 },
   'bridge+dec-threads1': { input: [...BRIDGE, '-threads', '1'], output: ENC1 },
   'bridge+udp': { input: BRIDGE.map((x) => (x === 'tcp' ? 'udp' : x)), output: ENC1 },
   'bridge+showinfo': { input: BRIDGE, vf: 'showinfo=checksum=0,scale=960:540:flags=area', output: ENC1 },
@@ -104,7 +111,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const names = Object.keys(VARIANTS).filter((n) => !only?.length || only.includes(n));
   const mtx = await startMediamtx(process.env.MEDIAMTX ?? 'mediamtx');
   const url = `rtsp://127.0.0.1:${mtx.rtsp}/bench`;
-  const src = startLatencySource(url, { width: w, height: h, fps, ffmpeg });
+  const src = startLatencySource(url, { width: w, height: h, fps, ffmpeg, codec: opt('codec', 'h264'), bframes: Number(opt('bframes', 0)) });
   await sleep(2000);
   const all = Object.fromEntries(names.map((n) => [n, []]));
   const perRun = Object.fromEntries(names.map((n) => [n, []]));
@@ -119,7 +126,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     }
   } finally { src.stop(); mtx.stop(); }
   const f = (x) => (Number.isFinite(x) ? x.toFixed(0) : '–');
-  console.log(`\n${w}×${h} @ ${fps} fps, ${runs} × ${seconds} s, stamp → out of ffmpeg (ms)\n`);
+  console.log(`\n${w}×${h} @ ${fps} fps, ${opt('codec', 'h264')}, B-frames ${opt('bframes', 0)}, ${runs} × ${seconds} s, stamp → out of ffmpeg (ms)\n`);
   console.log('| variant | mean | sd | min | p50 | max | run means | frames |\n|---|---|---|---|---|---|---|---|');
   for (const n of names) {
     const s = summarise(all[n]);

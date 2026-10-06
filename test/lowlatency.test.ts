@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error plain JS module
 import { ageStats, ffmpegArgs } from '../server/index.mjs';
-import { LatencyMeter, latencyLines } from '../src/latency';
-import { lowLatencyWidth } from '../src/sources';
+import { LatencyMeter, latencyLines, rtpLines } from '../src/latency';
+import { DEFAULT_LOW_LATENCY, effectiveWidth, mergeLowLatency } from '../src/lowLatency';
 
 // Low-latency mode (docs/research/low-latency.md)
 
@@ -55,12 +55,29 @@ describe('Latenzstufen', () => {
   });
 });
 
-describe('Analysebreite im Low-Latency-Modus', () => {
-  it('begrenzt auf 640 px, kleinere Wahl bleibt', () => {
-    expect(lowLatencyWidth(960, true)).toBe(640);
-    expect(lowLatencyWidth(0, true)).toBe(640); // nativ
-    expect(lowLatencyWidth(640, true)).toBe(640);
-    expect(lowLatencyWidth(1920, false)).toBe(1920);
+describe('Messwerte: RTP-Eigenempfang', () => {
+  it('Verlustquote, Wechsel auf TCP, Rückfall-Grund', () => {
+    const l = rtpLines({ own: true, codec: 'h264', transport: 'udp' }, { transport: 'tcp', packets: 653, lost: 139, reordered: 0, late: 0, accessUnits: 3, droppedUnits: 36, switched: 'UDP verlor 18 % der Pakete → TCP' });
+    expect(l[0]).toContain('RTP eigen · H.264 · TCP');
+    expect(l[1]).toContain('→ TCP');
+    expect(l[2]).toContain('139 verloren (17.6 %)');
+    expect(rtpLines({ own: false, note: 'RTP-Eigenempfang nur für rtsp://' }, null)).toEqual(['Empfang    RTP-Eigenempfang nur für rtsp://']);
+    expect(rtpLines(null, null)).toEqual([]);
+  });
+});
+
+describe('Low-Latency-Einstellungen', () => {
+  it('Analysebreite: Obergrenze nur im Modus, kleinere Wahl bleibt, 0 = keine Grenze', () => {
+    expect(effectiveWidth(960, true, 640)).toBe(640);
+    expect(effectiveWidth(0, true, 640)).toBe(640); // nativ
+    expect(effectiveWidth(480, true, 640)).toBe(480);
+    expect(effectiveWidth(1920, false, 640)).toBe(1920);
+    expect(effectiveWidth(1920, true, 0)).toBe(1920);
+    expect(effectiveWidth(960, true, 320)).toBe(320);
+  });
+  it('eigene Werte der Quelle vor globalen, sonst Vorgaben', () => {
+    expect(mergeLowLatency(undefined, undefined)).toEqual(DEFAULT_LOW_LATENCY);
+    expect(mergeLowLatency({ width: 480, statsMs: 500 }, { statsMs: 250, ownRtp: false })).toEqual({ width: 480, drawOnArrive: true, ownRtp: false, statsMs: 250 });
   });
 });
 

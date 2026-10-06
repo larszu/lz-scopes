@@ -15,6 +15,7 @@ export function updateFeedbacks(self: ModuleInstance): void {
       type: 'boolean', name: 'Mit LZ Scopes verbunden', defaultStyle: { bgcolor: BLUE, color: WHITE }, options: [],
       callback: () => checks.connected(s(), self.appConnected),
     },
+    qc_active: { type: 'boolean', name: 'QC-Ereignis aktiv', defaultStyle: { bgcolor: RED, color: WHITE }, options: [], callback: () => checks.qc_active(s()) },
     frozen: { type: 'boolean', name: 'Eingefroren', defaultStyle: { bgcolor: AMBER, color: BLACK }, options: [], callback: () => checks.frozen(s()) },
     source_active: {
       type: 'boolean', name: 'Quelle aktiv', defaultStyle: { bgcolor: RED, color: WHITE },
@@ -70,4 +71,4 @@ export function updateFeedbacks(self: ModuleInstance): void {
   self.setFeedbackDefinitions(defs)
 }
 
-export const FEEDBACK_IDS = ['connected', 'frozen', 'source_active', 'clip_above', 'ymax_above', 'ymin_below', 'layout_active', 'scene_active', 'output_open', 'streaming', 'maximized', 'playing', 'generator_running', 'loudness_paused', 'true_peak_above', 'ident_problem']
+export const FEEDBACK_IDS = ['connected', 'qc_active', 'frozen', 'source_active', 'clip_above', 'ymax_above', 'ymin_below', 'layout_active', 'scene_active', 'output_open', 'streaming', 'maximized', 'playing', 'generator_running', 'loudness_paused', 'true_peak_above', 'ident_problem']

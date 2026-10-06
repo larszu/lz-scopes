@@ -14,7 +14,7 @@ export const OVERLAY_SCOPES = ['wf-luma', 'wf-color', 'wf-skin', 'wf-rgb', 'para
 export const AUDIO_SCOPES = ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check'];
 /** Opple Light Master views (src/opple/scopes.ts) */
 export const LIGHT_SCOPES = ['light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch'];
-export const PANEL_SCOPES = ['picture', ...OVERLAY_SCOPES, 'diamond', 'cube', 'timeline', 'stats', ...AUDIO_SCOPES, 'clock', ...LIGHT_SCOPES];
+export const PANEL_SCOPES = ['picture', ...OVERLAY_SCOPES, 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'timeline', 'qclog', 'stats', ...AUDIO_SCOPES, 'clock', ...LIGHT_SCOPES];
 export const OUTPUT_VIEWS = ['grid', 'panel', 'clean', 'overlay'];
 export const TRANSPORT_OPS = ['play', 'pause', 'toggle', 'stop', 'next', 'prev', 'forward', 'rewind', 'start', 'end'];
 const MODES = ['toggle', 'on', 'off'];
@@ -30,6 +30,7 @@ export const COMMANDS = {
   'panel.scope': 'Messwerkzeug eines Panels: panel, scope',
   'panel.maximize': 'Panel groß: panel, mode toggle|on|off (off ohne panel = zurück)',
   'freeze': 'Einfrieren: mode toggle|on|off',
+  'qc.clear': 'QC-Protokoll leeren',
   'roi.clear': 'Messrahmen und Messpunkt löschen: source (optional; ohne = alle)',
   'pattern.select': 'Testbild wählen: pattern (id oder Name), source (optional)',
   'pattern.next': 'Nächstes Testbild: source (optional)',
@@ -112,6 +113,7 @@ export function validateCommand(raw) {
       if (out.panel === undefined && out.mode !== 'off') errors.push('panel fehlt');
       break;
     case 'freeze': check(optMode()); break;
+    case 'qc.clear': break;
     case 'roi.clear': check(optRef('source')); break;
     case 'pattern.select': check(reqRef('pattern')); check(optRef('source')); break;
     case 'pattern.next': case 'pattern.prev': check(optRef('source')); break;

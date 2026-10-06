@@ -39,3 +39,25 @@ In den geöffneten OmniScope-Seiten gibt es **keinen** Zeitverlauf-Scope (keine 
 | Snapshot / Text Display | teilweise (Standbild, PNG-Export, Overlay-Szenen) |
 | 3D LUT / ICC Profile als Scope | LUTs in der Kette, keine LUT-Volumenansicht |
 | Stream-Deck-Steuerung | Steuer-API (HTTP/WebSocket) vorhanden, keine fertige Stream-Deck-Anbindung |
+
+## Umsetzung #67, Teil 1 (Scatter-Scopes)
+
+- **3D-Farbvolumen**: zusätzlich Y′CbCr (3D-Waveform wie OmniScope „HectorScope“), HSV-Zylinder, CIE XYZ, CIE LCh (abgerollt: Farbton als Achse, entspricht OmniScopes „CHL“); Pan (⇧-Ziehen), Zoom (Mausrad), Doppelklick = Ausgangsansicht.
+- **Sättigung über Luma** (OmniScope „Sat / Lum“): x = Y′, y = |CbCr| / 0,5; Farbe der Pixel optional.
+- **Kanal-Plot** (OmniScope „Channel Plot“): R′/G′, R′/B′, G′/B′, Y′/Cb, Y′/Cr, Cb/Cr; Diagonale = gleiche Kanäle.
+- Nachleuchten auch für diese Scopes.
+
+## Umsetzung #67, Teil 2 (Min/Max, Neutral)
+
+- **Min/Max je Zeile** (OmniScope „Min Max“): je Bildzeile dunkelstes und hellstes Y′ (bis 540 Zeilen, oben = Zeile 1), Grenzen R 103 −5/105 % oder legal 0/100 % (Überschreitungen rot), bis zu 4 Ziellinien, Min/Max-Anzeige.
+- **Neutral** (OmniScope „Neutral Scope“) als Bild-Overlay: Pixel unter der Sättigungsschwelle (2/5/10 %, Standard 5 %) im gewählten Tonbereich (alles/Schatten/Mitten/Lichter) in ihrem verstärkten Farbstich, exakt Neutrales grau, Rest dunkel; dazu Flächenanteil und mittlerer Stich mit Richtung.
+
+## Umsetzung #67, Teil 3 (QC-Protokoll)
+
+Nach OmniScope „Error Logger“ (zeitgestempelte Liste von Gamut-Verletzungen, Luminanzgrenzen, Schwarzbildern, Audio-Stille …, filterbar, exportierbar), eigene Umsetzung `src/qclog.ts`: alle laufenden Quellen werden viermal pro Sekunde geprüft – R 103 (Vorzugsbereich > 1 % Fläche, Gesamtbereich; nur im Y′CbCr-Pfad aussagekräftig), Weiß-Clipping, Super-White > 100 %, Sub-Black < 0 %, Schwarzbild, Standbild (nur bei Live-Quellen und laufenden Videodateien), Ton-Stille. Ereignis = Beginn bis Ende mit Uhrzeit, Quell-Timecode (wenn vorhanden) und schlimmstem Wert; Panel „QC-Protokoll“ mit Filter, Schwellen, CSV-Export (Semikolon, UTF-8). Nicht übernommen: Blanking- und Zeilenzahlfehler, tote Pixel (bräuchten SDI-Rohdaten bzw. eine eigene Pixelanalyse).
+
+## Umsetzung #67, Teil 4 (LUT-Volumen, Zeitverlauf-Optionen, Stream Deck)
+
+- **LUT-Volumen** im 3D-Farbvolumen (Idee OmniScope „3D LUT / ICC Profile“, prism-LUT-Volumen): Eingangsgitter 9³/17³/33³ über 0…1, Ausgabe jeder geladenen LUT (`applyLut`, also 1D, 3D und Shaper) als Punktwolke in der Farbe des Ausgabewerts, wahlweise mit Eingangsgitter und ohne Bild. ICC-Profile: nicht umgesetzt (es gibt keinen ICC-Pfad in LZ Scopes).
+- **Zeitverlauf**: Abtastung „jedes Bild“ (statt 10 Hz) und Raster 96×54 / 192×108 / 384×216.
+- **Stream Deck**: über das vorhandene Bitfocus-Companion-Modul (`companion/`), das die Steuer-API nutzt: neue Scopes wählbar, Aktion „QC-Protokoll leeren“, Feedback „QC-Ereignis aktiv“, Variablen `qc_active`, `qc_last`; Steuer-API-Befehl `qc.clear`, Zustand `qc`. Ein eigenes Elgato-Plugin ist damit nicht nötig.

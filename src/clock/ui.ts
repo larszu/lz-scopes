@@ -51,6 +51,9 @@ export function clockPanelSettings(p: PanelState, save: () => void, sources: Sou
 
   rows.push(h('div', { class: 'mtitle' }, 'Tageszeit-Timecode (ST 2059-1)'));
   row('Bildrate', select(o.rate, RATES.map((r) => [r.id, r.label]), (v) => set({ rate: v, df: rateById(v).dfAllowed && o.df }, true)));
+  if (rateById(o.rate).nominal > 30) {
+    row('Anzeige > 30 fps', select(o.tcDisplay, [['frames', 'Bilder 0…' + (rateById(o.rate).nominal - 1) + ' (wie NLEs)'], ['pairs', 'Frame-Paare (ST 12-1)']], (v) => set({ tcDisplay: v as ClockOptions['tcDisplay'] })));
+  }
   if (rateById(o.rate).dfAllowed) row('Zählung', select(o.df ? 'df' : 'ndf', [['ndf', 'Non-Drop-Frame'], ['df', 'Drop-Frame']], (v) => set({ df: v === 'df' })));
   row('Daily Jam', select(o.jam, JAMS, (v) => set({ jam: v })), 'Lokalzeit');
   hint('Ohne PTP zählt die Uhr aus der Systemzeit (UTC + TAI−UTC nach IERS) in der Zeitzone des Systems. Das ist keine Referenz. Bei 1/1,001-Raten läuft Drop-Frame bis zum nächsten Jam um bis zu 3 Frames pro Tag weg (ST 2059-1 §9.1.2).');

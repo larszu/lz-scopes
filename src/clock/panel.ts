@@ -9,12 +9,14 @@ import { sourceTimecode } from './source';
 import { ptpClient, type PtpStatus } from './ptpClient';
 import { LEAP_SOURCE, browserZoneSeconds, leapTableValid, localOffset, ptpToUtc, taiMinusUtc } from './tai';
 import {
-  RATES, beyondSt2059, emulatedJam, formatTc, framePhase, rateById, tcDiff, timeAddressAt, type JamParams, type Rate, type TimeAddress,
+  RATES, beyondSt2059, emulatedJam, formatPairs, formatTc, toPairs, framePhase, rateById, tcDiff, timeAddressAt, type JamParams, type Rate, type TimeAddress,
 } from './timecode';
 
 export interface ClockOptions {
   /** RATES id */
   rate: string; df: boolean;
+  /** > 30 Hz: full frame count 0…49/59 (like NLEs) or ST 12-1 frame pairs */
+  tcDisplay: 'frames' | 'pairs';
   /** Daily Jam on the Local Time scale, "HH:MM" (multiple of 10 min, ST 2059-2 Annex A) */
   jam: string;
   /** take rate, drop frame, local offset and jam from the SM TLV when a grandmaster sends one */
@@ -30,7 +32,7 @@ export interface ClockOptions {
 }
 
 export const CLOCK_DEFAULTS: ClockOptions = {
-  rate: '25', df: false, jam: '00:00', useSm: true, ltcSource: '', ltcChannel: 0,
+  rate: '25', df: false, tcDisplay: 'frames', jam: '00:00', useSm: true, ltcSource: '', ltcChannel: 0,
   ptp: false, delayReq: false, iface: '', usePtp: false, rtpGroup: '', rtpPort: 0,
 };
 export const clockOpts = (o?: Partial<ClockOptions>): ClockOptions => ({ ...CLOCK_DEFAULTS, ...o });
@@ -91,6 +93,8 @@ function fit(ctx: CanvasRenderingContext2D, s: string, maxW: number) {
   return s.slice(0, lo) + '…';
 }
 const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '±0');
+/** Time address as configured (full count or ST 12-1 pairs above 30 Hz). */
+const tcText = (ta: TimeAddress, r: Rate, o: ClockOptions) => (o.tcDisplay === 'pairs' && beyondSt2059(r) ? formatPairs(toPairs(ta, r)) : formatTc(ta));
 const rateText = (r: Rate, df: boolean) => `${r.label} fps ${r.dfAllowed ? (df ? 'DF' : 'NDF') : ''}`.trim();
 
 /** Source time code against the time of day at the source's rate: Δ = source − time of day in frames. */
@@ -157,12 +161,14 @@ function layoutClock(ctx: CanvasRenderingContext2D, o: ClockOptions, src: Source
   const small = Math.max(11, Math.min(13, colW / 40));
 
   text('TAGESZEIT · Local Time nach SMPTE ST 2059-1', pad, small, C.dim); lineH(small);
-  text(formatTc(m.ta), pad, big, C.fg, '600'); lineH(big);
+  text(tcText(m.ta, m.rate, o), pad, big, C.fg, '600'); lineH(big);
   const refText = m.ref === 'ptp' ? `PTP-korrigiert – Schätzung mit Software-Zeitstempeln (Offset ${fmtNs(st?.offsetNs)})` : 'Systemuhr – keine Referenz';
   text(refText, pad, small + 1, m.ref === 'ptp' ? C.good : C.warn, '600'); lineH(small + 1);
   const jamLocal = m.jam.timeOfNextJam ? hhmm(m.jam.timeOfNextJam + m.jam.currentLocalOffset) : '–';
   text(`${rateText(m.rate, m.df)} · nächster Jam ${jamLocal} · ${m.fromSm ? 'Lokalzeit, Rate und Jam aus SM-TLV' : 'Lokalzeit: Zeitzone des Systems'}`, pad, small, C.dim); lineH(small);
-  if (beyondSt2059(m.rate)) { text('> 30 fps: Frame-Zählung 0…' + (m.rate.nominal - 1) + ' nach gängiger Konvention (ST 2059-1 definiert nur bis 30 Hz)', pad, small, C.dim); lineH(small); }
+  if (beyondSt2059(m.rate)) {
+    text(o.tcDisplay === 'pairs' ? `Frame-Paare nach ST 12-1: Paar 0…${m.rate.nominal / 2 - 1}, .1 = zweites Bild des Paars` : `Zählung 0…${m.rate.nominal - 1} wie Schnittprogramme und FFmpeg (⚙: Frame-Paare nach ST 12-1)`, pad, small, C.dim); lineH(small);
+  }
   const utc = new Date(m.utcMs).toISOString().slice(11, 23);
   text(`UTC ${utc} · TAI−UTC ${m.tai} s (${m.taiSource})${m.leapValid ? '' : ' – Tabelle abgelaufen, Schaltsekunde möglich'}`, pad, small, m.leapValid ? C.dim : C.warn); lineH(small);
   text(`PTP-Zeit ${m.t.toFixed(3)} s seit 1970-01-01 TAI · Frame ${m.phase.n}`, pad, small, C.dim); lineH(small);
@@ -203,7 +209,7 @@ function layoutClock(ctx: CanvasRenderingContext2D, o: ClockOptions, src: Source
       ctx.fillText(fit(ctx, `Δ ${signed(l.delta)} Frames · ${l.frame.fps.toFixed(2)} fps${l.frame.reverse ? ' · rückwärts' : ''}`, colW - pad - wTc - 16), pad + wTc + 12, y + big * 0.12);
       lineH(big * 0.55);
       const ub = l.frame.userBits.map((v) => v.toString(16)).join('');
-      text(`User-Bits ${ub} · Audio-Latenz nicht kompensiert`, pad, small, C.dim); lineH(small);
+      text(`User-Bits ${ub} · Audio-Latenz nicht kompensiert${beyondSt2059(m.rate) ? ' · bei 50/60p trägt LTC Frame-Paare (25/30 Codewörter/s)' : ''}`, pad, small, C.dim); lineH(small);
     } else { text(`LTC ${l.name}: ${l.note}`, pad, small, C.warn); lineH(small); }
     y += small * 0.4;
   }
@@ -283,7 +289,7 @@ export function drawClockOverlay(ctx: CanvasRenderingContext2D, o: ClockOptions,
   const st = o.ptp ? ptpClient.fresh : null;
   const m = clockModel(o, Date.now(), st);
   const stc = sourceTimecode(src);
-  const lines: [string, string][] = [[`TOD ${formatTc(m.ta)}`, m.ref === 'ptp' ? 'PTP-Schätzung' : 'Systemuhr – keine Referenz']];
+  const lines: [string, string][] = [[`TOD ${tcText(m.ta, m.rate, o)}`, m.ref === 'ptp' ? 'PTP-Schätzung' : 'Systemuhr – keine Referenz']];
   if (stc) lines.push([`SRC ${stc.text}`, `Δ ${signed(sourceDelta(m, stc.ta, stc.rate))} Fr`]);
   ctx.font = `600 13px ${MONO}`;
   const w1 = Math.max(...lines.map(([a]) => ctx.measureText(a).width));

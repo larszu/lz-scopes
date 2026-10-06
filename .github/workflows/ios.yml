@@ -91,7 +91,10 @@ jobs:
             # camera, microphone and local network without prompts (simulator only)
             xcrun simctl privacy "$UDID" grant all de.zumpelars.lzscopes || true
             xcrun simctl launch --console-pty "$UDID" de.zumpelars.lzscopes > "ios-shots/$kind-console.txt" 2>&1 &
-            sleep 25
+            # the first boot of a large iPad simulator keeps SpringBoard busy for a while
+            sleep 30
+            xcrun simctl io "$UDID" screenshot "ios-shots/$kind-30s.png"
+            sleep 30
             xcrun simctl io "$UDID" screenshot "ios-shots/$kind.png"
             xcrun simctl terminate "$UDID" de.zumpelars.lzscopes || true
             xcrun simctl shutdown "$UDID" || true

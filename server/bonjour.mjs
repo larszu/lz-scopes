@@ -24,7 +24,7 @@ const shortHost = (hostname) => hostname.replace(/\.local\.?$/i, '').split('.')[
 
 /** Instance name shown in the app: "LZ Scopes (Studio-Mac)". */
 export function instanceName(hostname = os.hostname()) {
-  return `LZ Scopes (${shortHost(hostname)})`.slice(0, 63);
+  return `LZ Scopes (${shortHost(hostname).slice(0, 40)})`;
 }
 
 /** SRV target: always "<name>.local" (os.hostname() on macOS often lacks the .local). */
@@ -40,9 +40,12 @@ export async function announce({ port, host }) {
   if (!shouldAnnounce(host)) return null;
   try {
     const { Bonjour } = await import('bonjour-service');
-    const bonjour = new Bonjour({}, (err) => console.warn(`Bonjour: ${err?.message ?? err}`));
+    // a network without multicast route (some VMs, CI) fails on every send: warn once
+    let warned = false;
+    const warn = (err) => { if (!warned) console.warn(`Bonjour: ${err?.message ?? err} (Ankündigung im Netz nicht möglich)`); warned = true; };
+    const bonjour = new Bonjour({}, warn);
     const service = bonjour.publish({ name: instanceName(), host: srvHost(), type: SERVICE_TYPE, protocol: 'tcp', port, txt: { v: '1', path: '/' } });
-    service.on?.('error', (err) => console.warn(`Bonjour: ${err?.message ?? err}`));
+    service.on?.('error', warn);
     return {
       name: service.name,
       stop: () => new Promise((ok) => bonjour.unpublishAll(() => bonjour.destroy(() => ok()))),

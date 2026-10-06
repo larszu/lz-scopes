@@ -45,6 +45,7 @@ describe('Bonjour announcement of the bridge', () => {
   it('names the instance after the computer and targets <name>.local', () => {
     expect(instanceName('Studio-Mac.local')).toBe('LZ Scopes (Studio-Mac)');
     expect(srvHost('Studio-Mac')).toBe('Studio-Mac.local');
+    expect(instanceName('x'.repeat(80))).toBe(`LZ Scopes (${'x'.repeat(40)})`);
     expect(srvHost('studio.example.org')).toBe('studio.local');
   });
 });

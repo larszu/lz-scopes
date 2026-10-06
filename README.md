@@ -93,9 +93,11 @@ The desktop app contains the bridge and a redistributable ffmpeg 9.0.2 (GPLv3, w
 2. Pick another source per panel: *Test pattern*, *Camera*, *Screen*, *File* or *Stream*.
 3. For a stream enter the URL (for example `rtsp://user:pass@host:554/stream`) and connect. Resolution, frame rate, 8 / 16 bit, TCP / UDP, transfer and colour space are set per stream, *auto* reads the metadata.
 4. Drag a rectangle in the picture to measure only that area. Click sets a measurement point that is marked in waveform and vectorscope.
-5. Arrange the windows with drag and drop, store the result under *Layouts*.
+5. Arrange the windows with drag and drop, store the result under *Datei → Layouts …*.
 
-Keys: `1`-`6` layout, `C` measuring stage (signal / after CST / after LUT), `Space` freeze or play, `Left` / `Right` frame, `J` `K` `L` shuttle, `F` full screen, `S` PNG, `B` sidebar, `Esc` leave zoom, `E` edit overlay in an output window.
+**Menu and settings.** The desktop app has a native menu bar (macOS: system menu bar with the app menu first; Windows: in the window): *Datei, Bearbeiten, Ansicht, Quellen, Scopes, Ausgabe, Fenster, Hilfe*. In the browser the same menus sit at the top left of the header (below 900 px behind ☰). All global settings are in one window, *Einstellungen …* (`Cmd+,` / `Ctrl+,`, or ⚙ at the top right): interface skin, display, scopes, measuring stage, latency, clock, bridge/ffmpeg, audio, keyboard, about/licences. The ⚙ in a panel head holds only that panel's options. *Hilfe* links the guides and lists the shortcuts. Reasoning: [docs/research/menue.md](docs/research/menue.md).
+
+Keys: `Cmd+,` / `Ctrl+,` settings, `1`-`6` layout, `C` measuring stage (signal / after CST / after LUT), `Space` freeze or play, `Left` / `Right` frame, `Shift+Left` / `Shift+Right` second, `J` `K` `L` shuttle, `Home` / `End`, `F` full screen, `S` PNG, `B` sidebar, `Esc` leave zoom or clear the measuring point, `E` edit overlay in an output window. Full list: *Hilfe → Tastenkürzel*.
 
 ## Build from source
 
@@ -127,7 +129,7 @@ Tone generator and loudness/level analyser, measured with an own DSP core (`src/
 
 ## Display calibration and verification
 
-⚙ → *Kalibrierung / Verifikation …* (procedures after DisplayCAL, own code; [docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md)).
+*Einstellungen → Display → Kalibrierung / Verifikation …* (procedures after DisplayCAL, own code; [docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md)).
 
 - **Patch sequencer**: the pattern output window (`?out=`) shows the measuring patches (size, constant APL background, optional full-field insertion against ABL). The sequencer (`src/patchSequencer.ts`) is shared with the LED-wall tools.
 - **Meter**: ArgyllCMS `spotread`, started by the bridge as a separate program (desktop app or `npm start`), with CCMX/CCSS correction and display type. ArgyllCMS is not bundled; without it the dialog says “ArgyllCMS nicht gefunden” and takes XYZ or xyY by hand. *Untested with real hardware.*
@@ -135,7 +137,7 @@ Tone generator and loudness/level analyser, measured with an own DSP core (`src/
 - **Report**: ΔE00 and ΔITP (mean, median, 95th percentile, max) against BT.1886 with measured black / gamma / sRGB / PQ, grey curve with effective gamma, CCT and Duv, contrast; CSV, HTML, print to PDF.
 - **Uniformity** 3×3 to 9×9 at 100/75/50/25 %, ΔE00 to the centre (≤ 4 / ≤ 2 as quoted by DisplayCAL for ISO 14861) and contrast deviation.
 - **3D LUT** `.cube` 33/65 from a matrix/shaper model of the measurements, only if the model predicts the measured patches well enough (SDR only).
-- **System profile (desktop app)**: ⚙ → *Systemprofil mitschalten* sets the operating system's display profile to match the chosen display colour space (sRGB / Display P3 / Rec.709, profile per space selectable). The previous profile is backed up first and restored on quit, with *Zurücksetzen* and after a crash on the next start. macOS via a small Swift helper on the public ColorSync API (`npm run build:helpers`, checked on a built-in display), Windows via mscms (untested). Monitor preset/brightness over DDC/CI (VCP 0x14 / 0x10) where a tool is present, untested. Not available in the browser ([docs/research/systemprofil.md](docs/research/systemprofil.md)).
+- **System profile (desktop app)**: *Einstellungen → Display → Systemprofil mitschalten* sets the operating system's display profile to match the chosen display colour space (sRGB / Display P3 / Rec.709, profile per space selectable). The previous profile is backed up first and restored on quit, with *Zurücksetzen* and after a crash on the next start. macOS via a small Swift helper on the public ColorSync API (`npm run build:helpers`, checked on a built-in display), Windows via mscms (untested). Monitor preset/brightness over DDC/CI (VCP 0x14 / 0x10) where a tool is present, untested. Not available in the browser ([docs/research/systemprofil.md](docs/research/systemprofil.md)).
 
 ## Clock and time code
 
@@ -184,6 +186,6 @@ Built and maintained by **Lars Zumpe**, Lars Zumpe Medienproduktion. Scopes can 
 Proprietary, &copy; 2026 Lars Zumpe, all rights reserved. Using the published builds is free; redistribution and derivative works are not. See [LICENSE](LICENSE). Not open source: the code is public to read.
 Bundled third-party components keep their own licences: [THIRD_PARTY.md](THIRD_PARTY.md) (including the GPL ffmpeg binary in the desktop app).
 
-The logo, signet and app icon of Lars Zumpe Medienproduktion are its own trademark and not free to use (LICENSE, section 10). The interface has three skins (⚙ → Oberfläche): *Neutral* (achromatic greys for colour-critical work, default), *LZM* (Brand Guide 2.0, navy) and *Original* (near black). Scope traces and measurement colours are the same in every skin. Reasoning: [docs/research/ui-farben.md](docs/research/ui-farben.md).
+The logo, signet and app icon of Lars Zumpe Medienproduktion are its own trademark and not free to use (LICENSE, section 10). The interface has three skins (*Einstellungen → Oberfläche*): *Neutral* (achromatic greys for colour-critical work, default), *LZM* (Brand Guide 2.0, navy) and *Original* (near black). Scope traces and measurement colours are the same in every skin. Reasoning: [docs/research/ui-farben.md](docs/research/ui-farben.md).
 
 NDI® is a registered trademark of Vizrt NDI AB.

@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
 // Dev: UI on 4191, bridge (server/index.mjs --dev) on 4192.
 export default defineConfig({
@@ -17,4 +20,6 @@ export default defineConfig({
     },
   },
   build: { target: 'es2022' },
+  // version for Settings → Über / Lizenzen (src/menu/pages.ts)
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
 });

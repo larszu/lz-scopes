@@ -52,3 +52,15 @@ Ergänzt:
 - **Resolve-Scripting-Weg** (vorhanden, dokumentiert): `Project.ExportCurrentFrameAsStill(path)` im Helfer, Voraussetzung Resolve Studio mit *Einstellungen → System → Allgemein → Externes Scripting: Lokal* und Python 3. Die Scripting-Module liegen unter `…/Developer/Scripting/Modules`, die Bibliothek `fusionscript.so/.dll` (Pfade im Helfer).
 
 Grenzen: eingebettete ICC-Profile werden nicht gelesen (Adobe RGB/ProPhoto-Exporte erscheinen als Rec.709-Primaries, sofern nicht an der Quelle umgestellt). Der Resolve-MCP-Server dieser Arbeitsumgebung war nicht verbunden (venv fehlt) und wurde nicht repariert.
+
+## 5. Laufende Resolve-Instanzen erkennen (06.10.2026)
+
+Geöffnet: `Developer/Scripting/README.md` und `Modules/DaVinciResolveScript.py` der lokalen Installation (Resolve Studio 21.1.1, Changelog „Last Updated: 1 Sep 2026“).
+
+- „In DaVinci Resolve Studio, Preferences > System > General, you can configure: External scripting … (None, Local, or Network).“ Ohne diese Einstellung liefert `scriptapp("Resolve")` nichts.
+- „DaVinci Resolve Studio and Fusion Studio scripting listens on port 1144 (registered with IANA for this purpose)“; mit „Network“ ist Zugriff aus dem LAN möglich. `fusionscript.scriptapp("Resolve", "<ip>")` nimmt eine Adresse an (geprüft mit 127.0.0.1).
+- Lokal gemessen: `scriptapp` antwortet in 0,14 s mit Produkt, Version, Seite, Projekt und Timeline, während Resolve läuft; ohne laufendes Resolve sofort leer.
+
+Entscheidung:
+- Die Bridge prüft zuerst die Prozessliste (`pgrep -x Resolve` bzw. `tasklist`) und fragt erst dann die Scripting-API (`resolve_helper.py --probe`, Ergebnis 3 s zwischengespeichert). `/api/resolve` liefert den Zustand, die Seitenleiste zeigt „DaVinci Resolve Studio 21.1.1 läuft · Projekt / Timeline · Verbinden“. Läuft Resolve ohne externes Scripting, sagt sie, wo man es einschaltet, und bietet kein Verbinden an.
+- **Kein Netzwerk-Scan:** Über Port 1144 wäre eine entfernte Instanz erreichbar, aber `ExportCurrentFrameAsStill` schreibt das Standbild auf deren Platte. Für ein Resolve auf einem anderen Rechner läuft dort eine Bridge (Feld *Bridge* der App); deren Seitenleiste zeigt dann diese Instanz.

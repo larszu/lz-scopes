@@ -225,6 +225,11 @@ function drawPtp(ctx: CanvasRenderingContext2D, st: PtpStatus | null, x: number,
   const nl = () => { y += size * 1.4; };
   put('PTP (passiv, IEEE 1588 / SMPTE ST 2059-2)', C.dim); nl();
   const conn = ptpClient.conn;
+  if (!st && conn === 'denied') {
+    put(`Diese Web-Oberfläche (${location.origin}) ist für die Uhr der Bridge nicht freigegeben.`, C.warn); y += size * 1.4;
+    put('⚙ → „In der Bridge zulassen …“ öffnet die Freigabe-Seite der Bridge.', C.dim);
+    return y + size * 1.4;
+  }
   if (!st) { put(conn === 'connecting' ? 'Verbinde mit der Bridge …' : 'Bridge nicht erreichbar – PTP-Monitor läuft in der Node-Bridge (npm start / Desktop-App)', C.warn); return y + size * 1.4; }
   if (st.error) { put(st.error, C.bad); nl(); }
   const state: Record<string, [string, string]> = {

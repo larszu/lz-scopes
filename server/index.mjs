@@ -22,13 +22,14 @@ import { basename, dirname, extname, join, normalize, resolve, sep } from 'node:
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { FrameAssembler } from './frames.mjs';
-import { COMMANDS, controlAccess, validateCommand } from './control.mjs';
+import { COMMANDS, controlAccess, isLoopback as isLoopbackAddr, validateCommand } from './control.mjs';
 import { applyDecodeOverride, deviceInputArgs, deviceOptions, formatListArgs, parseDeviceUrl, parseFormatList, pickPixfmt } from './devices.mjs';
 import { helperList, helperPath, startHelperStream } from './helper-input.mjs';
 import { resolveFolder, startFolderStream, watchRoots } from './folder.mjs';
 import { handleMeterSocket, meterInfo } from './meter.mjs';
 import { PtpMonitor, RtpMonitor, ipv4Interfaces, isMulticastV4, nowUtcNs } from './ptp.mjs';
 import { taiMinusUtc } from './leap.mjs';
+import { CONSENT_HEADERS, OriginStore, clockAccess, consentPage, defaultOriginsFile, newNonce, normalizeOrigin, takeNonce } from './origins.mjs';
 import { ffmpegCandidates, ffmpegFor, ffmpegInfo, noFfmpegMessage } from './ffmpeg.mjs';
 
 export { ffmpegCandidates, ffmpegInfo };
@@ -43,6 +44,8 @@ const arg = (name, fallback) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 };
 let DEV = args.includes('--dev');
+/** Web origins allowed to use /clock (server/origins.mjs); set up in startBridge. */
+let ORIGINS = new OriginStore(null);
 /** Control API token (optional); with a token, clients outside 127.0.0.1 are allowed. */
 let CONTROL_TOKEN = arg('control-token', process.env.LZS_CONTROL_TOKEN ?? '');
 let DIST = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
@@ -966,6 +969,19 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
 
 const server = createServer((req, res) => {
   const path = new URL(req.url ?? '/', 'http://x').pathname;
+  if (path === '/allow') return handleAllow(req, res);
+  if (path === '/api/clock-access') {
+    if (req.method === 'OPTIONS') {
+      // CORS / Private Network Access preflight of a page from another origin (no data in it)
+      res.writeHead(204, { ...(req.headers.origin ? { 'access-control-allow-origin': req.headers.origin, vary: 'Origin' } : {}), 'access-control-allow-private-network': 'true', 'access-control-allow-methods': 'GET' });
+      return res.end();
+    }
+    // may this page use /clock? Answered to any page (the answer reveals nothing else)
+    const origin = req.headers.origin ?? '';
+    const problem = clockAccess({ remote: req.socket.remoteAddress, origin, host: req.headers.host, store: ORIGINS });
+    res.writeHead(200, { 'content-type': 'application/json', ...(origin ? { 'access-control-allow-origin': origin, vary: 'Origin' } : {}) });
+    return res.end(JSON.stringify({ allowed: !problem, origin: normalizeOrigin(origin) }));
+  }
   if (path === '/api/health') {
     // which ffmpeg runs, read from the binary: origin, version, licence, SRT (UI: Bridge, output menu)
     const cands = ffmpegCandidates();
@@ -1268,7 +1284,7 @@ server.on('upgrade', (req, socket, head) => {
   }
   if (path === '/clock') {
     // network details (interfaces, grandmaster) only for the local UI of the same origin
-    const problem = controlAccess({ remote: req.socket.remoteAddress, origin: req.headers.origin, host: req.headers.host });
+    const problem = clockAccess({ remote: req.socket.remoteAddress, origin: req.headers.origin, host: req.headers.host, store: ORIGINS });
     if (problem) { socket.end(`HTTP/1.1 ${problem.status} Forbidden\r\n\r\n`); return; }
     return clockWss.handleUpgrade(req, socket, head, (ws) => clockWss.emit('connection', ws, req));
   }
@@ -1277,12 +1293,36 @@ server.on('upgrade', (req, socket, head) => {
   target.handleUpgrade(req, socket, head, (ws) => target.emit('connection', ws, req));
 });
 
+/** GET /allow?origin=… shows the consent page; POST adds or removes an origin. */
+function handleAllow(req, res) {
+  if (!isLoopbackAddr(req.socket.remoteAddress)) { res.writeHead(403); return res.end(); }
+  const q = new URL(req.url ?? '', 'http://x').searchParams;
+  if (req.method === 'GET') { res.writeHead(200, CONSENT_HEADERS); return res.end(consentPage(q.get('origin'), ORIGINS, newNonce())); }
+  if (req.method !== 'POST') { res.writeHead(405); return res.end(); }
+  // the form must come from this very page: Origin = the bridge itself, plus its one-time nonce
+  let own = '';
+  try { own = new URL(req.headers.origin ?? '').host; } catch { /* missing */ }
+  if (own !== req.headers.host) { res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' }); return res.end('Nur über die Freigabe-Seite der Bridge'); }
+  let body = '';
+  req.on('data', (d) => { body += d; if (body.length > 4096) req.destroy(); });
+  req.on('end', () => {
+    const f = new URLSearchParams(body);
+    if (!takeNonce(f.get('nonce') ?? '')) { res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' }); return res.end('Seite abgelaufen – bitte neu laden'); }
+    const origin = f.get('origin') ?? '';
+    if (f.get('action') === 'add') ORIGINS.add(origin); else if (f.get('action') === 'remove') ORIGINS.remove(origin);
+    res.writeHead(200, CONSENT_HEADERS);
+    res.end(consentPage(f.get('action') === 'add' ? origin : null, ORIGINS, newNonce()));
+  });
+}
+
 /**
  * Start the bridge. Used by the CLI below and by the desktop app (electron/main.cjs),
  * which passes port 0 for a free port and its own dist folder.
  */
-export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false, controlToken, watchDirs } = {}) {
+export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false, controlToken, watchDirs, configDir, allowOrigins = [] } = {}) {
   if (dist) DIST = resolve(dist);
+  ORIGINS = new OriginStore(configDir ? join(configDir, 'allowed-origins.json') : defaultOriginsFile());
+  for (const o of allowOrigins) ORIGINS.allowTemporarily(o);
   if (watchDirs) WATCH_ROOTS = watchRoots(watchDirs.flatMap((d) => ['--watch-dir', d]), {});
   if (controlToken !== undefined) CONTROL_TOKEN = controlToken;
   DEV = dev;
@@ -1294,7 +1334,8 @@ export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(arg('port', process.env.PORT ?? 4192)), host = arg('host', process.env.HOST ?? '127.0.0.1');
-  startBridge({ port, host, dev: DEV }).then(({ port: p }) => {
+  const allowOrigins = args.flatMap((a, i) => (a === '--allow-origin' && args[i + 1] ? [args[i + 1]] : []));
+  startBridge({ port, host, dev: DEV, configDir: arg('config-dir', process.env.LZS_CONFIG_DIR), allowOrigins }).then(({ port: p }) => {
     console.log(`lz-scopes bridge on http://${host}:${p}${DEV ? ' (dev)' : ''} · ffmpeg: ${ffmpegCandidates()[0] ?? 'nicht gefunden'}`);
   });
 }

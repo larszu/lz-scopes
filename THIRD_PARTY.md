@@ -13,6 +13,9 @@ Die Komponenten unten behalten ihre eigenen Lizenzen.
 | [ws](https://github.com/websockets/ws) | 8.22.0 | MIT | bridge (desktop / `npm start`) | WebSocket server |
 | [FFmpeg](https://ffmpeg.org/) (builds by [Martin Riedl](https://ffmpeg.martin-riedl.de/) for macOS, [BtbN](https://github.com/BtbN/FFmpeg-Builds) for Windows) | 9.0.2 | GPL-3.0-or-later (no nonfree parts) | desktop app only | see below |
 | [Public Sans](https://github.com/uswds/public-sans) via [@fontsource-variable/public-sans](https://fontsource.org/fonts/public-sans) | 5.3.0 | SIL OFL 1.1, text in [licenses/public-sans-OFL.txt](licenses/public-sans-OFL.txt) | web + desktop | UI typeface; `src/fonts/` holds the unchanged variable WOFF2 files (latin, latin-ext) so the desktop app works offline |
+| [Capacitor](https://github.com/ionic-team/capacitor) (@capacitor/core, /ios, /cli) | 8.5.2 | MIT, text in [licenses/capacitor-LICENSE.txt](licenses/capacitor-LICENSE.txt) | iOS/iPadOS app | native shell around the web build (`ios/`, docs/ios.md) |
+| [@capacitor-community/bluetooth-le](https://github.com/capacitor-community/bluetooth-le) | 8.3.0 | MIT, text in [licenses/capacitor-bluetooth-le-LICENSE.txt](licenses/capacitor-bluetooth-le-LICENSE.txt) | iOS/iPadOS app | CoreBluetooth for the Opple Light Master (`src/native/webBluetooth.ts`) |
+| [bonjour-service](https://github.com/onlxltd/bonjour-service) with multicast-dns, dns-packet, thunky, @leichtgewicht/ip-codec, fast-deep-equal | 1.4.4 | MIT, text in [licenses/bonjour-service-LICENSE.txt](licenses/bonjour-service-LICENSE.txt) (dependencies: MIT, notices in their packages) | bridge (desktop / `npm start`) | announces `_lz-scopes._tcp` for the iOS app (`server/bonjour.mjs`) |
 | [Electron](https://www.electronjs.org/) | 44.4.5 | MIT | desktop app | Chromium and Node.js inside it carry their own notices (`LICENSES.chromium.html` in the app bundle) |
 
 ## Ported formulas and constants

@@ -366,6 +366,13 @@ dialog.calib .calib-log { max-height: 160px; overflow: auto; font: 11px var(--mo
 .calib-grid td.g-ok { background: #3a3414; }
 .calib-grid td.g-aus { background: #4a1c1c; }
 
+/* running DaVinci Resolve in the source sidebar (src/resolveLive.ts) */
+.resolve-live { display: flex; gap: 8px; align-items: center; margin: 6px 0; padding: 6px 8px; border: 1px solid var(--line-2); border-left: 3px solid var(--ok, #3fb950); border-radius: 4px; font-size: 11px; }
+.resolve-live[hidden] { display: none; }
+.resolve-live .rl-text { flex: 1; min-width: 0; }
+.resolve-live .rl-title { font-weight: 600; }
+.resolve-live .rl-detail { color: var(--muted); word-break: break-word; }
+
 /* ---- application menu and settings window (#53, src/menu/) ---- */
 .bar .tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .menubar { position: relative; display: flex; align-items: center; }

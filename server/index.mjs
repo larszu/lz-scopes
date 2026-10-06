@@ -26,6 +26,7 @@ import { COMMANDS, controlAccess, validateCommand } from './control.mjs';
 import { applyDecodeOverride, deviceInputArgs, deviceOptions, formatListArgs, parseDeviceUrl, parseFormatList, pickPixfmt } from './devices.mjs';
 import { helperList, helperPath, startHelperStream } from './helper-input.mjs';
 import { resolveFolder, startFolderStream, watchRoots } from './folder.mjs';
+import { resolveStatus } from './resolve.mjs';
 import { handleMeterSocket, meterInfo } from './meter.mjs';
 import { PtpMonitor, RtpMonitor, ipv4Interfaces, isMulticastV4, nowUtcNs } from './ptp.mjs';
 import { taiMinusUtc } from './leap.mjs';
@@ -982,6 +983,11 @@ const server = createServer((req, res) => {
     const json = (code, body) => { res.writeHead(code, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(body)); };
     if (!parseDeviceUrl(url) || validateInput(url)) return json(400, { error: 'device:-URL erwartet' });
     deviceFormats(url).then((f) => json(200, { ...f, preferred: pickPixfmt(f.pixfmts), defaultSize: defaultMode(f.modes) }));
+    return;
+  }
+  if (path === '/api/resolve') {
+    const helper = fileURLToPath(new URL('./resolve_helper.py', import.meta.url)).replace(`app.asar${sep}`, `app.asar.unpacked${sep}`);
+    resolveStatus({ helper, python: pythonCandidates() }).then((st) => { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(st)); });
     return;
   }
   if (path === '/api/folders') {

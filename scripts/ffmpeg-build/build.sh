@@ -77,7 +77,7 @@ case "$TARGET" in
     CMAKE_ARGS+=(-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_PROCESSOR=x86_64 -DCMAKE_C_COMPILER=$CC -DCMAKE_CXX_COMPILER=$CXX
       -DCMAKE_RC_COMPILER=$HOST-windres -DCMAKE_FIND_ROOT_PATH="$PREFIX" -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
       -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY)
-    FF_ARGS+=(--target-os=mingw32 --arch=x86_64 --cross-prefix=$HOST- --enable-cross-compile --extra-ldexeflags=-static)
+    FF_ARGS+=(--target-os=mingw32 --arch=x86_64 --cross-prefix=$HOST- --enable-cross-compile --extra-ldexeflags=-static --extra-libs="-lws2_32 -lbcrypt")
     ;;
   *) echo "unbekanntes Ziel $TARGET" >&2; exit 1 ;;
 esac

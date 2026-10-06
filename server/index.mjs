@@ -36,6 +36,7 @@ import { FlvH264Demuxer } from './flv.mjs';
 import { handleOut10 } from './out10.mjs';
 import { readStamp, stampAge } from './stamp.mjs';
 import { startOwnRtp } from './rtsp.mjs';
+import { announce } from './bonjour.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -1288,13 +1289,18 @@ export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false
   DEV = dev;
   return new Promise((ok, fail) => {
     server.once('error', fail);
-    server.listen(port, host, () => ok({ port: server.address().port, close: () => server.close() }));
+    server.listen(port, host, async () => {
+      const p = server.address().port;
+      // the iPhone/iPad app finds a bridge that listens on the network via Bonjour (server/bonjour.mjs)
+      const mdns = await announce({ port: p, host });
+      ok({ port: p, bonjour: mdns?.name ?? null, close: () => { mdns?.stop(); server.close(); } });
+    });
   });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(arg('port', process.env.PORT ?? 4192)), host = arg('host', process.env.HOST ?? '127.0.0.1');
-  startBridge({ port, host, dev: DEV }).then(({ port: p }) => {
-    console.log(`lz-scopes bridge on http://${host}:${p}${DEV ? ' (dev)' : ''} · ffmpeg: ${ffmpegCandidates()[0] ?? 'nicht gefunden'}`);
+  startBridge({ port, host, dev: DEV }).then(({ port: p, bonjour }) => {
+    console.log(`lz-scopes bridge on http://${host}:${p}${DEV ? ' (dev)' : ''} · ffmpeg: ${ffmpegCandidates()[0] ?? 'nicht gefunden'}${bonjour ? ` · Bonjour: ${bonjour}` : ''}`);
   });
 }

@@ -90,6 +90,11 @@ d=$(unpack srt)
 cmake -S "$WORK/build/$d" -B "$WORK/build/$d/b" "${CMAKE_ARGS[@]}" -DENABLE_SHARED=OFF -DENABLE_STATIC=ON -DENABLE_APPS=OFF \
   -DENABLE_CXX_DEPS=ON -DUSE_ENCLIB=mbedtls -DMBEDTLS_PREFIX="$PREFIX" -DENABLE_UNITTESTS=OFF
 cmake --build "$WORK/build/$d/b" -j"$JOBS" && cmake --install "$WORK/build/$d/b"
+# srt.pc does not list mbedTLS for static linking; GNU ld needs it after -lsrt (Apple ld does not care)
+extra="-lmbedtls -lmbedx509 -lmbedcrypto"; [[ $TARGET == win32-x64 ]] && extra="$extra -lws2_32 -lbcrypt"
+sed -i.bak "s|^Libs.private:.*|& $extra|" "$PREFIX/lib/pkgconfig/srt.pc" && rm -f "$PREFIX/lib/pkgconfig/srt.pc.bak"
+grep -q '^Libs.private:' "$PREFIX/lib/pkgconfig/srt.pc" || echo "Libs.private: $extra" >> "$PREFIX/lib/pkgconfig/srt.pc"
+cat "$PREFIX/lib/pkgconfig/srt.pc"
 
 # ---- x264 (8 bit, H.264 push and the WebCodecs path)
 d=$(unpack x264)

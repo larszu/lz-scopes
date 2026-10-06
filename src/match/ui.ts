@@ -213,7 +213,7 @@ export function matchPanelSettings(p: PanelState, src: Source | null, c: MatchUi
       m.series = [...(m.series ?? []), v.rgb]; m.seriesSpace = sp; c.save(); c.refresh();
     } }, `+ Messreihe${n ? ` (${n})` : ''}`),
     n ? h('button', { class: 'mini', onclick: () => { m.series = undefined; m.seriesSpace = undefined; c.save(); c.refresh(); } }, 'Reihe löschen') : ''));
-  rows.push(h('p', { class: 'hint' }, 'Gemessen wird der Messrahmen (Mittel) bzw. der Messpunkt im Bild-Panel dieser Quelle. Effekt- und Metalliclacke ändern ihre Farbe mit dem Winkel: über eine Fläche messen und mehrere Stellen zur Reihe nehmen; gleiche Werte an wenigen Stellen garantieren noch keinen visuellen Abgleich.'));
+  rows.push(h('p', { class: 'hint narrow' }, 'Gemessen wird der Messrahmen (Mittel) bzw. der Messpunkt im Bild-Panel dieser Quelle. Effekt- und Metalliclacke ändern ihre Farbe mit dem Winkel: über eine Fläche messen und mehrere Stellen zur Reihe nehmen; gleiche Werte an wenigen Stellen garantieren noch keinen visuellen Abgleich.'));
   return [...rows, ...targetEditor(src, c)];
 }
 
@@ -239,7 +239,7 @@ export function greenSettings(g: SkinRange, src: Source | null, c: MatchUi, with
       if (!r) { c.alert('Zu wenig Pixel im Farbkeil'); return; }
       set({ hue: Math.round(hue), lo: Math.round(r.lo * 100) / 100, hi: Math.round(r.hi * 100) / 100 }); c.refresh();
     } }, 'Bereich aus Messrahmen')));
-    rows.push(h('p', { class: 'hint' }, 'Im Waveform: Linien ziehen = Luma-Bereich, Mausrad = Farbton-Toleranz.'));
+    rows.push(h('p', { class: 'hint narrow' }, 'Im Waveform: Linien ziehen = Luma-Bereich, Mausrad = Farbton-Toleranz.'));
   }
   return rows;
 }

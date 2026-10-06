@@ -377,3 +377,5 @@ dialog.calib .calib-log { max-height: 160px; overflow: auto; font: 11px var(--mo
 dialog.logodlg canvas.logopick { display: block; max-width: 100%; max-height: 50vh; margin: 8px 0; background: repeating-conic-gradient(#555 0% 25%, #777 0% 50%) 0 0 / 16px 16px; cursor: crosshair; }
 dialog.logodlg .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
 .swatch.big { width: 28px; height: 28px; }
+.menu-body p.hint.narrow { max-width: 380px; }
+.mrow > span.swatch:first-child { width: 14px; }

@@ -84,6 +84,11 @@ export function drawMatchPanel(ctx: CanvasRenderingContext2D, w: number, h: numb
   const sw = (w - 2 * pad - gap) / 2, sh = Math.max(36, Math.min(110, h * 0.28));
   ctx.font = MONO; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
   const side = (x: number, title: string, sub: string, rgb: Rgb | null, empty: string) => {
+    ctx.save(); ctx.beginPath(); ctx.rect(x, 0, sw, h); ctx.clip();
+    sideInner(x, title, sub, rgb, empty);
+    ctx.restore();
+  };
+  const sideInner = (x: number, title: string, sub: string, rgb: Rgb | null, empty: string) => {
     ctx.fillStyle = '#9aa0a8'; ctx.fillText(title, x, pad);
     ctx.fillStyle = '#6b7078'; ctx.fillText(sub, x, pad + 14);
     const y0 = pad + 30;
@@ -103,7 +108,18 @@ export function drawMatchPanel(ctx: CanvasRenderingContext2D, w: number, h: numb
   side(pad + sw + gap, refName, b?.how ?? '', b?.rgb ?? null, m?.ref?.startsWith('src:') ? 'Referenzquelle: Messpunkt/Rahmen setzen' : 'Ziel im ⚙ wählen');
 
   let y = pad + 30 + sh + 40;
-  const line = (t: string, col = '#d6d6d6') => { if (y > h - 14) return; ctx.fillStyle = col; ctx.fillText(t, pad, y); y += 15; };
+  // word-wrapped text line (continuation indented)
+  const line = (t: string, col = '#d6d6d6') => {
+    ctx.fillStyle = col;
+    let rest = t, first = true;
+    while (rest && y <= h - 14) {
+      const x = pad + (first ? 0 : 12), max = w - x - pad;
+      let cut = rest.length;
+      while (cut > 1 && ctx.measureText(rest.slice(0, cut)).width > max) { const sp = rest.lastIndexOf(' ', cut - 1); cut = sp > 0 ? sp : cut - 1; }
+      ctx.fillText(rest.slice(0, cut), x, y); y += 15;
+      rest = rest.slice(cut).trimStart(); first = false;
+    }
+  };
   if (!a || !b) {
     line(c.display === 'p3' ? 'Farbfelder für Display P3 umgerechnet' : `Farbfelder für ${c.display === 'srgb' ? 'sRGB-Display' : c.display}`, '#6b7078');
     return;

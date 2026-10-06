@@ -5,19 +5,20 @@ import {
   sceneToSignal, transferLabel, xyToUv, ycbcr,
   type Colorspace, type GamutId, type Transfer,
 } from './color';
+import { hexLine, targetSignal, type ColorTarget } from './match/core';
 import { CIE_VIEW, CIE_VIEW_UV, WAVE_MAX, WAVE_MIN, type Rect } from './renderer';
 import { latencyLines, rtpLines } from './latency';
 import type { Source } from './sources';
 import { CUBE_SPACE_LABELS, SIGNAL_SPACES, cubeProject, cubeRotation, cubeWireframe, qFromChl, qFromHsv, qFromIctcp, qFromLab, qFromRgb, qFromXyz, qFromYcc, type CubeSettings } from './cube';
 
-export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats'
+export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats'
   | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock'
   | 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map' | 'light-spectrum' | 'light-swatch';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits';
 
 export const SCOPE_LABELS: Record<ScopeType, string> = {
-  picture: 'Bild', 'wf-luma': 'Waveform Luma', 'wf-color': 'Waveform Farbe', 'wf-skin': 'Waveform Hauttöne', 'wf-rgb': 'Waveform RGB', parade: 'RGB-Parade', yrgb: 'YRGB-Parade',
-  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', diamond: 'Diamond (Gamut)', cube: '3D-Farbvolumen', satlum: 'Sättigung über Luma', chplot: 'Kanal-Plot', minmax: 'Min/Max je Zeile', qclog: 'QC-Protokoll', timeline: 'Zeitverlauf', hist: 'Histogramm', stats: 'Messwerte',
+  picture: 'Bild', 'wf-luma': 'Waveform Luma', 'wf-color': 'Waveform Farbe', 'wf-skin': 'Waveform Hauttöne', 'wf-green': 'Waveform Grüntöne', 'wf-rgb': 'Waveform RGB', parade: 'RGB-Parade', yrgb: 'YRGB-Parade',
+  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', diamond: 'Diamond (Gamut)', cube: '3D-Farbvolumen', satlum: 'Sättigung über Luma', chplot: 'Kanal-Plot', minmax: 'Min/Max je Zeile', qclog: 'QC-Protokoll', timeline: 'Zeitverlauf', hist: 'Histogramm', stats: 'Messwerte', match: 'Farbabgleich',
   'audio-meter': 'Audio Pegel & Lautheit', 'audio-loudness': 'Audio Lautheitsverlauf', 'audio-spectrum': 'Audio Spektrum', 'audio-phase': 'Audio Goniometer', 'audio-check': 'Audio Ident & A/V-Versatz',
   clock: 'Uhr / Timecode',
   // Opple Light Master (src/opple/scopes.ts, LIGHT_LABELS)
@@ -27,7 +28,7 @@ export const SCOPE_LABELS: Record<ScopeType, string> = {
 
 export const isAudio = (s: ScopeType) => s.startsWith('audio-');
 
-export const isWaveform = (s: ScopeType) => s === 'wf-luma' || s === 'wf-color' || s === 'wf-skin' || s === 'wf-rgb' || s === 'parade' || s === 'yrgb' || s === 'ycbcr';
+export const isWaveform = (s: ScopeType) => s === 'wf-luma' || s === 'wf-color' || s === 'wf-skin' || s === 'wf-green' || s === 'wf-rgb' || s === 'parade' || s === 'yrgb' || s === 'ycbcr';
 export const sections = (s: ScopeType) => (s === 'parade' || s === 'ycbcr' ? 3 : s === 'yrgb' ? 4 : 1);
 
 export const GRID = 'rgba(210, 190, 120, 0.42)';
@@ -213,15 +214,16 @@ export function drawWaveGraticule(ctx: CanvasRenderingContext2D, scope: ScopeTyp
   ctx.fillText(unit === 'nits' ? nits : unit === 'percent' ? '%' : unit === 'bit8' ? '8 bit' : '10 bit', r.x + r.w - 4, r.y + 2);
 }
 
-/** Skin-tone luma window of the skin waveform. */
-export function drawSkinRange(ctx: CanvasRenderingContext2D, r: Rect, skin: { lo: number; hi: number; tol: number }, range: WaveRange = WAVE_ZOOMS.full) {
+/** Luma window of the skin waveform (or, with green = true, of the green qualifier). */
+export function drawSkinRange(ctx: CanvasRenderingContext2D, r: Rect, skin: { lo: number; hi: number; tol: number; hue?: number }, range: WaveRange = WAVE_ZOOMS.full, green = false) {
   const y0 = waveY(r, skin.hi, range), y1 = waveY(r, skin.lo, range);
-  ctx.fillStyle = 'rgba(255, 170, 110, 0.07)'; ctx.fillRect(r.x, y0, r.w, y1 - y0);
-  ctx.strokeStyle = 'rgba(255, 170, 110, 0.8)'; ctx.setLineDash([6, 4]);
+  const rgb = green ? '120, 230, 120' : '255, 170, 110';
+  ctx.fillStyle = `rgba(${rgb}, 0.07)`; ctx.fillRect(r.x, y0, r.w, y1 - y0);
+  ctx.strokeStyle = `rgba(${rgb}, 0.8)`; ctx.setLineDash([6, 4]);
   for (const y of [y0, y1]) { ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke(); }
   ctx.setLineDash([]);
-  ctx.font = FONT; ctx.fillStyle = 'rgba(255, 190, 140, 0.95)'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-  ctx.fillText(`Hautton ${Math.round(skin.lo * 100)}–${Math.round(skin.hi * 100)} %  ±${skin.tol}°`, r.x + 4, y0 - 2);
+  ctx.font = FONT; ctx.fillStyle = green ? 'rgba(150, 240, 150, 0.95)' : 'rgba(255, 190, 140, 0.95)'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText(`${green ? 'Grün' : 'Hautton'} ${Math.round(skin.lo * 100)}–${Math.round(skin.hi * 100)} %  ${green ? `${Math.round(skin.hue ?? 0)}° ` : ''}±${skin.tol}°`, r.x + 4, y0 - 2);
 }
 
 export function drawWaveProbe(ctx: CanvasRenderingContext2D, scope: ScopeType, r: Rect, src: Source, rgb: [number, number, number], o: WaveOpts = {}) {
@@ -230,7 +232,7 @@ export function drawWaveProbe(ctx: CanvasRenderingContext2D, scope: ScopeType, r
   const { n, sec } = channelLayout(scope, o.channels);
   const fx = src.probe.x / src.width;
   const { y, cb, cr } = ycbcr(rgb[0], rgb[1], rgb[2], src.colorspace);
-  const vals: [number, string][] = scope === 'wf-luma' || scope === 'wf-color' || scope === 'wf-skin' ? [[y, '#fff']]
+  const vals: [number, string][] = scope === 'wf-luma' || scope === 'wf-color' || scope === 'wf-skin' || scope === 'wf-green' ? [[y, '#fff']]
     : scope === 'wf-rgb' || scope === 'parade' ? [[rgb[0], '#ff6b6b'], [rgb[1], '#6bff7a'], [rgb[2], '#7b9bff']]
       : scope === 'yrgb' ? [[y, '#fff'], [rgb[0], '#ff6b6b'], [rgb[1], '#6bff7a'], [rgb[2], '#7b9bff']]
         : [[y, '#fff'], [cb + 0.5, '#7b9bff'], [cr + 0.5, '#ff6b6b']];
@@ -304,7 +306,7 @@ export function drawDiamondGraticule(ctx: CanvasRenderingContext2D, r: Rect) {
   ctx.restore();
 }
 
-export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, skinTol = 0, targets?: BarTargetSet) {
+export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, skinTol = 0, targets?: BarTargetSet, green?: { hue: number; tol: number }) {
   const R = r.w / 2, cx = r.x + R, cy = r.y + R;
   ctx.save();
   ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
@@ -328,6 +330,14 @@ export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: 
   }
   ctx.strokeStyle = 'rgba(255, 170, 120, 0.5)'; ctx.setLineDash([5, 4]);
   ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(s) * R, cy - Math.sin(s) * R); ctx.stroke();
+  // green qualifier wedge (grass, foliage; match/core.ts GREEN_DEFAULT)
+  if (green) {
+    const g = (green.hue * Math.PI) / 180, t = (green.tol * Math.PI) / 180;
+    ctx.fillStyle = 'rgba(120, 230, 120, 0.08)';
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, R * 0.9, -(g + t), -(g - t)); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(120, 230, 120, 0.5)';
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(g) * R, cy - Math.sin(g) * R); ctx.stroke();
+  }
   ctx.setLineDash([]);
   ctx.font = FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const t100 = targets?.t100 ?? barTargets(cs, 1), t75 = targets?.t75 ?? barTargets(cs, 0.75);
@@ -376,13 +386,14 @@ function edgeMarker(ctx: CanvasRenderingContext2D, r: Rect, x: number, y: number
   return true;
 }
 
-export interface VectorTarget { name: string; rgb: [number, number, number] }
+/** User colour targets (match/core.ts ColorTarget: measured signal or CI definition). */
+export type VectorTarget = ColorTarget;
 
 /**
  * Gamut boundaries (hexagon through 100 % primaries/secondaries of each gamut, expressed
  * in the source's encoding) and user colour-match targets.
  */
-export function drawVectorExtras(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, gamuts: ('709' | 'p3' | '2020')[], targets: VectorTarget[], transfer: Transfer, srcGamut: GamutId = cs) {
+export function drawVectorExtras(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, gamuts: ('709' | 'p3' | '2020')[], targets: VectorTarget[], transfer: Transfer, srcGamut: GamutId = cs, hlgLw = 1000) {
   const src = GAMUTS[srcGamut];
   const enc = (v: number) => {
     const a = Math.abs(v), sgn = Math.sign(v);
@@ -411,9 +422,10 @@ export function drawVectorExtras(ctx: CanvasRenderingContext2D, r: Rect, cs: Col
   });
   ctx.restore();
   for (const t of targets) {
-    const { cb, cr } = ycbcr(t.rgb[0], t.rgb[1], t.rgb[2], cs);
+    const sig = targetSignal(t, { transfer, gamut: srcGamut, hlgLw });
+    const { cb, cr } = ycbcr(sig[0], sig[1], sig[2], cs);
     const [x, y] = vectorPoint(r, cb, cr, zoom);
-    const css = `rgb(${t.rgb.map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255)).join(',')})`;
+    const css = `rgb(${(t.ci?.v ?? sig).map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255)).join(',')})`;
     if (edgeMarker(ctx, r, x, y, t.name, css)) continue;
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.stroke();
@@ -530,6 +542,7 @@ export function probeLines(src: Source, rgb: [number, number, number], unit: Uni
     `x ${src.probe!.x}  y ${src.probe!.y}`,
     `R ${fmt(rgb[0])}  G ${fmt(rgb[1])}  B ${fmt(rgb[2])}`,
     `Y' ${pct(y)}  Cb ${cb >= 0 ? '+' : ''}${(cb * 100).toFixed(1)}  Cr ${cr >= 0 ? '+' : ''}${(cr * 100).toFixed(1)}`,
+    hexLine(rgb, src),
   ];
   if (!isGamma(src.transfer) || unit === 'nits') lines.push(`≈ ${levelText(y, src.transfer, src.hlgLw)}`);
   return lines;

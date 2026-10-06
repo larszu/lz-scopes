@@ -219,3 +219,31 @@ Frage: Was taugt ein Umgebungslicht-Sensor (LM4 = ams AS7341, LM3 = 6-Kanal-Filt
 ### C.4 Weißpunkt-Korrektur – Herleitung
 
 Annahmen: Die drei Kanäle addieren sich (W = R + G + B in XYZ), und ein Prozessor-Gain skaliert das Licht eines Kanals linear. Dann ist W = M·g mit M = [XYZ_R XYZ_G XYZ_B] (Spalten, bei Vollaussteuerung) und g = (1, 1, 1). Für einen Ziel-Weißpunkt (x_t, y_t) mit Y_t: g_t = M⁻¹·XYZ_t, anschließend durch max(g_t) teilen (kein Kanal über 100 %). Das ist dieselbe Rechnung wie die Normalized Primary Matrix aus Primärvalenzen und Weiß (`rgbToXyzMatrix` in `src/color.ts`). M kommt entweder aus Opple-Messungen der Primärfarben (unsicher, C.1) oder aus eingegebenen Primärvalenzen xy (Datenblatt, Prozessor-„native gamut“) plus gemessenem Weiß: M = P·diag(s), s = P⁻¹·W. Die Additivität wird geprüft (|R+G+B − W|/W); bei großer Abweichung sind die Gains nicht verlässlich. Nach dem Eintragen erneut messen (iterativ). Der Opple-Messfehler bleibt im Ergebnis – das Ziel ist „D65 laut Opple“.
+
+### C.5 Korrekturhinweise je Prozessor (Nachtrag 06.10.2026)
+
+Lars nutzt hauptsächlich NovaStar und Brompton; der Prozessor ist in der Wand-Konfiguration wählbar und bestimmt Begriffe und Menüwege (`src/led/processorHints.ts`). Geöffnete Quellen:
+
+- **NovaLCT** ([User Manual V5.3.1, Synchronous Control System](https://oss.novastar.tech/uploads/2020/07/NovaLCT-LED-Configuration-Tool-for-Synchronous-Control-System-User-Manual-V5.3.1.pdf)):
+  - Weißpunkt der ganzen Wand – 6.2.1: Settings › Brightness, Manual Adjustment; Farbtemperatur „Rough Adjustment“ (Regler) oder „Precise Adjustment“. Eine eigene Farbtemperatur legt man angemeldet an (Add, Add Brightness). „Brightness Component is a color temperature parameter of receiving cards. If Synchronize is selected, the R, G and B parameters will be set to the same value“; „Current Gain“ (Modul-Parameter) nur, wenn die Treiberchips es unterstützen. Dorthin gehen die R/G/B-Werte.
+  - Je Cabinet – 6.1.3 Managing Calibration Coefficients: User › Advanced Synchronous System User Login, Tools › Calibration › Single-Screen Mode › Manage Coefficients, „Adjust coefficients (Color is uniform on screen)“, Bereich „Select by Topology or List“ (Cabinet), „Simple Adjustment: drag the slider to adjust the values of red, green and blue“. Dort landen die Angleich-Werte je Cabinet.
+  - Wertebereiche bzw. Einheiten der Regler nennt das Handbuch nicht. Die Hinweise geben deshalb Verhältnisse in % des jetzigen Werts.
+- **NovaStar VX** ([VX1000 User Manual V1.3.0](https://oss.novastar.tech/uploads/2023/06/VX1000-All-in-One-Controller-User-Manual-V1.3.0.pdf), 5.2.6): Screen Configuration › More Settings › LED Screen Color › Temperature „Standard, Cool, Warm and Custom … When Custom is selected, you can customize the color temperature by adjusting the R, G and B values individually“. Keine Einstellung je Cabinet am Gerät.
+- **Brompton Tessera**:
+  - [Colour Temperature](https://www.bromptontech.com/online-help/Content/Tessera%20User%20Manual/03.%20Feature%20Topics/12.1.2%20-%20Colour%20Temperature.htm): Regler 2000–11 000 K, Standard 6504 K. Grün/Magenta lässt sich damit nicht korrigieren.
+  - [DynaCal Interface](https://www.bromptontech.com/online-help/Content/Tessera%20User%20Manual/03.%20Feature%20Topics/12.1.10%20-%20DynaCal%20Interface.htm): „The White-point target for the Video Input Colour Space can be changed either to a completely custom value, or a Colour Temperature value“. Das gilt nur für Panels mit Dynamic Calibration (R2/R2+, Hydra), [Dynamic Calibration](https://www.bromptontech.com/online-help/Content/Tessera%20User%20Manual/03.%20Feature%20Topics/05.2%20-%20Dynamic%20Calibration.htm).
+  - [OSCA](https://www.bromptontech.com/online-help/Content/Tessera%20User%20Manual/03.%20Feature%20Topics/12.1.9%20-%20On-Screen%20Colour%20Adjustment%20(OSCA).htm): je Panel (F8) oder Modul (F7) Brightness in Nits sowie „Red Gain“, „Green Gain“, „Blue Gain“; „OSCA adjustments do not overwrite existing fixture colour calibrations“. Einheit der Gains nicht angegeben.
+- **Brompton-Regler:** Der Vorschlag für den nächsten Wert verschiebt die Einstellung um den gemessenen Fehler in Mired: 1/T_neu = 1/T_jetzt + 1/T_Ziel − 1/T_gemessen. Das ist eine eigene Näherung, keine Herstellerangabe; danach neu messen.
+- **Angleich der Cabinets:** Je Cabinet gibt es Gains auf Farbort und Leuchtdichte des Referenz-Cabinets (Rechnung wie C.4). Alle Gains werden gemeinsam so skaliert, dass kein Kanal über 100 % muss. Das entspricht dem NovaLCT-Batch-Angleich („Fixed Batches, Adjust Other Batches to The Batch“, Einstellung der Sample Batches im NovaLCT-Handbuch).
+- **Import von Cabinet-Maßen: bewusst nicht umgesetzt.**
+  - NovaStar-Dateien (.rcfgx/.rcfg, .mcl/.cabinet, Farbtemperatur .fcg) sind im Handbuch nur als Dateien der eigenen Software beschrieben. Eine Format-Spezifikation von NovaStar habe ich nicht gefunden.
+  - Für Brompton-Projektdateien gibt es nichts Öffentliches.
+  - Ohne belegtes Format und ohne Beispieldateien wäre ein Parser geraten; die Cabinet-Maße bleiben Eingabe.
+
+### C.6 Herkunft der Opple-Matrizen (06.10.2026)
+
+Die XYZ-Matrizen (LM3 3×7, LM4 3×8), die Flimmer-Konstanten und die LM4-Kalibrierlogik stammen aus der **dekompilierten OPPLE-Smart-App**.
+- Veröffentlicht wurden sie von MIT-lizenzierten Projekten: LM4 über gabrielebaudo/opple-bridge, LM3 über OlliV/open-light-master (GPL) und von dort in natmart-in/sunday-light-meter (MIT).
+- LZ Scopes übernimmt sie aus diesen MIT-Projekten.
+- Lars hat am 06.10.2026 entschieden, sie im öffentlichen Repo zu veröffentlichen.
+- Eine Erlaubnis von Opple liegt nicht vor; die Rechtslage an reinen Zahlenwerten ist ungeklärt (B.6).

@@ -9,7 +9,7 @@ import {
 } from './analysis';
 import { LED_PATTERNS } from './patterns';
 import {
-  PATCH_PRESETS, cabinets, deleteWall, ledSettings, parsePatchList, pictureSize, saveWall, savedWalls, setLedSettings, wallSize,
+  PATCH_PRESETS, PROCESSOR_LABELS, cabinets, deleteWall, ledSettings, parsePatchList, pictureSize, saveWall, savedWalls, setLedSettings, wallSize,
   type LedSettings, type WallConfig,
 } from './wall';
 import { bt709InverseOetf } from '../color';
@@ -150,6 +150,7 @@ export function openLedTool(host: LedHost) {
         lab('Modul B×H', numIn(w.modW, 'Modulbreite in Pixeln (0 = ohne Modulraster)', (n) => setWall({ modW: n }), '1', 52), '×', numIn(w.modH, 'Modulhöhe in Pixeln', (n) => setWall({ modH: n }), '1', 52))),
       h('div', { class: 'row' },
         lab('Versatz X/Y', numIn(w.offX, 'Lage der Wand im Ausgabebild (links)', (n) => setWall({ offX: n })), numIn(w.offY, 'Lage der Wand im Ausgabebild (oben)', (n) => setWall({ offY: n }))),
+        lab('Prozessor', sel(w.processor, Object.entries(PROCESSOR_LABELS) as [string, string][], (v) => setWall({ processor: v as WallConfig['processor'] }), 'Bestimmt die Begriffe und Menüwege der Korrekturhinweise. Cabinet-Maße werden nicht aus Prozessor-Dateien importiert (kein öffentlich belegtes Format).')),
         lab('Zählung', sel(w.order, [['rows', 'zeilenweise'], ['cols', 'spaltenweise'], ['snake', 'Schlange']], (v) => setWall({ order: v as WallConfig['order'] })),
           'ab', numIn(w.start, 'Nummer des ersten Cabinets', (n) => setWall({ start: n }), '1', 52)),
         h('span', { class: 'hint' }, `Wand ${ws.w}×${ws.h} px · Ausgabebild ${ps.w}×${ps.h} px · ${w.cols * w.rows} Cabinets`)),

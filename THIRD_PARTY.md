@@ -59,7 +59,9 @@ Both contain GPL libraries (x264, x265) and **libsrt** (MPL-2.0); the macOS buil
 
 ## ArgyllCMS (optional, not shipped)
 
-Display calibration (`server/meter.mjs`) can use **ArgyllCMS `spotread`** if the user has installed it. ArgyllCMS is licensed under the AGPL-3 (some drivers GPL-2+, <https://www.argyllcms.com/doc/ArgyllDoc.html>). LZ Scopes does not bundle, link or modify it: it starts the separately installed program and reads its text output, the way DisplayCAL does. Procedures from DisplayCAL (GPL-3) were read as reference only; no code was taken ([docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md)).
+Display calibration (`server/meter.mjs`) can use **ArgyllCMS `spotread`** if the user has installed it separately. ArgyllCMS is licensed under the AGPL-3 (some drivers GPL-2+, <https://www.argyllcms.com/doc/ArgyllDoc.html>). Its author offers a commercial licence (ArgyllPRO) for closed-source products and writes: “It is highly advisable that closed source products that make use of ArgyllCMS NOT be developed before securing an appropriate license” (<https://www.argyllcms.com/commercialuse.html>).
+
+LZ Scopes contains **no ArgyllCMS code, binaries or data**, and the installers do not ship any (`electron-builder.js` excludes them; `test/argyll-packaging.test.ts` checks it). The app only starts a user-installed `spotread` as a separate process and reads its text output, the way DisplayCAL does. The feature is optional; without ArgyllCMS values are entered by hand. Remaining risk and assessment: [docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md#argyllcms-lizenzlage-stand-06102026). Procedures from DisplayCAL (GPL-3) were read as reference only; no code was taken.
 
 ## Display profile helper and DDC tools (#17)
 

@@ -393,7 +393,10 @@ export class Renderer {
   constructor(readonly canvas: HTMLCanvasElement, private readonly opts: { deep?: boolean } = {}) {
     const gl = canvas.getContext('webgl2', { antialias: false, alpha: !!opts.deep, preserveDrawingBuffer: true, premultipliedAlpha: false });
     if (!gl) throw new Error('WebGL2 wird von diesem Browser nicht unterstützt.');
-    if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float fehlt – Scopes brauchen Float-Rendertargets.');
+    // The scopes accumulate into RGBA16F (texture below). EXT_color_buffer_float covers that; iOS
+    // GPUs may offer only EXT_color_buffer_half_float, which the WebGL registry allows in WebGL 2
+    // for RGBA16F/RG16F/R16F (KhronosGroup/WebGL#3093, docs/research/ios-app.md).
+    if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) throw new Error('EXT_color_buffer_float/EXT_color_buffer_half_float fehlt – Scopes brauchen Float-Rendertargets (RGBA16F).');
     gl.getExtension('EXT_float_blend');
     this.gl = gl;
     this.vao = gl.createVertexArray()!;

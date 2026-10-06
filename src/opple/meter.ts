@@ -39,7 +39,8 @@ export const REQUEST_OPTIONS = {
 
 export function bluetoothSupport(): { ok: boolean; reason: string } {
   if (typeof navigator === 'undefined' || !bluetooth()) return { ok: false, reason: 'Dieser Browser hat kein Web Bluetooth (Chrome/Edge oder die Desktop-App nehmen; Safari und Firefox können es nicht).' };
-  if (typeof window !== 'undefined' && window.isSecureContext === false) return { ok: false, reason: 'Web Bluetooth braucht https oder localhost.' };
+  // the iOS app maps navigator.bluetooth onto CoreBluetooth (src/native/webBluetooth.ts); no secure-context rule there
+  if (typeof window !== 'undefined' && window.isSecureContext === false && !(bluetooth() as { native?: boolean }).native) return { ok: false, reason: 'Web Bluetooth braucht https oder localhost.' };
   return { ok: true, reason: '' };
 }
 

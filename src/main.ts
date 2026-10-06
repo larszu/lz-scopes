@@ -39,6 +39,7 @@ import { DEFAULT_LOW_LATENCY, LL_STATS, LL_WIDTHS, describeLowLatency, effective
 import { mountResolveLive } from './resolveLive';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
+import { ShadingControl, SIM_URL } from './shading/ui';
 
 // ---------------------------------------------------------------- state
 
@@ -155,6 +156,7 @@ app.innerHTML = `
     <button id="freeze" title="Standbild (Leertaste)">❚❚ Einfrieren</button>
     <details class="menu" id="laymenu"><summary title="Layout-Konfigurationen speichern und laden (Anordnung + Einstellungen der Scopes)">▦ Layouts</summary><div class="menu-body right" id="laybody"></div></details>
     <details class="menu" id="outmenu"><summary title="Ausgabe auf einen Bildschirm dieses Rechners oder als Stream">⧉ Ausgabe</summary><div class="menu-body right" id="outbody"></div></details>
+    <button id="shading" title="Touch Shading: Kamera über Parade, Waveform und Vectorscope steuern">◐ Shading</button>
     <button id="led" title="LED-Wand: Cabinet-Testbilder und Kamera-Prüfung (Heatmap, Nähte)">▦ LED-Wand</button>
     <button id="snap" title="Screenshot als PNG (S)">⤓ PNG</button>
     <button id="full" title="Vollbild (F)">⛶</button>
@@ -287,6 +289,7 @@ $('#toggle-side').onclick = () => { state.sidebar = !state.sidebar; applySidebar
 const applySidebar = () => $('#side').classList.toggle('hidden', !state.sidebar);
 $('#freeze').onclick = () => toggleFreeze();
 $('#snap').onclick = () => snapshot();
+$('#shading').onclick = () => shading.toggleBar();
 $('#led').onclick = () => openLedTool({
   sources: () => sources,
   showPattern: (id, w, hh) => {
@@ -393,6 +396,8 @@ function renderSources() {
         ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
         ...(sourceFfmpegText(s.url, bridgeHealth) ? [h('p', { class: 'hint', 'data-ffmpeg-source': '' }, sourceFfmpegText(s.url, bridgeHealth))] : []),
       );
+    } else if (s.url === SIM_URL) {
+      card.append(h('p', { class: 'hint' }, 'Bild ohne Kamera für Touch Shading – gesteuert über ◐ Shading.'));
     } else if (s.kind === 'pattern') {
       card.append(...patternControls(s));
     } else if (s.kind === 'audio') {
@@ -687,6 +692,7 @@ function panelElement(idx: number): HTMLElement {
     const head = h('div', { class: 'phead', ondblclick: () => toggleSolo(idx) });
     const el = h('div', { class: 'panel' }, head, body);
     body.addEventListener('dblclick', () => toggleSolo(idx));
+    shading.attach(body, idx, p);
     attachPointer(p(), body);
     attachSkinDrag(p(), body);
     attachCubeDrag(p(), body);
@@ -1277,7 +1283,7 @@ function drawAll(now: number) {
     const bodyRect = { x: b.left - g.left, y: b.top - g.top, w: b.width, h: b.height };
     const opts = drawOptions();
     // Skip panels whose inputs did not change: no GPU work, no overlay redraw.
-    const sig = panelSignature(p, src, bodyRect, opts) + dpr;
+    const sig = panelSignature(p, src, bodyRect, opts) + dpr + shading.sig();
     if (panelSigs.get(v.idx) === sig) continue;
     panelSigs.set(v.idx, sig);
     if (src?.latency.waiting && !drawnSources.has(src)) drawnSources.set(src, Date.now());
@@ -1288,6 +1294,7 @@ function drawAll(now: number) {
     ctx.clearRect(0, 0, b.width, b.height);
     renderer.clearRect(bodyRect, [0.043, 0.047, 0.055]);
     drawPanel(renderer, ctx, `p${v.idx}`, p, src, bodyRect, opts);
+    shading.drawOverlay(ctx, v.idx, p, b.width, b.height);
     // The WebGL canvas is off-screen; copy this panel's region into its own canvas.
     v.blit.getContext('2d')!.drawImage(glCanvas, Math.round(bodyRect.x * dpr), Math.round(bodyRect.y * dpr), W, H, 0, 0, W, H);
   }
@@ -1894,6 +1901,17 @@ mountGenerator($('#gen'), state.gen, state.genSink ?? '', (cfg, sink) => { state
 });
 applySidebar();
 renderHeader();
+// Touch Shading (#54): gestures on the scopes → lz-camera-bridge or the simulator
+const shading = new ShadingControl({
+  simSource: () => {
+    let s = sources.find((x) => x.url === SIM_URL);
+    if (!s) { s = addSource('file', 'Shading-Simulator', SIM_URL, { colorspace: '709' }); if (state.panels[0]) switchSource(state.panels[0], s.id); }
+    return s;
+  },
+  panelSource,
+  hud: alertHud,
+  redraw: () => panelSigs.clear(),
+}, app);
 const dock = createDock($('#dock'), {
   element: panelElement,
   title: panelTitle,

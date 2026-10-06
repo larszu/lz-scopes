@@ -36,6 +36,7 @@ import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as brid
 import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
 import { DEFAULT_LOW_LATENCY, LL_STATS, LL_WIDTHS, describeLowLatency, effectiveWidth, type LowLatencyConfig } from './lowLatency';
+import { mountResolveLive } from './resolveLive';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
 
@@ -162,6 +163,7 @@ app.innerHTML = `
     <aside class="side" id="side">
       <h2>Quellen</h2>
       <div id="source-list"></div>
+      <div class="resolve-live" id="resolve-live" hidden></div>
       <div class="add" id="add"></div>
       <details class="gen" id="gen-wrap"><summary>Tongenerator</summary><div id="gen"></div></details>
       <details class="gen" id="opple-wrap"><summary>Lichtmesser (Opple)</summary><div id="opple"></div></details>
@@ -628,14 +630,16 @@ async function pickWindow(s: Source) {
   document.body.append(dlg);
 }
 
+function addResolve() {
+  const s = addSource('stream', 'DaVinci Resolve', 'resolve:', { depth: 16, fps: 10, width: 1920 });
+  s.connectStream('resolve:', bridgeUrl());
+}
+
 $('#add').replaceChildren(
   h('span', {}, '+ Quelle'),
   h('button', { onclick: () => startLocal(addSource('pattern', `Testbild ${sources.length + 1}`)) }, 'Testbild'),
   h('button', { onclick: () => addSource('stream', `Stream ${sources.length + 1}`) }, 'RTSP / Netz'),
-  h('button', { title: 'Aktuelles Frame aus DaVinci Resolve (Viewer, gegradet) in 16 bit über die Scripting-API – Resolve Studio, Externes Scripting: Lokal', onclick: () => {
-    const s = addSource('stream', 'DaVinci Resolve', 'resolve:', { depth: 16, fps: 10, width: 1920 });
-    s.connectStream('resolve:', bridgeUrl());
-  } }, 'DaVinci Resolve'),
+  h('button', { title: 'Aktuelles Frame aus DaVinci Resolve (Viewer, gegradet) in 16 bit über die Scripting-API – Resolve Studio, Externes Scripting: Lokal', onclick: addResolve }, 'DaVinci Resolve'),
   h('button', { title: 'Kamera oder USB-Capture-Gerät (HDMI/SDI → USB)', onclick: () => startLocal(addSource('webcam')) }, 'Kamera/Capture'),
   h('button', { title: 'Bildschirm oder Fenster (z. B. Resolve-Viewer)', onclick: () => startLocal(addSource('screen')) }, 'Bildschirm/Fenster'),
   h('button', { onclick: () => startLocal(addSource('file')) }, 'Datei'),
@@ -1907,3 +1911,10 @@ requestAnimationFrame(frame);
 connectRemote(bridgeUrl, execute, controlState);
 // Auto-connect saved network sources (bridge must be running).
 sources.forEach((s) => { if (s.kind === 'stream' && s.url) s.connectStream(s.url, bridgeUrl()); });
+
+// running DaVinci Resolve on the bridge machine: one click to connect
+mountResolveLive($('#resolve-live'), {
+  http: () => bridgeUrl().replace(/^ws/, 'http'),
+  connect: () => { if (!sources.some((x) => x.url === 'resolve:' && x.status !== 'idle')) addResolve(); },
+  connected: () => sources.some((x) => x.url === 'resolve:' && (x.status === 'live' || x.status === 'connecting')),
+});

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LtcReader, biphaseMark, decodeLtcWord, encodeLtcWord } from '../src/audio/dsp/ltc';
-import { formatTc, fromFrames, rateById, toFrames } from '../src/clock/timecode';
+import { formatTc, fromFrames, fromPairs, rateById, toFrames, toPairs } from '../src/clock/timecode';
 
 const fs = 48000;
 
@@ -92,5 +92,23 @@ describe('LTC reader with a synthetic signal', () => {
     rd.process(new Float32Array(fs));
     rd.process(Float32Array.from({ length: fs }, (_, i) => 0.3 * Math.sin((2 * Math.PI * 1000 * i) / fs)));
     expect(rd.count).toBe(0);
+  });
+});
+
+describe('LTC at 50p carries frame pairs (25 code words per second)', () => {
+  it('50p clock → one word per pair → decoded pair maps back to the even 50p frame', () => {
+    const r50 = rateById('50');
+    const f0 = toFrames({ hh: 1, mm: 2, ss: 3, ff: 0, df: false }, r50);
+    const even: string[] = [], words: number[][] = [];
+    for (let f = 0; f < 60; f += 2) {
+      const ta = fromFrames(f0 + f, r50, false);
+      even.push(formatTc(ta));
+      words.push(encodeLtcWord(toPairs(ta, r50), 25));
+    }
+    const rd = new LtcReader(fs);
+    rd.process(degrade(biphaseMark(words, fs / 2000, 0.4)));
+    expect(rd.count).toBeGreaterThan(20);
+    expect(rd.frames.at(-1)!.fps).toBeCloseTo(25, 1);
+    for (const fr of rd.frames) expect(even).toContain(formatTc(fromPairs({ ...fr, second: false }, r50)));
   });
 });

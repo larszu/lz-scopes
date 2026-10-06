@@ -32,10 +32,13 @@ import { mountOpple } from './opple/ui';
 import { isLight, LIGHT_SCOPES, lightPanelSettings } from './opple/panelSettings';
 import { ledSettings, pictureSize } from './led/wall';
 import { Renderer, type PictureMode, type SkinRange } from './renderer';
+import { GREEN_DEFAULT } from './match/core';
+import { greenSettings, matchPanelSettings, targetEditor, type MatchUi } from './match/ui';
 import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
 import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
 import { DEFAULT_LOW_LATENCY, LL_STATS, LL_WIDTHS, describeLowLatency, effectiveWidth, type LowLatencyConfig } from './lowLatency';
+import { mountResolveLive } from './resolveLive';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
 
@@ -46,6 +49,8 @@ interface Persisted {
   layout: string; panels: PanelState[]; unit: Unit; tint: Tint; falsePreset: string;
   zebra: number; zebraLow: number; maxSamples: number; bridge: string; sidebar: boolean;
   skin: SkinRange; display: 'auto' | DisplaySpace;
+  /** green/grass qualifier (#55, match/core.ts GREEN_DEFAULT) */
+  green?: SkinRange;
   /** picture view: HDR/log → SDR down-mapping */
   hdrPreview?: HdrPreview;
   /** UI skin (Oberfläche); chrome only, never the measurement colours */
@@ -162,6 +167,7 @@ app.innerHTML = `
     <aside class="side" id="side">
       <h2>Quellen</h2>
       <div id="source-list"></div>
+      <div class="resolve-live" id="resolve-live" hidden></div>
       <div class="add" id="add"></div>
       <details class="gen" id="gen-wrap"><summary>Tongenerator</summary><div id="gen"></div></details>
       <details class="gen" id="opple-wrap"><summary>Lichtmesser (Opple)</summary><div id="opple"></div></details>
@@ -628,14 +634,16 @@ async function pickWindow(s: Source) {
   document.body.append(dlg);
 }
 
+function addResolve() {
+  const s = addSource('stream', 'DaVinci Resolve', 'resolve:', { depth: 16, fps: 10, width: 1920 });
+  s.connectStream('resolve:', bridgeUrl());
+}
+
 $('#add').replaceChildren(
   h('span', {}, '+ Quelle'),
   h('button', { onclick: () => startLocal(addSource('pattern', `Testbild ${sources.length + 1}`)) }, 'Testbild'),
   h('button', { onclick: () => addSource('stream', `Stream ${sources.length + 1}`) }, 'RTSP / Netz'),
-  h('button', { title: 'Aktuelles Frame aus DaVinci Resolve (Viewer, gegradet) in 16 bit über die Scripting-API – Resolve Studio, Externes Scripting: Lokal', onclick: () => {
-    const s = addSource('stream', 'DaVinci Resolve', 'resolve:', { depth: 16, fps: 10, width: 1920 });
-    s.connectStream('resolve:', bridgeUrl());
-  } }, 'DaVinci Resolve'),
+  h('button', { title: 'Aktuelles Frame aus DaVinci Resolve (Viewer, gegradet) in 16 bit über die Scripting-API – Resolve Studio, Externes Scripting: Lokal', onclick: addResolve }, 'DaVinci Resolve'),
   h('button', { title: 'Kamera oder USB-Capture-Gerät (HDMI/SDI → USB)', onclick: () => startLocal(addSource('webcam')) }, 'Kamera/Capture'),
   h('button', { title: 'Bildschirm oder Fenster (z. B. Resolve-Viewer)', onclick: () => startLocal(addSource('screen')) }, 'Bildschirm/Fenster'),
   h('button', { onclick: () => startLocal(addSource('file')) }, 'Datei'),
@@ -747,7 +755,7 @@ function panelSettings(p: PanelState): Node[] {
   const row = (label: string, ...kids: (Node | string)[]) => rows.push(h('label', { class: 'mrow' }, h('span', {}, label), ...kids));
   row('Messpunkt', select(p.stage ?? 'auto', [['auto', `wie Standard (${STAGE_LABELS[state.stage ?? 'signal']})`], ...STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string])],
     (v) => { p.stage = v === 'auto' ? undefined : v as Stage; save(); refreshHeads(); }, 'Wo in der Kette der Quelle (CST/LUT, Quellenkarte) dieses Panel misst'));
-  const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv' | 'skinBand', label: string, dflt = false) => {
+  const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv' | 'skinBand' | 'greenBand' | 'greenWedge', label: string, dflt = false) => {
     const c = h('input', { type: 'checkbox', checked: p[key] ?? dflt }) as HTMLInputElement;
     c.onchange = () => { p[key] = c.checked; save(); refreshHeads(); };
     return h('label', { class: 'inline' }, c, label);
@@ -762,7 +770,7 @@ function panelSettings(p: PanelState): Node[] {
   if (p.scope === 'parade' || p.scope === 'yrgb' || p.scope === 'wf-rgb') {
     row('Farbe', select(p.paradeColor ?? (p.scope === 'wf-rgb' || p.colorize ? 'channel' : 'mono'),
       [['mono', 'Mono'], ['channel', 'Kanalfarben'], ['source', 'Bildfarben (Quellpixel)']], (v) => { p.paradeColor = v as PanelState['paradeColor']; save(); }));
-  } else if (scatter && p.scope !== 'wf-skin' && p.scope !== 'wf-color') {
+  } else if (scatter && p.scope !== 'wf-skin' && p.scope !== 'wf-green' && p.scope !== 'wf-color') {
     row('Farbe', check('colorize', 'Spur in Bildfarbe'));
   }
   if (isWaveform(p.scope)) {
@@ -783,6 +791,8 @@ function panelSettings(p: PanelState): Node[] {
     row('Beschriftung', h('label', { class: 'inline' }, names, 'Kanalnamen und Einheit'));
   }
   if (p.scope === 'wf-skin') row('Hautton-Bereich', check('skinBand', 'Band und Linien einblenden (aus = nur farbige Hauttöne)', true));
+  if (p.scope === 'wf-green') row('Grün-Bereich', check('greenBand', 'Band und Linien einblenden (aus = nur farbige Grüntöne)', true));
+  if (p.scope === 'match') return [...rows, ...matchPanelSettings(p, panelSource(p), matchUi(p))];
   if (p.scope === 'cube') {
     const c = { ...DEFAULT_CUBE, ...p.cube };
     const setCube = (patch: Partial<CubeSettings>) => { p.cube = { ...c, ...patch }; Object.assign(c, patch); save(); };
@@ -877,28 +887,10 @@ function panelSettings(p: PanelState): Node[] {
       return h('label', { class: 'inline' }, c, label);
     };
     row('Gamut-Grenzen', gbox('709', '709'), gbox('p3', 'P3'), gbox('2020', '2020'));
-    rows.push(h('div', { class: 'mtitle' }, 'Zielfarben (Color Matching)'));
-    state.targets.forEach((t, i) => {
-      const css = `rgb(${t.rgb.map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255)).join(',')})`;
-      const name = h('input', { value: t.name }) as HTMLInputElement;
-      name.onchange = () => { t.name = name.value; save(); };
-      rows.push(h('div', { class: 'mrow' }, h('span', { class: 'swatch', style: `background:${css}` }), name,
-        h('button', { class: 'mini', title: 'Entfernen', onclick: () => { state.targets.splice(i, 1); save(); refreshHeads(); } }, '✕')));
-    });
-    const add = (name: string, rgb: [number, number, number] | null) => {
-      if (!rgb) { alertHud('Kein Wert – erst Messpunkt setzen bzw. Messrahmen ziehen'); return; }
-      state.targets.push({ name, rgb }); save(); refreshHeads();
-    };
-    const src = panelSource(p);
-    const hex = h('input', { placeholder: '#c89478', class: 'num wide' }) as HTMLInputElement;
-    rows.push(h('div', { class: 'mrow' },
-      h('button', { title: 'Farbe des Messpunkts (Klick ins Bild) als Ziel', onclick: () => add(`Ziel ${state.targets.length + 1}`, src?.probe ? src.readPixel(src.probe.x, src.probe.y) : null) }, '+ Messpunkt'),
-      h('button', { title: 'Mittelwert des Messrahmens als Ziel – z. B. Referenzkamera', onclick: () => add(`Ziel ${state.targets.length + 1}`, src?.roi && src.stats ? src.stats.rgbAvg : null) }, '+ Messrahmen'),
-      hex, h('button', { title: 'Hex-Farbe (Signalwerte) als Ziel', onclick: () => {
-        const m = /^#?([0-9a-f]{6})$/i.exec(hex.value.trim());
-        add(hex.value.trim(), m ? [0, 2, 4].map((k) => parseInt(m[1].slice(k, k + 2), 16) / 255) as [number, number, number] : null);
-      } }, '+')));
+    row('Grün-Keil', check('greenWedge', 'Rasen/Laub-Bereich einblenden'));
+    rows.push(...targetEditor(panelSource(p), matchUi(p)));
   }
+  if (p.scope === 'wf-green' || (p.scope === 'vector' && p.greenWedge) || (p.scope === 'picture' && p.picture === 'green')) rows.push(...greenSettings(greenState(), panelSource(p), matchUi(p), p.scope === 'wf-green'));
   if (p.scope === 'wf-skin' || p.scope === 'vector' || (p.scope === 'picture' && p.picture === 'skin')) {
     row('Hautton Luma',
       numIn(Math.round(state.skin.lo * 100), 0, 100, (v) => { state.skin.lo = v / 100; }), '–',
@@ -922,7 +914,7 @@ function panelSettings(p: PanelState): Node[] {
     row('HDR10-Kennwerte', h('button', { class: 'mini', title: 'MaxCLL/MaxFALL (CTA-861.3) neu zählen – nur bei PQ-Quellen, nur ganze Bilder', onclick: () => { panelSource(p)?.resetLightLevel(); } }, 'MaxCLL/MaxFALL zurücksetzen'));
   }
   if (p.scope === 'picture') {
-    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung'], ['r103', 'EBU R 103'], ['neutral', 'Neutral (Farbstich)']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
+    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['green', 'Grüntöne (Rasen)'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung'], ['r103', 'EBU R 103'], ['neutral', 'Neutral (Farbstich)']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
     const ab = p.ab ?? { mode: 'off' as const, b: 'stage:cst', pos: 0.5, gain: 4 };
     const setAb = (patch: Partial<NonNullable<PanelState['ab']>>, rebuild = false) => {
       p.ab = { ...ab, ...patch }; Object.assign(ab, patch); save(); refreshHeads();
@@ -1079,31 +1071,36 @@ function attachCubeDrag(p: PanelState, body: HTMLElement) {
   body.addEventListener('dblclick', () => { if (p.scope === 'cube') { const c = { ...DEFAULT_CUBE, ...p.cube }; p.cube = { ...c, yaw: DEFAULT_CUBE.yaw, pitch: DEFAULT_CUBE.pitch, zoom: 1, panX: 0, panY: 0 }; save(); } });
 }
 
+/** Skin and green waveforms: drag the lo/hi lines, mouse wheel = hue tolerance. */
 function attachSkinDrag(p: PanelState, body: HTMLElement) {
+  const range = () => (p.scope === 'wf-skin' ? state.skin : p.scope === 'wf-green' ? greenState() : null);
   const levelAt = (e: PointerEvent | WheelEvent) => {
     const b = body.getBoundingClientRect();
-    const r = plotRect('wf-skin', b.width, b.height);
+    const r = plotRect(p.scope, b.width, b.height);
     return waveLevel(r, e.clientY - b.top, WAVE_ZOOMS[p.waveZoom ?? 'full']);
   };
   let which: 'lo' | 'hi' | null = null;
   body.addEventListener('pointerdown', (e) => {
-    if (p.scope !== 'wf-skin' || e.button !== 0) return;
+    const q = range();
+    if (!q || e.button !== 0) return;
     const v = levelAt(e);
-    which = Math.abs(v - state.skin.lo) < Math.abs(v - state.skin.hi) ? 'lo' : 'hi';
+    which = Math.abs(v - q.lo) < Math.abs(v - q.hi) ? 'lo' : 'hi';
     try { body.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
-    state.skin[which] = Math.min(1.05, Math.max(0, v));
+    q[which] = Math.min(1.05, Math.max(0, v));
   });
   body.addEventListener('pointermove', (e) => {
-    if (!which || p.scope !== 'wf-skin') return;
+    const q = range();
+    if (!which || !q) return;
     const v = Math.min(1.05, Math.max(0, levelAt(e)));
-    state.skin[which] = v;
-    if (state.skin.lo > state.skin.hi) { const t = state.skin.lo; state.skin.lo = state.skin.hi; state.skin.hi = t; which = which === 'lo' ? 'hi' : 'lo'; }
+    q[which] = v;
+    if (q.lo > q.hi) { const t = q.lo; q.lo = q.hi; q.hi = t; which = which === 'lo' ? 'hi' : 'lo'; }
   });
   body.addEventListener('pointerup', () => { if (which) { which = null; save(); renderHeader(); } });
   body.addEventListener('wheel', (e) => {
-    if (p.scope !== 'wf-skin') return;
+    const q = range();
+    if (!q) return;
     e.preventDefault();
-    state.skin.tol = Math.min(45, Math.max(2, state.skin.tol + (e.deltaY < 0 ? 1 : -1)));
+    q.tol = Math.min(p.scope === 'wf-green' ? 60 : 45, Math.max(2, q.tol + (e.deltaY < 0 ? 1 : -1)));
     save();
   }, { passive: false });
 }
@@ -1368,11 +1365,22 @@ function setGlobalLowLatency(on: boolean) {
   renderSources(); refreshHeads();
 }
 
+/** Green qualifier state (created with defaults on first use). */
+function greenState(): SkinRange { return (state.green ??= { ...GREEN_DEFAULT }); }
+
+/** Hooks of the colour-target UI (match/ui.ts) for one panel's menu. */
+function matchUi(p: PanelState): MatchUi {
+  return {
+    targets: state.targets, sources, save: () => { save(); refreshHeads(); }, alert: alertHud,
+    refresh: () => { const v = [...views.values()].find((x) => state.panels[x.idx] === p); if (v) { fillHead(v); v.head.querySelector('details.psettings')?.setAttribute('open', ''); } },
+  };
+}
+
 function drawOptions(): DrawOptions {
   const displaySpace = state.display === 'auto' ? detected.space : state.display;
   return {
     unit: state.unit, tint: state.tint, maxSamples: state.maxSamples, falsePreset: state.falsePreset,
-    zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps, skin: state.skin, display: displaySpace, hdrPreview: state.hdrPreview, targets: state.targets,
+    zebra: state.zebra, zebraLow: state.zebraLow, frozen, displayFps, skin: state.skin, green: greenState(), display: displaySpace, hdrPreview: state.hdrPreview, targets: state.targets,
     stage: state.stage ?? 'signal',
     sourceById: (id) => sources.find((s) => s.id === id) ?? null,
     deRef: state.deRef ?? 'off',
@@ -1391,7 +1399,7 @@ interface LayoutConfig {
   dock: unknown; panels: PanelState[];
   /** overlay scenes (#1); older files have none */
   scenes?: OverlayScene[]; activeScene?: string;
-  settings: Pick<Persisted, 'unit' | 'tint' | 'skin' | 'falsePreset' | 'zebra' | 'zebraLow' | 'display' | 'hdrPreview' | 'maxSamples' | 'targets' | 'stage'> & { theme?: UiTheme };
+  settings: Pick<Persisted, 'unit' | 'tint' | 'skin' | 'green' | 'falsePreset' | 'zebra' | 'zebraLow' | 'display' | 'hdrPreview' | 'maxSamples' | 'targets' | 'stage'> & { theme?: UiTheme };
   /** CST/LUT chain per source, by source name (LUT files themselves stay in the browser's LUT store) */
   chains?: Record<string, ChainSettings>;
   saved: string;
@@ -1403,9 +1411,9 @@ function storeLayouts(l: Record<string, LayoutConfig>) {
   try { localStorage.setItem(LAYOUTS_KEY, JSON.stringify(l)); } catch { /* ignore */ }
 }
 function currentLayout(): LayoutConfig {
-  const { unit, tint, skin, falsePreset, zebra, zebraLow, display, hdrPreview, maxSamples, targets, stage, theme } = state;
+  const { unit, tint, skin, green, falsePreset, zebra, zebraLow, display, hdrPreview, maxSamples, targets, stage, theme } = state;
   const chains = Object.fromEntries(sources.filter((s) => s.settings.chain).map((s) => [s.name, structuredClone(s.settings.chain!)]));
-  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), scenes: structuredClone(state.scenes), activeScene: state.activeScene, settings: structuredClone({ unit, tint, skin, falsePreset, zebra, zebraLow, display, hdrPreview, maxSamples, targets, stage, theme }), chains, saved: new Date().toISOString() };
+  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), scenes: structuredClone(state.scenes), activeScene: state.activeScene, settings: structuredClone({ unit, tint, skin, green, falsePreset, zebra, zebraLow, display, hdrPreview, maxSamples, targets, stage, theme }), chains, saved: new Date().toISOString() };
 }
 function applyLayout(c: LayoutConfig) {
   // mutate in place: panel views hold references to their state objects
@@ -1907,3 +1915,10 @@ requestAnimationFrame(frame);
 connectRemote(bridgeUrl, execute, controlState);
 // Auto-connect saved network sources (bridge must be running).
 sources.forEach((s) => { if (s.kind === 'stream' && s.url) s.connectStream(s.url, bridgeUrl()); });
+
+// running DaVinci Resolve on the bridge machine: one click to connect
+mountResolveLive($('#resolve-live'), {
+  http: () => bridgeUrl().replace(/^ws/, 'http'),
+  connect: () => { if (!sources.some((x) => x.url === 'resolve:' && x.status !== 'idle')) addResolve(); },
+  connected: () => sources.some((x) => x.url === 'resolve:' && (x.status === 'live' || x.status === 'connecting')),
+});

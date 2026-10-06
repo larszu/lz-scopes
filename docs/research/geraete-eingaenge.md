@@ -21,9 +21,15 @@ Geöffnet:
 - ffmpeg `configure` (GitHub-Spiegel, 30.09.2026): `EXTERNAL_LIBRARY_NONFREE_LIST="decklink libfdk_aac libmpeghdec"` – ein ffmpeg mit `--enable-decklink` ist nonfree und nicht weitergebbar.
 - github.com/amiaopensource/decklinksdk: inoffizielle Sammlung „openly-licensed SDK files“ aus einem früher öffentlichen SDK-Zip 10.1.4.
 
-Nicht eingesehen: die Lizenzbedingungen des SDK-Downloads selbst (hinter der Registrierung). Die Aussage im Issue „SDK-Lizenz erlaubt Weitergabe von Apps“ ist damit **nicht belegt**; belegt ist nur die freizügige Header-Lizenz.
+**SDK-EULA** (geöffnet am 06.10.2026: https://www.blackmagicdesign.com/EULA/DeckLinkSDK leitet auf das PDF „End User License Agreement for the Software Development Kit“ weiter):
+- §0.1: „Clauses 1, 4.3, 4.4, 5, 7, 8 of these terms and conditions do not apply to those files of the SDK contained in the following sub-folders …: /Mac/Include /Win/Include /Linux/Include“. Für diese Dateien gilt die Header-Lizenz oben.
+- §1.2: Erlaubt ist unter anderem „creating software that will be compatible with the Licensor’s products“.
+- §6.2: Erlaubte Bezeichnungen sind nur „XXX compatible with Blackmagic Design YYY“ und „XXX for Blackmagic Design YYY“ (YYY u. a. „DeckLink“). UltraStudio steht nicht in dieser Liste; UI und README schreiben deshalb „kompatibel mit Blackmagic Design DeckLink“.
+- Der Treiber (Desktop Video) wird nicht mitgeliefert. `DeckLinkAPIDispatch.cpp` (macOS/Linux) bzw. COM (Windows) lädt ihn zur Laufzeit.
 
-Entscheidung: eigener Helfer `helpers/decklink/lz-decklink.cpp`, SDK nicht im Repository, Build mit `DECKLINK_SDK_DIR`. Zum Kompiliertest wurden die 12.0-Header nur in ein temporäres Verzeichnis geladen. Pixelformate laut Header `DeckLinkAPIModes.h`: `bmdFormat10BitYUV` = 'v210', `bmdFormat10BitRGB` = 'r210' „Big-endian RGB 10-bit per component with SMPTE video levels (64-960)“. HDR-EOTF-Kennung „in range 0-7 as per CEA 861.3“ (`bmdDeckLinkFrameMetadataHDRElectroOpticalTransferFunc`).
+Folge (06.10.2026): CI baut den Helfer für macOS (universal) und Windows und packt ihn in die Installer. Die Include-Dateien holt `scripts/decklink-sdk-fetch.mjs` aus dem OBS-Repository (Commit `a93fae1`). Jede Datei wird per Git-Blob-Hash geprüft (`scripts/decklink-sdk.json`); im Repository liegen die Dateien nicht. Ohne Desktop Video meldet der Helfer „Blackmagic Desktop Video ist nicht installiert (DeckLink-Treiber fehlt)“, und die Oberfläche zeigt genau das an.
+
+Entscheidung: eigener Helfer `helpers/decklink/lz-decklink.cpp`, SDK nicht im Repository. Gebaut wird mit den Include-Dateien 12.0 aus `npm run decklink:fetch` oder mit `DECKLINK_SDK_DIR`. Pixelformate laut Header `DeckLinkAPIModes.h`: `bmdFormat10BitYUV` = 'v210', `bmdFormat10BitRGB` = 'r210' „Big-endian RGB 10-bit per component with SMPTE video levels (64-960)“. HDR-EOTF-Kennung „in range 0-7 as per CEA 861.3“ (`bmdDeckLinkFrameMetadataHDRElectroOpticalTransferFunc`).
 
 v210-Zeilenlänge: 48 Pixel je 128 Byte; nachgeprüft an ffmpegs v210-Encoder (1280×720 → 3456 Byte/Zeile). ffmpeg hat einen v210-Demuxer (`-f v210`), einen r210-Rohdemuxer nicht brauchbar (Paketgröße falsch) – daher wandelt der Helfer r210 selbst in `rgb48le`.
 

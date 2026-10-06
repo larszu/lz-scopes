@@ -83,7 +83,7 @@ Für Netzwerkquellen ohne Desktop-App: `npm run ffmpeg:fetch` lädt dasselbe ffm
 | Testbild-Generator (siehe unten) | direkt im Browser, auch als Ausgabefenster |
 | Kamera, Bildschirm, Video-/Bilddatei | direkt im Browser |
 | `device:` – Capture-Karten, die sich als Systemgerät melden (AVFoundation/DirectShow/V4L2) | Bridge: ffmpeg mit festem Modus, Rohformat (10 bit, wenn angeboten) und wählbarer Matrix; auch am entfernten Bridge-Rechner |
-| `decklink:<n>` – Blackmagic DeckLink/UltraStudio | Bridge + eigener Helfer (DeckLink SDK, [helpers/decklink](helpers/decklink/README.md)); nur wenn gebaut und Desktop Video installiert, **mit Hardware ungeprüft** |
+| `decklink:<n>` – kompatibel mit Blackmagic Design DeckLink | Bridge + eigener Helfer ([helpers/decklink](helpers/decklink/README.md)), in der Desktop-App enthalten (macOS universal, Windows); aktiv nur mit installiertem Treiber Desktop Video, sonst „Desktop Video nicht installiert“; **mit Hardware ungeprüft** |
 | `ndi:<Quelle>` – NDI® | Bridge + NDI-Helfer ([helpers/ndi](helpers/ndi/README.md)), lädt die vom Nutzer installierte NDI-Runtime ([ndi.video](https://ndi.video/)); UYVY bzw. 16 bit P216; nur im Loopback mit eigenem Testsender geprüft |
 | `folder:<Name>` – Watch-Ordner auf dem Bridge-Rechner (Exporte aus Lightroom, Capture One, Resolve) | Bridge: neuestes TIFF/DPX/PNG/JPEG/WebP/EXR in voller Tiefe; Ordner nur ausdrücklich freigegeben (`--watch-dir`, `LZS_WATCH_DIRS`, Desktop-App per Dialog) |
 
@@ -258,7 +258,7 @@ Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in
 - Sub-Black und Super-White bleiben nur im Bridge-Modus *16 bit Y′CbCr* und bei den 16-bit-Testbildern erhalten. R′G′B′-Streams (8/16 bit) und Browser-Quellen sind auf 0–100 % beschnitten; die R-103-Prüfung weist dann darauf hin.
 - Die R-103-Prüfung misst am Analysebild. Bei skalierter Analysebreite ist sie nicht normgerecht (Breite „nativ“ wählen).
 - Die Ausgabefenster rechnen über 8 bit, wo der Browser es erlaubt (Testbilder: float16-Canvas mit exakten 10-bit-Codes, `R` wechselt zwischen Pegel 0–100 % und Codes 1:1 für einen Monitor in Limited Range; Scope-Fenster: WebGL-Puffer RGBA16F). Das Fenster zeigt, was die Pipeline liefert; ob die Verbindung zum Monitor 10 bit trägt, ist unbekannt – Prüfmuster *10-bit-Rampe* oder Capture-Karte. Ein 10-bit-Stream (`codec=hevc10|hevc422|v210|prores`, v210 bit-exakt) läuft über die Bridge. Siehe [docs/research/10bit-ausgabe.md](docs/research/10bit-ausgabe.md).
-- Kein AJA. NDI nur mit installierter NDI-Runtime, ohne Ton, mit echten Quellen im Netz ungeprüft. DeckLink nur über den selbst zu bauenden Helfer (ffmpegs eigener DeckLink-Weg ist „nonfree“ und nicht weitergebbar) und noch nie mit Hardware gelaufen.
+- Kein AJA. NDI nur mit installierter NDI-Runtime, ohne Ton, mit echten Quellen im Netz ungeprüft. DeckLink nur über den eigenen Helfer (ffmpegs eigener DeckLink-Weg ist „nonfree“ und nicht weitergebbar); der Helfer ist in der Desktop-App enthalten, lief aber noch nie mit Hardware, der Windows-Helfer ist nur kompiliert.
 - Audio: Browser liefern über `getUserMedia` höchstens 2 Kanäle; Mehrkanal kommt nur über die Bridge. Ungeprüft: Mehrkanal-Interfaces und Dante mit echter Hardware, die Bridge unter Windows (Ersatzweg für `pipe:3`, DirectShow-Ton), der A/V-Versatz gegen eine echte Kamera.
 - Browser-Quellen (Kamera, Datei) liefern immer 8 bit und durchlaufen das Farbmanagement des Browsers.
 

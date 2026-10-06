@@ -141,10 +141,11 @@ Tone generator and loudness/level analyser, measured with an own DSP core (`src/
 
 Panel type **Clock / time code** (and an optional corner read-out in the picture panel). Sources and findings: [docs/research/clock-ptp.md](docs/research/clock-ptp.md).
 
+- **Above 30 fps** the time code counts 0…49/59 like editing software and FFmpeg; ST 12-1 frame pairs as an option. LTC runs at 25/30 code words (pairs) there.
 - **Time of day** after SMPTE ST 2059-1: system time → TAI (IERS Bulletin C 72, TAI − UTC = 37 s) → time address with Daily Jam, 23.98 … 60 fps, DF/NDF, frame phase to the SMPTE epoch. Labelled “system clock – no reference” unless PTP corrects it.
 - **Source time code**: container start time code (ffprobe tag), GOP/SEI time code per frame (ffmpeg `showinfo`), DaVinci Resolve timeline time code, browser video files from `currentTime`; difference to the time of day in frames.
 - **LTC** from any source with sound: own biphase-mark reader (24–30 fps, forward and reverse).
-- **PTP monitor** in the bridge (own code, UDP 319/320 on 224.0.1.129): grandmaster, domain, clockClass, rates, SMPTE SM TLV (lock, local offset, next jam), offset and optional mean path delay as software-timestamp estimates. No PTP on the network → “no PTP received”.
+- **PTP monitor** in the bridge (own code, UDP 319/320 on 224.0.1.129): grandmaster, domain, clockClass, rates, SMPTE SM TLV (lock, local offset, next jam), offset and optional mean path delay as software-timestamp estimates. No PTP on the network → “no PTP received”. The UI served by the bridge or the desktop app may use it directly; another web origin (e.g. GitHub Pages) only after the user allows it on the bridge's own `/allow` page.
 - **ST 2110 RTP check**: RTP timestamp (90 kHz, zero offset at the epoch) against arrival time and frame grid.
 
 ## Architecture

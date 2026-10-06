@@ -214,10 +214,11 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 
 Panel-Typ **Uhr / Timecode**, dazu wahlweise eine Einblendung im Bild-Panel (⚙ → Uhr). Quellen und Befunde: [docs/research/clock-ptp.md](docs/research/clock-ptp.md).
 
+- **Über 30 fps** zählt der Timecode 0…49/59 wie Schnittprogramme und FFmpeg; Frame-Paare nach ST 12-1 als Option. LTC läuft dort mit 25/30 Codewörtern (Paare).
 - **Tageszeit** nach SMPTE ST 2059-1: Systemzeit → TAI (IERS Bulletin C 72, TAI − UTC = 37 s) → Timecode mit Daily Jam, 23,98 … 60 fps, DF/NDF, Frame-Phase zur SMPTE-Epoche. Gekennzeichnet als „Systemuhr – keine Referenz“, solange kein PTP die Uhr korrigiert.
 - **Quell-Timecode**: Start-Timecode des Containers (ffprobe-Tag), GOP-/SEI-Timecode je Bild (ffmpeg `showinfo`), Timeline-Timecode aus DaVinci Resolve, Videodateien im Browser aus `currentTime`; Differenz zur Tageszeit in Frames.
 - **LTC** aus dem Ton jeder Quelle: eigener Biphase-Mark-Leser (24–30 fps, vorwärts und rückwärts).
-- **PTP-Monitor** in der Bridge (eigener Code, UDP 319/320, 224.0.1.129): Grandmaster, Domain, clockClass, Nachrichtenraten, SMPTE-SM-TLV (Lock, Lokal-Offset, nächster Jam), Offset und auf Wunsch Mean Path Delay – als Schätzung mit Software-Zeitstempeln. Ohne PTP im Netz: „kein PTP empfangen“. Nur mit der UI aus Bridge oder Desktop-App, nicht von GitHub Pages.
+- **PTP-Monitor** in der Bridge (eigener Code, UDP 319/320, 224.0.1.129): Grandmaster, Domain, clockClass, Nachrichtenraten, SMPTE-SM-TLV (Lock, Lokal-Offset, nächster Jam), Offset und auf Wunsch Mean Path Delay – als Schätzung mit Software-Zeitstempeln. Ohne PTP im Netz: „kein PTP empfangen“. Die UI aus Bridge oder Desktop-App darf das direkt; eine andere Web-Oberfläche (z. B. GitHub Pages) erst nach Freigabe auf der Seite `/allow` der Bridge (⚙ → „In der Bridge zulassen …“).
 - **ST-2110-RTP-Prüfung**: RTP-Zeitstempel (90 kHz, Offset 0 zur Epoche) gegen Ankunftszeit und Frame-Raster.
 
 ## Einbetten

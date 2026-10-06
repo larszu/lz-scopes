@@ -21,8 +21,8 @@ async function createWindow() {
   const dist = path.join(__dirname, '..', 'dist');
   const host = process.env.LZS_HOST || '127.0.0.1';
   let port;
-  try { ({ port } = await startBridge({ port: Number(process.env.LZS_PORT) || 4192, host, dist })); }
-  catch { ({ port } = await startBridge({ port: 0, host, dist })); }
+  try { ({ port } = await startBridge({ port: Number(process.env.LZS_PORT) || 4192, host, dist, configDir: app.getPath('userData') })); }
+  catch { ({ port } = await startBridge({ port: 0, host, dist, configDir: app.getPath('userData') })); }
   origin = `http://127.0.0.1:${port}`;
   console.log(`bridge ${origin}, ffmpeg: ${ffmpegCandidates()[0] ?? 'missing'}`);
 

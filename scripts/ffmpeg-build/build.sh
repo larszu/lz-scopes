@@ -13,7 +13,7 @@
 # Research and licence duties: docs/research/ffmpeg-lizenz.md
 set -euo pipefail
 
-TARGET="${1:?Ziel: darwin-arm64 | darwin-x64 | win32-x64 | linux-x64}"
+TARGET="${1:?Ziel: darwin-arm64 | darwin-x64 | win32-x64 | linux-x64 | --sources-only}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BASE="${FFBUILD_DIR:-$PWD/ffbuild}"
 OUT="${2:-$BASE/out}"
@@ -26,13 +26,27 @@ JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 
 # ---- sources: download once, verify always (bash 3.2 on macOS: no associative arrays)
+# url "git+<repo>#<commit>": the archive is made from that commit with `git archive`
+# (forge archives such as GitLab's are not byte-stable); the commit hash is the check.
 mkdir -p "$SRC" "$OUT"
 while IFS='|' read -r file url sum _lic; do
   [[ -z "$file" || "$file" == \#* ]] && continue
+  if [[ "$url" == git+* ]]; then
+    repo="${url#git+}"; commit="${repo##*#}"; repo="${repo%#*}"
+    if [[ ! -f "$SRC/$file" ]]; then
+      tmp="$(mktemp -d)"
+      git init -q "$tmp" && git -C "$tmp" fetch -q --depth 1 "$repo" "$commit"
+      [[ "$(git -C "$tmp" rev-parse FETCH_HEAD)" == "$commit" ]] || { echo "Commit $file stimmt nicht" >&2; exit 1; }
+      git -C "$tmp" archive --format=tar --prefix="${file%.tar.gz}/" FETCH_HEAD | gzip -n > "$SRC/$file"
+      rm -rf "$tmp"
+    fi
+    continue
+  fi
   [[ -f "$SRC/$file" ]] || curl -fsSL --retry 3 -o "$SRC/$file" "$url"
   got="$(sha256 "$SRC/$file")"
   [[ "$got" == "$sum" ]] || { echo "SHA-256 $file: $got, erwartet $sum" >&2; exit 1; }
 done < "$HERE/sources.txt"
+[[ "$TARGET" == --sources-only ]] && { echo "Quellen → $SRC"; exit 0; }
 # archive of a library by name prefix (ffmpeg, x264, x265, srt, mbedtls, zlib)
 srcfile() { echo "$SRC/$(grep -v '^#' "$HERE/sources.txt" | cut -d'|' -f1 | grep -m1 "^$1[-_]")"; }
 FFVER="$(basename "$(srcfile ffmpeg)" .tar.xz)"; FFVER="${FFVER#ffmpeg-}"

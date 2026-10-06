@@ -109,11 +109,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
+          # same checked download as the build (SHA-256, or the commit hash for git sources)
+          FFBUILD_DIR="$PWD/ffbuild" bash scripts/ffmpeg-build/build.sh --sources-only
           mkdir -p src
-          grep -v '^#' scripts/ffmpeg-build/sources.txt | grep . | while IFS='|' read -r file url sum _lic; do
-            curl -fsSL --retry 3 -o "src/$file" "$url"
-            echo "$sum  src/$file" | sha256sum -c -
-          done
+          cp ffbuild/sources/* src/
           cp scripts/ffmpeg-build/build.sh scripts/ffmpeg-build/sources.txt src/
           name="$(ls dist/*.zip | head -1 | xargs basename | sed -E 's/^(ffmpeg-[^-]+-[^-]+)-.*/\1/')"
           (cd dist && sha256sum *.zip; cd ../src && sha256sum *) > SHA256SUMS

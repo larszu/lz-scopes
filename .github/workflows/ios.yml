@@ -1,0 +1,108 @@
+name: iOS
+
+# Builds the iPhone/iPad app (Capacitor, ios/) for the iOS Simulator without signing, starts it
+# on an iPhone and an iPad simulator next to a bridge on the runner (Bonjour discovery) and
+# uploads screenshots plus the app's console. Signing and TestFlight: docs/ios.md.
+# The repo is public, macOS minutes are free.
+
+on:
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'src/**'
+      - 'server/bonjour.mjs'
+      - 'capacitor.config.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ios.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'src/**'
+      - 'server/bonjour.mjs'
+      - 'capacitor.config.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap sync ios
+      - name: Xcode
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes available
+      - name: Build for the simulator (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath ios/App/build/dd CODE_SIGNING_ALLOWED=NO build | tail -n 60
+      - name: Bridge on the runner (announces _lz-scopes._tcp)
+        run: |
+          nohup node server/index.mjs --host 0.0.0.0 --port 4192 > bridge.log 2>&1 &
+          sleep 3
+          cat bridge.log
+      - name: Run on iPhone and iPad simulators, take screenshots
+        run: |
+          mkdir -p ios-shots
+          APP=ios/App/build/dd/Build/Products/Debug-iphonesimulator/App.app
+          pick() {
+            xcrun simctl list devices available -j | python3 -c '
+          import json, sys, re
+          want = sys.argv[1]
+          devs = json.load(sys.stdin)["devices"]
+          best = None
+          for rt, lst in devs.items():
+              m = re.search(r"iOS-(\d+)-(\d+)", rt)
+              if not m: continue
+              ver = (int(m.group(1)), int(m.group(2)))
+              for d in lst:
+                  if re.search(want, d["name"]) and (best is None or ver > best[0]):
+                      best = (ver, d["udid"], d["name"])
+          print(best[1] if best else "")
+          print(best[2] if best else "", file=sys.stderr)' "$1"
+          }
+          for kind in iphone ipad; do
+            if [ $kind = iphone ]; then UDID=$(pick '^iPhone \d+ Pro$'); else UDID=$(pick '^iPad Pro 13'); fi
+            [ -n "$UDID" ] || { echo "no $kind simulator"; continue; }
+            xcrun simctl boot "$UDID" || true
+            xcrun simctl bootstatus "$UDID" -b
+            xcrun simctl install "$UDID" "$APP"
+            # camera, microphone and local network without prompts (simulator only)
+            xcrun simctl privacy "$UDID" grant all de.zumpelars.lzscopes || true
+            xcrun simctl launch --console-pty "$UDID" de.zumpelars.lzscopes > "ios-shots/$kind-console.txt" 2>&1 &
+            sleep 25
+            xcrun simctl io "$UDID" screenshot "ios-shots/$kind.png"
+            xcrun simctl terminate "$UDID" de.zumpelars.lzscopes || true
+            xcrun simctl shutdown "$UDID" || true
+          done
+          ls -la ios-shots
+          grep -h "lzs-ios\|ERROR\|Error" ios-shots/*-console.txt | head -n 40 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-simulator
+          path: |
+            ios-shots
+            bridge.log
+          retention-days: 14

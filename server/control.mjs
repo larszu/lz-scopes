@@ -14,7 +14,7 @@ export const OVERLAY_SCOPES = ['wf-luma', 'wf-color', 'wf-skin', 'wf-rgb', 'para
 export const AUDIO_SCOPES = ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check'];
 /** Opple Light Master views (src/opple/scopes.ts) */
 export const LIGHT_SCOPES = ['light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch'];
-export const PANEL_SCOPES = ['picture', ...OVERLAY_SCOPES, 'wf-green', 'match', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'timeline', 'qclog', 'stats', ...AUDIO_SCOPES, 'clock', ...LIGHT_SCOPES];
+export const PANEL_SCOPES = ['picture', ...OVERLAY_SCOPES, 'wf-green', 'match', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'timeline', 'qclog', 'stats', ...AUDIO_SCOPES, 'clock', 'genlock', ...LIGHT_SCOPES];
 export const OUTPUT_VIEWS = ['grid', 'panel', 'clean', 'overlay'];
 export const TRANSPORT_OPS = ['play', 'pause', 'toggle', 'stop', 'next', 'prev', 'forward', 'rewind', 'start', 'end'];
 const MODES = ['toggle', 'on', 'off'];

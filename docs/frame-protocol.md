@@ -118,6 +118,9 @@ Geräte ohne freien ffmpeg-Weg (DeckLink, NDI) laufen über einen eigenen Helfer
 - `FRAM`: ein Bild im Format `pixel`, Zeilen ohne weiteres Padding. `pixel` ∈ `v210` (48 Pixel je 128 Byte), `uyvy422`, `p216le`, `rgb48le`, `bgra`, `bgr0`, `rgba`, `rgb0`, `nv12`, `yuv420p`.
 - `STAT` (JSON `{"message":"…"}`): Zustand, z. B. „kein Eingangssignal“.
 - `ERR `: Fehlertext; der Helfer beendet sich danach.
+- `TIME` (JSON `{"tc":"10:00:00:00","df":false}`, optional, je Bild vor `FRAM`): Timecode der Quelle (DeckLink: RP 188). Die Bridge schickt ihn als `{"type":"tc","tc":…,"kind":"decklink","fps":…,"df":…}` weiter.
+
+Bei Helfer-Quellen enthält `stats` zusätzlich `phase`: Lage der Bild-Ankunft im SMPTE-ST-2059-1-Raster `{periodMs, meanMs, sdMs, driftPpm, n, spanS, ref:"system"|"ptp"}` (server/phase.mjs). `GET /api/decklink/reference?index=n` liefert den Referenz-/Genlock-Status der Karte (`lz-decklink --reference n`, docs/research/genlock.md).
 
 `--list` gibt stattdessen eine JSON-Zeile `{"ok":true,"devices":[…]}` bzw. `{"ok":false,"error":"…"}` aus. Die Bridge leitet die Bilder durch ffmpeg (`-f v210` bzw. `-f rawvideo -pix_fmt …` von stdin) und dieselbe Skalierung wie bei Streams; Richtung Browser gilt Protokoll 1. Zum Testen ohne Hardware: `test/fixtures/fake-helper.mjs`.
 

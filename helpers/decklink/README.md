@@ -25,6 +25,7 @@ Das Ergebnis landet in `helpers/bin/`; `npm run dist:*` und `release.yml` nehmen
 ```
 lz-decklink --list                      → {"ok":true,"devices":[{"index":0,"name":"UltraStudio 4K Mini","formatDetection":true,"capture":true}]}
 lz-decklink --capture <index> [--bits 8|10]
+lz-decklink --reference <index>       → {"ok":true,"hasReference":true,"referenceLocked":true,"referenceMode":{…},"timingOffsetPixels":0,…} (Genlock, #72)
 ```
 
 - Formaterkennung (`bmdVideoInputEnableFormatDetection`): bei jedem Wechsel wird der Eingang neu geöffnet und ein neuer `INFO`-Datensatz geschickt. Geräte ohne Formaterkennung bleiben auf 1080i50.

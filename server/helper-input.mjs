@@ -5,12 +5,14 @@
 //   INFO  JSON {width, height, fpsNum, fpsDen, pixel, matrix?, range?, transfer?, primaries?, name?, timecode?}
 //   FRAM  one picture in `pixel` layout, rows without padding (v210: 128-byte blocks per 48 px)
 //   STAT  JSON {message}         (status text, e.g. "kein Signal")
+//   TIME  JSON {tc, df}          (optional, per frame: source timecode, e.g. DeckLink RP 188)
 //   ERR   UTF-8 text             (fatal; the helper exits afterwards)
 //
 // The bridge feeds the frames into ffmpeg (rawvideo/v210 demuxer on stdin) and uses the
 // same scale step as for streams, so matrix/range handling is identical.
 
 import { spawn } from 'node:child_process';
+import { PhaseTracker } from './phase.mjs';
 import { FrameAssembler } from './frames.mjs';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -111,6 +113,8 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
   const fpsLimit = Math.min(60, Math.max(0, Number(params.get('fps') ?? 0) || 0));
   const opts = ctx.deviceOptions(params);
   const helper = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  // frame phase against the ST 2059-1 grid (server/phase.mjs), when the bridge passes a clock
+  let phase = null, lastFps = 0, lastDf = false;
   let ff = null, fmt = null, outBytes = 0, asm = null, sent = 0, dropped = 0, closed = false, stderr = '', status = '';
 
   const stopFf = () => { if (ff) { ff.stdin.destroy(); ff.kill('SIGKILL'); ff = null; } };
@@ -125,6 +129,8 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
     const f = helperFormat(info);
     if (f.error) return ctx.fail(ws, f.error);
     fmt = f;
+    lastFps = f.fps;
+    phase = ctx.now && f.fps > 0 ? new PhaseTracker(Math.round(Number(info.fpsNum)), Math.round(Number(info.fpsDen) || 1)) : null;
     const { width, height } = ctx.outputSize(f.width, f.height, maxWidth);
     outBytes = width * height * 4 * (depth / 8); asm = new FrameAssembler(outBytes, sendFrame);
     const tags = { matrix: info.matrix ?? 'unknown', range: info.range ?? 'unknown', height: f.height };
@@ -155,7 +161,13 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
       let info;
       try { info = JSON.parse(payload.toString('utf8')); } catch { return ctx.fail(ws, 'Helfer: INFO kein JSON'); }
       startFf(info);
+    } else if (tag === 'TIME') {
+      let tcm;
+      try { tcm = JSON.parse(payload.toString('utf8')); } catch { return; }
+      lastDf = !!tcm.df;
+      if (typeof tcm.tc === 'string' && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'tc', tc: tcm.tc, kind: label.toLowerCase(), fps: lastFps || null, df: lastDf }));
     } else if (tag === 'FRAM') {
+      if (phase && ctx.now) { const n = ctx.now(); phase.add(n.seconds, n.ref); }
       if (!ff || !fmt) return;
       if (payload.length !== fmt.bytes) { status = `Bildgröße passt nicht (${payload.length} statt ${fmt.bytes} Byte)`; return; }
       // newest picture wins: skip when ffmpeg is still busy with the previous ones
@@ -188,7 +200,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
     self.stdin.end();
   });
   const stats = setInterval(() => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped, ...(status ? { message: status } : {}) }));
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped, ...(status ? { message: status } : {}), ...(phase?.report() ? { phase: phase.report() } : {}) }));
   }, 1000);
   ws.on('close', () => { closed = true; clearInterval(stats); stopFf(); helper.kill('SIGTERM'); });
 }

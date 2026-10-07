@@ -2,8 +2,16 @@
 // Stand-in for a native capture helper (DeckLink/NDI) in tests: speaks the helper
 // protocol (server/helper-input.mjs) and sends flat v210 frames with a known level.
 //   fake-helper.mjs --list            → one JSON line
-//   fake-helper.mjs --capture <y10> <frames>
+//   fake-helper.mjs --capture <y10> <frames>   (each frame preceded by a TIME record)
+//   fake-helper.mjs --reference <n>            → one JSON line in the shape of lz-decklink --reference
 const [mode, a1, a2] = process.argv.slice(2);
+if (mode === '--reference') {
+  process.stdout.write(`${JSON.stringify({ ok: true, index: Number(a1), name: 'Fake DeckLink 8K Pro', hasReference: true, fullFrameOffset: false, referenceLocked: true,
+    referenceMode: { name: '1080i50', width: 1920, height: 1080, fpsNum: 25000, fpsDen: 1000, field: 'interlaced' }, referencePsF: false,
+    inputLocked: true, inputMode: { name: '1080i50', width: 1920, height: 1080, fpsNum: 25000, fpsDen: 1000, field: 'interlaced' }, timingOffsetPixels: 12,
+    outputReference: { locked: true, notSupported: false } })}\n`);
+  process.exit(0);
+}
 if (mode === '--list') {
   process.stdout.write(`${JSON.stringify({ ok: true, devices: [{ index: 0, name: 'Fake UltraStudio', formatDetection: true }] })}\n`);
   process.exit(0);
@@ -22,4 +30,4 @@ for (let i = 0; i < frame.length; i += 4) frame.writeUInt32LE(words[(i / 4) % 4]
 rec('INFO', { width: w, height: h, fpsNum: 25, fpsDen: 1, pixel: 'v210', matrix: 'bt709', range: 'tv', name: 'Fake 1080i50', timecode: '10:00:00:00' });
 rec('STAT', { message: 'Signal erkannt' });
 let k = 0;
-const t = setInterval(() => { rec('FRAM', frame); if (++k >= n) { clearInterval(t); setTimeout(() => process.exit(0), 300); } }, 40);
+const t = setInterval(() => { rec('TIME', { tc: `10:00:00:${String(k).padStart(2, '0')}`, df: false }); rec('FRAM', frame); if (++k >= n) { clearInterval(t); setTimeout(() => process.exit(0), 300); } }, 40);

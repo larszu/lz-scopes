@@ -48,7 +48,8 @@ export function mountResolveLive(host: HTMLElement, o: ResolveLiveOptions) {
     const title = document.createElement('div'); title.className = 'rl-title'; title.textContent = l.title;
     const detail = document.createElement('div'); detail.className = 'rl-detail'; detail.textContent = l.detail;
     const text = document.createElement('div'); text.className = 'rl-text'; text.append(title, detail);
-    host.replaceChildren(text, btn);
+    // nothing to click while scripting is off: the text says what to do
+    host.replaceChildren(...(l.canConnect ? [text, btn] : [text]));
   };
   const poll = async () => {
     if (timer) clearTimeout(timer);

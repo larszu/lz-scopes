@@ -76,6 +76,8 @@ Für Netzwerkquellen ohne Desktop-App: `npm run ffmpeg:fetch` lädt dasselbe ffm
 
 ## Quellen
 
+Anleitung zu Resolve, Fenster-Capture, Ordnern, Clean Feed und Capture-Karten: [docs/manual/eingaenge.md](docs/manual/eingaenge.md), in der App unter **? Hilfe**.
+
 | Quelle | Weg |
 |---|---|
 | `rtsp://`, `rtsps://`, `rtmp://`, `rtp://`, `udp://`, `srt://`, `tcp://`, `http(s)://` (auch HLS) | Bridge: ffprobe → ffmpeg → rohe RGBA-Frames per WebSocket |

@@ -39,6 +39,7 @@ import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
 import { DEFAULT_LOW_LATENCY, LL_STATS, LL_WIDTHS, describeLowLatency, effectiveWidth, type LowLatencyConfig } from './lowLatency';
 import { mountResolveLive } from './resolveLive';
+import { openManual } from './manual';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
 
@@ -161,6 +162,7 @@ app.innerHTML = `
     <details class="menu" id="outmenu"><summary title="Ausgabe auf einen Bildschirm dieses Rechners oder als Stream">⧉ Ausgabe</summary><div class="menu-body right" id="outbody"></div></details>
     <button id="led" title="LED-Wand: Cabinet-Testbilder und Kamera-Prüfung (Heatmap, Nähte)">▦ LED-Wand</button>
     <button id="snap" title="Screenshot als PNG (S)">⤓ PNG</button>
+    <details class="menu" id="helpmenu"><summary title="Handbuch">? Hilfe</summary><div class="menu-body right" id="helpbody"></div></details>
     <button id="full" title="Vollbild (F)">⛶</button>
   </header>
   <div class="main">
@@ -1922,3 +1924,9 @@ mountResolveLive($('#resolve-live'), {
   connect: () => { if (!sources.some((x) => x.url === 'resolve:' && x.status !== 'idle')) addResolve(); },
   connected: () => sources.some((x) => x.url === 'resolve:' && (x.status === 'live' || x.status === 'connecting')),
 });
+
+// help menu: manual for the inputs (docs/manual, also on GitHub)
+$('#helpbody').replaceChildren(
+  h('button', { onclick: () => { ($('#helpmenu') as HTMLDetailsElement).open = false; openManual('de'); } }, 'Eingänge: Resolve, Fenster, Ordner, Capture-Karten'),
+  h('button', { onclick: () => { ($('#helpmenu') as HTMLDetailsElement).open = false; openManual('en'); } }, 'Inputs manual (English)'),
+);

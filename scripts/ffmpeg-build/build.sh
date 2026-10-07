@@ -120,12 +120,15 @@ d=$(unpack x265)
 cmake -S "$WORK/build/$d/source" -B "$WORK/build/$d/b" "${CMAKE_ARGS[@]}" -DENABLE_SHARED=OFF -DENABLE_CLI=OFF \
   -DHIGH_BIT_DEPTH=ON -DMAIN12=OFF -DENABLE_HDR10_PLUS=OFF
 cmake --build "$WORK/build/$d/b" -j"$JOBS" && cmake --install "$WORK/build/$d/b"
-# x265.pc names the shared libgcc_s (CMake's implicit libs); with -static mingw then defines
-# _Unwind_Resume twice (libgcc_eh + libgcc_s). Static exe: drop it.
+# The .pc files of the C++ libraries (x265, srt) name the shared libgcc_s (CMake implicit
+# libs); in a static mingw exe that defines _Unwind_Resume twice (libgcc_eh + libgcc_s).
 if [[ $TARGET == win32-x64 ]]; then
-  sed -i.bak -E 's/ -lgcc_s( |$)/ /g; s/ -lgcc( |$)/ /g' "$PREFIX/lib/pkgconfig/x265.pc" && rm -f "$PREFIX/lib/pkgconfig/x265.pc.bak"
+  for pc in "$PREFIX"/lib/pkgconfig/*.pc; do
+    sed -i.bak -E "s/(^| )-lgcc_s( |$)/ /g; s/(^| )-lgcc_s( |$)/ /g" "$pc" && rm -f "$pc.bak"
+  done
+  FF_ARGS+=(--extra-ldflags="-static-libgcc -static-libstdc++")
 fi
-grep '^Libs' "$PREFIX/lib/pkgconfig/x265.pc"
+grep -h "^Libs" "$PREFIX/lib/pkgconfig/x265.pc" "$PREFIX/lib/pkgconfig/srt.pc"
 
 # ---- FFmpeg
 d=$(unpack ffmpeg)

@@ -651,7 +651,7 @@ export class Source {
       this.set('live', `${v.videoWidth}×${v.videoHeight} Video`);
       this.tapElement(v).catch(() => { /* no sound track or no AudioContext */ });
     } catch (e) {
-      this.set('error', `Nicht abspielbar: ${(e as Error).message}`);
+      this.set('error', t('source.status.notPlayable', { msg: (e as Error).message }));
     }
   }
 

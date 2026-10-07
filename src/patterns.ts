@@ -184,7 +184,7 @@ function drawLogo(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: numbe
 export function logoCard(ctx: CanvasRenderingContext2D, w: number, h: number, bg: RGB = [0, 0, 0]) {
   fill(ctx, bg, 0, 0, w, h);
   const img = userLogo.image;
-  if (!img) { text(ctx, 'Kein Logo hochgeladen (Testbilder → Logo)', w / 2, h / 2, h * 0.04, '#888'); return; }
+  if (!img) { text(ctx, t('pattern.noLogo'), w / 2, h / 2, h * 0.04, '#888'); return; }
   drawLogo(ctx, img, w * 0.25, h * 0.25, w * 0.5, h * 0.5);
 }
 

@@ -1,6 +1,7 @@
 // German translation. `Record<Key, Msg>` makes a missing key a type error; the area files
 // catch extra or mistyped keys (`satisfies Translation<typeof en>`).
 import common from './de/common';
+import testmedia from './de/testmedia';
 import render from './de/render';
 import output from './de/output';
 import bridgeui from './de/bridgeui';
@@ -18,6 +19,7 @@ import type { Msg } from './types';
 
 export const de: Record<Key, Msg> = {
   ...common,
+  ...testmedia,
   ...render,
   ...output,
   ...bridgeui,

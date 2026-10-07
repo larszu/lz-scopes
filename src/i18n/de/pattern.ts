@@ -86,4 +86,12 @@ export default {
   'pattern.bt2111Hlg': 'BT.2111-3 HDR-Balken HLG (narrow)',
   'pattern.bt2111Pq': 'BT.2111-3 HDR-Balken PQ (narrow)',
   'pattern.bt2111PqFull': 'BT.2111-3 HDR-Balken PQ (full)',
+  'pattern.err.noIdb': 'IndexedDB nicht verfügbar',
+  'pattern.err.idb': 'IndexedDB-Fehler',
+  'pattern.ownLogo': 'Eigenes Logo',
+  'pattern.testcardLogo': 'Testbild mit Kreis und Uhr + Logo',
+  'pattern.err.notImage': '{name}: kein Bild',
+  'pattern.err.tooLarge': '{name}: größer als {mb} MB',
+  'pattern.err.notStored': '{name}: nicht gespeichert ({msg}); nur für diese Sitzung',
+  'pattern.noLogo': 'Kein Logo hochgeladen (Testbilder → Logo)',
 } satisfies Translation<typeof en>;

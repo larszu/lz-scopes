@@ -85,4 +85,12 @@ export default {
   'pattern.bt2111Hlg': 'BT.2111-3 HDR bars HLG (narrow)',
   'pattern.bt2111Pq': 'BT.2111-3 HDR bars PQ (narrow)',
   'pattern.bt2111PqFull': 'BT.2111-3 HDR bars PQ (full)',
+  'pattern.err.noIdb': 'IndexedDB not available',
+  'pattern.err.idb': 'IndexedDB error',
+  'pattern.ownLogo': 'Own logo',
+  'pattern.testcardLogo': 'Test card with circle and clock + logo',
+  'pattern.err.notImage': '{name}: not an image',
+  'pattern.err.tooLarge': '{name}: larger than {mb} MB',
+  'pattern.err.notStored': '{name}: not stored ({msg}); for this session only',
+  'pattern.noLogo': 'No logo uploaded (Test pictures → Logo)',
 } as const satisfies Messages;

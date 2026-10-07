@@ -65,6 +65,18 @@ LZ Scopes contains **no ArgyllCMS code, binaries or data**, and the installers d
 - `helpers/colorsync/lzs-colorsync.swift`: own code on Apple's public ColorSync API, built into `helpers/bin/` and shipped with the macOS app.
 - DDC/CI uses tools only if the user installed them and only as separate programs: [m1ddc](https://github.com/waydabber/m1ddc) (MIT, macOS, brightness) and ddcutil (GPL-2.0-or-later, Linux). Neither is bundled. The VCP values follow ddcutil's feature table (read as facts, no code taken). Windows uses the system DLLs `mscms.dll` and `dxva2.dll` through PowerShell.
 
+## Test videos (desktop app, downloaded on request, not shipped)
+
+*Quellen → Testvideos …* lists freely licensed films. Nothing of them is in the repository or the installers: the desktop app downloads a file only when the user clicks, from the publisher's server, checks size and SHA-256 (values computed on 06.10.2026, `src/testVideoCatalog.ts`), unpacks the single-entry ZIP (CRC-32 checked) and keeps it in `<userData>/testvideos`. The dialog shows licence and attribution next to each title. Research: [docs/research/testvideos.md](docs/research/testvideos.md).
+
+| Title | Files | Licence | Attribution |
+|---|---|---|---|
+| Big Buck Bunny (2008; 2013 re-render "sunflower") | download.blender.org/peach/bigbuckbunny_movies/ (320×180 … 1080p), download.blender.org/demo/movies/BBB/ (1080p/2160p, 30/60 fps) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) ([peach.blender.org/about](https://peach.blender.org/about/)) | (c) copyright 2008, Blender Foundation / www.bigbuckbunny.org |
+| Cosmos Laundromat, HDR P3/PQ 2K 24p | s3.amazonaws.com/download.opencontent.netflix.com/CosmosLaundromat/ | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) ([opencontent.netflix.com](https://opencontent.netflix.com/)) | Cosmos Laundromat – Blender Studio (Blender Foundation), HDR grade Netflix with Fotokem Keep Me Posted; Netflix Open Content |
+| Meridian, HDR P3/PQ UHD 59.94p | s3.amazonaws.com/download.opencontent.netflix.com/Meridian/ | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) ([opencontent.netflix.com](https://opencontent.netflix.com/)) | Meridian – Netflix, Inc.; Netflix Open Content |
+
+The licences do not cover the logos and trademarks of Blender Foundation or Netflix.
+
 ## Development only (not shipped)
 
 TypeScript, Vite, Vitest, electron-builder, concurrently, `@types/*`: MIT or Apache-2.0, see `package-lock.json`.
@@ -73,5 +85,5 @@ TypeScript, Vite, Vitest, electron-builder, concurrently, `@types/*`: MIT or Apa
 
 - **Logo and trademark of Lars Zumpe Medienproduktion** (`docs/brand/`, `src/brand/`, `build/icon.png`, `public/icons/`): signet, logo and app icon, unchanged files from the Brand Kit 2.0. Own trademark of Lars Zumpe, **not free to use**: no permission of the licence covers them (see [LICENSE](LICENSE), section 10).
 - **LZ display test images** (`public/patterns/lz-display/`, 20 images, 1920 x 1080): own work of Lars Zumpe Medienproduktion.
-- **Test patterns** generated in code (`src/patterns.ts`): own work. Standards such as SMPTE RP 219 / EBU R 95 / ITU-R BT.709 are referenced by name only.
+- **Test patterns** generated in code (`src/patterns.ts`): own work. Pictures and logos users upload stay in their own browser profile (IndexedDB) and are not part of the app. Standards such as SMPTE RP 219 / EBU R 95 / ITU-R BT.709 are referenced by name only.
 - Research notes in `docs/research/` cite third-party projects and standards by link and summary.

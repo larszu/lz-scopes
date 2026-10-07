@@ -158,7 +158,10 @@ Die Quelle *Testbild* erzeugt die Muster selbst, in 720p bis 2160p oder in freie
 - **HDR** PQ-Graukeil 0–10 000 cd/m², HLG-Graukeil, PQ-Verlauf mit Referenzweiß 203, PLUGE nach BT.814-4 (Higher level 38,2 %) und Graukarte 38 % (BT.2408) jeweils für HLG und PQ; die Scopes schalten dabei automatisch auf PQ bzw. HLG
 - **LZ Displaytest** die 20 Displaytestbilder (1920×1080) aus `Broadcast/displaytest`
 - **LED-Wand** Cabinet-Raster mit ID (auch mit Modulraster), Pixel-Mapping (1-px-Gitter, Diagonale, R/G/B/W-Eckpixel je Cabinet), Scroll 1 px/Frame, Vollfeld mit freiem Pegel und Kanalwahl, feine Graustufen und Rampen für Low-Level, Shutter/Genlock mit Frame-Zähler, Moiré, Messfeld mit Patch-Sequenzer (u. a. Unreal-Sätze R/G/B/W und 5×5×5)
-- **Eigene Bilder** über *+ Bilder*, gelten für die laufende Sitzung
+- **Eigene Bilder** über *+ Bilder* oder *Quellen → Eigene Testbilder und Logo …*: bleiben im Browser bzw. im Profil der Desktop-App gespeichert (IndexedDB), bis sie gelöscht werden, auch im Ausgabefenster
+- **Logo**: ein hochgeladenes Bild als Logo wählen; dann gibt es *Eigenes Logo* (mittig auf Schwarz, höchstens halbe Bildhöhe) und *Testbild mit Kreis und Uhr + Logo*
+- **Favoriten**: ☆ neben der Testbild-Auswahl; Favoriten stehen oben in der Liste
+- **Testvideos** (*Quellen → Testvideos …*): Big Buck Bunny (CC BY 3.0, Blender Foundation) von 320×180 bis 2160p60 in der Fassung 2008 und der Neuberechnung 2013, dazu die HDR-Fassungen (P3/PQ, 8-bit-H.264) von Cosmos Laundromat und Meridian (CC BY 4.0, Netflix Open Content). Nicht im Programm: Die Desktop-App lädt sie auf Klick vom offiziellen Server, prüft Größe und SHA-256 und behält sie im Profilordner; im Browser verhindern die Server das Laden (kein CORS), dort führt ein Link zur Datei. Lizenz und Namensnennung stehen im Dialog und in [THIRD_PARTY.md](THIRD_PARTY.md), Recherche in [docs/research/testvideos.md](docs/research/testvideos.md)
 
 Optional lässt sich eine Kennung einblenden. *⧉ Ausgeben* öffnet das Muster in einem eigenen Fenster (`?out=<id>&w=&h=&label=`) für Monitor, Beamer oder Capture: `←`/`→` wechseln, `F` Vollbild, `L` Label. In nativer Auflösung und im Vollbild wird 1:1 ausgegeben.
 

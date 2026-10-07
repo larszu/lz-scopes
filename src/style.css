@@ -445,3 +445,21 @@ dialog.logodlg .row { display: flex; gap: 8px; align-items: center; margin: 6px 
 .swatch.big { width: 28px; height: 28px; }
 .menu-body p.hint.narrow { max-width: 380px; }
 .mrow > span.swatch:first-child { width: 14px; }
+
+/* own test pictures, logo, favourites, test videos (#52, src/testMedia.ts) */
+dialog.testimg { width: min(640px, 96vw); }
+dialog.testvid { width: min(1000px, 96vw); }
+.timg { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+.timg img { width: 96px; height: 54px; object-fit: contain; background: #000; flex: none; }
+.timg-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.timg-main .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.favlist { display: flex; flex-wrap: wrap; gap: 4px; }
+.favlist .chip { display: inline-flex; gap: 2px; }
+button.fav { min-width: 24px; }
+button.fav.on { color: var(--text); border-color: var(--on-border); }
+table.tvtable { border-collapse: collapse; font-size: 12px; }
+table.tvtable td { padding: 5px 8px 5px 0; border-top: 1px solid var(--line); vertical-align: top; }
+table.tvtable td.tv-act { white-space: nowrap; }
+table.tvtable .row { display: inline-flex; gap: 4px; align-items: center; }
+table.tvtable progress { width: 90px; }
+table.tvtable a, dialog.testvid .hint a { color: var(--text); }

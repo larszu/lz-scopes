@@ -4,6 +4,7 @@ import { REPO } from './appMenu';
 import { formatAccel, isMac } from './model';
 import type { SettingsSection } from './settings';
 import { SHORTCUTS } from './shortcuts';
+import { t } from '../i18n';
 
 declare const __APP_VERSION__: string | undefined;
 const version = () => (typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '');
@@ -39,24 +40,24 @@ export function keysTable(): HTMLElement {
 }
 
 export const keysSection = (order: number): SettingsSection => ({
-  id: 'keys', label: 'Tastatur', order,
+  id: 'keys', label: t('settings.keys'), order,
   render: () => [
     keysTable(),
-    el('p', 'hint', 'Einzeltasten wirken nur, solange kein Eingabefeld den Fokus hat. Im Browser kann der Browser selbst einzelne Kombinationen abfangen; die Desktop-App hat sie im Menü.'),
+    el('p', 'hint', t('settings.keys.hint')),
   ],
 });
 
 export const aboutSection = (order: number): SettingsSection => ({
-  id: 'about', label: 'Über / Lizenzen', order,
+  id: 'about', label: t('settings.about'), order,
   render: () => {
     const p = (...kids: (Node | string)[]) => { const x = el('p', 'hint'); x.append(...kids); return x; };
     return [
       el('p', 'about-name', `LZ Scopes${version() ? ` ${version()}` : ''}`),
-      p(`© ${new Date().getFullYear()} Lars Zumpe Medienproduktion. Eigener Code proprietär, siehe `, link(`${REPO}/blob/main/LICENSE`, 'LICENSE'), '.'),
-      p('Komponenten Dritter (dockview, MediaPipe, ws, Electron, Public Sans, ffmpeg) und portierte Formeln mit ihren Lizenzen: ', link(`${REPO}/blob/main/THIRD_PARTY.md`, 'THIRD_PARTY.md'), '. Die Lizenztexte liegen der Desktop-App im Ordner licenses/ bei.'),
-      p('Die Desktop-App liefert ffmpeg (GPL-3.0-or-later) als eigenes Programm mit; Quelle und Build-Angaben in THIRD_PARTY.md.'),
+      p(`© ${new Date().getFullYear()} Lars Zumpe Medienproduktion. ${t('settings.about.own')}`, link(`${REPO}/blob/main/LICENSE`, 'LICENSE'), '.'),
+      p(t('settings.about.third'), link(`${REPO}/blob/main/THIRD_PARTY.md`, 'THIRD_PARTY.md'), t('settings.about.licenses')),
+      p(t('settings.about.ffmpeg')),
       p('NDI® is a registered trademark of Vizrt NDI AB.'),
-      p('Quellcode und Fehlermeldungen: ', link(REPO, 'github.com/larszu/lz-scopes'), '.'),
+      p(t('settings.about.source'), link(REPO, 'github.com/larszu/lz-scopes'), '.'),
     ];
   },
 });

@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { afterEach, describe, expect, it } from 'vitest';
 import { de } from '../src/i18n/de';
 import { en } from '../src/i18n/en';
@@ -38,6 +39,14 @@ describe('i18n dictionaries', () => {
       for (const s of typeof d === 'string' ? [d] : [d.one, d.other]) expect(s.trim(), k).not.toBe('');
       if (typeof e === 'string' && e.split(' ').length > 4) expect(d, `${k} not translated`).not.toBe(e);
     }
+  });
+});
+
+describe('Electron main process texts (electron/i18n.cjs)', () => {
+  it('same keys and argument shape in de and en', () => {
+    const { TEXT } = createRequire(import.meta.url)('../electron/i18n.cjs') as { TEXT: Record<'de' | 'en', Record<string, string | ((n: string) => string)>> };
+    expect(Object.keys(TEXT.de).sort()).toEqual(Object.keys(TEXT.en).sort());
+    for (const k of Object.keys(TEXT.en)) expect(typeof TEXT.de[k], k).toBe(typeof TEXT.en[k]);
   });
 });
 

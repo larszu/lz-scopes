@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld('lzsDesktop', {
   watchFolder: () => ipcRenderer.invoke('lzs:watch-folder'),
   /** Native application menu (#53): set the model, receive the chosen command ids. */
   menu: {
-    set: (model) => ipcRenderer.send('lzs:menu-set', model),
+    set: (model, lang) => ipcRenderer.send('lzs:menu-set', model, lang),
     onCommand: (cb) => { const f = (_e, id) => cb(String(id)); ipcRenderer.on('lzs:menu', f); return () => ipcRenderer.removeListener('lzs:menu', f); },
   },
 });

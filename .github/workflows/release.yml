@@ -6,7 +6,7 @@ name: Release
 # The release is created as a DRAFT first and published only when every asset is there
 # (job `publish`, scripts/release-check.mjs), so a release without installers is never
 # visible (#51: v1.1.0 failed half-way and stayed empty). Notes: docs/releases/<tag>.md
-# if present – a line `<!-- prerelease -->` makes it a pre-release – else GitHub's
+# if present – a line `<!-- prerelease -->` makes it a pre-release – else GitHub's (notes: English first, German below)
 # generated notes.
 #
 # No workflow artifacts: a full account artifact quota made uploads fail elsewhere

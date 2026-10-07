@@ -39,6 +39,7 @@ import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
 import { DEFAULT_LOW_LATENCY, LL_STATS, LL_WIDTHS, describeLowLatency, effectiveWidth, type LowLatencyConfig } from './lowLatency';
 import { mountResolveLive } from './resolveLive';
+import { openManual } from './manual';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
 import { SOURCE_ITEMS, mountMenu, refreshMenu, type MenuActions, type MenuState } from './menu/appMenu';
@@ -1994,6 +1995,7 @@ const menuState = (): MenuState => ({
   hasPattern: sources.some((x) => x.kind === 'pattern'),
 });
 const menuActions: MenuActions = {
+  manual: (lang) => openManual(lang),
   settings: (page) => openSettings(page),
   layouts: () => openToolDialog('laymenu'),
   layoutsExport: () => downloadJson(loadLayouts(), 'lz-scopes-layouts.json'),
@@ -2027,3 +2029,4 @@ mountResolveLive($('#resolve-live'), {
   connect: () => { if (!sources.some((x) => x.url === 'resolve:' && x.status !== 'idle')) addResolve(); },
   connected: () => sources.some((x) => x.url === 'resolve:' && (x.status === 'live' || x.status === 'connecting')),
 });
+

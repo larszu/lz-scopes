@@ -445,3 +445,15 @@ dialog.logodlg .row { display: flex; gap: 8px; align-items: center; margin: 6px 
 .swatch.big { width: 28px; height: 28px; }
 .menu-body p.hint.narrow { max-width: 380px; }
 .mrow > span.swatch:first-child { width: 14px; }
+/* in-app manual (src/manual.ts) */
+.manual-dlg .modal-body.manual { width: min(860px, 94vw); max-height: 90vh; overflow: auto; text-align: left; }
+.manual .manual-bar { position: sticky; top: 0; display: flex; gap: 6px; justify-content: flex-end; padding: 2px 0 6px; background: var(--card-bg); z-index: 1; }
+.manual article { font-size: 13px; line-height: 1.55; }
+.manual article h2 { font-size: 18px; margin: 4px 0 10px; }
+.manual article h3 { font-size: 15px; margin: 18px 0 6px; }
+.manual article table { border-collapse: collapse; margin: 8px 0; font-size: 12px; }
+.manual article th, .manual article td { border: 1px solid var(--line-2); padding: 4px 6px; vertical-align: top; }
+.manual article figure { margin: 10px 0; }
+.manual article img { max-width: 100%; border: 1px solid var(--line-2); border-radius: 4px; }
+.manual article figcaption { color: var(--muted); font-size: 11px; }
+.manual article code { font-family: var(--mono); font-size: 12px; }

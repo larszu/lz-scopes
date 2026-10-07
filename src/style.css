@@ -373,6 +373,26 @@ dialog.calib .calib-log { max-height: 160px; overflow: auto; font: 11px var(--mo
 .resolve-live .rl-title { font-weight: 600; }
 .resolve-live .rl-detail { color: var(--muted); word-break: break-word; }
 
+/* Touch Shading (#54): fixed bar at the bottom, large touch targets, red frame while live */
+.shading-bar {
+  position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 50;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: calc(100vw - 32px);
+  padding: 8px 10px; background: var(--panel); color: var(--text); border: 2px solid var(--line);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); font-size: 13px;
+}
+.shading-bar.hidden { display: none; }
+.shading-bar.live { border-color: var(--signal); }
+.shading-bar button, .shading-bar select, .shading-arm { min-height: 40px; }
+.shading-arm { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0 6px; cursor: pointer; }
+.shading-arm input { width: 22px; height: 22px; }
+.shading-stop { background: var(--signal); color: #fff; font-weight: 700; padding: 0 16px; border: 0; }
+.shading-values { display: flex; flex-wrap: wrap; gap: 4px 10px; font-family: var(--mono); font-size: 11px; max-width: 520px; }
+.shading-values .changed { color: #ffd34d; }
+.shading-msg { color: #ffb4a8; max-width: 360px; }
+.shading-more .hint { max-width: 420px; }
+.shading-url { width: 220px; font-family: var(--mono); }
+body.shading-on .panel .body { touch-action: none; }
+
 /* ---- application menu and settings window (#53, src/menu/) ---- */
 .bar .tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .menubar { position: relative; display: flex; align-items: center; }

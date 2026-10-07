@@ -154,6 +154,15 @@ Panel type **Clock / time code** (and an optional corner read-out in the picture
 - **PTP monitor** in the bridge (own code, UDP 319/320 on 224.0.1.129): grandmaster, domain, clockClass, rates, SMPTE SM TLV (lock, local offset, next jam), offset and optional mean path delay as software-timestamp estimates. No PTP on the network → “no PTP received”. The UI served by the bridge or the desktop app may use it directly; another web origin (e.g. GitHub Pages) only after the user allows it on the bridge's own `/allow` page.
 - **ST 2110 RTP check**: RTP timestamp (90 kHz, zero offset at the epoch) against arrival time and frame grid.
 
+## Touch Shading
+
+**Scopes → Touch Shading** controls a camera from the scopes:
+- **Parade:** grab a channel low to move Black R/G/B, high to move White R/G/B.
+- **Luma waveform:** shadows move Master Black, mids Master Gamma, highlights White.
+- **Vectorscope:** drag radially for saturation, turn for hue (hue in the simulator only).
+
+Commands go through [lz-camera-bridge](https://github.com/larszu/lz-camera-bridge) in its own vocabulary. Nothing moves until *Shading aktiv* is ticked and a target is chosen. Every change is step-limited, and **■ Ausgangswerte** (Esc) restores the session's starting values. A simulator works without a camera. Sony SRG-A40 paint over VISCA is not in the bridge yet. Details: [docs/research/touch-shading.md](docs/research/touch-shading.md).
+
 ## Architecture
 
 - **Bridge** (`server/index.mjs`): ffprobe for resolution and colour metadata, then ffmpeg scales to the analysis width and writes raw `rgba` / `rgba64le` frames (or `ayuv64le` in Y′CbCr mode, [docs/frame-protocol.md](docs/frame-protocol.md)) over a WebSocket. Slow browsers get frames dropped, no queue builds up. The Y'CbCr matrix is passed to ffmpeg explicitly, the transfer function is left untouched. It listens on `127.0.0.1` by default (`--host 0.0.0.0` for the iPhone/iPad app, then announced via Bonjour) and accepts network URLs and test patterns, never local files, ffmpeg options or a shell.

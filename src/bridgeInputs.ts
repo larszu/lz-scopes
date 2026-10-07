@@ -3,6 +3,7 @@
 // explicit decode matrix of the bridge's Y′CbCr → R′G′B′ step.
 
 import type { Source, SourceSettings } from './sources';
+import { bridgeText } from './i18n/bridgeMessage';
 
 export interface BridgeUi {
   /** http(s) base of the bridge */
@@ -104,7 +105,7 @@ export function deckLinkButton(ui: BridgeUi): HTMLElement {
     let st: DeckLinkStatus | null = null;
     try { st = await (await fetch(`${ui.http()}/api/decklink`)).json(); } catch { /* bridge missing */ }
     if (!st) { ui.hud('Bridge nicht erreichbar'); return; }
-    if (!st.available) { ui.hud(`DeckLink nicht verfügbar – ${st.error ?? 'Desktop Video/SDK nötig'}`); return; }
+    if (!st.available) { ui.hud(`DeckLink nicht verfügbar – ${bridgeText(st, 'error', 'Desktop Video/SDK nötig')}`); return; }
     if (!st.devices.length) { ui.hud('Desktop Video installiert, aber kein DeckLink-Gerät gefunden'); return; }
     btn.replaceWith(sel('', [['', 'DeckLink wählen …'], ...st.devices.map((d) => [`decklink:${d.index}`, d.name] as [string, string])], (v) => { if (v) ui.connect(v, st!.devices.find((d) => `decklink:${d.index}` === v)?.name); }));
   } }, 'DeckLink…');
@@ -133,7 +134,7 @@ export function ndiButton(ui: BridgeUi): HTMLElement {
     try { st = await (await fetch(`${ui.http()}/api/ndi`)).json(); } catch { /* bridge missing */ }
     btn.textContent = 'NDI®…';
     if (!st) { ui.hud('Bridge nicht erreichbar'); return; }
-    if (!st.available) { ui.hud(`NDI nicht verfügbar – ${st.error ?? 'NDI-Runtime nötig (ndi.video)'}`); return; }
+    if (!st.available) { ui.hud(`NDI nicht verfügbar – ${bridgeText(st, 'error', 'NDI-Runtime nötig (ndi.video)')}`); return; }
     if (!st.sources.length) { ui.hud('Keine NDI-Quellen gefunden'); return; }
     btn.replaceWith(sel('', [['', 'NDI-Quelle wählen …'], ...st.sources.map((s) => [`ndi:${s.name}`, s.name] as [string, string])], (v) => { if (v) ui.connect(v, v.slice(4).replace(/^.*\((.*)\)$/, '$1').slice(0, 40)); }));
   } }, 'NDI®…');

@@ -9,6 +9,7 @@
 import { spawn } from 'node:child_process';
 import { readdir, stat } from 'node:fs/promises';
 import { basename, delimiter, extname, join, resolve } from 'node:path';
+import { BridgeError, bmsg, toMsg } from './messages.mjs';
 
 export const STILL_EXTENSIONS = ['.tif', '.tiff', '.dpx', '.png', '.jpg', '.jpeg', '.webp', '.exr'];
 
@@ -21,7 +22,7 @@ export function watchRoots(argv = process.argv.slice(2), env = process.env) {
   for (const d of dirs) {
     const dir = resolve(d);
     if (out.some((r) => r.dir === dir)) continue;
-    const base = (basename(dir) || 'ordner').replace(/[^\w .-]/g, '_').slice(0, 60);
+    const base = (basename(dir) || 'folder').replace(/[^\w .-]/g, '_').slice(0, 60);
     let name = base, k = 2;
     while (out.some((r) => r.name === name)) name = `${base}-${k++}`;
     out.push({ name, dir });
@@ -64,7 +65,7 @@ export function startFolderStream(ws, { root, params, ctx, pollMs = 500 }) {
   const maxWidth = Math.min(3840, Math.max(0, Number(params.get('width') ?? 960) || 0));
   const opts = ctx.deviceOptions(params);
   let lastKey = '', pending = '', busy = false, closed = false, sent = 0, sentInfo = '';
-  const status = (message) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: 0, message })); };
+  const status = (m) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: 0, ...toMsg(m) })); };
 
   const decode = (file) => new Promise((ok, fail) => {
     // probe size first (banner), then decode scaled in one go
@@ -74,7 +75,7 @@ export function startFolderStream(ws, { root, params, ctx, pollMs = 500 }) {
     probe.on('error', fail);
     probe.on('close', () => {
       const info = stillInfo(err);
-      if (!info) return fail(new Error(`${file.name}: kein lesbares Bild`));
+      if (!info) return fail(new BridgeError('folder.unreadable', `${file.name}: no readable picture`, { file: file.name }));
       const { width, height } = ctx.outputSize(info.width, info.height, maxWidth);
       const rgb = /^(gbr|rgb|bgr|argb|abgr|rgba|bgra|gray|ya|pal)/.test(info.pixFmt) || info.codec === 'exr';
       const { decodeMatrix, decodeRange } = ctx.applyDecodeOverride(ctx.decodeParams({ matrix: 'unknown', range: /^yuvj/.test(info.pixFmt) ? 'pc' : 'unknown', height: info.height }), opts);
@@ -88,7 +89,7 @@ export function startFolderStream(ws, { root, params, ctx, pollMs = 500 }) {
       p.on('error', fail);
       p.on('close', (code) => {
         const data = Buffer.concat(chunks);
-        if (code || data.length !== width * height * 4 * (depth / 8)) return fail(new Error(`${file.name}: ${perr.trim().split('\n').pop() || 'Dekodierung fehlgeschlagen'}`));
+        if (code || data.length !== width * height * 4 * (depth / 8)) return fail(new Error(`${file.name}: ${perr.trim().split('\n').pop() || 'decoding failed'}`));
         ok({ info, width, height, data, decodeMatrix: rgb ? 'rgb' : decodeMatrix, linear: info.codec === 'exr' });
       });
     });
@@ -99,7 +100,7 @@ export function startFolderStream(ws, { root, params, ctx, pollMs = 500 }) {
     busy = true;
     try {
       const f = await newestStill(root.dir);
-      if (!f) { if (lastKey !== 'none') status(`${root.name}: noch kein Bild (TIFF, DPX, PNG, JPEG, WebP, EXR)`); lastKey = 'none'; return; }
+      if (!f) { if (lastKey !== 'none') status(bmsg('folder.empty', `${root.name}: no picture yet (TIFF, DPX, PNG, JPEG, WebP, EXR)`, { folder: root.name })); lastKey = 'none'; return; }
       const key = `${f.path}:${f.mtimeMs}:${f.size}`;
       if (key === lastKey) return;
       if (key !== pending) { pending = key; return; } // wait one poll: size/time must be stable
@@ -108,7 +109,7 @@ export function startFolderStream(ws, { root, params, ctx, pollMs = 500 }) {
       if (ws.readyState !== ws.OPEN) return;
       const infoMsg = JSON.stringify({
         type: 'info', width: pic.width, height: pic.height, depth, fps: 0, sourceWidth: pic.info.width, sourceHeight: pic.info.height,
-        codec: `Ordner ${root.name} · ${pic.info.codec}`, pixFmt: pic.info.pixFmt, decodeMatrix: pic.decodeMatrix,
+        codec: `Folder ${root.name} · ${pic.info.codec}`, pixFmt: pic.info.pixFmt, decodeMatrix: pic.decodeMatrix,
         transfer: pic.linear ? 'linear' : 'unknown', primaries: 'unknown', matrix: 'unknown', range: 'pc',
       });
       if (infoMsg !== sentInfo) { ws.send(infoMsg); sentInfo = infoMsg; }
@@ -116,7 +117,7 @@ export function startFolderStream(ws, { root, params, ctx, pollMs = 500 }) {
       sent++;
       status(`${root.name}/${f.name} · ${pic.info.width}×${pic.info.height} ${pic.info.pixFmt}`);
     } catch (e) {
-      status(e.message);
+      status(e);
     } finally { busy = false; }
   };
   const timer = setInterval(() => { poll(); }, pollMs);

@@ -11,6 +11,7 @@ import { LEAP_SOURCE, browserZoneSeconds, leapTableValid, localOffset, ptpToUtc,
 import {
   RATES, beyondSt2059, emulatedJam, formatPairs, formatTc, toPairs, framePhase, rateById, tcDiff, timeAddressAt, type JamParams, type Rate, type TimeAddress,
 } from './timecode';
+import { bridgeText, ptpLockText } from '../i18n/bridgeMessage';
 
 export interface ClockOptions {
   /** RATES id */
@@ -231,7 +232,7 @@ function drawPtp(ctx: CanvasRenderingContext2D, st: PtpStatus | null, x: number,
     return y + size * 1.4;
   }
   if (!st) { put(conn === 'connecting' ? 'Verbinde mit der Bridge …' : 'Bridge nicht erreichbar – PTP-Monitor läuft in der Node-Bridge (npm start / Desktop-App)', C.warn); return y + size * 1.4; }
-  if (st.error) { put(st.error, C.bad); nl(); }
+  if (st.error) { put(bridgeText(st, 'error'), C.bad); nl(); }
   const state: Record<string, [string, string]> = {
     none: ['kein PTP empfangen', C.warn], error: ['PTP-Monitor nicht aktiv', C.bad], receiving: ['PTP empfangen', C.good],
     announce: ['nur Announce, keine Sync', C.warn], 'sync-only': ['Sync ohne Announce', C.warn], stale: ['PTP verloren', C.bad],
@@ -254,14 +255,14 @@ function drawPtp(ctx: CanvasRenderingContext2D, st: PtpStatus | null, x: number,
   rows.push(['Mean Path Delay', st.meanPathDelayNs != null ? `${fmtNs(st.meanPathDelayNs)} (Schätzung, Delay_Req der Bridge)` : st.delayReq ? 'keine Delay_Resp erhalten' : 'nicht gemessen (passiv; ⚙ → Laufzeit messen)']);
   const sm = st.sm;
   if (sm) {
-    rows.push(['GM-Lock (SM)', sm.lockingText, sm.gmLockingStatus === 4 ? C.good : C.warn]);
+    rows.push(['GM-Lock (SM)', ptpLockText(sm.gmLockingStatus, sm.lockingText), sm.gmLockingStatus === 4 ? C.good : C.warn]);
     rows.push(['Lokal-Offset', `${sm.currentLocalOffset} s${sm.daylightSaving.current ? ' · Sommerzeit' : ''}${sm.jumpSeconds ? ` · Sprung ${signed(sm.jumpSeconds)} s bei ${sm.timeOfNextJump}` : ''}`]);
     rows.push(['nächster Jam', sm.timeOfNextJam ? `${hhmm(sm.timeOfNextJam + sm.currentLocalOffset)} Lokalzeit (PTP ${sm.timeOfNextJam})` : 'kein Daily Jam geplant']);
     rows.push(['System-Rate', `${sm.frameRateNum}/${sm.frameRateDen} ${sm.dropFrame ? 'DF' : 'NDF'}${sm.colorFrame ? ' · Color Frame' : ''}`]);
   } else rows.push(['SM-TLV', 'nicht empfangen (Lokal-Offset und Jam aus den Einstellungen)', C.dim]);
   if (st.rtp) {
     const r = st.rtp;
-    rows.push(['ST 2110 RTP', r.error ? r.error : `${r.group}:${r.port} · ${r.packets} Pakete · PT ${r.payloadType ?? '–'}`, r.error ? C.bad : C.fg]);
+    rows.push(['ST 2110 RTP', r.error ? bridgeText(r, 'error') : `${r.group}:${r.port} · ${r.packets} Pakete · PT ${r.payloadType ?? '–'}`, r.error ? C.bad : C.fg]);
     if (!r.error) rows.push(['RTP-Offset', r.lagMs != null ? `Ankunft − RTP-Zeit ${r.lagMs.toFixed(2)} ms (${r.lagFrames!.toFixed(2)} Frames) · Raster ${r.gridTicks} Ticks · Bezug ${r.ref === 'ptp' ? 'PTP-Schätzung' : 'Systemuhr'}` : 'keine Frames empfangen', r.ref === 'ptp' ? C.fg : C.warn]);
   }
   const kw = Math.min(160, w * 0.3);

@@ -15,11 +15,11 @@ const err = (raw: unknown) => {
 
 describe('validateCommand', () => {
   it('rejects non-objects and unknown commands', () => {
-    expect(err(null)).toMatch(/JSON-Objekt/);
-    expect(err([])).toMatch(/JSON-Objekt/);
-    expect(err('freeze')).toMatch(/JSON-Objekt/);
-    expect(err({ cmd: 'rm -rf' })).toMatch(/Unbekannter Befehl/);
-    expect(err({})).toMatch(/Unbekannter Befehl/);
+    expect(err(null)).toMatch(/JSON object/);
+    expect(err([])).toMatch(/JSON object/);
+    expect(err('freeze')).toMatch(/JSON object/);
+    expect(err({ cmd: 'rm -rf' })).toMatch(/Unknown command/);
+    expect(err({})).toMatch(/Unknown command/);
   });
 
   it('audio commands: I/LRA reset and pause, generator with a loudness guard (#24)', () => {
@@ -47,7 +47,7 @@ describe('validateCommand', () => {
     expect(ok({ cmd: 'source.select', source: 2 })).toEqual({ cmd: 'source.select', source: 2 });
     expect(ok({ cmd: 'source.select', source: ' 3 ', panel: '4' })).toEqual({ cmd: 'source.select', source: 3, panel: 4 });
     expect(ok({ cmd: 'source.select', source: 'Kamera 1' }).source).toBe('Kamera 1');
-    expect(err({ cmd: 'source.select' })).toMatch(/source fehlt/);
+    expect(err({ cmd: 'source.select' })).toMatch(/source missing/);
     expect(err({ cmd: 'source.select', source: 0 })).toMatch(/source/);
     expect(err({ cmd: 'source.select', source: 1.5 })).toMatch(/source/);
     expect(err({ cmd: 'source.select', source: {} })).toMatch(/source/);
@@ -59,14 +59,14 @@ describe('validateCommand', () => {
     expect(ok({ cmd: 'freeze', mode: 'on' }).mode).toBe('on');
     expect(err({ cmd: 'freeze', mode: 'yes' })).toMatch(/mode/);
     expect(ok({ cmd: 'panel.maximize', mode: 'off' })).toEqual({ cmd: 'panel.maximize', mode: 'off' });
-    expect(err({ cmd: 'panel.maximize' })).toMatch(/panel fehlt/);
+    expect(err({ cmd: 'panel.maximize' })).toMatch(/panel missing/);
     expect(ok({ cmd: 'panel.maximize', panel: 1 })).toEqual({ cmd: 'panel.maximize', mode: 'toggle', panel: 1 });
   });
 
   it('panel.scope only with a real scope', () => {
     expect(ok({ cmd: 'panel.scope', panel: 2, scope: 'vector' })).toEqual({ cmd: 'panel.scope', panel: 2, scope: 'vector' });
     expect(err({ cmd: 'panel.scope', panel: 2, scope: 'nope' })).toMatch(/scope/);
-    expect(err({ cmd: 'panel.scope', scope: 'vector' })).toMatch(/panel fehlt/);
+    expect(err({ cmd: 'panel.scope', scope: 'vector' })).toMatch(/panel missing/);
   });
 
   it('scope lists match the app', () => {
@@ -82,7 +82,7 @@ describe('validateCommand', () => {
     expect(err({ cmd: 'output.open', view: 'wall' })).toMatch(/view/);
     expect(err({ cmd: 'output.open', name: '../etc' })).toMatch(/name/);
     expect(err({ cmd: 'output.open', stream: 'a', target: 'file:///tmp/x' })).toMatch(/target/);
-    expect(err({ cmd: 'output.open', target: 'rtmp://x/y' })).toMatch(/target braucht stream/);
+    expect(err({ cmd: 'output.open', target: 'rtmp://x/y' })).toMatch(/target needs stream/);
     expect(err({ cmd: 'output.open', bg: 'green' })).toMatch(/bg/);
     expect(err({ cmd: 'output.open', display: 'screen; rm' })).toMatch(/display/);
     expect(err({ cmd: 'output.open', fullscreen: 'yes' })).toMatch(/fullscreen/);
@@ -94,7 +94,7 @@ describe('validateCommand', () => {
     expect(err({ cmd: 'stream.start', stream: 'a b' })).toMatch(/stream/);
     expect(ok({ cmd: 'stream.stop' })).toEqual({ cmd: 'stream.stop' });
     expect(ok({ cmd: 'scene.select', scene: 'Studio', output: 'out1' })).toEqual({ cmd: 'scene.select', scene: 'Studio', output: 'out1' });
-    expect(err({ cmd: 'scene.select' })).toMatch(/scene fehlt/);
+    expect(err({ cmd: 'scene.select' })).toMatch(/scene missing/);
     expect(ok({ cmd: 'transport', op: 'next' })).toEqual({ cmd: 'transport', op: 'next' });
     expect(err({ cmd: 'transport', op: 'eject' })).toMatch(/op/);
   });

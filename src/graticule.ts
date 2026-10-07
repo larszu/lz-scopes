@@ -10,6 +10,7 @@ import { CIE_VIEW, CIE_VIEW_UV, WAVE_MAX, WAVE_MIN, type Rect } from './renderer
 import { latencyLines, rtpLines } from './latency';
 import type { Source } from './sources';
 import { CUBE_SPACE_LABELS, SIGNAL_SPACES, cubeProject, cubeRotation, cubeWireframe, qFromChl, qFromHsv, qFromIctcp, qFromLab, qFromRgb, qFromXyz, qFromYcc, type CubeSettings } from './cube';
+import { bridgeText } from './i18n/bridgeMessage';
 
 export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats'
   | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock' | 'genlock'
@@ -565,7 +566,7 @@ export function statsLines(src: Source, displayFps: number): string[] {
     `Status     ${src.status}${src.message ? ` – ${src.message}` : ''}`,
     `Analyse    ${src.width}×${src.height}  ${src.yuv ? `16 bit Y′CbCr ${src.yuv.full ? 'full' : 'narrow'}, unbeschnitten (Quelle ${src.yuv.bits} bit)` : `${src.depth} bit R′G′B′`}`,
   ];
-  if (info?.note) lines.push(`Hinweis    ${info.note}`);
+  if (info?.note) lines.push(`Hinweis    ${bridgeText(info, 'note')}`);
   if (info) lines.push(`Abtastung  ${info.interlaced ? 'interlaced – beide Halbbilder als ein Bild, feldweise skaliert' : 'progressiv (bzw. nicht als interlaced gemeldet)'}; Scopes messen immer ganze Bilder`);
   if (info) {
     lines.push(`Quelle     ${info.sourceWidth}×${info.sourceHeight}  ${info.codec ?? ''} ${info.pixFmt ?? ''}`);

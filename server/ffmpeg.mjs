@@ -10,6 +10,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bmsg } from './messages.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -51,7 +52,7 @@ export function ffmpegOrigin(path, env = process.env) {
 
 /** Licence from the configure line, as ffmpeg's own LICENSE.md derives it. */
 export function licenseOf(configuration) {
-  if (/--enable-nonfree/.test(configuration)) return 'nonfree – nicht weitergebbar';
+  if (/--enable-nonfree/.test(configuration)) return 'nonfree – not redistributable';
   const gpl = /--enable-gpl/.test(configuration), v3 = /--enable-version3/.test(configuration);
   return gpl ? (v3 ? 'GPL-3.0-or-later' : 'GPL-2.0-or-later') : (v3 ? 'LGPL-3.0-or-later' : 'LGPL-2.1-or-later');
 }
@@ -110,8 +111,10 @@ export async function ffmpegFor(url, candidates = ffmpegCandidates()) {
   return null;
 }
 
-/** Error text when no ffmpeg fits the URL. */
+/** Error message ({ code, message }, server/messages.mjs) when no ffmpeg fits the URL. */
 export function noFfmpegMessage(url, candidates = ffmpegCandidates()) {
-  if (!candidates.length) return 'ffmpeg nicht gefunden – Desktop-App verwenden, npm run ffmpeg:fetch ausführen oder FFMPEG setzen';
-  return /^srt:/i.test(url ?? '') ? 'kein ffmpeg mit SRT gefunden – npm run ffmpeg:fetch ausführen oder FFMPEG auf ein ffmpeg mit libsrt setzen' : 'ffmpeg nicht gefunden';
+  if (!candidates.length) return bmsg('ffmpeg.none', 'ffmpeg not found – use the desktop app, run npm run ffmpeg:fetch or set FFMPEG');
+  return /^srt:/i.test(url ?? '')
+    ? bmsg('ffmpeg.noSrt', 'no ffmpeg with SRT found – run npm run ffmpeg:fetch or point FFMPEG to an ffmpeg with libsrt')
+    : bmsg('ffmpeg.missing', 'ffmpeg not found');
 }

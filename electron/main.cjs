@@ -14,6 +14,10 @@ registerScheme();
 // Own profile (localStorage, single-instance lock) for automated tests: LZS_USER_DATA.
 if (process.env.LZS_USER_DATA) app.setPath('userData', process.env.LZS_USER_DATA);
 if (!app.requestSingleInstanceLock()) app.quit();
+// UI language (#94): the page follows app.getLocale() unless the user chose one in the
+// settings. LZS_LANG (de, en, en-US …) pins the locale, e.g. for the E2E tests.
+if (process.env.LZS_LANG) app.commandLine.appendSwitch('lang', process.env.LZS_LANG);
+ipcMain.on('lzs:locale', (e) => { e.returnValue = app.getLocale(); });
 
 let mainWindow = null;
 let origin = '';

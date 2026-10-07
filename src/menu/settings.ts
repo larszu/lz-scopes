@@ -4,8 +4,10 @@
 // the panel's ⚙ menu.
 //
 // Other modules add their own pages or rows without touching main.ts:
-//   registerSettingsSection({ id: 'led', label: 'LED-Wand', order: 55, render: () => [...] })
+//   registerSettingsSection({ id: 'led', label: t('led.title'), order: 55, render: () => [...] })
 //   extendSettingsSection('clock', () => [...])
+
+import { t } from '../i18n';
 
 export interface SettingsSection {
   id: string;
@@ -44,15 +46,15 @@ function build() {
   dlg = document.createElement('dialog');
   dlg.className = 'settings';
   dlg.id = 'settings';
-  dlg.setAttribute('aria-label', 'Einstellungen');
+  dlg.setAttribute('aria-label', t('common.settings'));
   const head = document.createElement('div');
   head.className = 'set-head';
   const title = document.createElement('h2');
-  title.textContent = 'Einstellungen';
+  title.textContent = t('common.settings');
   const close = document.createElement('button');
   close.className = 'icon';
-  close.title = 'Schließen (Esc)';
-  close.setAttribute('aria-label', 'Schließen');
+  close.title = t('common.closeEsc');
+  close.setAttribute('aria-label', t('common.close'));
   close.textContent = '✕';
   close.onclick = () => dlg!.close();
   head.append(title, close);

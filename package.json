@@ -19,17 +19,24 @@
     "predev": "node scripts/copy-mediapipe.mjs",
     "prebuild": "node scripts/copy-mediapipe.mjs",
     "companion:test": "npm --prefix companion test",
-    "companion:build": "npm --prefix companion run build"
+    "companion:build": "npm --prefix companion run build",
+    "ios:sync": "npm run build && cap sync ios",
+    "ios:open": "cap open ios"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",
+    "bonjour-service": "^1.4.4",
     "dockview-core": "^8.3.1",
     "ws": "^8.22.0"
   },
   "devDependencies": {
+    "@capacitor-community/bluetooth-le": "^8.3.0",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.3",
     "@types/ws": "^8.18.2",

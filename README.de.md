@@ -55,13 +55,19 @@ Installer im [neuesten Release](https://github.com/larszu/lz-scopes/releases/lat
 
 **Web-Fassung:** <https://larszu.github.io/lz-scopes/>. Dort gehen Testbilder, Kamera, Bildschirm und Dateien. RTSP, SRT und andere Netzwerkstreams brauchen die Desktop-App oder `npm start`, weil ein Browser sie nicht öffnen kann.
 
+**iPhone und iPad** (`ios/`, Capacitor): dieselbe App in einer nativen Hülle. Die CI baut sie und startet sie im iOS-Simulator; auf echten Geräten ist sie noch ungeprüft, im App Store oder per TestFlight gibt es sie noch nicht (dafür ist ein Apple-Developer-Konto nötig). Möglich sind Kamera, USB-C-Capture-Karten ab iPadOS 17, Dateien und der Opple über CoreBluetooth. Netzwerkstreams kommen von einer Bridge auf einem Rechner im selben Netz (`npm start -- --host 0.0.0.0`), die App findet sie per Bonjour. Siehe [docs/ios.md](docs/ios.md).
+
 ## Schnellstart
 
 1. App starten. Die erste Quelle ist ein Testbild (SMPTE 75 %, Variante „(LZ)“ – deren Schwarzfeld lohnt einen Blick in die Waveform mit der Schwarz-Lupe), alle Panels folgen ihr.
 2. Pro Panel eine andere Quelle wählen: *Testbild*, *Kamera*, *Bildschirm*, *Datei* oder *Stream*.
 3. Für einen Stream die URL eintragen (z. B. `rtsp://user:pass@host:554/stream`) und verbinden.
 4. Im Bild einen Rahmen ziehen, um nur diesen Bereich zu messen.
-5. Fenster per Drag-and-drop anordnen und unter *Layouts* speichern.
+5. Fenster per Drag-and-drop anordnen und unter *Datei → Layouts …* speichern.
+
+**Menü und Einstellungen.** Die Desktop-App hat eine native Menüleiste (macOS: in der Systemleiste, App-Menü zuerst; Windows: im Fenster): *Datei, Bearbeiten, Ansicht, Quellen, Scopes, Ausgabe, Fenster, Hilfe*. Im Browser stehen dieselben Menüs links oben in der Kopfleiste (unter 900 px hinter ☰). Alle globalen Einstellungen liegen in einem Fenster, *Einstellungen …* (`Cmd+,` / `Strg+,` oder ⚙ rechts oben): Oberfläche, Display, Scopes, Messpunkt/CST, Latenz, Uhr/Timecode, Bridge/ffmpeg, Audio, Tastatur, Über/Lizenzen. Das ⚙ im Panel-Kopf enthält nur die Optionen dieses Panels. *Hilfe* verlinkt die Anleitungen und zeigt die Tastenkürzel. Begründung: [docs/research/menue.md](docs/research/menue.md).
+
+Tasten: `Cmd+,` / `Strg+,` Einstellungen, `1`–`6` Layout, `C` Messpunkt (Signal / nach CST / nach LUT), `Leertaste` Einfrieren bzw. Wiedergabe, `←` / `→` ein Bild, `Umschalt+←/→` eine Sekunde, `J` `K` `L` Shuttle, `Pos1` / `Ende`, `F` Vollbild, `S` PNG, `B` Seitenleiste, `Esc` Solo beenden bzw. Messpunkt löschen, `E` Overlay im Ausgabefenster bearbeiten. Vollständig: *Hilfe → Tastenkürzel*.
 
 ## Aus dem Quelltext
 
@@ -76,7 +82,7 @@ Für Netzwerkquellen ohne Desktop-App: `npm run ffmpeg:fetch` lädt dasselbe ffm
 
 ## Quellen
 
-Anleitung zu Resolve, Fenster-Capture, Ordnern, Clean Feed und Capture-Karten: [docs/manual/eingaenge.md](docs/manual/eingaenge.md), in der App unter **? Hilfe**.
+Anleitung zu Resolve, Fenster-Capture, Ordnern, Clean Feed und Capture-Karten: [docs/manual/eingaenge.md](docs/manual/eingaenge.md), in der App unter **Hilfe → Anleitung: Eingänge**.
 
 | Quelle | Weg |
 |---|---|
@@ -129,7 +135,7 @@ Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einste
 
 **Display-Farbraum** der Bildansicht wird automatisch erkannt (sRGB/P3, HDR-fähig) oder gewählt; die Scopes messen immer das Signal.
 
-**HDR-Vorschau** (⚙ → HDR-Vorschau): HDR und Log zeigt die Bildansicht auf SDR-Displays per Display-Light-Down-Mapping in BT.2020. *BT.2408 hybrid-linear* (Standard): linear ×0,5 (BT.2408-8 § 5.2, SDR 100 cd/m² ≙ ≈ 203 cd/m²), die Lichter rollt die BT.2390-EETF (§ 5.4, je Kanal in PQ) in die 100-cd/m²-Spitze; HDR-Referenzweiß landet bei ≈ 93 % SDR (§ 7.1.3 nennt 86–95 %). *BT.2446 Methode A* (BT.2446-1 § 4.1, Tab. 2/3): 1000 → 100 cd/m² mit Farbkorrektur; Quellen über 1000 cd/m² bringt vorher die EETF auf 1000. Quellspitze: PQ 1000 cd/m² (Mastering, ohne Metadaten angenommen), HLG das eingestellte Lw, Log das Kurvenende.
+**HDR-Vorschau** (*Einstellungen → Display*): HDR und Log zeigt die Bildansicht auf SDR-Displays per Display-Light-Down-Mapping in BT.2020. *BT.2408 hybrid-linear* (Standard): linear ×0,5 (BT.2408-8 § 5.2, SDR 100 cd/m² ≙ ≈ 203 cd/m²), die Lichter rollt die BT.2390-EETF (§ 5.4, je Kanal in PQ) in die 100-cd/m²-Spitze; HDR-Referenzweiß landet bei ≈ 93 % SDR (§ 7.1.3 nennt 86–95 %). *BT.2446 Methode A* (BT.2446-1 § 4.1, Tab. 2/3): 1000 → 100 cd/m² mit Farbkorrektur; Quellen über 1000 cd/m² bringt vorher die EETF auf 1000. Quellspitze: PQ 1000 cd/m² (Mastering, ohne Metadaten angenommen), HLG das eingestellte Lw, Log das Kurvenende.
 
 **Videodateien** mit Playhead, Timecode, Start/Stopp, Frame ±1 und J/K/L wie in Resolve.
 
@@ -199,7 +205,7 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 
 ## Display-Kalibrierung und Verifikation
 
-⚙ → *Kalibrierung / Verifikation …*. Die Abläufe folgen DisplayCAL, der Code ist eigen. Details: [docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md).
+*Einstellungen → Display → Kalibrierung / Verifikation …*. Die Abläufe folgen DisplayCAL, der Code ist eigen. Details: [docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md).
 
 - **Messfeld-Sequenzer**: Das Testbild-Ausgabefenster (`?out=`) zeigt die Messfelder. Einstellbar sind Feldgröße, konstanter APL-Hintergrund und Vollbild-Einschub gegen ABL. Der Sequenzer (`src/patchSequencer.ts`) ist auch für die LED-Wand-Werkzeuge gedacht.
 - **Messgerät**: ArgyllCMS `spotread` läuft als eigener Prozess über die Bridge (Desktop-App oder `npm start`), mit CCMX/CCSS-Korrektur und Displaytyp. ArgyllCMS wird nicht mitgeliefert. Fehlt es, meldet der Dialog „ArgyllCMS nicht gefunden“ und nimmt XYZ oder xyY von Hand an. *Mit echtem Messgerät noch nicht geprüft.*
@@ -207,7 +213,7 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 - **Bericht**: ΔE00 und ΔITP (Mittel, Median, 95. Perzentil, Max) gegen BT.1886 mit gemessenem Schwarz, Gamma, sRGB oder PQ. Dazu Graukurve mit effektivem Gamma, CCT und Duv, Kontrast. Export als CSV und HTML, Druck als PDF.
 - **Uniformität** 3×3 bis 9×9 in 100/75/50/25 %: ΔE00 zum Mittelfeld (≤ 4 / ≤ 2, ISO 14861 wie von DisplayCAL zitiert) und Kontrastabweichung.
 - **3D-LUT** `.cube` 33/65 aus einem Matrix/Shaper-Modell der Messungen. Sie entsteht nur, wenn das Modell die gemessenen Felder gut genug vorhersagt, und nur für SDR.
-- **Systemprofil (Desktop-App)**: ⚙ → *Systemprofil mitschalten* setzt das Display-Profil des Betriebssystems passend zum gewählten Display-Farbraum (sRGB, Display P3 oder Rec.709, das Profil je Farbraum ist wählbar). Das vorherige Profil wird vorher gesichert und zurückgesetzt: beim Beenden, mit *Zurücksetzen* und nach einem Absturz beim nächsten Start. Unter macOS läuft das über einen kleinen Swift-Helfer auf der öffentlichen ColorSync-API (`npm run build:helpers`, am eingebauten Display geprüft). Unter Windows läuft es über mscms (ungeprüft). Monitor-Preset und Helligkeit per DDC/CI (VCP 0x14 / 0x10) gehen, wo ein Werkzeug vorhanden ist, ebenfalls ungeprüft. Im Browser nicht verfügbar ([docs/research/systemprofil.md](docs/research/systemprofil.md)).
+- **Systemprofil (Desktop-App)**: *Einstellungen → Display → Systemprofil mitschalten* setzt das Display-Profil des Betriebssystems passend zum gewählten Display-Farbraum (sRGB, Display P3 oder Rec.709, das Profil je Farbraum ist wählbar). Das vorherige Profil wird vorher gesichert und zurückgesetzt: beim Beenden, mit *Zurücksetzen* und nach einem Absturz beim nächsten Start. Unter macOS läuft das über einen kleinen Swift-Helfer auf der öffentlichen ColorSync-API (`npm run build:helpers`, am eingebauten Display geprüft). Unter Windows läuft es über mscms (ungeprüft). Monitor-Preset und Helligkeit per DDC/CI (VCP 0x14 / 0x10) gehen, wo ein Werkzeug vorhanden ist, ebenfalls ungeprüft. Im Browser nicht verfügbar ([docs/research/systemprofil.md](docs/research/systemprofil.md)).
 
 ## Lichtmesser
 
@@ -289,6 +295,6 @@ Von **Lars Zumpe**, Lars Zumpe Medienproduktion.
 
 Proprietär, © 2026 Lars Zumpe, alle Rechte vorbehalten. Nutzung der veröffentlichten Builds ist kostenlos; Weiterverbreitung und abgeleitete Werke sind es nicht. Siehe [LICENSE](LICENSE). Kein Open Source: Der Code ist öffentlich zum Lesen. Fremdkomponenten behalten ihre Lizenzen: [THIRD_PARTY.md](THIRD_PARTY.md).
 
-Logo, Signet und App-Icon der Lars Zumpe Medienproduktion sind eigene Marke und nicht frei verwendbar (LICENSE, Abschnitt 10). Die Oberfläche hat drei Varianten (⚙ → Oberfläche): *Neutral* (unbunte Grautöne für farbkritische Arbeit, Standard), *LZM* (Brand Guide 2.0, Navy) und *Original* (fast schwarz). Scope-Spuren und Messfarben sind in allen gleich. Begründung: [docs/research/ui-farben.md](docs/research/ui-farben.md).
+Logo, Signet und App-Icon der Lars Zumpe Medienproduktion sind eigene Marke und nicht frei verwendbar (LICENSE, Abschnitt 10). Die Oberfläche hat drei Varianten (*Einstellungen → Oberfläche*): *Neutral* (unbunte Grautöne für farbkritische Arbeit, Standard), *LZM* (Brand Guide 2.0, Navy) und *Original* (fast schwarz). Scope-Spuren und Messfarben sind in allen gleich. Begründung: [docs/research/ui-farben.md](docs/research/ui-farben.md).
 
 NDI® is a registered trademark of Vizrt NDI AB.

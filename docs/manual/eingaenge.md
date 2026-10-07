@@ -36,7 +36,7 @@ Alternativ: **+ Quelle → DaVinci Resolve**.
 **Resolve auf einem anderen Rechner**
 
 1. Auf dem Resolve-Rechner die Bridge starten, mit `npm start -- --host 0.0.0.0` oder als Desktop-App mit `LZS_HOST=0.0.0.0`.
-2. In LZ Scopes unter **Bridge → Adresse** diesen Rechner eintragen, z. B. `http://<rechner>:4192`.
+2. In LZ Scopes unter **Einstellungen → Bridge / ffmpeg → Adresse** diesen Rechner eintragen, z. B. `http://<rechner>:4192`.
 3. Die Seitenleiste zeigt dann das Resolve dieses Rechners.
 
 Einen eigenen Netzwerk-Scan gibt es nicht. Resolve legt das Standbild auf der Platte des Resolve-Rechners ab, deshalb muss dort die Bridge laufen.

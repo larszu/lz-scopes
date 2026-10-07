@@ -6,10 +6,9 @@ import { isMac, registersNatively, sep, type MenuItem, type TopMenu } from './mo
 import { MenuBar } from './menubar';
 
 export const REPO = 'https://github.com/larszu/lz-scopes';
-/** Guides in the Help menu. Add new ones here (e.g. the Resolve guide of issue #78). */
+/** Guides in the Help menu (links). The inputs manual (#78) opens inside the app, see `manual:`. */
 export const GUIDES: { id: string; label: string; url: string }[] = [
   { id: 'readme', label: 'Anleitung (README)', url: `${REPO}/blob/main/README.de.md` },
-  { id: 'resolve', label: 'Anleitung: DaVinci Resolve als Quelle', url: `${REPO}/issues/78` },
   { id: 'control', label: 'Steuer-API und Companion', url: `${REPO}/blob/main/docs/control-api.md` },
   { id: 'cable', label: 'cable-planner-Anbindung', url: `${REPO}/blob/main/docs/cable-planner-integration.md` },
 ];
@@ -32,6 +31,8 @@ export interface MenuState {
 
 export interface MenuActions {
   settings: (page?: string) => void;
+  /** in-app manual docs/manual (#78) */
+  manual?: (lang: 'de' | 'en') => void;
   layouts: () => void;
   layoutsExport: () => void;
   layoutsImport: () => void;
@@ -161,6 +162,8 @@ export function buildMenu(s: MenuState): TopMenu[] {
       id: 'help', label: 'Hilfe', items: [
         { id: 'settings:keys', label: 'Tastenkürzel' },
         sep(),
+        { id: 'manual:de', label: 'Anleitung: Eingänge (Resolve, Fenster, Ordner, Capture-Karten)' },
+        { id: 'manual:en', label: 'Inputs manual (English)' },
         ...GUIDES.map((g): MenuItem => ({ id: `open:${g.id}`, label: g.label })),
         sep(),
         { id: 'open:issues', label: 'Fehler melden …' },
@@ -202,6 +205,7 @@ export function dispatch(id: string, a: MenuActions) {
     case 'led': return a.led();
     case 'calibration': return a.calibration();
     case 'open': { const u = URLS[arg]; if (u) window.open(u, '_blank', 'noopener'); return; }
+    case 'manual': return a.manual?.(arg === 'en' ? 'en' : 'de');
   }
   a.other?.(id);
 }

@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 // @ts-expect-error plain JS module
 import { ageStats, ffmpegArgs } from '../server/index.mjs';
 import { LatencyMeter, latencyLines, rtpLines } from '../src/latency';
 import { DEFAULT_LOW_LATENCY, effectiveWidth, mergeLowLatency } from '../src/lowLatency';
+import { setLang } from '../src/i18n';
+
+// the texts are checked in German
+beforeAll(() => setLang('de'));
 
 // Low-latency mode (docs/research/low-latency.md)
 

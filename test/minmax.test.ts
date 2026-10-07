@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { castName, lineExtremes, neutralCast } from '../src/minmax';
 import { rgbDecoder } from '../src/ycbcr';
+import { setLang } from '../src/i18n';
+
+// the texts are checked in German
+beforeAll(() => setLang('de'));
 
 const frame = (w: number, h: number, fn: (x: number, y: number) => number[]) => {
   const px = new Float32Array(w * h * 4);

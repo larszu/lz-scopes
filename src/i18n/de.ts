@@ -17,6 +17,8 @@ import match from './de/match';
 import bridge from './de/bridge';
 
 
+
+import tools from './de/tools';
 import clock from './de/clock';
 import audio from './de/audio';
 import type { Key } from './en';
@@ -38,6 +40,7 @@ export const de: Record<Key, Msg> = {
   ...chain,
   ...match,
   ...bridge,
+  ...tools,
   ...clock,
   ...audio,
 };

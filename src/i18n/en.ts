@@ -17,6 +17,8 @@ import chain from './en/chain';
 import match from './en/match';
 import bridge from './en/bridge';
 
+
+import tools from './en/tools';
 import clock from './en/clock';
 import audio from './en/audio';
 
@@ -36,6 +38,7 @@ export const en = {
   ...chain,
   ...match,
   ...bridge,
+  ...tools,
   ...clock,
   ...audio,
 };

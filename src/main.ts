@@ -41,6 +41,9 @@ import { DEFAULT_LOW_LATENCY, LL_STATS, LL_WIDTHS, describeLowLatency, effective
 import { mountResolveLive } from './resolveLive';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
+import { SOURCE_ITEMS, mountMenu, refreshMenu, type MenuActions, type MenuState } from './menu/appMenu';
+import { openSettings, refreshSettings, registerSettingsSection } from './menu/settings';
+import { aboutSection, keysSection } from './menu/pages';
 
 // ---------------------------------------------------------------- state
 
@@ -151,18 +154,20 @@ const app = $('#app');
 app.innerHTML = `
   <header class="bar">
     <div class="brand" title="LZ Scopes · Lars Zumpe Medienproduktion"><img class="signet" src="${SIGNET[state.theme]}" alt="Lars Zumpe Medienproduktion" width="33" height="20" /><span class="product">Scopes</span></div>
-    <button class="icon" id="toggle-side" title="Quellen ein/aus (B)">☰</button>
-    <div class="group" id="layouts"></div>
-    <div class="group" id="globals"></div>
+    <div id="menubar"></div>
+    <div class="tools">
+      <button class="icon" id="toggle-side" title="Seitenleiste (Quellen) ein/aus (B)" aria-label="Seitenleiste">◧</button>
+      <div class="group" id="layouts"></div>
+      <div class="group" id="globals"></div>
+    </div>
     <div class="spacer"></div>
     <span class="fps" id="fps"></span>
     <button id="freeze" title="Standbild (Leertaste)">❚❚ Einfrieren</button>
-    <details class="menu" id="laymenu"><summary title="Layout-Konfigurationen speichern und laden (Anordnung + Einstellungen der Scopes)">▦ Layouts</summary><div class="menu-body right" id="laybody"></div></details>
-    <details class="menu" id="outmenu"><summary title="Ausgabe auf einen Bildschirm dieses Rechners oder als Stream">⧉ Ausgabe</summary><div class="menu-body right" id="outbody"></div></details>
-    <button id="led" title="LED-Wand: Cabinet-Testbilder und Kamera-Prüfung (Heatmap, Nähte)">▦ LED-Wand</button>
-    <button id="snap" title="Screenshot als PNG (S)">⤓ PNG</button>
-    <button id="full" title="Vollbild (F)">⛶</button>
+    <button id="settings-btn" class="icon" title="Einstellungen (⌘, / Strg+,)" aria-label="Einstellungen">⚙</button>
+    <button class="icon" id="full" title="Vollbild (F)" aria-label="Vollbild">⛶</button>
   </header>
+  <dialog class="tooldlg" id="laymenu" aria-label="Layouts"><div class="dlg-head"><h2>Layouts</h2><button class="icon" data-close aria-label="Schließen">✕</button></div><div class="dlg-body" id="laybody"></div></dialog>
+  <dialog class="tooldlg" id="outmenu" aria-label="Ausgabe"><div class="dlg-head"><h2>Ausgabe</h2><button class="icon" data-close aria-label="Schließen">✕</button></div><div class="dlg-body" id="outbody"></div></dialog>
   <div class="main">
     <aside class="side" id="side">
       <h2>Quellen</h2>
@@ -171,15 +176,6 @@ app.innerHTML = `
       <div class="add" id="add"></div>
       <details class="gen" id="gen-wrap"><summary>Tongenerator</summary><div id="gen"></div></details>
       <details class="gen" id="opple-wrap"><summary>Lichtmesser (Opple)</summary><div id="opple"></div></details>
-      <details class="bridge"><summary>Bridge</summary>
-        <label>Adresse <input id="bridge" placeholder="leer = dieser Server"></label>
-        <p class="hint">RTSP, SRT, HLS und andere Netzwerkquellen dekodiert die Bridge mit ffmpeg: Desktop-App oder <code>npm start</code>. Im Browser allein gehen Testbilder, Kamera, Bildschirm und Dateien.</p>
-        <p class="hint" id="ffmpeg-info">ffmpeg: wird abgefragt …</p>
-      </details>
-      <details class="help"><summary>Tastatur</summary>
-        <p><kbd>1</kbd>–<kbd>6</kbd> Layout · <kbd>Leertaste</kbd> Einfrieren · <kbd>F</kbd> Vollbild · <kbd>S</kbd> PNG · <kbd>B</kbd> Seitenleiste ·
-        Doppelklick = Solo, <kbd>Esc</kbd> zurück · Klick ins Bild = Messpunkt, Rechtsklick löscht</p>
-      </details>
     </aside>
     <section class="dockwrap" id="grid"><canvas id="gl"></canvas><div id="dock"></div></section>
   </div>`;
@@ -201,39 +197,89 @@ function renderHeader() {
   lay.replaceChildren(...Object.entries(PRESETS).map(([k, l], i) =>
     h('button', { class: k === state.layout ? 'on' : '', title: `Layout ${l.label} (${i + 1}) – danach frei per Drag & Drop`, onclick: () => setLayout(k) }, l.label)),
     h('button', { title: 'Panel hinzufügen', onclick: () => addScopePanel() }, '+ Panel'));
-  const disp = state.display === 'auto' ? detected.space : state.display;
   $('#globals').replaceChildren(
-    select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m²']], (v) => { state.unit = v as Unit; save(); }, 'Skala'),
-    h('details', { class: 'menu' },
-      h('summary', { title: 'Einstellungen' }, `⚙ ${DISPLAY_LABELS[disp].split(' ')[0]}${state.display === 'auto' ? ' auto' : ''}`),
-      h('div', { class: 'menu-body' }, ...settingsItems())),
+    select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m²']], (v) => { state.unit = v as Unit; save(); refreshSettings(); }, 'Skala der Waveforms'),
   );
+  refreshMenu();
+  refreshSettings();
 }
 
-function settingsItems(): Node[] {
-  const row = (label: string, ...kids: (Node | string)[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
-  return [
-    row('Oberfläche', select(state.theme, THEMES, (v) => { if (isTheme(v)) setTheme(v); }, 'Farben der Bedienoberfläche. Messdarstellungen (Spuren, Graticule, Falschfarben) bleiben in allen Varianten gleich.')),
-    row('Messpunkt', select(state.stage ?? 'signal', STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string]), (v) => setStage(v as Stage), 'Standard für alle Panels ohne eigenen Messpunkt (Taste C)')),
-    row('HDR-Vorschau', select(state.hdrPreview ?? 'bt2408', Object.entries(HDR_PREVIEW_LABELS) as [string, string][], (v) => { state.hdrPreview = v as HdrPreview; save(); renderHeader(); },
-      'Wie die Bildansicht HDR (PQ/HLG) und Log auf einem SDR-Display zeigt: BT.2408 hybrid-linear (Referenzweiß ≈ 93 %, Lichter per BT.2390-EETF) oder BT.2446 Methode A. Die Scopes messen immer das Signal.')),
-    row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}${detected.hdr ? ' (HDR-fähig)' : ''}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])],
-      (v) => setDisplaySpace(v as Persisted['display']), 'Display-Farbraum der Bildansicht; die Scopes messen immer das Signal')),
-    row('', h('button', { class: 'mini', title: 'Messfelder ausgeben, Display mit Messgerät (ArgyllCMS) oder manuell prüfen, Uniformität, Bericht, 3D-LUT', onclick: openCalibrationDialog }, 'Kalibrierung / Verifikation …')),
-    ...(sysProfileAvailable() ? [sysProfileSection(h, () => (state.display === 'auto' ? null : state.display))] : []),
-    row('Low Latency', select(state.lowLatency ? '1' : '0', [['0', 'aus'], ['1', 'an (alle Bridge-Quellen ohne eigene Wahl)']], (v) => setGlobalLowLatency(v === '1'), LOW_LATENCY_HINT)),
-    ...lowLatencyFields(Source.globalLowLatencyConfig, false, (patch) => setGlobalLowLatencyConfig(patch)).map(([label, el]) => row(label, el)),
-    row('Spurfarbe', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); })),
-    row('Präzision', select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }, 'Abtastpunkte je Scope')),
-    row('ΔE am Messpunkt', select(state.deRef ?? 'off', [['off', 'aus'], ['bars', 'nächster Farbbalken'], ['targets', 'nächstes eigenes Ziel'], ...state.targets.map((t) => [`target:${t.name}`, `Ziel ${t.name}`] as [string, string])],
-      (v) => { state.deRef = v; save(); }, 'ΔE 2000 (SDR, Log) bzw. ΔE ITP (PQ/HLG, BT.2124) des Messpunkts gegen den gewählten Sollwert; eigene Ziele im Vectorscope-⚙ anlegen')),
-    row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); })),
-    row('Hautton Luma',
-      numIn(Math.round(state.skin.lo * 100), 0, 100, (v) => { state.skin.lo = v / 100; }), '–',
-      numIn(Math.round(state.skin.hi * 100), 0, 100, (v) => { state.skin.hi = v / 100; }), '%'),
-    row('Hautton Farbton ±', numIn(state.skin.tol, 2, 45, (v) => { state.skin.tol = v; }), '° um die Hautton-Linie'),
-    row('Zebra', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%'),
-  ];
+// ---------------------------------------------------------------- settings window (#53)
+// Global settings live in one window (Einstellungen …, Cmd/Ctrl+,); panel options stay in ⚙.
+
+const srow = (label: string, ...kids: (Node | string)[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
+const shint = (text: string) => h('p', { class: 'hint' }, text);
+
+registerSettingsSection({ id: 'ui', label: 'Oberfläche', order: 10, render: () => [
+  srow('Skin', select(state.theme, THEMES, (v) => { if (isTheme(v)) setTheme(v); }, 'Farben der Bedienoberfläche')),
+  shint('Nur die Bedienoberfläche ändert sich. Messdarstellungen (Spuren, Graticule, Falschfarben) bleiben in allen Varianten gleich.'),
+  srow('Seitenleiste', checkbox(state.sidebar, 'Quellen anzeigen (B)', (v) => { state.sidebar = v; applySidebar(); save(); })),
+] });
+
+registerSettingsSection({ id: 'display', label: 'Display', order: 20, render: () => [
+  srow('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}${detected.hdr ? ' (HDR-fähig)' : ''}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])],
+    (v) => setDisplaySpace(v as Persisted['display']), 'Display-Farbraum der Bildansicht')),
+  shint('Farbraum, in dem die Bildansicht gezeigt wird. Die Scopes messen immer das Signal.'),
+  srow('HDR-Vorschau', select(state.hdrPreview ?? 'bt2408', Object.entries(HDR_PREVIEW_LABELS) as [string, string][], (v) => { state.hdrPreview = v as HdrPreview; save(); renderHeader(); },
+    'Wie die Bildansicht HDR (PQ/HLG) und Log auf einem SDR-Display zeigt')),
+  shint('BT.2408 hybrid-linear (Referenzweiß ≈ 93 %, Lichter per BT.2390-EETF) oder BT.2446 Methode A.'),
+  srow('', h('button', { title: 'Messfelder ausgeben, Display mit Messgerät (ArgyllCMS) oder manuell prüfen, Uniformität, Bericht, 3D-LUT', onclick: openCalibrationDialog }, 'Kalibrierung / Verifikation …')),
+  ...(sysProfileAvailable() ? [sysProfileSection(h, () => (state.display === 'auto' ? null : state.display))] : []),
+] });
+
+registerSettingsSection({ id: 'scopes', label: 'Scopes', order: 30, render: () => [
+  srow('Skala', select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m² / Szene']], (v) => { state.unit = v as Unit; save(); renderHeader(); })),
+  srow('Spurfarbe', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); })),
+  srow('Präzision', select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }, 'Abtastpunkte je Scope')),
+  srow('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); })),
+  srow('Hautton Luma',
+    numIn(Math.round(state.skin.lo * 100), 0, 100, (v) => { state.skin.lo = v / 100; }), '–',
+    numIn(Math.round(state.skin.hi * 100), 0, 100, (v) => { state.skin.hi = v / 100; }), '%'),
+  srow('Hautton Farbton ±', numIn(state.skin.tol, 2, 45, (v) => { state.skin.tol = v; }), '° um die Hautton-Linie'),
+  srow('Zebra', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%'),
+  shint('Einstellungen einzelner Panels (Helligkeit, Farbe, Lupe, Kanäle …) stehen im ⚙ des Panels.'),
+] });
+
+registerSettingsSection({ id: 'stage', label: 'Messpunkt / CST', order: 40, render: () => [
+  srow('Messpunkt', select(state.stage ?? 'signal', STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string]), (v) => setStage(v as Stage), 'Standard für alle Panels ohne eigenen Messpunkt (Taste C)')),
+  shint('Wo in der Kette (Signal → CST → LUT 1 → LUT 2) die Panels messen. Ein Panel kann im ⚙ einen eigenen Messpunkt haben; CST und LUTs stellt man an der Quellenkarte ein.'),
+  srow('ΔE am Messpunkt', select(state.deRef ?? 'off', [['off', 'aus'], ['bars', 'nächster Farbbalken'], ['targets', 'nächstes eigenes Ziel'], ...state.targets.map((t) => [`target:${t.name}`, `Ziel ${t.name}`] as [string, string])],
+    (v) => { state.deRef = v; save(); }, 'Sollwert für ΔE')),
+  shint('ΔE 2000 (SDR, Log) bzw. ΔE ITP (PQ/HLG, BT.2124) des Messpunkts gegen den gewählten Sollwert; eigene Ziele im Vectorscope-⚙ anlegen.'),
+  srow('', h('button', { onclick: () => showLutLibrary() }, 'Hersteller-LUTs …')),
+] });
+
+registerSettingsSection({ id: 'latency', label: 'Latenz', order: 50, render: () => [
+  srow('Low Latency', select(state.lowLatency ? '1' : '0', [['0', 'aus'], ['1', 'an (alle Bridge-Quellen ohne eigene Wahl)']], (v) => setGlobalLowLatency(v === '1'), LOW_LATENCY_HINT)),
+  ...lowLatencyFields(Source.globalLowLatencyConfig, false, (patch) => setGlobalLowLatencyConfig(patch)).map(([label, el]) => srow(label, el)),
+  shint(LOW_LATENCY_HINT),
+  shint('Jede Netzwerkquelle kann auf ihrer Karte davon abweichen. Gemessen wird die Latenz nur mit gestempeltem Testbild (scripts/latency-source.mjs).'),
+] });
+
+registerSettingsSection({ id: 'clock', label: 'Uhr / Timecode', order: 60, render: () => [
+  shint('Bildrate, Daily Jam, LTC-Quelle, PTP (ST 2059-2) und ST-2110-RTP-Zeitstempel stellt man je Uhr-Panel in dessen ⚙ ein: Mehrere Uhren können verschiedene Referenzen zeigen.'),
+  srow('', h('button', { onclick: () => { addScopePanel('clock'); } }, 'Uhr-Panel hinzufügen')),
+] });
+
+registerSettingsSection({ id: 'bridge', label: 'Bridge / ffmpeg', order: 70, render: () => [
+  srow('Adresse', bridgeInput),
+  shint('Leer = dieser Server. RTSP, SRT, HLS und andere Netzwerkquellen dekodiert die Bridge mit ffmpeg: Desktop-App oder npm start. Im Browser allein gehen Testbilder, Kamera, Bildschirm und Dateien.'),
+  ffmpegInfoEl,
+  srow('', h('button', { onclick: () => refreshFfmpegInfo() }, 'Neu abfragen')),
+] });
+
+registerSettingsSection({ id: 'audio', label: 'Audio', order: 80, render: () => [
+  shint('Der Tongenerator (Signal, Pegel, Ausgabegerät) steht in der Seitenleiste; Pegelskala, Lautheitsnorm und Kanäle je Audio-Panel in dessen ⚙. Audioquellen kommen über Quellen → Audio.'),
+  srow('', h('button', { onclick: () => { state.sidebar = true; applySidebar(); save(); const g = $<HTMLDetailsElement>('#gen-wrap'); g.open = true; g.scrollIntoView({ block: 'nearest' }); } }, 'Tongenerator zeigen')),
+] });
+
+registerSettingsSection(keysSection(90));
+registerSettingsSection(aboutSection(100));
+
+function checkbox(on: boolean, label: string, set: (v: boolean) => void) {
+  const c = h('input', { type: 'checkbox', checked: on }) as HTMLInputElement;
+  c.onchange = () => set(c.checked);
+  return h('label', { class: 'inline' }, c, label);
 }
 
 /** Display colour space changed: re-render and, if switched on, switch the system profile (#17). */
@@ -245,7 +291,7 @@ function setDisplaySpace(v: Persisted['display']) {
 if (state.display !== 'auto') applySysProfile(state.display).catch(() => {});
 
 function openCalibrationDialog() {
-  document.querySelectorAll<HTMLDetailsElement>('#globals details.menu[open]').forEach((d) => (d.open = false));
+  document.querySelector<HTMLDialogElement>('dialog.settings[open]')?.close();
   const ws = bridgeUrl();
   import('./calib/ui').then((m) => m.openCalibration({
     bridgeWs: () => ws, bridgeHttp: () => ws.replace(/^ws/, 'http'),
@@ -258,7 +304,7 @@ function numIn(value: number, min: number, max: number, set: (v: number) => void
 }
 
 function setTheme(t: UiTheme) {
-  state.theme = t; applyTheme(t); save();
+  state.theme = t; applyTheme(t); save(); refreshMenu();
 }
 
 function setLayout(k: string) {
@@ -285,13 +331,22 @@ document.addEventListener('pointerdown', (e) => {
   if ((e.target as HTMLElement).closest('details.psettings')) return;
   document.querySelectorAll<HTMLDetailsElement>('details.psettings[open]').forEach((o) => (o.open = false));
 });
-$<HTMLDetailsElement>('#laymenu').addEventListener('toggle', (e) => { if ((e.target as HTMLDetailsElement).open) renderLayoutMenu(); });
-$<HTMLDetailsElement>('#outmenu').addEventListener('toggle', (e) => { if ((e.target as HTMLDetailsElement).open) renderOutputMenu(); });
+// Layouts and Ausgabe: tool dialogs opened from the menu (Datei → Layouts …, Ausgabe → Ausgabe öffnen …)
+for (const d of document.querySelectorAll<HTMLDialogElement>('dialog.tooldlg')) {
+  d.querySelector<HTMLElement>('[data-close]')!.onclick = () => d.close();
+  d.addEventListener('click', (e) => { if (e.target === d) d.close(); });
+  d.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });
+}
+function openToolDialog(id: 'laymenu' | 'outmenu') {
+  const d = $<HTMLDialogElement>(`#${id}`);
+  if (id === 'laymenu') renderLayoutMenu(); else renderOutputMenu();
+  if (!d.open) d.showModal();
+}
 $('#toggle-side').onclick = () => { state.sidebar = !state.sidebar; applySidebar(); save(); };
-const applySidebar = () => $('#side').classList.toggle('hidden', !state.sidebar);
+function applySidebar() { $('#side').classList.toggle('hidden', !state.sidebar); refreshMenu(); }
 $('#freeze').onclick = () => toggleFreeze();
-$('#snap').onclick = () => snapshot();
-$('#led').onclick = () => openLedTool({
+$('#settings-btn').onclick = () => openSettings();
+const openLed = () => openLedTool({
   sources: () => sources,
   showPattern: (id, w, hh) => {
     const s = sources.find((x) => x.kind === 'pattern') ?? addSource('pattern', 'LED-Wand');
@@ -301,13 +356,14 @@ $('#led').onclick = () => openLedTool({
   patternsChanged: () => sources.filter((s) => s.kind === 'pattern' && s.pattern.id.startsWith('led-')).forEach((s) => s.startPattern()),
 });
 $('#full').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen());
-const bridgeInput = $<HTMLInputElement>('#bridge');
+const bridgeInput = h('input', { id: 'bridge', placeholder: 'leer = dieser Server', spellcheck: 'false' }) as HTMLInputElement;
 bridgeInput.value = state.bridge;
+const ffmpegInfoEl = h('p', { class: 'hint', id: 'ffmpeg-info' }, 'ffmpeg: wird abgefragt …');
 // which ffmpeg the bridge runs (origin, version, licence, SRT) – read by the bridge from the binary
 let bridgeHealth: BridgeHealth | null = null;
 async function refreshFfmpegInfo() {
   bridgeHealth = await fetchBridgeHealth(bridgeUrl().replace(/^ws/, 'http'));
-  const el = $('#ffmpeg-info');
+  const el = ffmpegInfoEl;
   el.textContent = bridgeFfmpegText(bridgeHealth);
   el.title = bridgeHealth?.ffmpeg?.path ?? '';
   if (sources.some((x) => x.kind === 'stream' && /^srt:/i.test(x.url))) renderSources();
@@ -317,7 +373,6 @@ async function refreshFfmpegInfo() {
 }
 let ffmpegRetry: ReturnType<typeof setTimeout> | undefined;
 bridgeInput.onchange = () => { state.bridge = bridgeInput.value; save(); refreshFfmpegInfo(); };
-$('details.bridge').addEventListener('toggle', (e) => { if ((e.target as HTMLDetailsElement).open) refreshFfmpegInfo(); });
 refreshFfmpegInfo();
 
 function toggleFreeze() {
@@ -325,6 +380,7 @@ function toggleFreeze() {
   sources.forEach((s) => (s.frozen = frozen));
   $('#freeze').classList.toggle('on', frozen);
   $('#freeze').textContent = frozen ? '▶ Weiter' : '❚❚ Einfrieren';
+  refreshMenu();
 }
 
 // ---------------------------------------------------------------- sources
@@ -334,7 +390,7 @@ function addSource(kind: SourceKind, name?: string, url = '', settings?: Partial
   s.url = url;
   s.onChange = () => { renderSources(); };
   sources.push(s);
-  renderSources(); renderPanels(); save();
+  renderSources(); renderPanels(); save(); refreshMenu();
   return s;
 }
 
@@ -342,7 +398,7 @@ function removeSource(s: Source) {
   s.stop();
   renderer.dropSource(s.id);
   sources.splice(sources.indexOf(s), 1);
-  renderSources(); renderPanels(); save();
+  renderSources(); renderPanels(); save(); refreshMenu();
 }
 
 function renderSources() {
@@ -639,16 +695,27 @@ function addResolve() {
   s.connectStream('resolve:', bridgeUrl());
 }
 
+/** Add a source of a kind (sidebar buttons and Quellen menu). */
+function addSourceOfKind(kind: string) {
+  switch (kind) {
+    case 'pattern': return void startLocal(addSource('pattern', `Testbild ${sources.length + 1}`));
+    case 'stream': { state.sidebar = true; applySidebar(); save(); return void addSource('stream', `Stream ${sources.length + 1}`); }
+    case 'resolve': return addResolve();
+    case 'webcam': case 'screen': case 'file': case 'folder': return void startLocal(addSource(kind));
+    case 'audio': return addAudioSource('device');
+    case 'generator': return addAudioSource('generator');
+  }
+}
 $('#add').replaceChildren(
   h('span', {}, '+ Quelle'),
-  h('button', { onclick: () => startLocal(addSource('pattern', `Testbild ${sources.length + 1}`)) }, 'Testbild'),
-  h('button', { onclick: () => addSource('stream', `Stream ${sources.length + 1}`) }, 'RTSP / Netz'),
-  h('button', { title: 'Aktuelles Frame aus DaVinci Resolve (Viewer, gegradet) in 16 bit über die Scripting-API – Resolve Studio, Externes Scripting: Lokal', onclick: addResolve }, 'DaVinci Resolve'),
-  h('button', { title: 'Kamera oder USB-Capture-Gerät (HDMI/SDI → USB)', onclick: () => startLocal(addSource('webcam')) }, 'Kamera/Capture'),
-  h('button', { title: 'Bildschirm oder Fenster (z. B. Resolve-Viewer)', onclick: () => startLocal(addSource('screen')) }, 'Bildschirm/Fenster'),
-  h('button', { onclick: () => startLocal(addSource('file')) }, 'Datei'),
-  h('button', { title: 'Neuestes Bild eines Ordners (Exporte aus Resolve, Lightroom, Capture One)', onclick: () => startLocal(addSource('folder')) }, 'Ordner'),
-  h('button', { title: 'Audiogerät, Audiodatei oder Generator messen', onclick: () => addAudioSource('device') }, 'Audio'),
+  h('button', { onclick: () => addSourceOfKind('pattern') }, 'Testbild'),
+  h('button', { onclick: () => addSourceOfKind('stream') }, 'RTSP / Netz'),
+  h('button', { title: 'Aktuelles Frame aus DaVinci Resolve (Viewer, gegradet) in 16 bit über die Scripting-API – Resolve Studio, Externes Scripting: Lokal', onclick: () => addSourceOfKind('resolve') }, 'DaVinci Resolve'),
+  h('button', { title: 'Kamera oder USB-Capture-Gerät (HDMI/SDI → USB)', onclick: () => addSourceOfKind('webcam') }, 'Kamera/Capture'),
+  h('button', { title: 'Bildschirm oder Fenster (z. B. Resolve-Viewer)', onclick: () => addSourceOfKind('screen') }, 'Bildschirm/Fenster'),
+  h('button', { onclick: () => addSourceOfKind('file') }, 'Datei'),
+  h('button', { title: 'Neuestes Bild eines Ordners (Exporte aus Resolve, Lightroom, Capture One)', onclick: () => addSourceOfKind('folder') }, 'Ordner'),
+  h('button', { title: 'Audiogerät, Audiodatei oder Generator messen', onclick: () => addSourceOfKind('audio') }, 'Audio'),
 );
 
 /** Add an audio source and, if no audio panel is open, a pinned level/loudness panel for it. */
@@ -734,9 +801,9 @@ function renderPanels() {
   needClear = true;
 }
 
-function addScopePanel() {
+function addScopePanel(scope: ScopeType = 'wf-luma') {
   const idx = state.panels.length;
-  state.panels.push(panel('wf-luma'));
+  state.panels.push(panel(scope));
   save();
   dock.addPanel(idx);
 }
@@ -1442,6 +1509,26 @@ function applyLayout(c: LayoutConfig) {
   save(); renderHeader(); refreshHeads(); needClear = true;
 }
 
+function downloadJson(obj: unknown, fname: string) {
+  const a = h('a', { download: fname, href: URL.createObjectURL(new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' })) }) as HTMLAnchorElement;
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+/** Choose a layout file and add its configurations; then `done`. */
+function importLayouts(done: () => void = () => {}) {
+  const file = h('input', { type: 'file', accept: 'application/json,.json' }) as HTMLInputElement;
+  file.onchange = async () => {
+    const f = file.files?.[0];
+    if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      const entries: Record<string, LayoutConfig> = data.panels ? { [f.name.replace(/\.json$/i, '')]: data } : data;
+      storeLayouts({ ...loadLayouts(), ...entries }); done();
+      alertHud(`${Object.keys(entries).length} Layout(s) importiert`);
+    } catch (e) { alertHud(`Import fehlgeschlagen: ${(e as Error).message}`); }
+  };
+  file.click();
+}
+
 function renderLayoutMenu() {
   const all = loadLayouts();
   const name = h('input', { placeholder: 'Name, z. B. Grading, LED-Wand, Studio' }) as HTMLInputElement;
@@ -1451,25 +1538,12 @@ function renderLayoutMenu() {
     all[n] = currentLayout(); storeLayouts(all); state.layoutName = n; save(); renderLayoutMenu();
   };
   name.onkeydown = (e) => { if (e.key === 'Enter') saveAs(); };
-  const file = h('input', { type: 'file', accept: 'application/json,.json', hidden: true }) as HTMLInputElement;
-  file.onchange = async () => {
-    const f = file.files?.[0];
-    if (!f) return;
-    try {
-      const data = JSON.parse(await f.text());
-      const entries: Record<string, LayoutConfig> = data.panels ? { [f.name.replace(/\.json$/i, '')]: data } : data;
-      Object.assign(all, entries); storeLayouts(all); renderLayoutMenu();
-    } catch (e) { alertHud(`Import fehlgeschlagen: ${(e as Error).message}`); }
-  };
-  const download = (obj: unknown, fname: string) => {
-    const a = h('a', { download: fname, href: URL.createObjectURL(new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' })) }) as HTMLAnchorElement;
-    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  };
+  const download = downloadJson;
   const names = Object.keys(all).sort((a, b) => a.localeCompare(b));
   $('#laybody').replaceChildren(
-    h('div', { class: 'mtitle' }, 'Layout-Konfigurationen'),
+    h('p', { class: 'hint' }, 'Eine Layout-Konfiguration speichert Anordnung und Einstellungen der Scopes, Skin, Display und die CST/LUT-Ketten der Quellen.'),
     ...(names.length ? names.map((n) => h('div', { class: 'mrow lay' },
-      h('button', { class: `lname${n === state.layoutName ? ' on' : ''}`, title: `Laden (gespeichert ${new Date(all[n].saved).toLocaleString('de-DE')})`, onclick: () => { applyLayout(all[n]); state.layoutName = n; save(); ($('#laymenu') as HTMLDetailsElement).open = false; } }, n),
+      h('button', { class: `lname${n === state.layoutName ? ' on' : ''}`, title: `Laden (gespeichert ${new Date(all[n].saved).toLocaleString('de-DE')})`, onclick: () => { applyLayout(all[n]); state.layoutName = n; save(); $<HTMLDialogElement>('#laymenu').close(); } }, n),
       h('button', { class: 'mini', title: 'Mit dem aktuellen Stand überschreiben', onclick: () => { all[n] = currentLayout(); storeLayouts(all); renderLayoutMenu(); } }, '↻'),
       h('button', { class: 'mini', title: 'Als Datei exportieren', onclick: () => download(all[n], `lz-scopes-layout-${n}.json`) }, '⤓'),
       h('button', { class: 'mini', title: 'Löschen', onclick: () => { delete all[n]; storeLayouts(all); renderLayoutMenu(); } }, '✕')))
@@ -1477,7 +1551,7 @@ function renderLayoutMenu() {
     h('div', { class: 'mrow' }, name, h('button', { class: 'primary', onclick: saveAs }, 'Speichern')),
     h('div', { class: 'mrow' },
       h('button', { onclick: () => download(all, 'lz-scopes-layouts.json') }, '⤓ Alle exportieren'),
-      h('button', { onclick: () => file.click() }, '⤒ Importieren'), file),
+      h('button', { onclick: () => importLayouts(renderLayoutMenu) }, '⤒ Importieren')),
   );
 }
 
@@ -1910,6 +1984,37 @@ const dock = createDock($('#dock'), {
 let layoutSave = 0;
 if (!(state.dock && dock.restore(state.dock))) dock.applyPreset(state.layout);
 if (!state.scenes.some((sc) => sc.id === state.activeScene)) state.activeScene = state.scenes[0].id;
+// application menu (#53): native in the desktop app, menu bar in the header in the browser
+const menuState = (): MenuState => ({
+  sidebar: state.sidebar, frozen, layout: state.layoutName ? '' : state.layout,
+  layouts: Object.entries(PRESETS).map(([k, l]) => [k, l.label]),
+  theme: state.theme, themes: THEMES,
+  stage: state.stage ?? 'signal', stages: STAGES.map((st) => [st, STAGE_LABELS[st]]),
+  scopes: (Object.entries(SCOPE_LABELS) as [string, string][]),
+  hasPattern: sources.some((x) => x.kind === 'pattern'),
+});
+const menuActions: MenuActions = {
+  settings: (page) => openSettings(page),
+  layouts: () => openToolDialog('laymenu'),
+  layoutsExport: () => downloadJson(loadLayouts(), 'lz-scopes-layouts.json'),
+  layoutsImport: () => importLayouts(() => { if ($<HTMLDialogElement>('#laymenu').open) renderLayoutMenu(); }),
+  snapshot: () => snapshot(),
+  sidebar: () => $('#toggle-side').click(),
+  layout: (k) => { if (k in PRESETS) setLayout(k); },
+  addPanel: (scope) => addScopePanel(scope && scope in SCOPE_LABELS ? scope as ScopeType : undefined),
+  exitSolo: () => { if (dock.api.hasMaximizedGroup()) dock.exitMaximized(); },
+  freeze: () => toggleFreeze(),
+  stageNext: () => setStage(STAGES[(STAGES.indexOf(state.stage ?? 'signal') + 1) % STAGES.length]),
+  stage: (id) => { if ((STAGES as string[]).includes(id)) setStage(id as Stage); },
+  theme: (id) => { if (isTheme(id)) { setTheme(id); refreshSettings(); } },
+  fullscreen: () => $('#full').click(),
+  addSource: (kind) => { if (SOURCE_ITEMS.some(([k]) => k === kind)) addSourceOfKind(kind); },
+  output: () => openToolDialog('outmenu'),
+  outputPattern: () => { const p = sources.find((x) => x.kind === 'pattern'); if (p) openOutput(p.pattern); },
+  led: () => openLed(),
+  calibration: () => openCalibrationDialog(),
+};
+mountMenu($('#menubar'), menuState, menuActions);
 requestAnimationFrame(frame);
 // Control API: the bridge forwards Companion/HTTP commands to this window.
 connectRemote(bridgeUrl, execute, controlState);

@@ -51,6 +51,9 @@ test('SRT-Empfang: mediamtx-Listener → Bridge (mitgeliefertes ffmpeg) → Wave
   const card = page.locator('#source-list .src.live').last();
   await expect(card).toContainText('1280×720');
   await expect(card.locator('[data-ffmpeg-source]')).toContainText('SRT-Empfang mit ffmpeg');
+  // end the stream: a live 720p source keeps software WebGL busy and starved the next test's window (local Mac: 5 min)
+  pub?.kill('SIGKILL'); pub = undefined;
+  mtx.stop(); mtx = undefined;
 });
 
 async function openWindow(q: string): Promise<Page> {
@@ -63,6 +66,8 @@ async function openWindow(q: string): Promise<Page> {
 }
 
 test('SRT-Push: 10-bit-Stream (HEVC Main 10) → srt:// → mitgeliefertes ffmpeg als Listener', async () => {
+  // window boot (up to 60 s) + push (up to 120 s) exceed the default 180 s on a busy machine
+  test.setTimeout(300_000);
   const port = await freePort();
   let log = '';
   const rx = spawn(SHIPPED_FFMPEG!, ['-hide_banner', '-f', 'mpegts', '-i', `srt://127.0.0.1:${port}?mode=listener`, '-frames:v', '1', '-f', 'null', '-']);

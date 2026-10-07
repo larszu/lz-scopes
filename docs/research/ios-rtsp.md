@@ -54,6 +54,18 @@ Only sources that were actually opened are listed; assessments are marked as suc
   start (`-LzsAutoStreams`, debug builds only); `scripts/ios-rtsp-check.mjs` requires both live
   in the WebView with ≥ 25 frames and the 75 % bar at 191 ±8.
 
+## Findings from the simulator runs (CI, iOS 26.5)
+
+- WebKit's WebCodecs decodes the H.264 test stream (narrow range, BT.709) into planes in
+  **full range**: with the stream's tag the 75 % bar came out at 204 instead of 191. The
+  worker now takes the range from `VideoFrame.colorSpace.fullRange` (`src/yuv.ts`
+  `decodedFullRange`); since then 191 on iPhone and iPad. Consequence: on this path codes
+  below black and above white are already clipped by the decoder (assessment: WebKit converts
+  to full range internally).
+- HEVC Main 10 (shipped x265) goes to VideoToolbox and arrives at 960 px with 191.
+- One run: the first RTSP request from the freshly booted iPhone simulator got no answer within
+  8 s; network errors are therefore retried (5 times before the first picture, then every 2 s).
+
 ## Not verified
 
 - Real iPhone/iPad (simulator runs on the Mac's GPU and video stack), real cameras, Wi-Fi

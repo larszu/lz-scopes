@@ -369,7 +369,7 @@ static int reference(int index) {
   }
   IDeckLinkOutput* o = nullptr;
   if (d->QueryInterface(IID_IDeckLinkOutput, (void**)&o) == S_OK) {
-    BMDReferenceStatus rs = 0;
+    BMDReferenceStatus rs = static_cast<BMDReferenceStatus>(0); // MIDL makes it an enum on Windows
     if (o->GetReferenceStatus(&rs) == S_OK)
       out += std::string(",\"outputReference\":{\"locked\":") + ((rs & bmdReferenceLocked) ? "true" : "false") + ",\"notSupported\":" + ((rs & bmdReferenceNotSupportedByHardware) ? "true" : "false") + "}";
     o->Release();

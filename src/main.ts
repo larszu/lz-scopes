@@ -40,6 +40,7 @@ import { mountResolveLive } from './resolveLive';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
 import { ShadingControl, SIM_URL } from './shading/ui';
+import { T as SHADING_T } from './shading/text';
 
 // ---------------------------------------------------------------- state
 
@@ -156,7 +157,7 @@ app.innerHTML = `
     <button id="freeze" title="Standbild (Leertaste)">❚❚ Einfrieren</button>
     <details class="menu" id="laymenu"><summary title="Layout-Konfigurationen speichern und laden (Anordnung + Einstellungen der Scopes)">▦ Layouts</summary><div class="menu-body right" id="laybody"></div></details>
     <details class="menu" id="outmenu"><summary title="Ausgabe auf einen Bildschirm dieses Rechners oder als Stream">⧉ Ausgabe</summary><div class="menu-body right" id="outbody"></div></details>
-    <button id="shading" title="Touch Shading: Kamera über Parade, Waveform und Vectorscope steuern">◐ Shading</button>
+    <button id="shading" title="${SHADING_T.buttonTitle}">${SHADING_T.button}</button>
     <button id="led" title="LED-Wand: Cabinet-Testbilder und Kamera-Prüfung (Heatmap, Nähte)">▦ LED-Wand</button>
     <button id="snap" title="Screenshot als PNG (S)">⤓ PNG</button>
     <button id="full" title="Vollbild (F)">⛶</button>
@@ -397,7 +398,7 @@ function renderSources() {
         ...(sourceFfmpegText(s.url, bridgeHealth) ? [h('p', { class: 'hint', 'data-ffmpeg-source': '' }, sourceFfmpegText(s.url, bridgeHealth))] : []),
       );
     } else if (s.url === SIM_URL) {
-      card.append(h('p', { class: 'hint' }, 'Bild ohne Kamera für Touch Shading – gesteuert über ◐ Shading.'));
+      card.append(h('p', { class: 'hint' }, SHADING_T.simCard));
     } else if (s.kind === 'pattern') {
       card.append(...patternControls(s));
     } else if (s.kind === 'audio') {
@@ -1905,7 +1906,7 @@ renderHeader();
 const shading = new ShadingControl({
   simSource: () => {
     let s = sources.find((x) => x.url === SIM_URL);
-    if (!s) { s = addSource('file', 'Shading-Simulator', SIM_URL, { colorspace: '709' }); if (state.panels[0]) switchSource(state.panels[0], s.id); }
+    if (!s) { s = addSource('file', SHADING_T.simName, SIM_URL, { colorspace: '709' }); if (state.panels[0]) switchSource(state.panels[0], s.id); }
     return s;
   },
   panelSource,

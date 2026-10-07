@@ -12,6 +12,7 @@ import {
   type Channel, type Paint, type PaintField,
 } from './model';
 import { ShadingSim, SIM_URL } from './sim';
+import { T } from './text';
 
 const STORE = 'lz-scopes.shading';
 type Target = 'sim' | number;
@@ -110,14 +111,14 @@ export class ShadingControl {
   }
 
   activate() {
-    if (this.target === null) { this.message = 'Erst ein Ziel wählen'; this.render(); return; }
+    if (this.target === null) { this.message = T.chooseTargetFirst; this.render(); return; }
     const known = this.targetPaint();
     this.start = { ...known };
     this.cur = { ...known };
     this.touched.clear();
     this.undoStack = [];
     this.active = true;
-    this.message = this.target === 'sim' ? 'Simulator – keine Kamera' : '';
+    this.message = this.target === 'sim' ? T.simNote : '';
     this.bump();
   }
 
@@ -134,7 +135,7 @@ export class ShadingControl {
       for (const f of this.touched) this.cur[f] = this.start[f];
       this.dirty = new Set(this.touched);
       this.flush();
-      this.host.hud(`Shading: ${this.touched.size} Wert(e) auf Ausgangswerte zurückgesetzt`);
+      this.host.hud(T.restored(this.touched.size));
     }
     this.touched.clear();
     this.undoStack = [];
@@ -204,8 +205,8 @@ export class ShadingControl {
     if (this.target === 'sim') { this.sim?.set(this.cur); }
     else if (typeof this.target === 'number') {
       const { commands, error } = busCommands(changed, this.cur);
-      if (error) { this.message = error; this.render(); return; }
-      for (const c of commands) if (!this.link.send(this.target, c.cmd, c.params)) { this.message = 'lz-camera-bridge nicht verbunden – nichts gesendet'; break; }
+      if (error) { this.message = error === 'hue' ? T.hueNotOnBus : T.tripleUnknown(error === 'black' ? 'Black' : 'White'); this.render(); return; }
+      for (const c of commands) if (!this.link.send(this.target, c.cmd, c.params)) { this.message = T.notConnected; break; }
     }
     this.version++;
     this.host.redraw();
@@ -264,14 +265,14 @@ export class ShadingControl {
     } else {
       const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
       const from: [number, number] = [x - cx, cy - y];
-      if (Math.hypot(...from) < r.w * 0.04) return this.refuse('Am Vectorscope außerhalb der Mitte greifen: drehen = Hue, nach außen/innen = Sättigung');
+      if (Math.hypot(...from) < r.w * 0.04) return this.refuse(T.vectorCentre);
       g = { panel: idx, scope: p.scope, fields: ['hue', 'saturation'], channel: 'y', from, last: from, mode: null, startSat: this.cur.saturation, acc: 0, before: {} };
     }
     const mode = this.mode();
     const missing = g.fields.filter((f) => !fieldAvailable(f, mode));
-    if (g.scope !== 'vector' && missing.length) return this.refuse(`${missing.map((f) => FIELDS[f].label).join(', ')}: an diesem Ziel nicht steuerbar (Bridge-Modus „${mode || '?'}“)`);
+    if (g.scope !== 'vector' && missing.length) return this.refuse(T.notControllable(missing.map((f) => FIELDS[f].label).join(', '), mode || '?'));
     const unknown = g.fields.filter((f) => fieldAvailable(f, mode) && this.cur[f] === undefined);
-    if (g.scope !== 'vector' && unknown.length) return this.refuse(`${unknown.map((f) => FIELDS[f].label).join(', ')}: aktueller Wert unbekannt – die Kamera hat ihn der Bridge noch nicht gemeldet`);
+    if (g.scope !== 'vector' && unknown.length) return this.refuse(T.unknownValue(unknown.map((f) => FIELDS[f].label).join(', ')));
     for (const f of g.fields) g.before[f] = this.cur[f];
     this.message = '';
     this.gesture = g;
@@ -303,10 +304,10 @@ export class ShadingControl {
     if (!g.mode) return;
     const mode = this.mode();
     if (!fieldAvailable(g.mode, mode)) {
-      this.message = g.mode === 'hue' ? 'Hue: kein Kommando im Bus von lz-camera-bridge – nur im Simulator' : `Sättigung: an diesem Ziel nicht steuerbar (Bridge-Modus „${mode}“)`;
+      this.message = g.mode === 'hue' ? T.hueSimOnly : T.notControllable(FIELDS.saturation.label, mode);
       this.render(); return;
     }
-    if (this.cur[g.mode] === undefined) { this.message = `${FIELDS[g.mode].label}: aktueller Wert unbekannt`; this.render(); return; }
+    if (this.cur[g.mode] === undefined) { this.message = T.unknownValue(FIELDS[g.mode].label); this.render(); return; }
     if (g.mode === 'hue') {
       const { dHue } = vectorGesture(g.last!, to);
       g.acc += dHue;
@@ -329,7 +330,7 @@ export class ShadingControl {
     ctx.save();
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.lineWidth = 1; ctx.setLineDash([]);
     ctx.font = '600 11px system-ui, sans-serif';
-    const label = this.target === 'sim' ? 'SHADING · Simulator' : `SHADING · Kamera ${this.target}`;
+    const label = this.target === 'sim' ? T.badgeSim : T.badgeCam(this.target as number);
     const tw = ctx.measureText(label).width + 12;
     ctx.fillStyle = 'rgba(214, 64, 52, 0.85)';
     ctx.fillRect(r.x + r.w - tw - 4, r.y + 4, tw, 18);
@@ -346,7 +347,7 @@ export class ShadingControl {
         ctx.beginPath(); ctx.moveTo(sx, yOf(g.grab!)); ctx.lineTo(sx + sw, yOf(g.grab!)); ctx.stroke();
         ctx.setLineDash([]); ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(sx, yOf(g.level!)); ctx.lineTo(sx + sw, yOf(g.level!)); ctx.stroke();
-        lines.unshift(`Ziel ${(g.level! * 100).toFixed(1)} % (gegriffen ${(g.grab! * 100).toFixed(1)} %)`);
+        lines.unshift(T.target((g.level! * 100).toFixed(1), (g.grab! * 100).toFixed(1)));
         this.box(ctx, sx + 6, Math.max(r.y + 26, yOf(g.level!) - 8 - lines.length * 14), lines);
       } else {
         const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
@@ -354,7 +355,7 @@ export class ShadingControl {
         ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + lx, cy - ly); ctx.stroke();
         ctx.beginPath(); ctx.arc(cx, cy, Math.hypot(lx, ly), 0, Math.PI * 2); ctx.globalAlpha = 0.35; ctx.stroke(); ctx.globalAlpha = 1;
-        const shown = g.mode ? [`${FIELDS[g.mode].label} ${formatValue(g.mode, this.cur[g.mode])}`] : ['drehen = Hue · radial = Sättigung'];
+        const shown = g.mode ? [`${FIELDS[g.mode].label} ${formatValue(g.mode, this.cur[g.mode])}`] : [T.vectorHint];
         this.box(ctx, r.x + 6, r.y + 26, shown);
       }
     }
@@ -392,28 +393,28 @@ export class ShadingControl {
     if (!this.open) return;
     const cams = this.link.cameras;
     const targetSel = h('select', {
-      title: 'Ziel der Gesten', 'data-shading-target': '',
+      title: T.targetTitle, 'data-shading-target': '',
       onchange: (e: Event) => { const v = (e.target as HTMLSelectElement).value; void this.setTarget(v === '' ? null : v === 'sim' ? 'sim' : Number(v)); },
-    }, h('option', { value: '' }, '– Ziel wählen –'), h('option', { value: 'sim' }, 'Simulator (ohne Kamera)'),
-      ...cams.map((c) => h('option', { value: String(c.cameraNumber) }, `Kamera ${c.cameraNumber} · ${c.label}${c.connected ? '' : ' (getrennt)'}${c.mode ? ` · ${c.mode}` : ''}`))) as HTMLSelectElement;
+    }, h('option', { value: '' }, T.chooseTarget), h('option', { value: 'sim' }, T.simOption),
+      ...cams.map((c) => h('option', { value: String(c.cameraNumber) }, T.camOption(c.cameraNumber, c.label, c.connected, c.mode)))) as HTMLSelectElement;
     targetSel.value = this.target === null ? '' : String(this.target);
-    const url = h('input', { class: 'shading-url', value: this.bridgeUrl, title: 'Adresse von lz-camera-bridge (WebSocket)', spellcheck: 'false' }) as HTMLInputElement;
+    const url = h('input', { class: 'shading-url', value: this.bridgeUrl, title: T.urlTitle, spellcheck: 'false' }) as HTMLInputElement;
     url.onchange = () => { this.bridgeUrl = url.value.trim(); this.persist(); this.link.disconnect(); this.link.connect(); };
-    const linkTxt = this.link.status === 'open' ? `Bridge verbunden · ${cams.length} Kamera(s)` : this.link.status === 'connecting' ? 'Bridge: verbinde …' : 'Bridge nicht erreichbar';
+    const linkTxt = this.link.status === 'open' ? T.linkOpen(cams.length) : this.link.status === 'connecting' ? T.linkConnecting : T.linkClosed;
     this.valuesEl = h('div', { class: 'shading-values' });
     b.replaceChildren(
       h('label', { class: 'shading-arm' },
         h('input', { type: 'checkbox', 'data-shading-active': '', ...(this.active ? { checked: '' } : {}), onchange: (e: Event) => ((e.target as HTMLInputElement).checked ? this.activate() : this.deactivate()) }),
-        h('span', {}, 'Shading aktiv')),
+        h('span', {}, T.active)),
       targetSel,
-      h('button', { class: 'shading-undo', title: 'Letzte Geste zurücknehmen', disabled: !this.undoStack.length || !this.active, onclick: () => this.undo() }, '↶ Rückgängig'),
-      h('button', { class: 'shading-stop', 'data-shading-stop': '', title: 'Alle Werte dieser Sitzung auf die Ausgangswerte und Shading aus (Esc)', onclick: () => this.emergencyStop() }, '■ Ausgangswerte'),
+      h('button', { class: 'shading-undo', title: T.undoTitle, disabled: !this.undoStack.length || !this.active, onclick: () => this.undo() }, T.undo),
+      h('button', { class: 'shading-stop', 'data-shading-stop': '', title: T.stopTitle, onclick: () => this.emergencyStop() }, T.stop),
       this.valuesEl,
       h('details', { class: 'shading-more' }, h('summary', {}, 'Bridge'),
         h('div', { class: 'row' }, url), h('div', { class: 'hint' }, linkTxt),
-        h('p', { class: 'hint' }, 'Parade: unten greifen = Black R/G/B, oben = White R/G/B. Luma-Waveform: Schatten = Master Black, Mitten = Master Gamma, Lichter = White R=G=B. Vectorscope: drehen = Hue (nur Simulator), radial = Sättigung. Höchstens ', `±${LIMITS.step} je Bewegung, ±${LIMITS.span} je Sitzung.`)),
+        h('p', { class: 'hint' }, T.help(LIMITS.step, LIMITS.span))),
       h('span', { class: 'shading-msg', 'data-shading-msg': '' }, this.message),
-      h('button', { class: 'icon', title: 'Leiste schließen', onclick: () => { if (this.active) this.deactivate(); this.toggleBar(false); } }, '✕'),
+      h('button', { class: 'icon', title: T.close, onclick: () => { if (this.active) this.deactivate(); this.toggleBar(false); } }, '✕'),
     );
     this.renderValues();
   }

@@ -4,6 +4,7 @@ import {
   paintFrame, slope, vectorGesture, vectorMode, waveTarget, zoneOf,
 } from '../src/shading/model';
 import { CameraBridgeLink } from '../src/shading/bridge';
+import { TEXTS } from '../src/shading/text';
 
 describe('touch shading: gesture → value', () => {
   it('zones follow the shadows/mids/highlights borders of the neutral overlay (0.3 / 0.7)', () => {
@@ -89,6 +90,13 @@ describe('touch shading: simulator picture model', () => {
   });
 });
 
+describe('touch shading: texts', () => {
+  it('every text exists in German and English', () => {
+    expect(Object.keys(TEXTS.en).sort()).toEqual(Object.keys(TEXTS.de).sort());
+    for (const k of Object.keys(TEXTS.de) as (keyof typeof TEXTS.de)[]) expect(typeof TEXTS.en[k]).toBe(typeof TEXTS.de[k]);
+  });
+});
+
 describe('touch shading: lz-camera-bridge vocabulary', () => {
   it('balance travels as an RGB triple with the current values of the other axes', () => {
     const r = busCommands(['whiteR'], { whiteR: 140, whiteG: 128, whiteB: 120 });
@@ -99,8 +107,8 @@ describe('touch shading: lz-camera-bridge vocabulary', () => {
   });
 
   it('refuses a triple with an unknown axis and hue (not on the bus)', () => {
-    expect(busCommands(['blackR'], { blackR: 130 }).error).toMatch(/nicht alle drei/);
-    expect(busCommands(['hue'], { hue: 5 }).error).toMatch(/Hue/);
+    expect(busCommands(['blackR'], { blackR: 130 }).error).toBe('black');
+    expect(busCommands(['hue'], { hue: 5 }).error).toBe('hue');
   });
 
   it('capabilities per bridge mode: VISCA and HTTP-CGI carry no paint, the simulator everything', () => {

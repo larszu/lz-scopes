@@ -227,13 +227,14 @@ export interface BusCommand { cmd: string; params: Record<string, number> }
  * change of one axis sends the other two with their current values – which therefore must be
  * known. Returns an error for anything the bus does not carry.
  */
-export function busCommands(changed: PaintField[], cur: Paint): { commands: BusCommand[]; error?: string } {
+/** `error`: 'black' / 'white' = triple not fully known, 'hue' = not on the bus. */
+export function busCommands(changed: PaintField[], cur: Paint): { commands: BusCommand[]; error?: 'black' | 'white' | 'hue' } {
   const out: BusCommand[] = [];
   const set = new Set(changed);
   const triple = (k: 'black' | 'white', cmd: string) => {
     if (![...set].some((f) => f.startsWith(k))) return null;
     const r = cur[`${k}R` as PaintField], g = cur[`${k}G` as PaintField], b = cur[`${k}B` as PaintField];
-    if (r === undefined || g === undefined || b === undefined) return `${k === 'black' ? 'Black' : 'White'} R/G/B: nicht alle drei Werte bekannt`;
+    if (r === undefined || g === undefined || b === undefined) return k;
     out.push({ cmd, params: { r, g, b } });
     return null;
   };
@@ -243,7 +244,7 @@ export function busCommands(changed: PaintField[], cur: Paint): { commands: BusC
   if (set.has('masterBlack')) out.push({ cmd: 'setMasterBlack', params: { value: cur.masterBlack! } });
   if (set.has('masterGamma')) out.push({ cmd: 'setMasterGamma', params: { value: cur.masterGamma! } });
   if (set.has('saturation')) out.push({ cmd: 'setSaturation', params: { value: cur.saturation! } });
-  if (set.has('hue')) return { commands: [], error: 'Hue: kein Kommando im Bus von lz-camera-bridge' };
+  if (set.has('hue')) return { commands: [], error: 'hue' };
   return { commands: out };
 }
 

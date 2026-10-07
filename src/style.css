@@ -358,10 +358,3 @@ table.tvtable progress { width: 90px; }
   table.tvtable td { border: 0; padding: 2px 0; }
   table.tvtable td.tv-act { grid-column: 1 / -1; white-space: normal; }
 }
-
-/* legacy class names of the feature modules that are not on src/ui yet (removed with their migration) */
-.mrow { display: flex; align-items: center; gap: 6px; color: var(--text-muted); flex-wrap: wrap; }
-.mrow > span:first-child { width: var(--label-w); flex: none; }
-.mrow select { flex: 1; min-width: 0; }
-.mtitle { font-weight: 600; color: var(--text); margin-bottom: 2px; }
-input.num:not([class*='num-']) { width: 48px; }

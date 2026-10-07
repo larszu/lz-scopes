@@ -4,13 +4,14 @@
 
 import { GAMUTS, gamutConvert, mul3, pqEncode } from '../color';
 import { quantize, type RGB } from '../patchSequencer';
+import { t } from '../i18n';
 
 export interface TestPatch { rgb: RGB; label: string; kind: 'grey' | 'primary' | 'colour' }
 export interface TestSet { id: string; name: string; hdr: boolean; patches: TestPatch[] }
 
 const pct = (v: number) => `${Math.round(v * 1000) / 10} %`;
-const grey = (v: number): TestPatch => ({ rgb: quantize([v, v, v]), label: `Grau ${pct(v)}`, kind: 'grey' });
-const HUES6: [string, RGB][] = [['Rot', [1, 0, 0]], ['Grün', [0, 1, 0]], ['Blau', [0, 0, 1]], ['Cyan', [0, 1, 1]], ['Magenta', [1, 0, 1]], ['Gelb', [1, 1, 0]]];
+const grey = (v: number): TestPatch => ({ rgb: quantize([v, v, v]), label: t('calib.patch.grey', { v: pct(v) }), kind: 'grey' });
+const HUES6: [string, RGB][] = [[t('calib.hue.red'), [1, 0, 0]], [t('calib.hue.green'), [0, 1, 0]], [t('calib.hue.blue'), [0, 0, 1]], [t('calib.hue.cyan'), [0, 1, 1]], [t('calib.hue.magenta'), [1, 0, 1]], [t('calib.hue.yellow'), [1, 1, 0]]];
 const primaries = (levels: number[]): TestPatch[] => levels.flatMap((l) => HUES6.map(([n, c]) => ({ rgb: quantize(c.map((v) => v * l) as RGB), label: `${n} ${pct(l)}`, kind: 'primary' as const })));
 
 /** Fully saturated colour of hue h (0…360°, HSV wheel, R at 0°). */
@@ -22,7 +23,7 @@ function hueRgb(h: number): RGB {
 /** Signal level `level` with saturation `sat` (mix towards grey of the same level). */
 const wheel = (count: number, level: number, sat: number): TestPatch[] => Array.from({ length: count }, (_, i) => {
   const h = (360 / count) * i, c = hueRgb(h);
-  return { rgb: quantize(c.map((v) => level * (1 - sat + sat * v)) as RGB), label: `Farbton ${Math.round(h)}° ${pct(level)}/${Math.round(sat * 100)} %`, kind: 'colour' as const };
+  return { rgb: quantize(c.map((v) => level * (1 - sat + sat * v)) as RGB), label: t('calib.patch.hue', { h: Math.round(h), level: pct(level), sat: Math.round(sat * 100) }), kind: 'colour' as const };
 });
 const steps = (n: number) => Array.from({ length: n }, (_, i) => i / (n - 1));
 
@@ -34,19 +35,19 @@ function pqPatch(label: string, rgbLin: RGB, gamut: '709' | 'p3' | '2020', nits:
 const HDR_GREY_NITS = [0, 0.5, 1, 2, 5, 10, 20, 50, 100, 203, 300, 400, 500, 600, 800, 1000, 1500, 2000, 4000, 10000];
 
 export function hdrPqSet(peak: number): TestSet {
-  const greys = HDR_GREY_NITS.filter((n) => n <= peak).map((n) => pqPatch(`Grau ${n} cd/m²`, [1, 1, 1], '2020', n));
+  const greys = HDR_GREY_NITS.filter((n) => n <= peak).map((n) => pqPatch(t('calib.patch.grey', { v: `${n} cd/m²` }), [1, 1, 1], '2020', n));
   const cols = [
-    ...HUES6.map(([n, c]) => pqPatch(`${n} P3 (Weiß 203)`, c, 'p3', 203)),
-    ...HUES6.map(([n, c]) => pqPatch(`${n} Rec.709 (Weiß 100)`, c, '709', 100)),
+    ...HUES6.map(([n, c]) => pqPatch(t('calib.patch.p3', { c: n }), c, 'p3', 203)),
+    ...HUES6.map(([n, c]) => pqPatch(t('calib.patch.rec709', { c: n }), c, '709', 100)),
   ];
-  return { id: `hdr-pq-${peak}`, name: `HDR PQ bis ${peak} cd/m² (${greys.length + cols.length} Felder)`, hdr: true, patches: [...greys, ...cols] };
+  return { id: `hdr-pq-${peak}`, name: t('calib.set.hdr', { peak, n: greys.length + cols.length }), hdr: true, patches: [...greys, ...cols] };
 }
 
 export const TEST_SETS: TestSet[] = [
-  { id: 'grey21', name: 'Graukeil 21 (5-%-Stufen)', hdr: false, patches: steps(21).map(grey) },
+  { id: 'grey21', name: t('calib.set.grey21'), hdr: false, patches: steps(21).map(grey) },
   { id: 'video47', name: 'Video 47', hdr: false, patches: [...steps(11).map(grey), ...primaries([1, 0.75, 0.5, 0.25]), ...wheel(12, 0.75, 0.5)] },
   {
-    id: 'video81', name: 'Video 81 (erweitert)', hdr: false,
+    id: 'video81', name: t('calib.set.video81'), hdr: false,
     patches: [...steps(21).map(grey), ...primaries([1, 0.75, 0.5, 0.25, 0.1]), ...wheel(12, 0.75, 0.5), ...wheel(12, 0.5, 0.75), ...wheel(6, 1, 0.25)],
   },
   hdrPqSet(1000),

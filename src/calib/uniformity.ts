@@ -7,6 +7,7 @@
 import { deltaE2000, xyzToLab } from '../color';
 import { cctDuv, xyzToXy, type XYZ } from './colorimetry';
 import { UNIFORMITY_LEVELS } from './testsets';
+import { t } from '../i18n';
 
 export const UNIFORMITY_LIMITS = { dE00: { nominal: 4, recommended: 2 }, contrastT: 0.1 } as const;
 
@@ -15,18 +16,18 @@ export interface UniformityCell {
   /** per level (UNIFORMITY_LEVELS order) */
   dE00: number[]; lumDev: number[];
   cct: number | null; contrastT: number | null;
-  grade: 'gut' | 'ok' | 'aus';
+  grade: 'good' | 'ok' | 'fail';
 }
 export interface UniformityReport {
   n: number; levels: number[]; cells: UniformityCell[]; maxDE00: number; maxT: number;
-  grade: 'gut' | 'ok' | 'aus'; contrastOk: boolean; warnings: string[]; date: string;
+  grade: 'good' | 'ok' | 'fail'; contrastOk: boolean; warnings: string[]; date: string;
 }
 
 /** @param readings [cellIndex][levelIndex] absolute XYZ, cells row by row, n odd */
 export function evaluateUniformity(n: number, readings: XYZ[][], levels = UNIFORMITY_LEVELS): UniformityReport {
   const warnings: string[] = [];
-  if (n % 2 === 0) throw new Error('Raster braucht ein Mittelfeld (ungerade Anzahl)');
-  if (n < 5) warnings.push('ISO 14861 verlangt laut DisplayCAL mindestens ein 5×5-Raster.');
+  if (n % 2 === 0) throw new Error(t('calib.uni.odd'));
+  if (n < 5) warnings.push(t('calib.uni.min5'));
   const ref = readings[(n * n - 1) / 2];
   const refWhite = ref[0];
   const half = levels.indexOf(0.5);
@@ -40,14 +41,14 @@ export function evaluateUniformity(n: number, readings: XYZ[][], levels = UNIFOR
     return {
       row: Math.floor(i / n), col: i % n, dE00, lumDev,
       cct: c[0][1] > 0 ? cctDuv(xyzToXy(c[0])).cct : null, contrastT: T,
-      grade: m <= UNIFORMITY_LIMITS.dE00.recommended ? 'gut' : m <= UNIFORMITY_LIMITS.dE00.nominal ? 'ok' : 'aus',
+      grade: m <= UNIFORMITY_LIMITS.dE00.recommended ? 'good' : m <= UNIFORMITY_LIMITS.dE00.nominal ? 'ok' : 'fail',
     };
   });
   const maxDE00 = Math.max(...cells.flatMap((c) => c.dE00));
   const maxT = Math.max(...cells.map((c) => c.contrastT ?? 0));
   return {
     n, levels, cells, maxDE00, maxT, warnings, date: new Date().toISOString(),
-    grade: maxDE00 <= UNIFORMITY_LIMITS.dE00.recommended ? 'gut' : maxDE00 <= UNIFORMITY_LIMITS.dE00.nominal ? 'ok' : 'aus',
+    grade: maxDE00 <= UNIFORMITY_LIMITS.dE00.recommended ? 'good' : maxDE00 <= UNIFORMITY_LIMITS.dE00.nominal ? 'ok' : 'fail',
     contrastOk: maxT < UNIFORMITY_LIMITS.contrastT,
   };
 }

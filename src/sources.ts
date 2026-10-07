@@ -293,6 +293,20 @@ export class Source {
     ys.sort((a, b) => a - b);
     return { lo: ys[Math.floor(ys.length * 0.05)], hi: ys[Math.floor(ys.length * 0.95)], n: ys.length };
   }
+  /** Decoded R′G′B′ samples inside the ROI (whole frame without ROI), at most ~`max` (green qualifier, match/core.ts). */
+  roiSamples(max = 40000): number[][] {
+    const f = this.lastFrame ?? this.readbackFrame();
+    if (!f) return [];
+    const sx = f.w / this.width, sy = f.h / this.height;
+    const rects = this.activeRois().length ? this.activeRois().map((r) => [r[0] * sx, r[1] * sy, r[2] * sx, r[3] * sy]) : [[0, 0, f.w, f.h]];
+    const area = rects.reduce((a, [x0, y0, x1, y1]) => a + (x1 - x0) * (y1 - y0), 0);
+    const step = Math.max(f.step, Math.ceil(Math.sqrt(area / max)));
+    const out: number[][] = [];
+    for (const [x0, y0, x1, y1] of rects) for (let y = Math.floor(y0); y < Math.min(f.h, y1); y += step) {
+      for (let x = Math.floor(x0); x < Math.min(f.w, x1); x += step) out.push(f.decode(f.px, (y * f.w + x) * 4));
+    }
+    return out;
+  }
   probe: { x: number; y: number } | null = null;
   /** Region of interest in source pixels [x0, y0, x1, y1). */
   roi: [number, number, number, number] | null = null;

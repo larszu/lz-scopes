@@ -55,13 +55,19 @@ Installer im [neuesten Release](https://github.com/larszu/lz-scopes/releases/lat
 
 **Web-Fassung:** <https://larszu.github.io/lz-scopes/>. Dort gehen Testbilder, Kamera, Bildschirm und Dateien. RTSP, SRT und andere Netzwerkstreams brauchen die Desktop-App oder `npm start`, weil ein Browser sie nicht öffnen kann.
 
+**iPhone und iPad** (`ios/`, Capacitor): dieselbe App in einer nativen Hülle. Die CI baut sie und startet sie im iOS-Simulator; auf echten Geräten ist sie noch ungeprüft, im App Store oder per TestFlight gibt es sie noch nicht (dafür ist ein Apple-Developer-Konto nötig). Möglich sind Kamera, USB-C-Capture-Karten ab iPadOS 17, Dateien und der Opple über CoreBluetooth. Netzwerkstreams kommen von einer Bridge auf einem Rechner im selben Netz (`npm start -- --host 0.0.0.0`), die App findet sie per Bonjour. Siehe [docs/ios.md](docs/ios.md).
+
 ## Schnellstart
 
 1. App starten. Die erste Quelle ist ein Testbild (SMPTE 75 %, Variante „(LZ)“ – deren Schwarzfeld lohnt einen Blick in die Waveform mit der Schwarz-Lupe), alle Panels folgen ihr.
 2. Pro Panel eine andere Quelle wählen: *Testbild*, *Kamera*, *Bildschirm*, *Datei* oder *Stream*.
 3. Für einen Stream die URL eintragen (z. B. `rtsp://user:pass@host:554/stream`) und verbinden.
 4. Im Bild einen Rahmen ziehen, um nur diesen Bereich zu messen.
-5. Fenster per Drag-and-drop anordnen und unter *Layouts* speichern.
+5. Fenster per Drag-and-drop anordnen und unter *Datei → Layouts …* speichern.
+
+**Menü und Einstellungen.** Die Desktop-App hat eine native Menüleiste (macOS: in der Systemleiste, App-Menü zuerst; Windows: im Fenster): *Datei, Bearbeiten, Ansicht, Quellen, Scopes, Ausgabe, Fenster, Hilfe*. Im Browser stehen dieselben Menüs links oben in der Kopfleiste (unter 900 px hinter ☰). Alle globalen Einstellungen liegen in einem Fenster, *Einstellungen …* (`Cmd+,` / `Strg+,` oder ⚙ rechts oben): Oberfläche, Display, Scopes, Messpunkt/CST, Latenz, Uhr/Timecode, Bridge/ffmpeg, Audio, Tastatur, Über/Lizenzen. Das ⚙ im Panel-Kopf enthält nur die Optionen dieses Panels. *Hilfe* verlinkt die Anleitungen und zeigt die Tastenkürzel. Begründung: [docs/research/menue.md](docs/research/menue.md).
+
+Tasten: `Cmd+,` / `Strg+,` Einstellungen, `1`–`6` Layout, `C` Messpunkt (Signal / nach CST / nach LUT), `Leertaste` Einfrieren bzw. Wiedergabe, `←` / `→` ein Bild, `Umschalt+←/→` eine Sekunde, `J` `K` `L` Shuttle, `Pos1` / `Ende`, `F` Vollbild, `S` PNG, `B` Seitenleiste, `Esc` Solo beenden bzw. Messpunkt löschen, `E` Overlay im Ausgabefenster bearbeiten. Vollständig: *Hilfe → Tastenkürzel*.
 
 ## Aus dem Quelltext
 
@@ -85,6 +91,7 @@ Für Netzwerkquellen ohne Desktop-App: `npm run ffmpeg:fetch` lädt dasselbe ffm
 | `device:` – Capture-Karten, die sich als Systemgerät melden (AVFoundation/DirectShow/V4L2) | Bridge: ffmpeg mit festem Modus, Rohformat (10 bit, wenn angeboten) und wählbarer Matrix; auch am entfernten Bridge-Rechner |
 | `decklink:<n>` – kompatibel mit Blackmagic Design DeckLink | Bridge + eigener Helfer ([helpers/decklink](helpers/decklink/README.md)), in der Desktop-App enthalten (macOS universal, Windows); aktiv nur mit installiertem Treiber Desktop Video, sonst „Desktop Video nicht installiert“; **mit Hardware ungeprüft** |
 | `ndi:<Quelle>` – NDI® | Bridge + NDI-Helfer ([helpers/ndi](helpers/ndi/README.md)), lädt die vom Nutzer installierte NDI-Runtime ([ndi.video](https://ndi.video/)); UYVY bzw. 16 bit P216; nur im Loopback mit eigenem Testsender geprüft |
+| `resolve:` – DaVinci Resolve (Studio, externes Scripting „Lokal“) | Bridge: gegradetes Bild über die Scripting-API in 16 bit; ein laufendes Resolve erscheint von selbst in der Quellenleiste („läuft: Projekt / Timeline – Verbinden“) |
 | `folder:<Name>` – Watch-Ordner auf dem Bridge-Rechner (Exporte aus Lightroom, Capture One, Resolve) | Bridge: neuestes TIFF/DPX/PNG/JPEG/WebP/EXR in voller Tiefe; Ordner nur ausdrücklich freigegeben (`--watch-dir`, `LZS_WATCH_DIRS`, Desktop-App per Dialog) |
 
 Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einstellbar sind Analyseauflösung, Bildrate, 8 oder 16 bit (für 10-bit/HDR), RTSP über TCP oder UDP, Transfer, Matrix (709, 2020, 601 525 Zeilen/SMPTE-C, 601 625 Zeilen/EBU) und Gamut. „auto“ übernimmt die Stream-Metadaten (`bt470bg` → 625, `smpte170m` → 525).
@@ -105,6 +112,7 @@ Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einste
 - **Histogramm** RGB, Luma, getrennt, linear oder log, mit Clipping-Anteil
 - **Diamond (Gamut)** nach Tektronix: oben B′+G′ über B′−G′, unten −(R′+G′) über R′−G′; alles Legale liegt in beiden Rauten, ein Überschreiten zeigt sofort, welcher Kanal (Blau nur oben, Rot nur unten, Grün in beiden). Ohne den Tiefpass der Hardware-Geräte, kurze Überschwinger zählen also mit. Auch als CRT-Strahl
 - **Zeitverlauf**: Farbe (Movie-Barcode), Farbton, Sättigung und Luma über die letzten 10 s bis 5 min; Nachleuchten (Spur) für Vectorscope, CIE, Diamond und 3D-Würfel
+- **Farbziele und Farbabgleich (#55)**: Kunden-CI als Hex, RGB 8/10 bit oder Legal 16–235/64–940, gelesen als Videowert (Grafik-Workflow) oder als sRGB-Licht; aus Messpunkt, Messrahmen oder hochgeladenem Logo gepickt; in benannten Listen mit JSON-Export/-Import. Das Panel *Farbabgleich* vergleicht Messpunkt bzw. Rahmenmittel einer Quelle mit einem Ziel oder mit demselben Objekt in einer zweiten Kamera: Farbfelder nebeneinander fürs Display (sRGB/P3), ΔE00/ΔITP, ΔL/ΔC/ΔH, Farbton und Sättigung, dazu die Korrektur in Worten, Werten und Kamera-Begriffen (Multi-Matrix, Weißabgleich, Resolve). Messreihen für Effektlacke (mehrere Stellen bzw. Winkel). *Waveform Grüntöne*, Grün-Keil und Bild-Overlay für Rasen und Laub (BT.2408-Pegel als Vorgabe). Hex/RGB an jedem Messpunkt. Hintergrund: [docs/research/farbziele.md](docs/research/farbziele.md)
 - **3D-Farbvolumen und ΔE**: Punktwolke im R′G′B′-Würfel, in CIELAB oder ICtCp mit Achsenskalen, drehbar per Ziehen, Zielgamut als Drahtgitter; ΔE 2000 (SDR) bzw. ΔE ITP (HDR) des Messpunkts gegen den nächsten Farbbalken oder ein eigenes Ziel. Weitere Kurven: Sony S-Log2, ACEScct, ARRI LogC3 für EI 160–1600 (ARRI-Whitepaper)
 - **A/B-Vergleich und Gamut-Kompression** im Bild-Panel: Split, Wipe oder Differenz gegen einen anderen Messpunkt derselben Quelle (Signal / nach CST / nach LUT) oder eine andere Quelle; ACES-1.3-Reference-Gamut-Compression als Vorschau für Bild und Gamut-Warnung
 - **Bild** mit Falschfarben (ARRI-Schema, RED „Video Mode“ nach docs.red.com, Sony-Paletten SDR und S-Log3 aus Monitor & Control; bis 12 Bänder), Zebra, Clipping-Anzeige, Luma und **Gamut-Warnung** (Pixel mit negativen Anteilen im Zielgamut 709/P3/2020, abgestuft nach der Distanz (max − c)/max). Ein Klick setzt einen Messpunkt, der zusätzlich in Waveform und Vectorscope markiert wird
@@ -125,7 +133,7 @@ Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einste
 
 **Display-Farbraum** der Bildansicht wird automatisch erkannt (sRGB/P3, HDR-fähig) oder gewählt; die Scopes messen immer das Signal.
 
-**HDR-Vorschau** (⚙ → HDR-Vorschau): HDR und Log zeigt die Bildansicht auf SDR-Displays per Display-Light-Down-Mapping in BT.2020. *BT.2408 hybrid-linear* (Standard): linear ×0,5 (BT.2408-8 § 5.2, SDR 100 cd/m² ≙ ≈ 203 cd/m²), die Lichter rollt die BT.2390-EETF (§ 5.4, je Kanal in PQ) in die 100-cd/m²-Spitze; HDR-Referenzweiß landet bei ≈ 93 % SDR (§ 7.1.3 nennt 86–95 %). *BT.2446 Methode A* (BT.2446-1 § 4.1, Tab. 2/3): 1000 → 100 cd/m² mit Farbkorrektur; Quellen über 1000 cd/m² bringt vorher die EETF auf 1000. Quellspitze: PQ 1000 cd/m² (Mastering, ohne Metadaten angenommen), HLG das eingestellte Lw, Log das Kurvenende.
+**HDR-Vorschau** (*Einstellungen → Display*): HDR und Log zeigt die Bildansicht auf SDR-Displays per Display-Light-Down-Mapping in BT.2020. *BT.2408 hybrid-linear* (Standard): linear ×0,5 (BT.2408-8 § 5.2, SDR 100 cd/m² ≙ ≈ 203 cd/m²), die Lichter rollt die BT.2390-EETF (§ 5.4, je Kanal in PQ) in die 100-cd/m²-Spitze; HDR-Referenzweiß landet bei ≈ 93 % SDR (§ 7.1.3 nennt 86–95 %). *BT.2446 Methode A* (BT.2446-1 § 4.1, Tab. 2/3): 1000 → 100 cd/m² mit Farbkorrektur; Quellen über 1000 cd/m² bringt vorher die EETF auf 1000. Quellspitze: PQ 1000 cd/m² (Mastering, ohne Metadaten angenommen), HLG das eingestellte Lw, Log das Kurvenende.
 
 **Videodateien** mit Playhead, Timecode, Start/Stopp, Frame ±1 und J/K/L wie in Resolve.
 
@@ -160,7 +168,7 @@ Grenze: Canvas arbeitet in Full-Range-RGB, deshalb gibt es keine Pegel unter 0 %
 
 ### LED-Wand
 
-*▦ LED-Wand* in der Kopfleiste: Wand- und Cabinet-Konfiguration (Cabinet-Pixel, Spalten/Reihen, Modulraster, Versatz, Zählung zeilen-/spaltenweise oder als Schlange; speicherbar), die LED-Testbilder in Wandauflösung und eine **relative Prüfung mit der Kamera**: Wandecken im Kamerabild anklicken, 4-Punkt-Entzerrung (Homographie), je Cabinet Median, Streuung und Farbabweichung (ΔCb/ΔCr) zum Wandmedian als Heatmap, Nahtprofile mit Kontrast je Cabinetgrenze, Mittelung mehrerer Bilder, Vorher/Nachher, Blickwinkelserie, Scan-Linien-Index (Zeilenprofil-Varianz zum Vergleich von Shutter und Genlock-Phase), Suche nach toten/hängenden Pixeln, Bericht als CSV und PNG. Dazu die 3×3-Kameramatrix nach dem Unreal-Verfahren (R/G/B/W-Felder, OCIO-Matrix). Mit dem Opple Light Master (siehe Lichtmesser) misst der Dialog außerdem je Cabinet über den Patch-Sequenzer (manuell bestätigt oder automatisch mit Einschwingzeit): Helligkeit, Δu′v′ und CCT zum Referenz-Cabinet als Karte, Weißpunkt Ist/Soll/Δ gegen D65, D50 oder eine Farbtemperatur mit RGB-Gain-Hinweisen (aus gemessenen oder eingegebenen Primärvalenzen, mit Additivitätsprüfung) und Flimmern (Light Master 4); Bericht als gemeinsame CSV und PNG mit der Kamera-Auswertung. Der Light Master ist dabei ein Trendmessgerät, kein Kolorimeter für schmalbandige LEDs, und ohne Gerät ungeprüft (Recherche Teil C). Kalibriert wird die Wand im LED-Prozessor (Brompton, NovaStar, Colorlight); LZ Scopes schreibt keine Korrekturwerte, und eine Videokamera ist kein Kolorimeter. Die Auswertung ist mit synthetischen Bildern getestet, an einer echten Wand noch nicht erprobt. Recherche: [docs/research/led-wall-und-messgeraete.md](docs/research/led-wall-und-messgeraete.md).
+*▦ LED-Wand* in der Kopfleiste: Wand- und Cabinet-Konfiguration (Cabinet-Pixel, Spalten/Reihen, Modulraster, Versatz, Zählung zeilen-/spaltenweise oder als Schlange; speicherbar), die LED-Testbilder in Wandauflösung und eine **relative Prüfung mit der Kamera**: Wandecken im Kamerabild anklicken, 4-Punkt-Entzerrung (Homographie), je Cabinet Median, Streuung und Farbabweichung (ΔCb/ΔCr) zum Wandmedian als Heatmap, Nahtprofile mit Kontrast je Cabinetgrenze, Mittelung mehrerer Bilder, Vorher/Nachher, Blickwinkelserie, Scan-Linien-Index (Zeilenprofil-Varianz zum Vergleich von Shutter und Genlock-Phase), Suche nach toten/hängenden Pixeln, Bericht als CSV und PNG. Dazu die 3×3-Kameramatrix nach dem Unreal-Verfahren (R/G/B/W-Felder, OCIO-Matrix). Mit dem Opple Light Master (siehe Lichtmesser) misst der Dialog außerdem je Cabinet über den Patch-Sequenzer (manuell bestätigt oder automatisch mit Einschwingzeit): Helligkeit, Δu′v′ und CCT zum Referenz-Cabinet als Karte, Weißpunkt Ist/Soll/Δ gegen D65, D50 oder eine Farbtemperatur mit Korrekturhinweisen je Prozessor (NovaLCT, NovaStar VX, Brompton Tessera mit Farbtemperatur-Vorschlag, DynaCal und OSCA) und Angleich-Werten je Cabinet an ein Referenz-Cabinet (aus gemessenen oder eingegebenen Primärvalenzen, mit Additivitätsprüfung) und Flimmern (Light Master 4); Bericht als gemeinsame CSV und PNG mit der Kamera-Auswertung. Der Light Master ist dabei ein Trendmessgerät, kein Kolorimeter für schmalbandige LEDs, und ohne Gerät ungeprüft (Recherche Teil C). Kalibriert wird die Wand im LED-Prozessor (Brompton, NovaStar, Colorlight); LZ Scopes schreibt keine Korrekturwerte, und eine Videokamera ist kein Kolorimeter. Die Auswertung ist mit synthetischen Bildern getestet, an einer echten Wand noch nicht erprobt. Recherche: [docs/research/led-wall-und-messgeraete.md](docs/research/led-wall-und-messgeraete.md).
 
 ## Audio
 
@@ -195,7 +203,7 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 
 ## Display-Kalibrierung und Verifikation
 
-⚙ → *Kalibrierung / Verifikation …*. Die Abläufe folgen DisplayCAL, der Code ist eigen. Details: [docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md).
+*Einstellungen → Display → Kalibrierung / Verifikation …*. Die Abläufe folgen DisplayCAL, der Code ist eigen. Details: [docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md).
 
 - **Messfeld-Sequenzer**: Das Testbild-Ausgabefenster (`?out=`) zeigt die Messfelder. Einstellbar sind Feldgröße, konstanter APL-Hintergrund und Vollbild-Einschub gegen ABL. Der Sequenzer (`src/patchSequencer.ts`) ist auch für die LED-Wand-Werkzeuge gedacht.
 - **Messgerät**: ArgyllCMS `spotread` läuft als eigener Prozess über die Bridge (Desktop-App oder `npm start`), mit CCMX/CCSS-Korrektur und Displaytyp. ArgyllCMS wird nicht mitgeliefert. Fehlt es, meldet der Dialog „ArgyllCMS nicht gefunden“ und nimmt XYZ oder xyY von Hand an. *Mit echtem Messgerät noch nicht geprüft.*
@@ -203,7 +211,7 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 - **Bericht**: ΔE00 und ΔITP (Mittel, Median, 95. Perzentil, Max) gegen BT.1886 mit gemessenem Schwarz, Gamma, sRGB oder PQ. Dazu Graukurve mit effektivem Gamma, CCT und Duv, Kontrast. Export als CSV und HTML, Druck als PDF.
 - **Uniformität** 3×3 bis 9×9 in 100/75/50/25 %: ΔE00 zum Mittelfeld (≤ 4 / ≤ 2, ISO 14861 wie von DisplayCAL zitiert) und Kontrastabweichung.
 - **3D-LUT** `.cube` 33/65 aus einem Matrix/Shaper-Modell der Messungen. Sie entsteht nur, wenn das Modell die gemessenen Felder gut genug vorhersagt, und nur für SDR.
-- **Systemprofil (Desktop-App)**: ⚙ → *Systemprofil mitschalten* setzt das Display-Profil des Betriebssystems passend zum gewählten Display-Farbraum (sRGB, Display P3 oder Rec.709, das Profil je Farbraum ist wählbar). Das vorherige Profil wird vorher gesichert und zurückgesetzt: beim Beenden, mit *Zurücksetzen* und nach einem Absturz beim nächsten Start. Unter macOS läuft das über einen kleinen Swift-Helfer auf der öffentlichen ColorSync-API (`npm run build:helpers`, am eingebauten Display geprüft). Unter Windows läuft es über mscms (ungeprüft). Monitor-Preset und Helligkeit per DDC/CI (VCP 0x14 / 0x10) gehen, wo ein Werkzeug vorhanden ist, ebenfalls ungeprüft. Im Browser nicht verfügbar ([docs/research/systemprofil.md](docs/research/systemprofil.md)).
+- **Systemprofil (Desktop-App)**: *Einstellungen → Display → Systemprofil mitschalten* setzt das Display-Profil des Betriebssystems passend zum gewählten Display-Farbraum (sRGB, Display P3 oder Rec.709, das Profil je Farbraum ist wählbar). Das vorherige Profil wird vorher gesichert und zurückgesetzt: beim Beenden, mit *Zurücksetzen* und nach einem Absturz beim nächsten Start. Unter macOS läuft das über einen kleinen Swift-Helfer auf der öffentlichen ColorSync-API (`npm run build:helpers`, am eingebauten Display geprüft). Unter Windows läuft es über mscms (ungeprüft). Monitor-Preset und Helligkeit per DDC/CI (VCP 0x14 / 0x10) gehen, wo ein Werkzeug vorhanden ist, ebenfalls ungeprüft. Im Browser nicht verfügbar ([docs/research/systemprofil.md](docs/research/systemprofil.md)).
 
 ## Lichtmesser
 
@@ -213,10 +221,11 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 
 Panel-Typ **Uhr / Timecode**, dazu wahlweise eine Einblendung im Bild-Panel (⚙ → Uhr). Quellen und Befunde: [docs/research/clock-ptp.md](docs/research/clock-ptp.md).
 
+- **Über 30 fps** zählt der Timecode 0…49/59 wie Schnittprogramme und FFmpeg; Frame-Paare nach ST 12-1 als Option. LTC läuft dort mit 25/30 Codewörtern (Paare).
 - **Tageszeit** nach SMPTE ST 2059-1: Systemzeit → TAI (IERS Bulletin C 72, TAI − UTC = 37 s) → Timecode mit Daily Jam, 23,98 … 60 fps, DF/NDF, Frame-Phase zur SMPTE-Epoche. Gekennzeichnet als „Systemuhr – keine Referenz“, solange kein PTP die Uhr korrigiert.
 - **Quell-Timecode**: Start-Timecode des Containers (ffprobe-Tag), GOP-/SEI-Timecode je Bild (ffmpeg `showinfo`), Timeline-Timecode aus DaVinci Resolve, Videodateien im Browser aus `currentTime`; Differenz zur Tageszeit in Frames.
 - **LTC** aus dem Ton jeder Quelle: eigener Biphase-Mark-Leser (24–30 fps, vorwärts und rückwärts).
-- **PTP-Monitor** in der Bridge (eigener Code, UDP 319/320, 224.0.1.129): Grandmaster, Domain, clockClass, Nachrichtenraten, SMPTE-SM-TLV (Lock, Lokal-Offset, nächster Jam), Offset und auf Wunsch Mean Path Delay – als Schätzung mit Software-Zeitstempeln. Ohne PTP im Netz: „kein PTP empfangen“. Nur mit der UI aus Bridge oder Desktop-App, nicht von GitHub Pages.
+- **PTP-Monitor** in der Bridge (eigener Code, UDP 319/320, 224.0.1.129): Grandmaster, Domain, clockClass, Nachrichtenraten, SMPTE-SM-TLV (Lock, Lokal-Offset, nächster Jam), Offset und auf Wunsch Mean Path Delay – als Schätzung mit Software-Zeitstempeln. Ohne PTP im Netz: „kein PTP empfangen“. Die UI aus Bridge oder Desktop-App darf das direkt; eine andere Web-Oberfläche (z. B. GitHub Pages) erst nach Freigabe auf der Seite `/allow` der Bridge (⚙ → „In der Bridge zulassen …“).
 - **ST-2110-RTP-Prüfung**: RTP-Zeitstempel (90 kHz, Offset 0 zur Epoche) gegen Ankunftszeit und Frame-Raster.
 
 ## Einbetten
@@ -284,6 +293,6 @@ Von **Lars Zumpe**, Lars Zumpe Medienproduktion.
 
 Proprietär, © 2026 Lars Zumpe, alle Rechte vorbehalten. Nutzung der veröffentlichten Builds ist kostenlos; Weiterverbreitung und abgeleitete Werke sind es nicht. Siehe [LICENSE](LICENSE). Kein Open Source: Der Code ist öffentlich zum Lesen. Fremdkomponenten behalten ihre Lizenzen: [THIRD_PARTY.md](THIRD_PARTY.md).
 
-Logo, Signet und App-Icon der Lars Zumpe Medienproduktion sind eigene Marke und nicht frei verwendbar (LICENSE, Abschnitt 10). Die Oberfläche hat drei Varianten (⚙ → Oberfläche): *Neutral* (unbunte Grautöne für farbkritische Arbeit, Standard), *LZM* (Brand Guide 2.0, Navy) und *Original* (fast schwarz). Scope-Spuren und Messfarben sind in allen gleich. Begründung: [docs/research/ui-farben.md](docs/research/ui-farben.md).
+Logo, Signet und App-Icon der Lars Zumpe Medienproduktion sind eigene Marke und nicht frei verwendbar (LICENSE, Abschnitt 10). Die Oberfläche hat drei Varianten (*Einstellungen → Oberfläche*): *Neutral* (unbunte Grautöne für farbkritische Arbeit, Standard), *LZM* (Brand Guide 2.0, Navy) und *Original* (fast schwarz). Scope-Spuren und Messfarben sind in allen gleich. Begründung: [docs/research/ui-farben.md](docs/research/ui-farben.md).
 
 NDI® is a registered trademark of Vizrt NDI AB.

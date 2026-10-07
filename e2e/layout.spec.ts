@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
-import { type App, expectOk, launchApp, until } from './app';
+import { type App, expectOk, launchApp, menuClick, until } from './app';
 
-// Dock layout: save a configuration in the ▦ Layouts menu, change everything, load it
+// Dock layout: save a configuration in the layouts dialog (Datei → Layouts …), change everything, load it
 // back (menu and control API), and the dock survives a restart (localStorage).
 
 let a: App;
@@ -19,11 +19,12 @@ test('Layout speichern, ändern, laden, Neustart', async () => {
   const saved = await panelsOf(a);
   expect(saved).toBe('1:picture 2:cie 3:vector 4:stats');
 
-  await page.locator('#laymenu > summary').click();
+  await menuClick(a, 'layouts');
   await page.locator('#laybody input[placeholder^="Name"]').fill('E2E Studio');
   await page.locator('#laybody button', { hasText: 'Speichern' }).click();
   await expect(page.locator('#laybody button.lname', { hasText: 'E2E Studio' })).toBeVisible();
-  await page.locator('#laymenu > summary').click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#laymenu')).not.toBeVisible();
 
   // change layout and scopes
   expectOk(await a.control({ cmd: 'layout.preset', preset: 'Colorist' }));
@@ -31,8 +32,9 @@ test('Layout speichern, ändern, laden, Neustart', async () => {
   expect(await panelsOf(a)).not.toBe(saved);
 
   // load in the menu
-  await page.locator('#laymenu > summary').click();
+  await menuClick(a, 'layouts');
   await page.locator('#laybody button.lname', { hasText: 'E2E Studio' }).click();
+  await expect(page.locator('#laymenu')).not.toBeVisible();
   await until(async () => (await panelsOf(a)) === saved, 15_000, 'Layout aus dem Menü geladen').catch(async (e) => { console.log('ist', await panelsOf(a)); throw e; });
   expect((await a.state()).layoutName).toBe('E2E Studio');
 

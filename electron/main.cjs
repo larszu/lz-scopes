@@ -5,6 +5,7 @@ const { app, BrowserWindow, desktopCapturer, ipcMain, screen, session, shell } =
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { setupDisplayProfiles } = require('./displayProfile.cjs');
+const { setAppMenu } = require('./menu.cjs');
 
 // Own profile (localStorage, single-instance lock) for automated tests: LZS_USER_DATA.
 if (process.env.LZS_USER_DATA) app.setPath('userData', process.env.LZS_USER_DATA);
@@ -21,8 +22,8 @@ async function createWindow() {
   const dist = path.join(__dirname, '..', 'dist');
   const host = process.env.LZS_HOST || '127.0.0.1';
   let port;
-  try { ({ port } = await startBridge({ port: Number(process.env.LZS_PORT) || 4192, host, dist })); }
-  catch { ({ port } = await startBridge({ port: 0, host, dist })); }
+  try { ({ port } = await startBridge({ port: Number(process.env.LZS_PORT) || 4192, host, dist, configDir: app.getPath('userData') })); }
+  catch { ({ port } = await startBridge({ port: 0, host, dist, configDir: app.getPath('userData') })); }
   origin = `http://127.0.0.1:${port}`;
   console.log(`bridge ${origin}, ffmpeg: ${ffmpegCandidates()[0] ?? 'missing'}`);
 
@@ -35,8 +36,14 @@ async function createWindow() {
 
   mainWindow = new BrowserWindow({
     width: 1512, height: 900, minWidth: 900, minHeight: 560,
-    title: 'LZ Scopes', backgroundColor: '#0b0c0e', autoHideMenuBar: true,
+    // menu bar visible on Windows/Linux (app menu, #53); macOS shows it in the system bar
+    title: 'LZ Scopes', backgroundColor: '#0b0c0e', autoHideMenuBar: false,
     webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
+  });
+  // Application menu (#53): the page sends its menu model, clicks go back as command ids.
+  ipcMain.on('lzs:menu-set', (e, model) => {
+    if (e.sender !== mainWindow.webContents) return;
+    setAppMenu(model, (id) => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send('lzs:menu', id); });
   });
   // System display profile / monitor mode (#17): restored on quit and after a crash.
   setupDisplayProfiles(ipcMain, app);

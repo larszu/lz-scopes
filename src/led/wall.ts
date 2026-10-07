@@ -9,6 +9,15 @@
 
 export type CabinetOrder = 'rows' | 'cols' | 'snake';
 
+/** LED processor family – selects the wording of correction hints (src/led/processorHints.ts). */
+export type ProcessorKind = 'novastar-lct' | 'novastar-vx' | 'brompton' | 'other';
+export const PROCESSOR_LABELS: Record<ProcessorKind, string> = {
+  'novastar-lct': 'NovaStar (NovaLCT)',
+  'novastar-vx': 'NovaStar VX (Gerätemenü)',
+  brompton: 'Brompton Tessera',
+  other: 'anderer Prozessor',
+};
+
 export interface WallConfig {
   name: string;
   /** cabinet size in wall pixels (free, e.g. 176×176, 192×192, 256×256) */
@@ -22,6 +31,8 @@ export interface WallConfig {
   order: CabinetOrder;
   /** number of the first cabinet */
   start: number;
+  /** processor driving the wall */
+  processor: ProcessorKind;
 }
 
 export type RGB01 = [number, number, number];
@@ -52,7 +63,7 @@ export interface LedSettings {
   };
 }
 
-export const DEFAULT_WALL: WallConfig = { name: 'Wand 1', cabW: 192, cabH: 192, cols: 10, rows: 5, modW: 0, modH: 0, offX: 0, offY: 0, order: 'rows', start: 1 };
+export const DEFAULT_WALL: WallConfig = { name: 'Wand 1', cabW: 192, cabH: 192, cols: 10, rows: 5, modW: 0, modH: 0, offX: 0, offY: 0, order: 'rows', start: 1, processor: 'novastar-lct' };
 
 export const DEFAULT_SETTINGS: LedSettings = {
   wall: DEFAULT_WALL, level: 50, channels: [true, true, true], gridStep: 16, lowMax: 20, scroll: 'h',
@@ -103,6 +114,7 @@ export function sanitizeWall(v: Partial<WallConfig> | null | undefined): WallCon
     offX: int(x.offX, 0, 8192, 0), offY: int(x.offY, 0, 8192, 0),
     order: x.order === 'cols' || x.order === 'snake' ? x.order : 'rows',
     start: int(x.start, 0, 99999, 1),
+    processor: x.processor && x.processor in PROCESSOR_LABELS ? x.processor : d.processor,
   };
   wall.offX = Math.min(wall.offX, 16384 - wall.cabW * wall.cols);
   wall.offY = Math.min(wall.offY, 16384 - wall.cabH * wall.rows);

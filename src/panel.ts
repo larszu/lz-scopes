@@ -28,6 +28,8 @@ import { CUBE_SPACE_ID, DEFAULT_CUBE, cubeNits, cubeQOf, cubeRotation, type Cube
 import { DEFAULT_CRT, PHOSPHORS, type CrtSettings } from './crt';
 import { STAGE_LABELS, autoPeaks, baseOf, chainOf, stageView, type Stage } from './chain';
 import { clockOpts, drawClockOverlay, drawClockPanel, type ClockOptions } from './clock/panel';
+import { GREEN_DEFAULT, targetSignal } from './match/core';
+import { drawMatchPanel, matchSignature, type MatchSettings } from './match/panel';
 import { drawLightPanel, isLight, lightSignature, type LightPanelOptions } from './opple/scopes';
 
 export interface PanelState {
@@ -53,6 +55,10 @@ export interface PanelState {
   stage?: Stage;
   /** skin-tone waveform: show the luma window band and lines (default on) */
   skinBand?: boolean;
+  /** green waveform: show the luma window band (default on); vectorscope: show the green wedge */
+  greenBand?: boolean; greenWedge?: boolean;
+  /** colour match panel (match/panel.ts) */
+  match?: MatchSettings;
   /** waveforms: zoom into blacks/highlights, visible channels (parade/YRGB/RGB), channel names and unit */
   waveZoom?: WaveZoom; channels?: WaveChannels; names?: boolean;
   /** clock panel settings (src/clock/panel.ts); also used by the picture overlay */
@@ -103,6 +109,8 @@ export interface DrawOptions {
   unit: Unit; tint: Tint; maxSamples: number; falsePreset: string;
   zebra: number; zebraLow: number; frozen: boolean; displayFps: number;
   skin: SkinRange; display: DisplaySpace;
+  /** green/grass qualifier (match/core.ts GREEN_DEFAULT) */
+  green?: SkinRange;
   /** picture view: HDR/log → SDR down-mapping (default BT.2408 hybrid-linear) */
   hdrPreview?: HdrPreview;
   /** user colour-match targets (vectorscope) */
@@ -117,6 +125,9 @@ export interface DrawOptions {
 }
 
 export const DEFAULT_SKIN: SkinRange = { lo: 0.3, hi: 0.8, tol: 14 };
+/** Green qualifier of the draw options with defaults. */
+export const greenOf = (o: DrawOptions): SkinRange => ({ ...GREEN_DEFAULT, ...o.green });
+const matchCtx = (o: DrawOptions) => ({ targets: o.targets ?? [], sourceById: o.sourceById ?? (() => null), display: o.display });
 
 /**
  * Input gamut → display gamut and output curve for the picture view; HDR and log sources are
@@ -155,7 +166,7 @@ export function deLines(src: Source, rgb: [number, number, number], o: DrawOptio
   const r = o.deRef ?? 'off';
   if (r === 'off') return [];
   const refs: DeRef[] = r === 'bars' ? barRefs(src)
-    : (o.targets ?? []).filter((t) => r === 'targets' || r === `target:${t.name}`).map((t) => ({ name: t.name, rgb: t.rgb }));
+    : (o.targets ?? []).filter((t) => r === 'targets' || r === `target:${t.name}`).map((t) => ({ name: t.name, rgb: targetSignal(t, src) }));
   const n = nearest(src, rgb, refs);
   if (!n) return [`ΔE        – (kein Bezug „${r.replace('target:', '')}“)`];
   return [`${n.metric.padEnd(9)} ${n.value.toFixed(2)} zu ${n.ref.name}`];
@@ -204,7 +215,7 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
     return `A|${src?.id}:${a ? `${a.version}:${a.paused}:${a.stale}` : `${src?.status}:${src?.message}`}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}`;
   }
   if (src) src = stageView(src, p.stage ?? o.stage ?? 'signal');
-  const s = src ? `${chainOf(src)?.sig ?? ''}:${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${src.faceMode}:${src.faces.map((f) => f.id + '/' + f.box.join(',')).join(';')}:${[...src.faceSel].join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}${p.scope === 'timeline' ? `h${src.history.version}` : ''}` : '-';
+  const s = src ? `${chainOf(src)?.sig ?? ''}:${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${src.faceMode}:${src.faces.map((f) => f.id + '/' + f.box.join(',')).join(';')}:${[...src.faceSel].join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}${p.scope === 'timeline' ? `h${src.history.version}` : ''}${p.scope === 'match' ? matchSignature(p.match, src, matchCtx(o)) : ''}` : '-';
   const bs = p.scope === 'picture' && src && p.ab && p.ab.mode !== 'off' ? abSource(p.ab.b, src, p, o) : null;
   const abSig = bs ? `|B${bs.id}:${bs.frameSeq}:${bs.status}:${chainOf(bs)?.sig ?? ''}` : '';
   const { displayFps, ...rest } = o;
@@ -220,7 +231,7 @@ export const defaultPanel = (scope: ScopeType): PanelState => ({
 const PARADE: ScopeType[] = ['parade', 'yrgb', 'wf-rgb'];
 
 const SCATTER: Partial<Record<ScopeType, ScatterMode>> = {
-  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie', diamond: 'diamond', cube: 'cube', satlum: 'satlum', chplot: 'chplot',
+  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-green': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie', diamond: 'diamond', cube: 'cube', satlum: 'satlum', chplot: 'chplot',
 };
 
 /**
@@ -286,7 +297,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
         view: { zoom: cube.zoom ?? 1, panX: cube.panX ?? 0, panY: cube.panY ?? 0 },
       } } : {}),
       mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: crt ? [...PHOSPHORS[crt.phosphor].color] as [number, number, number] : [...TINTS[o.tint]] as [number, number, number],
-      maxSamples: o.maxSamples, roi: src.activeRois(), skin: o.skin, cieUv: p.scope === 'cie' && !!p.cieUv,
+      maxSamples: o.maxSamples, roi: src.activeRois(), skin: p.scope === 'wf-green' ? greenOf(o) : o.skin, cieUv: p.scope === 'cie' && !!p.cieUv,
       ...(isWaveform(p.scope) ? { range: WAVE_ZOOMS[p.waveZoom ?? 'full'], ...(({ sec, n }) => ({ sec, secN: n }))(channelLayout(p.scope, p.channels)) } : {}),
     });
   }
@@ -294,10 +305,12 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     const wo = waveOpts(p, src);
     drawWaveGraticule(ctx, p.scope, r, o.unit, src.transfer, wo);
     if (p.scope === 'wf-skin' && p.skinBand !== false) drawSkinRange(ctx, r, o.skin, wo.range);
+    if (p.scope === 'wf-green' && p.greenBand !== false) drawSkinRange(ctx, r, greenOf(o), wo.range, true);
     if (probeRgb) drawWaveProbe(ctx, p.scope, r, src, probeRgb, wo);
   } else if (p.scope === 'vector') {
-    drawVectorGraticule(ctx, r, src.colorspace, p.zoom, o.skin.tol, vectorTargets(src));
-    drawVectorExtras(ctx, r, src.colorspace, p.zoom, p.gamuts ?? [], o.targets ?? [], src.transfer, src.gamut);
+    const g = greenOf(o);
+    drawVectorGraticule(ctx, r, src.colorspace, p.zoom, o.skin.tol, vectorTargets(src), p.greenWedge ? { hue: g.hue ?? GREEN_DEFAULT.hue, tol: g.tol } : undefined);
+    drawVectorExtras(ctx, r, src.colorspace, p.zoom, p.gamuts ?? [], o.targets ?? [], src.transfer, src.gamut, src.hlgLw);
     if (probeRgb) {
       const { cb, cr } = ycbcr(probeRgb[0], probeRgb[1], probeRgb[2], src.colorspace);
       const [x, y] = vectorPoint(r, cb, cr, p.zoom);
@@ -336,7 +349,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   } else if (p.scope === 'picture') {
     const pic = (s: Source, rgcOn = !!p.rgc): PictureParams => ({
       mode: p.picture, bands: FALSE_COLOR_PRESETS[o.falsePreset] ?? [], zebra: o.zebra, zebraLow: o.zebraLow,
-      roi: s.activeRois(), skin: o.skin, display: displayParams(s, o.display, o.hdrPreview), warn: warnMatrix(s, p.gamutTarget),
+      roi: s.activeRois(), skin: p.picture === 'green' ? greenOf(o) : o.skin, display: displayParams(s, o.display, o.hdrPreview), warn: warnMatrix(s, p.gamutTarget),
       ...(p.picture === 'neutral' ? { neutral: neutralParams(p) } : {}),
       ...(rgcOn ? { rgc: { toAp1: gamutConvert(GAMUTS[s.gamut], GAMUTS.ap1), fromAp1: gamutConvert(GAMUTS.ap1, GAMUTS[s.gamut]) } } : {}),
     });
@@ -436,6 +449,8 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     if (o.frozen) drawTextBox(ctx, r.x + 6, r.y + 6, ['STANDBILD']);
     if (p.clockOverlay) drawClockOverlay(ctx, clockOpts(p.clock), src, r.x + r.w - 6, r.y + r.h - 6);
     if (p.audioBar !== false && src.audio) drawAudioBar(ctx, src.audio, r);
+  } else if (p.scope === 'match') {
+    drawMatchPanel(ctx, body.w, body.h, p.match, src, matchCtx(o));
   } else if (p.scope === 'stats') {
     const lines = statsLines(src, o.displayFps);
     if (probeRgb) lines.push('', 'Messpunkt', ...[...probeLines(src, probeRgb, o.unit), ...deLines(src, probeRgb, o)]);

@@ -34,6 +34,8 @@ export const PRESETS: Record<string, { label: string; build: (add: Adder) => voi
     },
     size: { 0: [1 / 3, 1 / 3], 1: [1 / 3, 1 / 3], 2: [1 / 3, 1 / 3], 3: [1 / 3, 1 / 3], 4: [1 / 3, 1 / 3], 5: [1 / 3, 1 / 3] },
   },
+  // stacked (iPhone portrait, narrow windows): picture above waveform
+  l2v: { label: '1/1', build: (add) => { add(0); add(1, 0, 'below'); }, size: { 0: [1, 0.5] } },
 };
 type Adder = (idx: number, ref?: number, direction?: 'right' | 'below') => void;
 

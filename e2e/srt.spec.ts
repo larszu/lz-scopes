@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { type App, SHIPPED_FFMPEG, freePort, launchApp, singlePanel, startMediamtx, traceNear, until, waveProfile, which } from './app';
+import { type App, SHIPPED_FFMPEG, freePort, launchApp, menuClick, singlePanel, startMediamtx, traceNear, until, waveProfile, which } from './app';
 
 // SRT end to end, everything through the ffmpeg the app ships (npm run ffmpeg:fetch):
 //  - receive: shipped ffmpeg publishes SMPTE HD bars (H.264/MPEG-TS) to a local SRT listener
@@ -19,9 +19,10 @@ test.afterAll(async () => { await a?.close(); pub?.kill('SIGKILL'); mtx?.stop();
 test('Bridge meldet das mitgelieferte ffmpeg mit SRT', async () => {
   const h = await (await fetch(`${a.base}/api/health`)).json();
   expect(h.ffmpeg).toMatchObject({ path: SHIPPED_FFMPEG, origin: 'vendor', license: 'GPL-3.0-or-later', srt: true, inputSrt: true });
-  await a.page.locator('details.bridge summary').click();
+  await menuClick(a, 'settings:bridge');
   await expect(a.page.locator('#ffmpeg-info')).toContainText('mitgeliefert');
   await expect(a.page.locator('#ffmpeg-info')).toContainText('SRT ja');
+  await a.page.keyboard.press('Escape');
 });
 
 test('SRT-Empfang: mediamtx-Listener → Bridge (mitgeliefertes ffmpeg) → Waveform', async () => {

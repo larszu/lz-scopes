@@ -2,7 +2,17 @@
 import type { Messages } from '../types';
 
 export default {
-  'native.note': 'iPhone/iPad do not decode RTSP/SRT themselves. The bridge runs on a computer on the same network: desktop app with LZS_HOST=0.0.0.0 or npm start -- --host 0.0.0.0. It announces itself via Bonjour.',
+  'native.note': 'iPhone/iPad receive rtsp:// cameras themselves (Settings → RTSP direct). SRT, rtsps://, files and devices of a computer go through the bridge on a computer on the same network: desktop app with LZS_HOST=0.0.0.0 or npm start -- --host 0.0.0.0. It announces itself via Bonjour.',
+  'native.rtsp.section': 'RTSP direct',
+  'native.rtsp.route': 'rtsp:// cameras',
+  'native.rtsp.direct': 'directly on this device',
+  'native.rtsp.viaBridge': 'through the bridge',
+  'native.rtsp.hint': 'Direct: the app receives RTSP/RTP itself (TCP or UDP as set on the source, Basic/Digest), WebKit decodes with WebCodecs, VideoToolbox takes over where WebKit cannot (e.g. HEVC 10 bit, then 8 bit at the analysis width). The picture is the camera’s own compression; 16-bit analysis and audio need the bridge. Tested with a local test server and the iOS simulator, not yet on a real iPhone/iPad or with real cameras.',
+  'native.rtsp.stored': 'Credentials in the Keychain',
+  'native.rtsp.storedHint': 'User and password typed into an rtsp:// address are moved to the iOS Keychain (this device only) and removed from the address.',
+  'native.rtsp.none': 'No stored credentials.',
+  'native.rtsp.forget': 'Forget',
+  'native.rtsp.saveFailed': 'Credentials could not be stored in the Keychain',
   'native.search': 'Find bridge on the network',
   'native.bridgePh': 'e.g. 192.168.1.20:4192',
   'native.searching': 'Searching …',

@@ -6,7 +6,8 @@
 //            first layout on the iPhone.
 // afterApp:  Settings → Bridge gets the bridges found via Bonjour (src/bridgeField.ts, no DOM
 //            search); Settings → "iPhone/iPad: cameras" compares what the system sees (built-in
-//            and USB/UVC from iPadOS 17) with what WebKit offers.
+//            and USB/UVC from iPadOS 17) with what WebKit offers; rtsp:// sources are received
+//            on the device itself (src/native/rtspDirect.ts, #90).
 
 import './mobile.css';
 import { registerPlugin } from '@capacitor/core';
@@ -18,10 +19,17 @@ import { t } from '../i18n';
 import { button, field, h, hint } from '../ui';
 import { bridgeField, type BridgeField } from '../bridgeField';
 import { extendSettingsSection, refreshSettings, registerSettingsSection, type SettingsSection } from '../menu/settings';
+import { installRtspDirect, rtspSection, type RtspNative } from './rtspDirect';
+import { streamRoute } from '../streamRoute';
+import { Source } from '../sources';
 
-export interface NativeInfo { idiom: 'pad' | 'phone' | 'mac' | 'other'; system: string; version: string; model: string; iosAppOnMac: boolean; multitasking: boolean }
+export interface NativeInfo {
+  idiom: 'pad' | 'phone' | 'mac' | 'other'; system: string; version: string; model: string; iosAppOnMac: boolean; multitasking: boolean;
+  /** debug builds: RTSP URLs from the launch argument -LzsAutoStreams (simulator test in CI) */
+  autoStreams?: string[];
+}
 export interface NativeCamera { id: string; name: string; manufacturer: string; external: boolean; position: string }
-interface LzNativePlugin {
+interface LzNativePlugin extends RtspNative {
   info(): Promise<NativeInfo>;
   browseBridges(o: { timeout?: number }): Promise<{ bridges: FoundBridge[]; error?: string; errorCode?: string; errorParams?: Record<string, unknown> }>;
   cameras(): Promise<{ cameras: NativeCamera[]; authorization: string }>;
@@ -66,8 +74,9 @@ export interface AfterAppDeps {
   extend: typeof extendSettingsSection;
   register: typeof registerSettingsSection;
   refresh: typeof refreshSettings;
+  route?: typeof streamRoute;
 }
-const DEFAULT_DEPS: AfterAppDeps = { bridge: bridgeField, extend: extendSettingsSection, register: registerSettingsSection, refresh: refreshSettings };
+const DEFAULT_DEPS: AfterAppDeps = { bridge: bridgeField, extend: extendSettingsSection, register: registerSettingsSection, refresh: refreshSettings, route: streamRoute };
 
 /** Bonjour state shown under Settings → Bridge; rendered when the page is shown. */
 let searching = false;
@@ -106,6 +115,11 @@ export function afterApp(d: AfterAppDeps = DEFAULT_DEPS) {
   d.bridge.setPlaceholder(t('native.bridgePh'));
   d.extend('bridge', () => bonjourRows(d));
   d.register(camerasSection(75));
+  if (d.route) {
+    installRtspDirect(LzNative, d.route, (msg) => alert(msg));
+    d.register(rtspSection(LzNative, d.refresh, 74));
+    openAutoStreams(d.route);
+  }
   navigator.mediaDevices?.addEventListener?.('devicechange', () => d.refresh());
   if (!d.bridge.get().trim()) void browseBridges(d, true);
   markUnavailable();
@@ -141,4 +155,29 @@ function camerasSection(order: number): SettingsSection {
     })();
     return [body, hint(t('native.camHint'))];
   } };
+}
+
+/**
+ * Debug builds: open the RTSP sources given at launch and log, every 5 s, what arrives in the
+ * WebView – frame count, size and the R′G′B′ in the middle of the 75 % white bar of SMPTE bars
+ * (the iOS workflow checks these lines in the simulator console).
+ */
+function openAutoStreams(route: typeof streamRoute) {
+  const urls = info?.autoStreams ?? [];
+  if (!urls.length) return;
+  const frames = new Map<Source, number>();
+  const prev = Source.onArrive;
+  Source.onArrive = (s) => { prev?.(s); frames.set(s, (frames.get(s) ?? 0) + 1); };
+  urls.forEach((u, i) => route.add(u, `RTSP ${i + 1}`));
+  setInterval(() => {
+    for (const [s, n] of frames) {
+      const d = s.data, w = s.width, h = s.height;
+      let bar = '';
+      if (d && w && h) {
+        const o = (Math.floor(h / 2) * w + Math.floor(((240 + 205.7 / 2) / 1920) * w)) * 4;
+        bar = ` bar75=${d[o]},${d[o + 1]},${d[o + 2]}`;
+      }
+      console.info(`[lzs-ios] rtsp-direct frames: ${s.name} ${s.status} n=${n} ${w}x${h}${bar} · ${s.message}`);
+    }
+  }, 5000);
 }

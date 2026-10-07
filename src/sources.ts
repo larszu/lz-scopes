@@ -14,6 +14,7 @@ import { effectiveWidth, mergeLowLatency, type LowLatencyConfig } from './lowLat
 import { meanLuma } from './luma';
 import { t } from './i18n';
 import { bridgeMessage } from './i18n/bridgeMessage';
+import { streamRoute } from './streamRoute';
 
 export { meanLuma };
 
@@ -416,10 +417,22 @@ export class Source {
     if (!this.frozen) this.frameSeq++;
   }
 
+  /** counts connect attempts, so a late answer of an earlier one is ignored */
+  private connectSeq = 0;
+
   connectStream(url: string, bridge: string) {
     this.stop();
     this.url = url;
     this.set('connecting', t('source.status.connecting'));
+    const seq = ++this.connectSeq;
+    // a platform shell may receive this URL itself (iOS: RTSP direct, #90) – same frame protocol
+    const direct = streamRoute.resolve(url, this.settings);
+    if (direct) {
+      this.rtpStats = null; this.phase = null;
+      direct.then((ws) => { if (seq === this.connectSeq && this.status === 'connecting') this.connectFrames(ws, false); })
+        .catch((e: Error) => { if (seq === this.connectSeq) this.set('error', e.message); });
+      return;
+    }
     const { fps, depth, transport } = this.settings;
     const ll = this.llConfig;
     const width = effectiveWidth(this.settings.width, this.lowLatency, ll.width);
@@ -836,6 +849,7 @@ export class Source {
   }
 
   stop() {
+    this.connectSeq++;
     Source.onStop?.(this);
     this.liveShown = false; this.resolveRoute = null;
     if (this.folderTimer) { clearInterval(this.folderTimer); this.folderTimer = null; }

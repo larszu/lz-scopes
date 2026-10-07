@@ -44,6 +44,7 @@ import { Renderer, type PictureMode, type SkinRange } from './renderer';
 import { GREEN_DEFAULT } from './match/core';
 import { greenSettings, matchPanelSettings, targetEditor, type MatchUi } from './match/ui';
 import { bindBridgeField, normaliseBridge } from './bridgeField';
+import { streamRoute } from './streamRoute';
 import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
 import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
@@ -411,6 +412,9 @@ function addSource(kind: SourceKind, name?: string, url = '', settings?: Partial
   return s;
 }
 
+// platform shells open stream sources through this hook (src/streamRoute.ts; iOS auto streams)
+streamRoute.bindAdder((url, name) => { const s = addSource('stream', name, url); s.connectStream(url, bridgeUrl()); });
+
 function removeSource(s: Source) {
   s.stop();
   renderer.dropSource(s.id);
@@ -436,7 +440,7 @@ function renderSources() {
     );
     if (s.kind === 'stream') {
       const urlIn = textInput(s.url, () => {}, { placeholder: 'rtsp://user:pass@host:554/stream', mono: true, onEnter: () => connect(), attrs: { class: 'url' } });
-      const connect = () => { s.url = urlIn.value.trim(); save(); s.connectStream(s.url, bridgeUrl()); };
+      const connect = () => { s.url = streamRoute.normalise(urlIn.value.trim()); urlIn.value = s.url; save(); s.connectStream(s.url, bridgeUrl()); };
       const bridgeUi: BridgeUi = {
         http: () => bridgeUrl().replace(/^ws/, 'http'), hud: alertHud, upd,
         connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (/^(decklink|ndi|folder):/.test(url)) s.settings.depth = 16; } connect(); renderSources(); },

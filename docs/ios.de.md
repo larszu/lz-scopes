@@ -13,11 +13,20 @@ Die App ist dieselbe Web-App wie im Browser und in der Desktop-App, verpackt mit
 | Testbilder, Dateien, Fotos | ja | ja | wie im Browser |
 | Eingebaute Kamera | ja | ja | getUserMedia |
 | USB-C-Capture-Karte (UVC) | nein | ab iPadOS 17 | getUserMedia, Liste der Systemkameras im Abschnitt „iPad: Kameras und USB-Capture“ |
-| RTSP, SRT, HLS, NDI, DeckLink, Resolve | über die Bridge | über die Bridge | Bridge auf einem Rechner im selben Netz |
+| RTSP-Kamera (`rtsp://`, H.264/HEVC) | ja, direkt | ja, direkt | eigener RTSP/RTP-Empfang in der App, ohne Bridge (siehe „RTSP direkt“) |
+| SRT, `rtsps://`, HLS, NDI, DeckLink, Resolve | über die Bridge | über die Bridge | Bridge auf einem Rechner im selben Netz |
 | Opple Light Master | ja | ja | CoreBluetooth (@capacitor-community/bluetooth-le); nimmt den Light Master mit dem stärksten Signal |
 | Bildschirm/Fenster, Ordner beobachten | nein | nein | gibt es in WKWebView nicht, Schaltflächen deaktiviert |
 
 Bedienung: Auf dem iPad gilt das normale Layout mit Seitenleiste. Split View, Slide Over und Stage Manager werden unterstützt (alle Ausrichtungen, kein Vollbildzwang). Unter 700 px Breite wird die Kopfleiste waagerecht scrollbar. Auf dem iPhone startet die App beim ersten Mal mit Bild über Waveform (Layout „1/1“), die Seitenleiste ist zu. Scopes nehmen alle Berührungen an, die Seite selbst scrollt nicht. Apple Pencil und Trackpad laufen über die normalen Pointer-Events.
+
+## RTSP direkt
+
+Die App empfängt `rtsp://`-Kameras selbst: „+ Quelle → RTSP / Netz“, Adresse eintragen, verbinden. TCP oder UDP richtet sich nach der Transport-Einstellung der Quelle; über UDP wechselt sie bei mehr als 2 % Verlust selbst auf TCP. Basic- und Digest-Anmeldung gehen. Benutzer und Passwort in der Adresse (`rtsp://benutzer:passwort@kamera/stream`) wandern in den iOS-Schlüsselbund (nur dieses Gerät) und werden aus der Adresse entfernt; Einstellungen → RTSP direkt zeigt die gespeicherten Einträge (nur Benutzernamen) und vergisst sie. Dort lässt sich `rtsp://` auch wieder über die Bridge leiten.
+
+So kommt das Bild zu den Scopes: Der eigene RTSP/RTP-Code der App (Swift, `ios/LzRtsp`, eine Portierung von `server/rtsp.mjs`/`rtp.mjs` der Bridge) sammelt die H.264/HEVC-Bilder und gibt sie komprimiert an die WebView, die sie mit WebCodecs dekodiert. Wo WebKit das nicht kann (HEVC 10 bit oder kein HEVC), dekodiert VideoToolbox in der App, die Bilder kommen dann in Analysebreite. Kein ffmpeg in der App.
+
+Grenzen: 8 bit, die Kompression der Kamera; kein Ton; `rtsps://` nur über die Bridge; UDP nur über IPv4. Geprüft mit lokalem Testserver (mediamtx, SMPTE-Balken) in Unit-Tests und im iOS-Simulator, **noch nicht auf echtem iPhone/iPad und nicht mit echten Kameras**. Einzelheiten: [docs/research/ios-rtsp.md](research/ios-rtsp.md).
 
 ## Bridge im Netz
 

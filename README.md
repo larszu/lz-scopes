@@ -91,7 +91,7 @@ The desktop app contains the bridge and a redistributable ffmpeg 9.0.2 (GPLv3, w
 
 **Web edition:** <https://larszu.github.io/lz-scopes/>. Test patterns, camera, screen and files work there. RTSP, SRT and other network streams need the desktop app or `npm start`, because a browser cannot open them.
 
-**iPhone and iPad** (`ios/`, Capacitor): the same app in a native shell, built and started in the iOS Simulator by CI, not yet on real devices and not in the App Store/TestFlight (needs an Apple Developer account). Camera, USB-C capture cards on iPadOS 17, files, Opple via CoreBluetooth; network streams come from a bridge on a computer in the same network (`npm start -- --host 0.0.0.0`), which the app finds via Bonjour. See [docs/ios.md](docs/ios.md).
+**iPhone and iPad** (`ios/`, Capacitor): the same app in a native shell, built and started in the iOS Simulator by CI, not yet on real devices and not in the App Store/TestFlight (needs an Apple Developer account). Camera, USB-C capture cards on iPadOS 17, files, Opple via CoreBluetooth; RTSP cameras directly (own RTSP/RTP reception, WebCodecs/VideoToolbox, credentials in the Keychain); other network streams come from a bridge on a computer in the same network (`npm start -- --host 0.0.0.0`), which the app finds via Bonjour. See [docs/ios.md](docs/ios.md).
 
 ## Quick start
 

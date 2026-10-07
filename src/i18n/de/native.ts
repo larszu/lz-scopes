@@ -3,7 +3,17 @@ import type en from '../en/native';
 import type { Translation } from '../types';
 
 export default {
-  'native.note': 'iPhone/iPad dekodieren kein RTSP/SRT selbst. Die Bridge läuft auf einem Rechner im selben Netz: Desktop-App mit LZS_HOST=0.0.0.0 oder npm start -- --host 0.0.0.0. Sie meldet sich per Bonjour.',
+  'native.note': 'iPhone/iPad empfangen rtsp://-Kameras selbst (Einstellungen → RTSP direkt). SRT, rtsps://, Dateien und Geräte eines Rechners laufen über die Bridge auf einem Rechner im selben Netz: Desktop-App mit LZS_HOST=0.0.0.0 oder npm start -- --host 0.0.0.0. Sie meldet sich per Bonjour.',
+  'native.rtsp.section': 'RTSP direkt',
+  'native.rtsp.route': 'rtsp://-Kameras',
+  'native.rtsp.direct': 'direkt auf diesem Gerät',
+  'native.rtsp.viaBridge': 'über die Bridge',
+  'native.rtsp.hint': 'Direkt: Die App empfängt RTSP/RTP selbst (TCP oder UDP wie an der Quelle eingestellt, Basic/Digest), WebKit dekodiert mit WebCodecs, VideoToolbox springt ein, wo WebKit nicht kann (z. B. HEVC 10 bit, dann 8 bit in Analysebreite). Das Bild ist die Kompression der Kamera; 16-bit-Analyse und Ton brauchen die Bridge. Geprüft mit lokalem Testserver und iOS-Simulator, noch nicht auf echtem iPhone/iPad und nicht mit echten Kameras.',
+  'native.rtsp.stored': 'Zugangsdaten im Schlüsselbund',
+  'native.rtsp.storedHint': 'Benutzer und Passwort in einer rtsp://-Adresse wandern in den iOS-Schlüsselbund (nur dieses Gerät) und werden aus der Adresse entfernt.',
+  'native.rtsp.none': 'Keine gespeicherten Zugangsdaten.',
+  'native.rtsp.forget': 'Vergessen',
+  'native.rtsp.saveFailed': 'Zugangsdaten konnten nicht im Schlüsselbund gespeichert werden',
   'native.search': 'Bridge im Netz suchen',
   'native.bridgePh': 'z. B. 192.168.1.20:4192',
   'native.searching': 'Suche …',

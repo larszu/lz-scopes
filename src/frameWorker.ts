@@ -10,7 +10,7 @@
 
 import { readStamp } from '../server/stamp.mjs';
 import { meanLuma } from './luma';
-import { yuv420ToRgba } from './yuv';
+import { decodedFullRange, yuv420ToRgba } from './yuv';
 import { t as tr } from './i18n';
 
 export interface FrameMeta {
@@ -81,7 +81,7 @@ async function onDecodedAsync(frame: VideoFrame, t: { bridge: number; t0: number
   const layout = await frame.copyTo(buf);
   const y = buf.subarray(layout[0].offset), u = buf.subarray(layout[1].offset), v = fmt === 'I420' ? buf.subarray(layout[2].offset) : new Uint8Array(0);
   const rgba = yuv420ToRgba({ y, u, v, strideY: layout[0].stride, strideU: layout[1].stride, strideV: fmt === 'I420' ? layout[2].stride : 0, nv12: fmt === 'NV12' },
-    Math.min(w, vw), Math.min(h, vh), info?.decodeMatrix ?? 'bt709', info?.range === 'pc', 16);
+    Math.min(w, vw), Math.min(h, vh), info?.decodeMatrix ?? 'bt709', decodedFullRange(frame, info?.range), 16);
   // LZV1 header like the raw transport, so src/sources.ts needs no second path
   const dv = new DataView(rgba.buffer);
   [76, 90, 86, 49].forEach((c, i) => dv.setUint8(i, c));
@@ -120,7 +120,7 @@ function open(url: string) {
       const m = JSON.parse(ev.data);
       if (m.type === 'info') {
         info = m;
-        if (m.transport === 'h264' && typeof VideoDecoder === 'undefined') {
+        if ((m.transport === 'h264' || m.transport === 'hevc') && typeof VideoDecoder === 'undefined') {
           post({ type: 'text', data: JSON.stringify({ type: 'error', message: tr('render.h264NeedsWebCodecs') }) });
           return;
         }

@@ -28,7 +28,7 @@ npm start -- --host 0.0.0.0                  # aus dem Repo
 open --env LZS_HOST=0.0.0.0 -a "LZ Scopes"   # Desktop-App am Mac
 ```
 
-Lauscht die Bridge nicht nur auf 127.0.0.1, meldet sie sich per Bonjour als `_lz-scopes._tcp` (`LZS_BONJOUR=0` schaltet das ab). In der App: Seitenleiste → Bridge → „Bridge im Netz suchen“. Ist das Feld leer und es gibt genau eine Bridge, trägt die App sie selbst ein. Sonst die Adresse von Hand eingeben, `192.168.1.20` reicht (Port 4192 und `ws://` werden ergänzt).
+Lauscht die Bridge nicht nur auf 127.0.0.1, meldet sie sich per Bonjour als `_lz-scopes._tcp` (`LZS_BONJOUR=0` schaltet das ab). In der App: Einstellungen → Bridge → „Bridge im Netz suchen“. Ist das Feld leer und es gibt genau eine Bridge, trägt die App sie selbst ein. Sonst die Adresse von Hand eingeben, `192.168.1.20` reicht (Port 4192 und `ws://` werden ergänzt).
 
 Achtung: Im Netz kann dann jeder Rechner über die Bridge Streams öffnen, also auch die Kameras und Capture-Geräte des Rechners. Nur in vertrauenswürdigen Netzen. Steuerung, Messgeräte und PTP bleiben auf den Rechner selbst beschränkt.
 

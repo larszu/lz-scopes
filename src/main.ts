@@ -43,6 +43,7 @@ import { ledSettings, pictureSize } from './led/wall';
 import { Renderer, type PictureMode, type SkinRange } from './renderer';
 import { GREEN_DEFAULT } from './match/core';
 import { greenSettings, matchPanelSettings, targetEditor, type MatchUi } from './match/ui';
+import { bindBridgeField, normaliseBridge } from './bridgeField';
 import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
 import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
@@ -368,7 +369,12 @@ const openLed = () => openLedTool({
   },
   patternsChanged: () => sources.filter((s) => s.kind === 'pattern' && s.pattern.id.startsWith('led-')).forEach((s) => s.startPattern()),
 });
-const bridgeInput = textInput(state.bridge, (v) => { state.bridge = v; save(); refreshFfmpegInfo(); }, { placeholder: t('settings.bridge.placeholder'), attrs: { id: 'bridge' } });
+const bridgeInput = textInput(state.bridge, (v) => setBridge(v), { placeholder: t('settings.bridge.placeholder'), attrs: { id: 'bridge' } });
+function setBridge(v: string) {
+  state.bridge = bridgeInput.value = normaliseBridge(v);
+  save(); refreshFfmpegInfo();
+}
+bindBridgeField({ get: () => state.bridge, set: setBridge, setPlaceholder: (p) => { bridgeInput.placeholder = p; } });
 const ffmpegInfoEl = h('p', { class: 'hint', id: 'ffmpeg-info' }, t('settings.bridge.querying'));
 // which ffmpeg the bridge runs (origin, version, licence, SRT) – read by the bridge from the binary
 let bridgeHealth: BridgeHealth | null = null;

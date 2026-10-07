@@ -45,7 +45,7 @@ import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, 
 import { SOURCE_ITEMS, mountMenu, refreshMenu, type MenuActions, type MenuState } from './menu/appMenu';
 import { openSettings, refreshSettings, registerSettingsSection } from './menu/settings';
 import { aboutSection, keysSection } from './menu/pages';
-import { LANG_NAMES, LANGS, langPref, setLangPref, systemLang, t, type LangPref } from './i18n';
+import { LANG_NAMES, LANGS, langPref, num, setLangPref, systemLang, t, type LangPref } from './i18n';
 
 // ---------------------------------------------------------------- state
 
@@ -90,7 +90,7 @@ function load(): Persisted {
   const base: Persisted = {
     layout: 'lc', panels: DEFAULT_SCOPES.map(panel), unit: 'percent', tint: 'green', falsePreset: 'ARRI', zebra: 0.95, zebraLow: 0,
     maxSamples: 1_000_000, bridge: '', sidebar: true, skin: { ...DEFAULT_SKIN }, display: 'auto', theme: DEFAULT_THEME, targets: [], scenes: [defaultScene()], activeScene: '', layoutName: '',
-    sources: [{ kind: 'pattern', name: 'Testbild', url: '', settings: { transfer: 'auto', colorspace: 'auto', width: 960, fps: 0, depth: 8, transport: 'tcp' }, pattern: { id: 'smpte75-lz', width: 1920, height: 1080, label: '' } }],
+    sources: [{ kind: 'pattern', name: t('main.pattern.title'), url: '', settings: { transfer: 'auto', colorspace: 'auto', width: 960, fps: 0, depth: 8, transport: 'tcp' }, pattern: { id: 'smpte75-lz', width: 1920, height: 1080, label: '' } }],
   };
   try {
     const s = JSON.parse(localStorage.getItem(STORE_KEY) ?? 'null');
@@ -158,26 +158,26 @@ app.innerHTML = `
     <div class="brand" title="LZ Scopes · Lars Zumpe Medienproduktion"><img class="signet" src="${SIGNET[state.theme]}" alt="Lars Zumpe Medienproduktion" width="33" height="20" /><span class="product">Scopes</span></div>
     <div id="menubar"></div>
     <div class="tools">
-      <button class="icon" id="toggle-side" title="Seitenleiste (Quellen) ein/aus (B)" aria-label="Seitenleiste">◧</button>
+      <button class="icon" id="toggle-side" title="${t('main.side.toggle')}" aria-label="${t('main.side.aria')}">◧</button>
       <div class="group" id="layouts"></div>
       <div class="group" id="globals"></div>
     </div>
     <div class="spacer"></div>
     <span class="fps" id="fps"></span>
-    <button id="freeze" title="Standbild (Leertaste)">❚❚ Einfrieren</button>
-    <button id="settings-btn" class="icon" title="Einstellungen (⌘, / Strg+,)" aria-label="Einstellungen">⚙</button>
-    <button class="icon" id="full" title="Vollbild (F)" aria-label="Vollbild">⛶</button>
+    <button id="freeze" title="${t('main.freezeTitle')}">${t('main.freeze')}</button>
+    <button id="settings-btn" class="icon" title="${t('main.settingsTitle')}" aria-label="${t('common.settings')}">⚙</button>
+    <button class="icon" id="full" title="${t('main.fullTitle')}" aria-label="${t('main.full')}">⛶</button>
   </header>
-  <dialog class="tooldlg" id="laymenu" aria-label="Layouts"><div class="dlg-head"><h2>Layouts</h2><button class="icon" data-close aria-label="Schließen">✕</button></div><div class="dlg-body" id="laybody"></div></dialog>
-  <dialog class="tooldlg" id="outmenu" aria-label="Ausgabe"><div class="dlg-head"><h2>Ausgabe</h2><button class="icon" data-close aria-label="Schließen">✕</button></div><div class="dlg-body" id="outbody"></div></dialog>
+  <dialog class="tooldlg" id="laymenu" aria-label="Layouts"><div class="dlg-head"><h2>Layouts</h2><button class="icon" data-close aria-label="${t('common.close')}">✕</button></div><div class="dlg-body" id="laybody"></div></dialog>
+  <dialog class="tooldlg" id="outmenu" aria-label="${t('main.output')}"><div class="dlg-head"><h2>${t('main.output')}</h2><button class="icon" data-close aria-label="${t('common.close')}">✕</button></div><div class="dlg-body" id="outbody"></div></dialog>
   <div class="main">
     <aside class="side" id="side">
-      <h2>Quellen</h2>
+      <h2>${t('main.sources')}</h2>
       <div id="source-list"></div>
       <div class="resolve-live" id="resolve-live" hidden></div>
       <div class="add" id="add"></div>
-      <details class="gen" id="gen-wrap"><summary>Tongenerator</summary><div id="gen"></div></details>
-      <details class="gen" id="opple-wrap"><summary>Lichtmesser (Opple)</summary><div id="opple"></div></details>
+      <details class="gen" id="gen-wrap"><summary>${t('main.toneGen')}</summary><div id="gen"></div></details>
+      <details class="gen" id="opple-wrap"><summary>${t('main.lightMeter')}</summary><div id="opple"></div></details>
     </aside>
     <section class="dockwrap" id="grid"><canvas id="gl"></canvas><div id="dock"></div></section>
   </div>`;
@@ -197,10 +197,10 @@ try {
 function renderHeader() {
   const lay = $('#layouts');
   lay.replaceChildren(...Object.entries(PRESETS).map(([k, l], i) =>
-    h('button', { class: k === state.layout ? 'on' : '', title: `Layout ${l.label} (${i + 1}) – danach frei per Drag & Drop`, onclick: () => setLayout(k) }, l.label)),
-    h('button', { title: 'Panel hinzufügen', onclick: () => addScopePanel() }, '+ Panel'));
+    h('button', { class: k === state.layout ? 'on' : '', title: t('main.layoutTitle', { name: l.label, n: i + 1 }), onclick: () => setLayout(k) }, l.label)),
+    h('button', { title: t('main.addPanel'), onclick: () => addScopePanel() }, t('main.addPanelBtn')));
   $('#globals').replaceChildren(
-    select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m²']], (v) => { state.unit = v as Unit; save(); refreshSettings(); }, 'Skala der Waveforms'),
+    select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m²']], (v) => { state.unit = v as Unit; save(); refreshSettings(); }, t('main.unitTitle')),
   );
   refreshMenu();
   refreshSettings();
@@ -212,70 +212,70 @@ function renderHeader() {
 const srow = (label: string, ...kids: (Node | string)[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
 const shint = (text: string) => h('p', { class: 'hint' }, text);
 
-registerSettingsSection({ id: 'ui', label: 'Oberfläche', order: 10, render: () => [
+registerSettingsSection({ id: 'ui', label: t('settings.ui'), order: 10, render: () => [
   srow(t('lang.label'), select(langPref(), [['auto', t('lang.auto', { lang: LANG_NAMES[systemLang()] })], ...LANGS.map((l) => [l, LANG_NAMES[l]] as [string, string])],
     (v) => { try { sessionStorage.setItem(REOPEN_SETTINGS, 'ui'); } catch { /* ignore */ } setLangPref(v as LangPref); }, t('lang.title'))),
   shint(t('lang.hint')),
-  srow('Skin', select(state.theme, THEMES, (v) => { if (isTheme(v)) setTheme(v); }, 'Farben der Bedienoberfläche')),
-  shint('Nur die Bedienoberfläche ändert sich. Messdarstellungen (Spuren, Graticule, Falschfarben) bleiben in allen Varianten gleich.'),
-  srow('Seitenleiste', checkbox(state.sidebar, 'Quellen anzeigen (B)', (v) => { state.sidebar = v; applySidebar(); save(); })),
+  srow(t('settings.ui.skin'), select(state.theme, THEMES, (v) => { if (isTheme(v)) setTheme(v); }, t('settings.ui.skinTitle'))),
+  shint(t('settings.ui.skinHint')),
+  srow(t('settings.ui.sidebar'), checkbox(state.sidebar, t('settings.ui.sidebarShow'), (v) => { state.sidebar = v; applySidebar(); save(); })),
 ] });
 
-registerSettingsSection({ id: 'display', label: 'Display', order: 20, render: () => [
-  srow('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}${detected.hdr ? ' (HDR-fähig)' : ''}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])],
-    (v) => setDisplaySpace(v as Persisted['display']), 'Display-Farbraum der Bildansicht')),
-  shint('Farbraum, in dem die Bildansicht gezeigt wird. Die Scopes messen immer das Signal.'),
-  srow('HDR-Vorschau', select(state.hdrPreview ?? 'bt2408', Object.entries(HDR_PREVIEW_LABELS) as [string, string][], (v) => { state.hdrPreview = v as HdrPreview; save(); renderHeader(); },
-    'Wie die Bildansicht HDR (PQ/HLG) und Log auf einem SDR-Display zeigt')),
-  shint('BT.2408 hybrid-linear (Referenzweiß ≈ 93 %, Lichter per BT.2390-EETF) oder BT.2446 Methode A.'),
-  srow('', h('button', { title: 'Messfelder ausgeben, Display mit Messgerät (ArgyllCMS) oder manuell prüfen, Uniformität, Bericht, 3D-LUT', onclick: openCalibrationDialog }, 'Kalibrierung / Verifikation …')),
+registerSettingsSection({ id: 'display', label: t('settings.display'), order: 20, render: () => [
+  srow(t('settings.display'), select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}${detected.hdr ? t('settings.display.hdrCapable') : ''}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])],
+    (v) => setDisplaySpace(v as Persisted['display']), t('settings.display.spaceTitle'))),
+  shint(t('settings.display.spaceHint')),
+  srow(t('settings.display.hdrPreview'), select(state.hdrPreview ?? 'bt2408', Object.entries(HDR_PREVIEW_LABELS) as [string, string][], (v) => { state.hdrPreview = v as HdrPreview; save(); renderHeader(); },
+    t('settings.display.hdrTitle'))),
+  shint(t('settings.display.hdrHint')),
+  srow('', h('button', { title: t('settings.display.calibTitle'), onclick: openCalibrationDialog }, t('settings.display.calib'))),
   ...(sysProfileAvailable() ? [sysProfileSection(h, () => (state.display === 'auto' ? null : state.display))] : []),
 ] });
 
-registerSettingsSection({ id: 'scopes', label: 'Scopes', order: 30, render: () => [
-  srow('Skala', select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m² / Szene']], (v) => { state.unit = v as Unit; save(); renderHeader(); })),
-  srow('Spurfarbe', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); })),
-  srow('Präzision', select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }, 'Abtastpunkte je Scope')),
-  srow('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); })),
-  srow('Hautton Luma',
+registerSettingsSection({ id: 'scopes', label: t('settings.scopes'), order: 30, render: () => [
+  srow(t('settings.scopes.scale'), select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', t('settings.scopes.nitsScene')]], (v) => { state.unit = v as Unit; save(); renderHeader(); })),
+  srow(t('settings.scopes.tint'), select(state.tint, [['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]], (v) => { state.tint = v as Tint; save(); })),
+  srow(t('settings.scopes.precision'), select(String(state.maxSamples), [['250000', t('settings.scopes.fast')], ['1000000', t('settings.scopes.standard')], ['4000000', t('settings.scopes.full')]], (v) => { state.maxSamples = Number(v); save(); }, t('settings.scopes.samplesTitle'))),
+  srow(t('settings.scopes.falseColour'), select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); })),
+  srow(t('settings.scopes.skinLuma'),
     numIn(Math.round(state.skin.lo * 100), 0, 100, (v) => { state.skin.lo = v / 100; }), '–',
     numIn(Math.round(state.skin.hi * 100), 0, 100, (v) => { state.skin.hi = v / 100; }), '%'),
-  srow('Hautton Farbton ±', numIn(state.skin.tol, 2, 45, (v) => { state.skin.tol = v; }), '° um die Hautton-Linie'),
-  srow('Zebra', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%'),
-  shint('Einstellungen einzelner Panels (Helligkeit, Farbe, Lupe, Kanäle …) stehen im ⚙ des Panels.'),
+  srow(t('settings.scopes.skinHue'), numIn(state.skin.tol, 2, 45, (v) => { state.skin.tol = v; }), t('settings.scopes.skinHueUnit')),
+  srow(t('settings.scopes.zebra'), numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%'),
+  shint(t('settings.scopes.panelHint')),
 ] });
 
-registerSettingsSection({ id: 'stage', label: 'Messpunkt / CST', order: 40, render: () => [
-  srow('Messpunkt', select(state.stage ?? 'signal', STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string]), (v) => setStage(v as Stage), 'Standard für alle Panels ohne eigenen Messpunkt (Taste C)')),
-  shint('Wo in der Kette (Signal → CST → LUT 1 → LUT 2) die Panels messen. Ein Panel kann im ⚙ einen eigenen Messpunkt haben; CST und LUTs stellt man an der Quellenkarte ein.'),
-  srow('ΔE am Messpunkt', select(state.deRef ?? 'off', [['off', 'aus'], ['bars', 'nächster Farbbalken'], ['targets', 'nächstes eigenes Ziel'], ...state.targets.map((t) => [`target:${t.name}`, `Ziel ${t.name}`] as [string, string])],
-    (v) => { state.deRef = v; save(); }, 'Sollwert für ΔE')),
-  shint('ΔE 2000 (SDR, Log) bzw. ΔE ITP (PQ/HLG, BT.2124) des Messpunkts gegen den gewählten Sollwert; eigene Ziele im Vectorscope-⚙ anlegen.'),
-  srow('', h('button', { onclick: () => showLutLibrary() }, 'Hersteller-LUTs …')),
+registerSettingsSection({ id: 'stage', label: t('settings.stage'), order: 40, render: () => [
+  srow(t('settings.stage.point'), select(state.stage ?? 'signal', STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string]), (v) => setStage(v as Stage), t('settings.stage.defaultTitle'))),
+  shint(t('settings.stage.hint')),
+  srow(t('settings.stage.deAt'), select(state.deRef ?? 'off', [['off', t('common.off')], ['bars', t('settings.stage.deBars')], ['targets', t('settings.stage.deTargets')], ...state.targets.map((tg) => [`target:${tg.name}`, t('settings.stage.deTarget', { name: tg.name })] as [string, string])],
+    (v) => { state.deRef = v; save(); }, t('settings.stage.deTitle'))),
+  shint(t('settings.stage.deHint')),
+  srow('', h('button', { onclick: () => showLutLibrary() }, t('main.lut.vendor'))),
 ] });
 
-registerSettingsSection({ id: 'latency', label: 'Latenz', order: 50, render: () => [
-  srow('Low Latency', select(state.lowLatency ? '1' : '0', [['0', 'aus'], ['1', 'an (alle Bridge-Quellen ohne eigene Wahl)']], (v) => setGlobalLowLatency(v === '1'), LOW_LATENCY_HINT)),
+registerSettingsSection({ id: 'latency', label: t('settings.latency'), order: 50, render: () => [
+  srow('Low Latency', select(state.lowLatency ? '1' : '0', [['0', t('common.off')], ['1', t('settings.latency.onAll')]], (v) => setGlobalLowLatency(v === '1'), LOW_LATENCY_HINT)),
   ...lowLatencyFields(Source.globalLowLatencyConfig, false, (patch) => setGlobalLowLatencyConfig(patch)).map(([label, el]) => srow(label, el)),
   shint(LOW_LATENCY_HINT),
-  shint('Jede Netzwerkquelle kann auf ihrer Karte davon abweichen. Gemessen wird die Latenz nur mit gestempeltem Testbild (scripts/latency-source.mjs).'),
+  shint(t('settings.latency.hint')),
 ] });
 
-registerSettingsSection({ id: 'clock', label: 'Uhr / Timecode', order: 60, render: () => [
-  shint('Bildrate, Daily Jam, LTC-Quelle, PTP (ST 2059-2) und ST-2110-RTP-Zeitstempel stellt man je Uhr-Panel in dessen ⚙ ein: Mehrere Uhren können verschiedene Referenzen zeigen.'),
-  srow('', h('button', { onclick: () => { addScopePanel('clock'); } }, 'Uhr-Panel hinzufügen')),
+registerSettingsSection({ id: 'clock', label: t('settings.clock'), order: 60, render: () => [
+  shint(t('settings.clock.hint')),
+  srow('', h('button', { onclick: () => { addScopePanel('clock'); } }, t('settings.clock.add'))),
 ] });
 
-registerSettingsSection({ id: 'bridge', label: 'Bridge / ffmpeg', order: 70, render: () => [
-  srow('Adresse', bridgeInput),
-  shint('Leer = dieser Server. RTSP, SRT, HLS und andere Netzwerkquellen dekodiert die Bridge mit ffmpeg: Desktop-App oder npm start. Im Browser allein gehen Testbilder, Kamera, Bildschirm und Dateien.'),
+registerSettingsSection({ id: 'bridge', label: t('settings.bridge'), order: 70, render: () => [
+  srow(t('settings.bridge.address'), bridgeInput),
+  shint(t('settings.bridge.hint')),
   ffmpegInfoEl,
-  srow('', h('button', { onclick: () => refreshFfmpegInfo() }, 'Neu abfragen')),
+  srow('', h('button', { onclick: () => refreshFfmpegInfo() }, t('settings.bridge.requery'))),
 ] });
 
-registerSettingsSection({ id: 'audio', label: 'Audio', order: 80, render: () => [
-  shint('Der Tongenerator (Signal, Pegel, Ausgabegerät) steht in der Seitenleiste; Pegelskala, Lautheitsnorm und Kanäle je Audio-Panel in dessen ⚙. Audioquellen kommen über Quellen → Audio.'),
-  srow('', h('button', { onclick: () => { state.sidebar = true; applySidebar(); save(); const g = $<HTMLDetailsElement>('#gen-wrap'); g.open = true; g.scrollIntoView({ block: 'nearest' }); } }, 'Tongenerator zeigen')),
+registerSettingsSection({ id: 'audio', label: t('settings.audio'), order: 80, render: () => [
+  shint(t('settings.audio.hint')),
+  srow('', h('button', { onclick: () => { state.sidebar = true; applySidebar(); save(); const g = $<HTMLDetailsElement>('#gen-wrap'); g.open = true; g.scrollIntoView({ block: 'nearest' }); } }, t('settings.audio.showGen'))),
 ] });
 
 registerSettingsSection(keysSection(90));
@@ -360,16 +360,16 @@ $('#settings-btn').onclick = () => openSettings();
 const openLed = () => openLedTool({
   sources: () => sources,
   showPattern: (id, w, hh) => {
-    const s = sources.find((x) => x.kind === 'pattern') ?? addSource('pattern', 'LED-Wand');
+    const s = sources.find((x) => x.kind === 'pattern') ?? addSource('pattern', t('main.src.ledWall'));
     Object.assign(s.pattern, { id, width: w, height: hh });
     save(); s.startPattern(); renderSources(); openOutput(s.pattern);
   },
   patternsChanged: () => sources.filter((s) => s.kind === 'pattern' && s.pattern.id.startsWith('led-')).forEach((s) => s.startPattern()),
 });
 $('#full').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen());
-const bridgeInput = h('input', { id: 'bridge', placeholder: 'leer = dieser Server', spellcheck: 'false' }) as HTMLInputElement;
+const bridgeInput = h('input', { id: 'bridge', placeholder: t('settings.bridge.placeholder'), spellcheck: 'false' }) as HTMLInputElement;
 bridgeInput.value = state.bridge;
-const ffmpegInfoEl = h('p', { class: 'hint', id: 'ffmpeg-info' }, 'ffmpeg: wird abgefragt …');
+const ffmpegInfoEl = h('p', { class: 'hint', id: 'ffmpeg-info' }, t('settings.bridge.querying'));
 // which ffmpeg the bridge runs (origin, version, licence, SRT) – read by the bridge from the binary
 let bridgeHealth: BridgeHealth | null = null;
 async function refreshFfmpegInfo() {
@@ -390,7 +390,7 @@ function toggleFreeze() {
   frozen = !frozen;
   sources.forEach((s) => (s.frozen = frozen));
   $('#freeze').classList.toggle('on', frozen);
-  $('#freeze').textContent = frozen ? '▶ Weiter' : '❚❚ Einfrieren';
+  $('#freeze').textContent = frozen ? t('main.resume') : t('main.freeze');
   refreshMenu();
 }
 
@@ -426,7 +426,7 @@ function renderSources() {
         h('span', { class: 'dot', title: s.status }),
         h('span', { class: 'idx' }, String(i + 1)),
         h('input', { class: 'name', value: s.name, onchange: (e: Event) => { s.name = (e.target as HTMLInputElement).value; save(); renderPanels(); } }),
-        h('button', { class: 'icon', title: 'Entfernen', onclick: () => removeSource(s) }, '✕')),
+        h('button', { class: 'icon', title: t('main.src.remove'), onclick: () => removeSource(s) }, '✕')),
     );
     if (s.kind === 'stream') {
       const urlIn = h('input', { class: 'url', value: s.url, placeholder: 'rtsp://user:pass@host:554/stream', spellcheck: 'false' }) as HTMLInputElement;
@@ -439,16 +439,16 @@ function renderSources() {
       card.append(
         h('div', { class: 'row' }, urlIn),
         h('div', { class: 'row' },
-          select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', 'nativ']], (v) => upd({ width: Number(v) }, true), s.lowLatency && effectiveWidth(set.width, true, s.llConfig.width) !== set.width ? `Analyseauflösung – Low Latency begrenzt auf ${s.llConfig.width} px` : 'Analyseauflösung'),
-          select(String(set.fps), [['0', 'alle fps'], ['10', '10 fps'], ['25', '25 fps'], ['30', '30 fps']], (v) => upd({ fps: Number(v) }, true), 'Bildrate begrenzen'),
-          select(set.yuv ? 'yuv' : String(set.depth), [['8', '8 bit'], ['16', '16 bit'], ['yuv', '16 bit Y′CbCr']], (v) => upd(v === 'yuv' ? { depth: 16, yuv: true } : { depth: Number(v) as 8 | 16, yuv: false }, true), 'Bittiefe. 16 bit für 10-bit/HDR-Quellen; Y′CbCr = unbeschnitten ohne Range-Wandlung (Sub-Black, Super-White, R 103)'),
-          select(set.transport, [['tcp', 'TCP'], ['udp', 'UDP']], (v) => upd({ transport: v as 'tcp' | 'udp' }, true), 'RTSP-Transport'),
-          select(set.audio === false ? '0' : '1', [['1', 'Ton'], ['0', 'ohne Ton']], (v) => upd({ audio: v === '1' }, true), 'Ton des Streams mitmessen (Bridge-Protokoll 2)'),
-          select(set.codec ?? 'raw', [['raw', 'roh'], ['h264', 'H.264 · 8 bit']], (v) => upd({ codec: v as 'raw' | 'h264' }, true), 'Übertragung Bridge → Browser: roh = unkomprimiert, exakt (8/16 bit); H.264 = für entfernte Bridges, ca. 1/50 der Datenrate, aber 8 bit 4:2:0 und verlustbehaftet')),
+          select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', t('main.native')]], (v) => upd({ width: Number(v) }, true), s.lowLatency && effectiveWidth(set.width, true, s.llConfig.width) !== set.width ? t('main.src.widthLimited', { px: s.llConfig.width }) : t('main.src.widthTitle')),
+          select(String(set.fps), [['0', t('main.src.fpsAll')], ['10', '10 fps'], ['25', '25 fps'], ['30', '30 fps']], (v) => upd({ fps: Number(v) }, true), t('main.src.fpsTitle')),
+          select(set.yuv ? 'yuv' : String(set.depth), [['8', '8 bit'], ['16', '16 bit'], ['yuv', '16 bit Y′CbCr']], (v) => upd(v === 'yuv' ? { depth: 16, yuv: true } : { depth: Number(v) as 8 | 16, yuv: false }, true), t('main.src.depthTitle')),
+          select(set.transport, [['tcp', 'TCP'], ['udp', 'UDP']], (v) => upd({ transport: v as 'tcp' | 'udp' }, true), t('main.src.transportTitle')),
+          select(set.audio === false ? '0' : '1', [['1', t('main.src.audio')], ['0', t('main.src.noAudio')]], (v) => upd({ audio: v === '1' }, true), t('main.src.audioTitle')),
+          select(set.codec ?? 'raw', [['raw', t('main.src.raw')], ['h264', 'H.264 · 8 bit']], (v) => upd({ codec: v as 'raw' | 'h264' }, true), t('main.src.codecTitle'))),
         h('div', { class: 'row' },
-          select(set.lowLatency === undefined ? '' : set.lowLatency ? '1' : '0', [['', `Latenz: global (${state.lowLatency ? 'Low Latency' : 'normal'})`], ['1', 'Low Latency'], ['0', 'Latenz normal']],
+          select(set.lowLatency === undefined ? '' : set.lowLatency ? '1' : '0', [['', t('main.src.llGlobal', { mode: state.lowLatency ? 'Low Latency' : t('main.normal') })], ['1', 'Low Latency'], ['0', t('main.src.llNormal')]],
             (v) => { upd({ lowLatency: v === '' ? undefined : v === '1' }, true); refreshHeads(); }, LOW_LATENCY_HINT),
-          h('span', { class: 'llmeasure', 'data-llsrc': s.id, title: 'Stempel → gezeichnet, nur mit gestempeltem Testbild (scripts/latency-source.mjs)' }, latencyMeasureText(s))),
+          h('span', { class: 'llmeasure', 'data-llsrc': s.id, title: t('main.src.llMeasureTitle') }, latencyMeasureText(s))),
         ...(s.lowLatency ? [h('details', { class: 'llsettings' },
           h('summary', { title: describeLowLatency(s.llConfig) }, `Low Latency: ${describeLowLatency(s.llConfig)}`),
           ...lowLatencyFields(set.ll ?? {}, true, (patch) => {
@@ -457,7 +457,7 @@ function renderSources() {
             upd({ ll }, true); refreshHeads();
           }).map(([label, el]) => h('label', { class: 'mrow' }, h('span', {}, label), el)))] : []),
         h('div', { class: 'row' },
-          running ? h('button', { onclick: () => s.stop() }, '■ Trennen') : h('button', { class: 'primary', onclick: connect }, '▶ Verbinden'),
+          running ? h('button', { onclick: () => s.stop() }, t('main.src.disconnect')) : h('button', { class: 'primary', onclick: connect }, t('main.src.connect')),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
             h('button', { class: 'mini', title: `Testbild ${p}`, onclick: () => { urlIn.value = `test:${p}`; connect(); } }, p)),
             deviceButton(bridgeUi), deckLinkButton(bridgeUi), ndiButton(bridgeUi), folderButton(bridgeUi, (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop?.watchFolder))),
@@ -473,27 +473,27 @@ function renderSources() {
       if (s.kind === 'webcam') card.append(deviceRow(s));
       if ((s.kind === 'screen' || s.kind === 'webcam' || s.isVideoFile) && running) {
         card.append(h('div', { class: 'row' },
-          h('button', { class: 'mini', title: 'Den Messrahmen im Bild als Zuschnitt übernehmen (z. B. nur den Viewer eines Programmfensters)', onclick: () => { if (!s.cropToRoi()) alertHud('Erst im Bild einen Rahmen ziehen'); renderSources(); } }, '✂ Zuschnitt = Rahmen'),
-          s.crop ? h('button', { class: 'mini', onclick: () => { s.clearCrop(); renderSources(); } }, 'Zuschnitt aus') : ''));
+          h('button', { class: 'mini', title: t('main.src.cropTitle'), onclick: () => { if (!s.cropToRoi()) alertHud(t('main.src.dragFirst')); renderSources(); } }, t('main.src.crop')),
+          s.crop ? h('button', { class: 'mini', onclick: () => { s.clearCrop(); renderSources(); } }, t('main.src.cropOff')) : ''));
       }
       card.append(h('div', { class: 'row' },
-        running ? h('button', { onclick: () => s.stop() }, '■ Stopp')
-          : h('button', { class: 'primary', onclick: () => startLocal(s) }, s.kind === 'file' ? 'Datei wählen …' : s.kind === 'folder' ? 'Ordner wählen …' : '▶ Start')));
+        running ? h('button', { onclick: () => s.stop() }, t('main.src.stop'))
+          : h('button', { class: 'primary', onclick: () => startLocal(s) }, s.kind === 'file' ? t('main.src.chooseFile') : s.kind === 'folder' ? t('main.src.chooseFolder') : t('main.src.start'))));
       if (s.kind === 'folder') card.append(h('details', { class: 'hint' }, h('summary', {}, 'Lightroom, Capture One, Resolve'), STILL_WORKFLOW()));
     }
     const ar = audioRow(s, renderSources);
     if (ar) card.append(ar);
     if (s.kind !== 'audio') card.append(h('div', { class: 'row' },
       groupedSelect(set.transfer, transferGroups(`auto: ${transferLabel(s.transfer)} (${s.transferOrigin})`),
-        (v) => upd({ transfer: v as SourceSettings['transfer'] }), 'Transferfunktion. Erkannt wird sie nur aus den Stream-Metadaten (ffprobe color_transfer); aus dem Bild selbst lässt sich die Kurve nicht bestimmen. Log-Kurven werden nie signalisiert und müssen gewählt werden.'),
-      select(set.colorspace, [['auto', `Matrix auto: ${s.colorspace} (${s.colorspaceOrigin})`], ['709', 'Rec.709'], ['2020', 'Rec.2020'], ['601', 'Rec.601 525 (SMPTE-C)'], ['601-625', 'Rec.601 625 (EBU)']], (v) => upd({ colorspace: v as SourceSettings['colorspace'] }), 'Y′CbCr-Matrix & Primärfarben')),
+        (v) => upd({ transfer: v as SourceSettings['transfer'] }), t('main.src.transferTitle')),
+      select(set.colorspace, [['auto', `Matrix auto: ${s.colorspace} (${s.colorspaceOrigin})`], ['709', 'Rec.709'], ['2020', 'Rec.2020'], ['601', 'Rec.601 525 (SMPTE-C)'], ['601-625', 'Rec.601 625 (EBU)']], (v) => upd({ colorspace: v as SourceSettings['colorspace'] }), t('main.src.matrixTitle'))),
       h('div', { class: 'row' },
         groupedSelect(set.gamut ?? 'auto', [
           ['', [['auto', `Gamut auto (${GAMUTS[s.gamut].name})`]]],
           ['Video', (['709', 'p3', '2020', '601', '601-625'] as GamutId[]).map((k) => [k, GAMUTS[k].name])],
-          ['Kamera / ACES', (Object.keys(CAMERA_GAMUTS) as GamutId[]).map((k) => [k, GAMUTS[k].name])],
-        ], (v) => upd({ gamut: v as SourceSettings['gamut'] }), 'Primärfarben des linearen Lichts (CIE, Bild, Gamut-Warnung); auto = Kamera-Gamut der Log-Kurve bzw. Farbraum'),
-        s.transfer === 'hlg' ? select(String(s.hlgLw), HLG_PEAKS.map((n) => [String(n), `HLG-Display ${n} cd/m²`]), (v) => upd({ hlgLw: Number(v) }), 'Spitzenleuchtdichte Lw des HLG-Displays (Systemgamma nach BT.2100, Presets nach EBU R 167)') : ''));
+          [t('main.src.camAces'), (Object.keys(CAMERA_GAMUTS) as GamutId[]).map((k) => [k, GAMUTS[k].name])],
+        ], (v) => upd({ gamut: v as SourceSettings['gamut'] }), t('main.src.gamutTitle')),
+        s.transfer === 'hlg' ? select(String(s.hlgLw), HLG_PEAKS.map((n) => [String(n), `HLG-Display ${n} cd/m²`]), (v) => upd({ hlgLw: Number(v) }), t('main.src.hlgTitle')) : ''));
     if (s.kind !== 'audio') card.append(chainControls(s, upd));
     if (s.message) card.append(h('div', { class: 'msg' }, s.message));
     // LUT files dropped on a source card: LUT 1, with Shift LUT 2
@@ -511,8 +511,8 @@ async function loadLutInto(s: Source, f: File, slot: 'lut1' | 'lut2') {
     await addLutFile(f);
     s.settings.chain = { ...s.settings.chain, [slot]: f.name };
     save(); await refreshRecent(); renderSources(); refreshHeads(); needClear = true;
-    alertHud(`LUT ${f.name} → ${slot === 'lut1' ? 'LUT 1' : 'LUT 2'} von ${s.name}`);
-  } catch (e) { alertHud(`LUT nicht lesbar: ${(e as Error).message}`); }
+    alertHud(t('main.lut.loaded', { file: f.name, slot: slot === 'lut1' ? 'LUT 1' : 'LUT 2', source: s.name }));
+  } catch (e) { alertHud(t('main.lut.unreadable', { error: (e as Error).message })); }
 }
 
 let recentLutNames: string[] = [];
@@ -521,14 +521,14 @@ async function refreshRecent() { recentLutNames = await recentLuts(); }
 function transferGroups(autoLabel: string, withAuto = true): [string, [string, string][]][] {
   return [
     ['', withAuto ? [['auto', autoLabel]] : []],
-    ['Display (SDR)', [['sdr', 'SDR BT.1886 (γ 2,4)'], ['g22', 'Gamma 2,2'], ['g26', 'Gamma 2,6'], ['g28', 'Gamma 2,8'], ['srgb', 'sRGB'], ['linear', 'Linear']]],
+    ['Display (SDR)', [['sdr', `SDR BT.1886 (γ ${num(2.4, 1)})`], ['g22', `Gamma ${num(2.2, 1)}`], ['g26', `Gamma ${num(2.6, 1)}`], ['g28', `Gamma ${num(2.8, 1)}`], ['srgb', 'sRGB'], ['linear', 'Linear']]],
     ['HDR', [['pq', 'PQ ST 2084'], ['hlg', 'HLG']]],
-    ['Kamera-Log (Szene)', Object.entries(LOG_CURVES).map(([k, c]) => [k, c.name] as [string, string])],
+    [t('main.tr.camLog'), Object.entries(LOG_CURVES).map(([k, c]) => [k, c.name] as [string, string])],
   ];
 }
 const gamutGroups = (): [string, [string, string][]][] => [
   ['Video', (['709', 'p3', '2020', '601', '601-625'] as GamutId[]).map((k) => [k, GAMUTS[k].name])],
-  ['Kamera / ACES', (Object.keys(CAMERA_GAMUTS) as GamutId[]).map((k) => [k, GAMUTS[k].name])],
+  [t('main.src.camAces'), (Object.keys(CAMERA_GAMUTS) as GamutId[]).map((k) => [k, GAMUTS[k].name])],
 ];
 
 /** CST / LUT block of a source card (chain.ts). */
@@ -550,56 +550,56 @@ function chainControls(s: Source, upd: (p: Partial<SourceSettings>) => void): No
     const file = h('input', { type: 'file', accept: LUT_EXTENSIONS.join(','), hidden: true }) as HTMLInputElement;
     file.onchange = () => { const f = file.files?.[0]; if (f) loadLutInto(s, f, slot); };
     const names = [...new Set([...recentLutNames, ...LUTS.keys()])];
-    const opts: [string, string][] = [['', slot === 'lut1' ? 'LUT 1: keine' : 'LUT 2: keine'],
-      ...names.map((n) => [n, `${slot === 'lut1' ? 'LUT 1' : 'LUT 2'}: ${n}`] as [string, string]), ['__load', 'Datei laden …']];
-    if (cur && !names.includes(cur)) opts.splice(1, 0, [cur, `⚠ ${cur} (nicht geladen)`]);
+    const opts: [string, string][] = [['', slot === 'lut1' ? t('main.lut.none1') : t('main.lut.none2')],
+      ...names.map((n) => [n, `${slot === 'lut1' ? 'LUT 1' : 'LUT 2'}: ${n}`] as [string, string]), ['__load', t('main.lut.load')]];
+    if (cur && !names.includes(cur)) opts.splice(1, 0, [cur, t('main.lut.notLoaded', { name: cur })]);
     const sel = select(cur, opts, async (v) => {
       if (v === '__load') { file.click(); return; }
-      if (v && !(await ensureLut(v))) { alertHud(`LUT ${v} ist nicht gespeichert – bitte Datei neu laden`); return; }
+      if (v && !(await ensureLut(v))) { alertHud(t('main.lut.notStored', { name: v })); return; }
       setChain({ [slot]: v || undefined });
-    }, 'LUT-Datei (.cube, .3dl, .spi3d, .spi1d, .csp); auch per Drag & Drop auf die Quellenkarte (Umschalt = LUT 2)');
+    }, t('main.lut.fileTitle'));
     return h('span', { class: 'lutslot' }, sel, file);
   };
   const out = ch.lutOut ?? {};
   const summary = [cst.on ? `CST → ${GAMUTS[cst.gamut].name} ${transferLabel(cst.transfer)}` : '', ch.lut1 ? `LUT ${ch.lut1}` : '', ch.lut2 ? `LUT ${ch.lut2}` : ''].filter(Boolean).join(' · ');
   return h('details', { class: 'chain', open: !!summary },
-    h('summary', { title: 'Farbraum-Transformation und LUTs; welche Stufe ein Panel misst, steht in dessen ⚙ (Taste C = Standard umschalten)' }, `CST / LUT${summary ? `: ${summary}` : ''}`),
+    h('summary', { title: t('main.chain.summaryTitle') }, `CST / LUT${summary ? `: ${summary}` : ''}`),
     h('div', { class: 'row' },
-      select('', [['', 'Kamera-Preset …'], ...CAMERA_PRESETS.map((p) => [p.id, `${p.name} → Rec.709`] as [string, string])], (v) => {
+      select('', [['', t('main.chain.camPreset')], ...CAMERA_PRESETS.map((p) => [p.id, `${p.name} → Rec.709`] as [string, string])], (v) => {
         const p = CAMERA_PRESETS.find((x) => x.id === v);
         if (!p) return;
         const t = CST_TARGETS[0];
         upd({ transfer: p.curve, gamut: 'auto', chain: { ...ch, cst: { ...cst, on: true, gamut: t.gamut, transfer: t.transfer, tonemap: t.tonemap } } });
         refreshHeads(); needClear = true;
-      }, 'Setzt Transfer und Gamut der Quelle auf die Kamera-Log-Kurve und eine CST nach Rec.709 mit ACES-2.0-Tonescale'),
-      select('', [['', 'Ziel …'], ...CST_TARGETS.map((t) => [t.id, t.name] as [string, string])], (v) => {
+      }, t('main.chain.camPresetTitle')),
+      select('', [['', t('main.chain.target')], ...CST_TARGETS.map((t) => [t.id, t.name] as [string, string])], (v) => {
         const t = CST_TARGETS.find((x) => x.id === v);
         if (t) setCst({ on: true, gamut: t.gamut, transfer: t.transfer, tonemap: t.tonemap, lw: 1000 });
       })),
     h('div', { class: 'row' },
-      h('label', { class: 'inline', title: 'Farbraum-Transformation: Eingang (Transfer/Gamut oben) → linear → Ziel-Gamut (Bradford bei anderem Weißpunkt) → Tone-Mapping → Ziel-Transfer' }, on, 'CST'),
-      groupedSelect(cst.gamut, gamutGroups(), (v) => setCst({ gamut: v as GamutId }), 'Ziel-Gamut'),
-      groupedSelect(cst.transfer, transferGroups('', false), (v) => setCst({ transfer: v as CstSettings['transfer'] }), 'Ziel-Transfer')),
+      h('label', { class: 'inline', title: t('main.chain.cstTitle') }, on, 'CST'),
+      groupedSelect(cst.gamut, gamutGroups(), (v) => setCst({ gamut: v as GamutId }), t('main.chain.tgtGamut')),
+      groupedSelect(cst.transfer, transferGroups('', false), (v) => setCst({ transfer: v as CstSettings['transfer'] }), t('main.chain.tgtTransfer'))),
     h('div', { class: 'row' },
-      select(cst.tonemap ?? 'bt2390', Object.entries(TONEMAP_LABELS) as [string, string][], (v) => setCst({ tonemap: v as ToneMap }), 'Tone-Mapping in der CST (bei Log-Zielen ohne Wirkung)'),
-      num(cst.srcPeak, peaks.src, 'Quellspitze in cd/m² (leer = automatisch)', (n) => setCst({ srcPeak: n })),
-      num(cst.tgtPeak, peaks.tgt, 'Zielspitze in cd/m² (leer = automatisch)', (n) => setCst({ tgtPeak: n })),
+      select(cst.tonemap ?? 'bt2390', Object.entries(TONEMAP_LABELS) as [string, string][], (v) => setCst({ tonemap: v as ToneMap }), t('main.chain.tonemapTitle')),
+      num(cst.srcPeak, peaks.src, t('main.chain.srcPeak'), (n) => setCst({ srcPeak: n })),
+      num(cst.tgtPeak, peaks.tgt, t('main.chain.tgtPeak'), (n) => setCst({ tgtPeak: n })),
       cst.transfer === 'hlg' ? select(String(cst.lw ?? 1000), HLG_PEAKS.map((n) => [String(n), `Ziel-HLG ${n}`]), (v) => setCst({ lw: Number(v) })) : ''),
     h('div', { class: 'row' }, lutSel('lut1'), lutSel('lut2')),
     ch.lut1 || ch.lut2 ? h('div', { class: 'row' },
-      groupedSelect(out.transfer ?? 'auto', transferGroups('LUT-Ausgang Transfer: wie Eingang'), (v) => setChain({ lutOut: { ...out, transfer: v === 'auto' ? undefined : v as CstSettings['transfer'] } }), 'Was die LUT ausgibt – steht nicht in der Datei und muss angegeben werden'),
-      groupedSelect(out.gamut ?? 'auto', [['', [['auto', 'LUT-Ausgang Gamut: wie Eingang']]], ...gamutGroups()], (v) => setChain({ lutOut: { ...out, gamut: v === 'auto' ? undefined : v as GamutId } }))) : '',
-    h('div', { class: 'row' }, h('button', { class: 'mini', title: 'Offizielle Download-Seiten der Hersteller-LUTs', onclick: () => showLutLibrary() }, 'Hersteller-LUTs …')),
-    h('p', { class: 'hint' }, 'LUT-Dateien auf diese Karte ziehen (Umschalt = LUT 2). Geladene LUTs bleiben im Browser gespeichert.'));
+      groupedSelect(out.transfer ?? 'auto', transferGroups(t('main.chain.lutOutTransfer')), (v) => setChain({ lutOut: { ...out, transfer: v === 'auto' ? undefined : v as CstSettings['transfer'] } }), t('main.chain.lutOutTitle')),
+      groupedSelect(out.gamut ?? 'auto', [['', [['auto', t('main.chain.lutOutGamut')]]], ...gamutGroups()], (v) => setChain({ lutOut: { ...out, gamut: v === 'auto' ? undefined : v as GamutId } }))) : '',
+    h('div', { class: 'row' }, h('button', { class: 'mini', title: t('main.lut.vendorTitle'), onclick: () => showLutLibrary() }, t('main.lut.vendor'))),
+    h('p', { class: 'hint' }, t('main.chain.dropHint')));
 }
 
 function showLutLibrary() {
   const dlg = h('dialog', { class: 'lutlib' },
-    h('h3', {}, 'Hersteller-LUTs'),
-    h('p', { class: 'hint' }, 'Hersteller-LUTs werden nicht mitgeliefert: Ihre Nutzungsbedingungen erlauben die Weitergabe nicht oder sagen nichts dazu. Hier die offiziellen Download-Seiten; heruntergeladene Dateien per Drag & Drop auf eine Quellenkarte ziehen.'),
+    h('h3', {}, t('main.lut.vendorHead')),
+    h('p', { class: 'hint' }, t('main.lut.vendorHint')),
     h('table', {}, ...LUT_SOURCES.map((l) => h('tr', {},
-      h('td', {}, l.vendor), h('td', {}, l.looks), h('td', {}, l.url ? h('a', { href: l.url, target: '_blank', rel: 'noopener' }, 'Download-Seite') : '–'), h('td', { class: 'hint' }, l.note)))),
-    h('div', { class: 'row' }, h('button', { onclick: () => dlg.close() }, 'Schließen')));
+      h('td', {}, l.vendor), h('td', {}, l.looks), h('td', {}, l.url ? h('a', { href: l.url, target: '_blank', rel: 'noopener' }, t('main.lut.download')) : '–'), h('td', { class: 'hint' }, l.note)))),
+    h('div', { class: 'row' }, h('button', { onclick: () => dlg.close() }, t('common.close'))));
   document.body.append(dlg);
   dlg.addEventListener('close', () => dlg.remove());
   dlg.showModal();
@@ -607,7 +607,7 @@ function showLutLibrary() {
 
 function patternSelect(value: string, onchange: (id: string) => void) {
   const groups = [...new Set(PATTERNS.map((p) => p.group))];
-  return h('select', { class: 'pattern', title: 'Testbild', onchange: (e: Event) => onchange((e.target as HTMLSelectElement).value) },
+  return h('select', { class: 'pattern', title: t('main.pattern.title'), onchange: (e: Event) => onchange((e.target as HTMLSelectElement).value) },
     ...groups.map((g) => h('optgroup', { label: g },
       ...PATTERNS.filter((p) => p.group === g).map((p) => h('option', { value: p.id, selected: p.id === value }, p.name)))));
 }
@@ -619,7 +619,7 @@ function patternControls(s: Source): Node[] {
     const i = PATTERNS.findIndex((p) => p.id === pt.id);
     apply({ id: PATTERNS[(i + d + PATTERNS.length) % PATTERNS.length].id });
   };
-  const label = h('input', { class: 'url', value: pt.label, placeholder: 'Kennung / Label (optional)' }) as HTMLInputElement;
+  const label = h('input', { class: 'url', value: pt.label, placeholder: t('main.pattern.label') }) as HTMLInputElement;
   label.onchange = () => apply({ label: label.value });
   const imgs = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true }) as HTMLInputElement;
   imgs.onchange = () => {
@@ -628,16 +628,16 @@ function patternControls(s: Source): Node[] {
   };
   return [
     h('div', { class: 'row' },
-      h('button', { class: 'mini', title: 'Vorheriges Testbild', onclick: () => step(-1) }, '◀'),
+      h('button', { class: 'mini', title: t('main.pattern.prev'), onclick: () => step(-1) }, '◀'),
       patternSelect(pt.id, (id) => apply({ id })),
-      h('button', { class: 'mini', title: 'Nächstes Testbild', onclick: () => step(1) }, '▶')),
+      h('button', { class: 'mini', title: t('main.pattern.next'), onclick: () => step(1) }, '▶')),
     h('div', { class: 'row' },
       resolutionControls(pt, apply),
       label),
     ...(patternById(pt.id).note ? [h('p', { class: 'hint' }, patternById(pt.id).note!)] : []),
     h('div', { class: 'row' },
-      h('button', { class: 'primary', title: 'Testbild im eigenen Fenster ausgeben (für Monitor, Beamer, Capture)', onclick: () => openOutput(pt) }, '⧉ Ausgeben'),
-      h('button', { title: 'Eigene Bilder als Testbilder laden', onclick: () => imgs.click() }, '+ Bilder'), imgs),
+      h('button', { class: 'primary', title: t('main.pattern.outTitle'), onclick: () => openOutput(pt) }, t('main.pattern.out')),
+      h('button', { title: t('main.pattern.imagesTitle'), onclick: () => imgs.click() }, t('main.pattern.images')), imgs),
   ];
 }
 
@@ -646,14 +646,14 @@ function resolutionControls(pt: PatternState, applyPt: (p: Partial<PatternState>
   const apply = (p: Partial<PatternState>) => { applyPt(p); renderSources(); };
   const cur = `${pt.width}x${pt.height}`, wall = pictureSize(ledSettings().wall), wallKey = `${wall.w}x${wall.h}`;
   const opts: [string, string][] = RESOLUTIONS.map(([w, hh]) => [`${w}x${hh}`, `${w}×${hh}`]);
-  if (!opts.some(([k]) => k === wallKey)) opts.push([wallKey, `${wall.w}×${wall.h} (LED-Wand)`]);
+  if (!opts.some(([k]) => k === wallKey)) opts.push([wallKey, t('main.res.ledWall', { w: wall.w, h: wall.h })]);
   if (!opts.some(([k]) => k === cur)) opts.push([cur, `${pt.width}×${pt.height}`]);
   const size = (v: number) => Math.max(16, Math.min(16384, Math.round(v) || 16));
-  const w = h('input', { type: 'number', value: String(pt.width), min: 16, max: 16384, title: 'Breite in Pixeln (frei)', style: 'width:64px' }) as HTMLInputElement;
-  const hh = h('input', { type: 'number', value: String(pt.height), min: 16, max: 16384, title: 'Höhe in Pixeln (frei)', style: 'width:64px' }) as HTMLInputElement;
+  const w = h('input', { type: 'number', value: String(pt.width), min: 16, max: 16384, title: t('main.res.wTitle'), style: 'width:64px' }) as HTMLInputElement;
+  const hh = h('input', { type: 'number', value: String(pt.height), min: 16, max: 16384, title: t('main.res.hTitle'), style: 'width:64px' }) as HTMLInputElement;
   w.onchange = hh.onchange = () => apply({ width: size(Number(w.value)), height: size(Number(hh.value)) });
   return h('span', { class: 'row', style: 'margin:0' },
-    select(cur, opts, (v) => { const [a, b] = v.split('x').map(Number); apply({ width: a, height: b }); }, 'Auflösung'), w, '×', hh);
+    select(cur, opts, (v) => { const [a, b] = v.split('x').map(Number); apply({ width: a, height: b }); }, t('main.res.title')), w, '×', hh);
 }
 
 function openOutput(pt: PatternState) {
@@ -680,11 +680,11 @@ async function refreshDevices() {
 navigator.mediaDevices?.addEventListener?.('devicechange', () => refreshDevices().then(renderSources));
 function deviceRow(s: Source): Node {
   if (!videoDevices.length) refreshDevices().then(() => { if (videoDevices.length) renderSources(); });
-  const opts: [string, string][] = videoDevices.map((d, i) => [d.deviceId, d.label || `Gerät ${i + 1}`]);
-  return h('div', { class: 'row' }, select(s.deviceId, opts.length ? opts : [['', 'Standardgerät']], (id) => {
+  const opts: [string, string][] = videoDevices.map((d, i) => [d.deviceId, d.label || t('main.dev.n', { n: i + 1 })]);
+  return h('div', { class: 'row' }, select(s.deviceId, opts.length ? opts : [['', t('main.dev.default')]], (id) => {
     s.name = videoDevices.find((d) => d.deviceId === id)?.label.replace(/\s*\([0-9a-f:]+\)$/i, '').slice(0, 40) || s.name;
     s.startCapture('webcam', id).then(() => { refreshDevices().then(renderSources); });
-  }, 'Kamera oder USB-Capture-Gerät'));
+  }, t('main.dev.title')));
 }
 
 /** Desktop app: choose a window or screen (thumbnails), e.g. DaVinci Resolve's viewer. */
@@ -693,11 +693,11 @@ async function pickWindow(s: Source) {
   const close = () => dlg.remove();
   const dlg = h('div', { class: 'modal', onclick: (e: Event) => { if (e.target === dlg) close(); } },
     h('div', { class: 'modal-body' },
-      h('div', { class: 'mtitle' }, 'Fenster oder Bildschirm wählen'),
-      h('p', { class: 'hint' }, 'Resolve: am besten „Video Clean Feed“ auf einen zweiten Bildschirm legen und diesen wählen – oder das Resolve-Fenster wählen und dann um den Viewer einen Rahmen ziehen → „Zuschnitt = Rahmen“. Lightroom/Capture One genauso, oder den Export-Ordner als Quelle „Ordner“ nehmen.'),
+      h('div', { class: 'mtitle' }, t('main.pick.title')),
+      h('p', { class: 'hint' }, t('main.pick.hint')),
       h('div', { class: 'thumbs' }, ...list.map((c) => h('button', { class: 'thumb', title: c.name, onclick: () => { close(); s.name = c.name.slice(0, 40); s.startCapture('screen', undefined, c.id); } },
         h('img', { src: c.thumb, alt: '' }), h('span', {}, c.name)))),
-      h('button', { onclick: close }, 'Abbrechen')));
+      h('button', { onclick: close }, t('common.cancel'))));
   document.body.append(dlg);
 }
 
@@ -709,7 +709,7 @@ function addResolve() {
 /** Add a source of a kind (sidebar buttons and Quellen menu). */
 function addSourceOfKind(kind: string) {
   switch (kind) {
-    case 'pattern': return void startLocal(addSource('pattern', `Testbild ${sources.length + 1}`));
+    case 'pattern': return void startLocal(addSource('pattern', t('main.src.patternN', { n: sources.length + 1 })));
     case 'stream': { state.sidebar = true; applySidebar(); save(); return void addSource('stream', `Stream ${sources.length + 1}`); }
     case 'resolve': return addResolve();
     case 'webcam': case 'screen': case 'file': case 'folder': return void startLocal(addSource(kind));
@@ -718,15 +718,15 @@ function addSourceOfKind(kind: string) {
   }
 }
 $('#add').replaceChildren(
-  h('span', {}, '+ Quelle'),
-  h('button', { onclick: () => addSourceOfKind('pattern') }, 'Testbild'),
-  h('button', { onclick: () => addSourceOfKind('stream') }, 'RTSP / Netz'),
-  h('button', { title: 'Aktuelles Frame aus DaVinci Resolve (Viewer, gegradet) in 16 bit über die Scripting-API – Resolve Studio, Externes Scripting: Lokal', onclick: () => addSourceOfKind('resolve') }, 'DaVinci Resolve'),
-  h('button', { title: 'Kamera oder USB-Capture-Gerät (HDMI/SDI → USB)', onclick: () => addSourceOfKind('webcam') }, 'Kamera/Capture'),
-  h('button', { title: 'Bildschirm oder Fenster (z. B. Resolve-Viewer)', onclick: () => addSourceOfKind('screen') }, 'Bildschirm/Fenster'),
-  h('button', { onclick: () => addSourceOfKind('file') }, 'Datei'),
-  h('button', { title: 'Neuestes Bild eines Ordners (Exporte aus Resolve, Lightroom, Capture One)', onclick: () => addSourceOfKind('folder') }, 'Ordner'),
-  h('button', { title: 'Audiogerät, Audiodatei oder Generator messen', onclick: () => addSourceOfKind('audio') }, 'Audio'),
+  h('span', {}, t('main.add.source')),
+  h('button', { onclick: () => addSourceOfKind('pattern') }, t('main.pattern.title')),
+  h('button', { onclick: () => addSourceOfKind('stream') }, t('main.add.stream')),
+  h('button', { title: t('main.add.resolveTitle'), onclick: () => addSourceOfKind('resolve') }, 'DaVinci Resolve'),
+  h('button', { title: t('main.add.webcamTitle'), onclick: () => addSourceOfKind('webcam') }, t('main.add.webcam')),
+  h('button', { title: t('main.add.screenTitle'), onclick: () => addSourceOfKind('screen') }, t('main.add.screen')),
+  h('button', { onclick: () => addSourceOfKind('file') }, t('main.add.file')),
+  h('button', { title: t('main.add.folderTitle'), onclick: () => addSourceOfKind('folder') }, t('main.add.folder')),
+  h('button', { title: t('main.add.audioTitle'), onclick: () => addSourceOfKind('audio') }, 'Audio'),
 );
 
 /** Add an audio source and, if no audio panel is open, a pinned level/loudness panel for it. */
@@ -955,7 +955,7 @@ function panelSettings(p: PanelState): Node[] {
       glow.oninput = () => setCrt({ glow: Number(glow.value) });
       row('Glow', glow);
       row('Strahlbreite', select(String(c.beam), [['1', '1 px'], ['1.5', '1,5 px'], ['2', '2 px'], ['3', '3 px'], ['4', '4 px']], (v) => setCrt({ beam: Number(v) }), 'Halbwertsbreite des Strahls'));
-    } else row('Spurfarbe (Mono)', select(state.tint, [['green', 'Grün'], ['white', 'Weiß'], ['amber', 'Bernstein']], (v) => { state.tint = v as Tint; save(); }));
+    } else row('Spurfarbe (Mono)', select(state.tint, [['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]], (v) => { state.tint = v as Tint; save(); }));
   }
   if (p.scope === 'vector') {
     row('Zoom', select(String(p.zoom), [['1', '×1'], ['2', '×2'], ['5', '×5']], (v) => { p.zoom = Number(v); save(); }));
@@ -970,10 +970,10 @@ function panelSettings(p: PanelState): Node[] {
   }
   if (p.scope === 'wf-green' || (p.scope === 'vector' && p.greenWedge) || (p.scope === 'picture' && p.picture === 'green')) rows.push(...greenSettings(greenState(), panelSource(p), matchUi(p), p.scope === 'wf-green'));
   if (p.scope === 'wf-skin' || p.scope === 'vector' || (p.scope === 'picture' && p.picture === 'skin')) {
-    row('Hautton Luma',
+    row(t('settings.scopes.skinLuma'),
       numIn(Math.round(state.skin.lo * 100), 0, 100, (v) => { state.skin.lo = v / 100; }), '–',
       numIn(Math.round(state.skin.hi * 100), 0, 100, (v) => { state.skin.hi = v / 100; }), '%');
-    row('Hautton Farbton ±', numIn(state.skin.tol, 2, 45, (v) => { state.skin.tol = v; }), '°');
+    row(t('settings.scopes.skinHue'), numIn(state.skin.tol, 2, 45, (v) => { state.skin.tol = v; }), '°');
     if (p.scope === 'wf-skin') {
       row('', h('button', { title: 'Messrahmen im Bild aufs Gesicht ziehen, dann hier übernehmen', onclick: () => skinFromRoi(p) }, 'Bereich aus Messrahmen'));
       rows.push(h('p', { class: 'hint' }, 'Im Waveform: Linien ziehen = Bereich, Mausrad = Farbton-Toleranz.'));
@@ -992,7 +992,7 @@ function panelSettings(p: PanelState): Node[] {
     row('HDR10-Kennwerte', h('button', { class: 'mini', title: 'MaxCLL/MaxFALL (CTA-861.3) neu zählen – nur bei PQ-Quellen, nur ganze Bilder', onclick: () => { panelSource(p)?.resetLightLevel(); } }, 'MaxCLL/MaxFALL zurücksetzen'));
   }
   if (p.scope === 'picture') {
-    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', 'Falschfarben'], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['green', 'Grüntöne (Rasen)'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung'], ['r103', 'EBU R 103'], ['neutral', 'Neutral (Farbstich)']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
+    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', t('settings.scopes.falseColour')], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['green', 'Grüntöne (Rasen)'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung'], ['r103', 'EBU R 103'], ['neutral', 'Neutral (Farbstich)']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
     const ab = p.ab ?? { mode: 'off' as const, b: 'stage:cst', pos: 0.5, gain: 4 };
     const setAb = (patch: Partial<NonNullable<PanelState['ab']>>, rebuild = false) => {
       p.ab = { ...ab, ...patch }; Object.assign(ab, patch); save(); refreshHeads();
@@ -1022,7 +1022,7 @@ function panelSettings(p: PanelState): Node[] {
       row('Bereich', select(p.neutral?.range ?? 'all', [['all', 'alles'], ['shadows', 'Schatten'], ['mids', 'Mitten'], ['highlights', 'Lichter']], (v) => { p.neutral = { ...p.neutral, range: v as 'all' }; save(); }));
     }
     if (p.picture === 'gamut') row('Zielgamut', select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, 'Markiert Pixel, die im Zielgamut negative Anteile hätten'));
-    if (p.picture === 'false') row('Falschfarben', select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); }));
+    if (p.picture === 'false') row(t('settings.scopes.falseColour'), select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); }));
     if (p.picture === 'zebra') row('Zebra ab', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%');
     const clk = h('input', { type: 'checkbox', checked: !!p.clockOverlay }) as HTMLInputElement;
     clk.onchange = () => { p.clockOverlay = clk.checked; save(); };
@@ -1032,14 +1032,14 @@ function panelSettings(p: PanelState): Node[] {
       'Wie die Bildansicht HDR (PQ/HLG) und Log auf einem SDR-Display zeigt: BT.2408 hybrid-linear (Referenzweiß ≈ 93 %, Lichter per BT.2390-EETF) oder BT.2446 Methode A. Die Scopes messen immer das Signal.'));
     const bar = h('input', { type: 'checkbox', checked: p.audioBar !== false }) as HTMLInputElement;
     bar.onchange = () => { p.audioBar = bar.checked; save(); refreshHeads(); };
-    row('Ton', h('label', { class: 'inline', title: 'Pegel je Kanal (−60 … 0 dBFS, Marken −18 und −1) und Short-term-Lautheit am rechten Bildrand, wenn die Quelle Ton hat' }, bar, 'Kompakter Pegelbalken'));
+    row(t('main.src.audio'), h('label', { class: 'inline', title: 'Pegel je Kanal (−60 … 0 dBFS, Marken −18 und −1) und Short-term-Lautheit am rechten Bildrand, wenn die Quelle Ton hat' }, bar, 'Kompakter Pegelbalken'));
     rows.push(h('p', { class: 'hint' }, 'Klick = Messpunkt, Ziehen = Messrahmen, Rechtsklick löscht.'));
   }
   if (p.scope === 'hist') {
     row('Darstellung', select(p.hist, [['rgb', 'RGB'], ['luma', 'Luma'], ['split', 'Getrennt']], (v) => { p.hist = v as PanelState['hist']; save(); }));
     row('Skala', check('log', 'logarithmisch'));
   }
-  if (scatter) row('Präzision', select(String(state.maxSamples), [['250000', 'Schnell'], ['1000000', 'Standard'], ['4000000', 'Voll']], (v) => { state.maxSamples = Number(v); save(); }));
+  if (scatter) row(t('settings.scopes.precision'), select(String(state.maxSamples), [['250000', t('settings.scopes.fast')], ['1000000', t('settings.scopes.standard')], ['4000000', t('settings.scopes.full')]], (v) => { state.maxSamples = Number(v); save(); }));
   return rows;
 }
 

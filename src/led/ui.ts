@@ -29,9 +29,6 @@ export interface LedHost {
   patternsChanged: () => void;
 }
 
-/** Number field of the LED tool: (value, title, onchange, step, size) – the order all rows here use. */
-const numIn = (value: number, title: string, onchange: (n: number) => void, step = '1', size: 's' | 'm' | 'l' = 'l') =>
-  numberInput(value, onchange, { title, step, size });
 const fmt = (v: number, d = 1) => (Number.isFinite(v) ? num(v, d) : '–');
 const locale = () => (lang() === 'de' ? 'de-DE' : 'en-GB');
 const signed = (v: number, d = 1) => (Number.isFinite(v) ? `${v > 0 ? '+' : ''}${fmt(v, d)}` : '–');
@@ -109,14 +106,14 @@ export function openLedTool(host: LedHost) {
         button(t('led.save'), () => { saveWall(s.wall); renderWall(); }),
         walls.some((x) => x.name === w.name) && button(t('led.delete'), () => { deleteWall(w.name); renderWall(); })),
       row(
-        lab(t('led.wall.cabinetPx'), numIn(w.cabW, t('led.wall.cabWTitle'), (n) => setWall({ cabW: n })), '×', numIn(w.cabH, t('led.wall.cabHTitle'), (n) => setWall({ cabH: n }))),
-        lab(t('led.wall.colsRows'), numIn(w.cols, t('led.wall.colsTitle'), (n) => setWall({ cols: n }), '1', 's'), '×', numIn(w.rows, t('led.wall.rowsTitle'), (n) => setWall({ rows: n }), '1', 's')),
-        lab(t('led.wall.module'), numIn(w.modW, t('led.wall.modWTitle'), (n) => setWall({ modW: n }), '1', 's'), '×', numIn(w.modH, t('led.wall.modHTitle'), (n) => setWall({ modH: n }), '1', 's'))),
+        lab(t('led.wall.cabinetPx'), numberInput(w.cabW, (n) => setWall({ cabW: n }), { title: t('led.wall.cabWTitle'), size: 'l' }), '×', numberInput(w.cabH, (n) => setWall({ cabH: n }), { title: t('led.wall.cabHTitle'), size: 'l' })),
+        lab(t('led.wall.colsRows'), numberInput(w.cols, (n) => setWall({ cols: n }), { title: t('led.wall.colsTitle'), size: 's' }), '×', numberInput(w.rows, (n) => setWall({ rows: n }), { title: t('led.wall.rowsTitle'), size: 's' })),
+        lab(t('led.wall.module'), numberInput(w.modW, (n) => setWall({ modW: n }), { title: t('led.wall.modWTitle'), size: 's' }), '×', numberInput(w.modH, (n) => setWall({ modH: n }), { title: t('led.wall.modHTitle'), size: 's' }))),
       row(
-        lab(t('led.wall.offset'), numIn(w.offX, t('led.wall.offXTitle'), (n) => setWall({ offX: n })), numIn(w.offY, t('led.wall.offYTitle'), (n) => setWall({ offY: n }))),
+        lab(t('led.wall.offset'), numberInput(w.offX, (n) => setWall({ offX: n }), { title: t('led.wall.offXTitle'), size: 'l' }), numberInput(w.offY, (n) => setWall({ offY: n }), { title: t('led.wall.offYTitle'), size: 'l' })),
         lab(t('led.wall.processor'), sel(w.processor, Object.entries(PROCESSOR_LABELS) as [string, string][], (v) => setWall({ processor: v as WallConfig['processor'] }), t('led.wall.processorTitle'))),
         lab(t('led.wall.order'), sel(w.order, [['rows', t('led.wall.byRows')], ['cols', t('led.wall.byCols')], ['snake', t('led.wall.snake')]], (v) => setWall({ order: v as WallConfig['order'] })),
-          t('led.wall.from'), numIn(w.start, t('led.wall.startTitle'), (n) => setWall({ start: n }), '1', 's')),
+          t('led.wall.from'), numberInput(w.start, (n) => setWall({ start: n }), { title: t('led.wall.startTitle'), size: 's' })),
         h('span', { class: 'hint' }, t('led.wall.summary', { ww: ws.w, wh: ws.h, pw: ps.w, ph: ps.h, n: w.cols * w.rows }))),
     );
   }
@@ -134,16 +131,16 @@ export function openLedTool(host: LedHost) {
         sel(patId, LED_PATTERNS.map((x) => [x.id, x.name] as [string, string]), (v) => { patId = v; }),
         button(t('led.pat.show', { w: ps.w, h: ps.h }), () => host.showPattern(patId, ps.w, ps.h), { variant: 'primary', title: t('led.pat.showTitle', { w: ps.w, h: ps.h }) })),
       row(
-        lab(t('led.pat.level'), numIn(s.level, t('led.pat.levelTitle'), (n) => { set({ level: n }); renderPatterns(); }, '0.5', 'l'), h('span', { class: 'hint' }, `= ${t('led.pat.code', { code })}`)),
+        lab(t('led.pat.level'), numberInput(s.level, (n) => { set({ level: n }); renderPatterns(); }, { title: t('led.pat.levelTitle'), step: '0.5', size: 'l' }), h('span', { class: 'hint' }, `= ${t('led.pat.code', { code })}`)),
         ...(['R', 'G', 'B'] as const).map((c, i) => checkbox(s.channels[i], c, (on) => { const ch = [...s.channels] as LedSettings['channels']; ch[i] = on; set({ channels: ch }); })),
-        lab(t('led.pat.gridEvery'), numIn(s.gridStep, t('led.pat.gridTitle'), (n) => set({ gridStep: n }), '1', 's'), 'px'),
-        lab(t('led.pat.lowMax'), numIn(s.lowMax, t('led.pat.lowMaxTitle'), (n) => set({ lowMax: n }), '1', 's')),
+        lab(t('led.pat.gridEvery'), numberInput(s.gridStep, (n) => set({ gridStep: n }), { title: t('led.pat.gridTitle'), size: 's' }), 'px'),
+        lab(t('led.pat.lowMax'), numberInput(s.lowMax, (n) => set({ lowMax: n }), { title: t('led.pat.lowMaxTitle'), size: 's' })),
         lab('Scroll', sel(s.scroll, [['h', t('led.pat.horizontal')], ['v', t('led.pat.vertical')]], (v) => set({ scroll: v as 'h' | 'v' })))),
       hint(t('led.pat.canvasHint')),
       row(
         h('b', {}, t('led.pat.sequencer')),
         lab(t('led.pat.window'), sel(String(p.window), ['1', '4', '10', '25', '100'].map((v) => [v, `${v} %`] as [string, string]), (v) => set({ patch: { ...p, window: Number(v) } }))),
-        lab(t('led.pat.surround'), numIn(p.surround, t('led.pat.surroundTitle'), (n) => set({ patch: { ...p, surround: n } }), '1', 's')),
+        lab(t('led.pat.surround'), numberInput(p.surround, (n) => set({ patch: { ...p, surround: n } }), { title: t('led.pat.surroundTitle'), size: 's' })),
         sel('', [['', t('led.pat.loadSet')], ...PATCH_PRESETS.map((x) => [x.id, x.name] as [string, string])], (v) => {
           const pr = PATCH_PRESETS.find((x) => x.id === v); if (pr) { set({ patch: { ...p, list: pr.list(), index: 0 } }); renderPatterns(); }
         })),
@@ -156,7 +153,7 @@ export function openLedTool(host: LedHost) {
             button('▶', () => { set({ patch: { ...p, index: (p.index + 1) % p.list.length } }); renderPatterns(); }, { small: true })),
           row(
             checkbox(p.auto, t('led.pat.auto'), (on) => set({ patch: { ...p, auto: on } })),
-            lab(t('led.pat.each'), numIn(p.seconds, t('led.pat.secondsTitle'), (n) => set({ patch: { ...p, seconds: n } }), '0.5', 'm'), 's'),
+            lab(t('led.pat.each'), numberInput(p.seconds, (n) => set({ patch: { ...p, seconds: n } }), { title: t('led.pat.secondsTitle'), step: '0.5' }), 's'),
             checkbox(p.label, t('led.pat.label'), (on) => set({ patch: { ...p, label: on } }))),
           hint(t('led.pat.seqHint')))),
     );
@@ -293,7 +290,7 @@ export function openLedTool(host: LedHost) {
         button('⤓ PNG', () => heat.toBlob((b) => b && download(`${t('led.file.prefix')}-${r.wall.name}-heatmap.png`, b), 'image/png')),
         button(t('led.res.remember'), () => { before = r; renderResult(); }, { title: t('led.res.rememberTitle') }),
         before && h('span', { class: 'hint' }, t('led.res.before', { time: new Date(before.date).toLocaleTimeString(locale()), a: fmt(before.spread, 2), b: fmt(r.spread, 2) })),
-        lab(`${t('led.res.angle')} °`, numIn(angle, t('led.res.angleTitle'), (n) => { angle = n; }, '1', 's')),
+        lab(`${t('led.res.angle')} °`, numberInput(angle, (n) => { angle = n; }, { title: t('led.res.angleTitle'), size: 's' })),
         button(t('led.res.series'), () => { series.push({ angle, result: r }); renderResult(); }, { title: t('led.res.seriesTitle') })),
       h('div', { class: 'cols' },
         h('div', { class: 'table-wrap' }, numTable(['Cabinet', t('led.res.devPct'), 'ΔCb', 'ΔCr', 'Std'],
@@ -324,13 +321,13 @@ export function openLedTool(host: LedHost) {
       row(
         sel(srcId, list.length ? list.map((x) => [x.id, x.name] as [string, string]) : [['', t('led.cam.noSourceOpt')]], (v) => { srcId = v; }, t('led.cam.sourceTitle')),
         button('↻', renderCam, { small: true, title: t('led.cam.reloadTitle') }),
-        lab(t('led.cam.average'), numIn(captures, t('led.cam.averageTitle'), (n) => { captures = Math.max(1, Math.min(32, Math.round(n))); }, '1', 's')),
+        lab(t('led.cam.average'), numberInput(captures, (n) => { captures = Math.max(1, Math.min(32, Math.round(n))); }, { title: t('led.cam.averageTitle'), size: 's' })),
         button(t('led.cam.grab'), grab, { variant: 'primary' }),
         button(t('led.cam.resetCorners'), () => { corners = []; hits = []; drawCam(); updateCamMsg(); }),
         camMsg),
       h('div', { class: 'cam-wrap' }, camCanvas),
       row(
-        lab(t('led.cam.margin'), numIn(margin, t('led.cam.marginTitle'), (n) => { margin = n; }, '1', 's')),
+        lab(t('led.cam.margin'), numberInput(margin, (n) => { margin = n; }, { title: t('led.cam.marginTitle'), size: 's' })),
         lab('Signal', sel(transfer, [['code', t('led.cam.codeValues')], ['bt709', t('led.cam.linearised')]], (v) => { transfer = v as CameraTransfer; })),
         lab(t('led.cam.camNote'), textInput(camNote, (v) => { camNote = v; }, { placeholder: t('led.cam.camNotePh') })),
         button(t('led.cam.evaluate'), evaluate, { variant: 'primary' })),
@@ -348,7 +345,7 @@ export function openLedTool(host: LedHost) {
       hint(t('led.scan.hint')),
       row(
         h('b', {}, t('led.px.title')),
-        lab(t('led.px.threshold'), numIn(thr, t('led.px.thresholdTitle'), (n) => { thr = n; }, '1', 's')),
+        lab(t('led.px.threshold'), numberInput(thr, (n) => { thr = n; }, { title: t('led.px.thresholdTitle'), size: 's' })),
         button(t('led.px.search'), () => {
           if (!frame) { hitBox.textContent = t('led.grabFirst'); return; }
           hits = findOutlierPixels(frame, corners.length === 4 ? corners : null, thr / 100);

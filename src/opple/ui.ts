@@ -113,7 +113,7 @@ export function mountOpple(root: HTMLElement, hooks: { openScopes?: () => void; 
   let label = '';
   function renderPoints() {
     const o = s.opts;
-    const numIn = (v: number, set: (n: number) => void, max = 12) => numberInput(v, (n) => { set(Math.max(1, Math.min(max, n || 1))); s.saveOpts(); s.changed(); }, { min: 1, max, size: 's' });
+    const commit = () => { s.saveOpts(); s.changed(); };
     const can = s.connected.length > 0;
     const take = (grid: boolean) => { s.capture(label, grid).then(() => { label = ''; }).catch((e) => { s.message = (e as Error).message; s.changed(); }); };
     const cellName = `${String.fromCharCode(65 + o.cursor[1])}${o.cursor[0] + 1}`;
@@ -128,7 +128,8 @@ export function mountOpple(root: HTMLElement, hooks: { openScopes?: () => void; 
         button(t('opple.ui.point'), () => take(false), { disabled: !can, title: t('opple.ui.pointTitle') }),
         button(t('opple.ui.cell', { cell: cellName }), () => take(true), { disabled: !can, title: t('opple.ui.cellTitle') }),
         iconButton('→', t('opple.ui.skipCell'), () => s.advance(), { small: true })),
-      row(t('opple.ui.grid'), numIn(o.cols, (n) => { o.cols = n; }), '×', numIn(o.rows, (n) => { o.rows = n; }, 26),
+      row(t('opple.ui.grid'), numberInput(o.cols, (n) => { o.cols = n; commit(); }, { min: 1, max: 12, clamp: true, size: 's' }), '×',
+        numberInput(o.rows, (n) => { o.rows = n; commit(); }, { min: 1, max: 26, clamp: true, size: 's' }),
         h('span', { class: 'hint' }, t('opple.ui.gridHint'))),
       s.points.length ? h('table', {},
         h('tr', {}, h('td', {}, ''), h('td', {}, 'Ref'), h('td', {}, 'B'), h('td', { class: 'n' }, 'lx'), h('td', { class: 'n' }, 'K'), h('td', { class: 'n' }, 'Duv'), h('td', {}, '')),

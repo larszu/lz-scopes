@@ -11,7 +11,6 @@ import { t } from '../i18n';
 import { button, download, field, filePicker, h, hint, iconButton, kicker, numberInput, openModal, row as line, select, textInput } from '../ui';
 
 const row = field;
-const num = (value: number, min: number, max: number, set: (v: number) => void) => numberInput(value, set, { min, max, size: 's' });
 
 export interface MatchUi {
   targets: ColorTarget[];
@@ -192,8 +191,8 @@ export function matchPanelSettings(p: PanelState, src: Source | null, c: MatchUi
 export function greenSettings(g: SkinRange, src: Source | null, c: MatchUi, withRoi: boolean): Node[] {
   const set = (patch: Partial<SkinRange>) => { Object.assign(g, patch); c.save(); };
   const rows: Node[] = [
-    row(t('match.greenLuma'), num(Math.round(g.lo * 100), 0, 100, (v) => set({ lo: v / 100 })), '–', num(Math.round(g.hi * 100), 0, 100, (v) => set({ hi: v / 100 })), '%'),
-    row(t('match.greenHue'), num(Math.round(g.hue ?? GREEN_DEFAULT.hue), 0, 359, (v) => set({ hue: ((v % 360) + 360) % 360 })), '° ±', num(g.tol, 2, 60, (v) => set({ tol: v })), '°'),
+    row(t('match.greenLuma'), numberInput(Math.round(g.lo * 100), (v) => set({ lo: v / 100 }), { min: 0, max: 100, size: 's' }), '–', numberInput(Math.round(g.hi * 100), (v) => set({ hi: v / 100 }), { min: 0, max: 100, size: 's' }), '%'),
+    row(t('match.greenHue'), numberInput(Math.round(g.hue ?? GREEN_DEFAULT.hue), (v) => set({ hue: ((v % 360) + 360) % 360 }), { min: 0, max: 359, size: 's' }), '° ±', numberInput(g.tol, (v) => set({ tol: v }), { min: 2, max: 60, size: 's' }), '°'),
     row(t('match.preset'), select('', [['', t('match.bt2408Levels')], ...GREEN_PRESETS.map((p) => [p.id, p.label] as [string, string]), ['default', t('match.greenDefault')]], (v) => {
       const p = GREEN_PRESETS.find((x) => x.id === v);
       if (p) set({ lo: p.lo, hi: p.hi }); else if (v === 'default') set({ ...GREEN_DEFAULT });

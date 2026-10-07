@@ -32,7 +32,7 @@ async function wheel(page: Page, scope: string, x: number, y: number, init: Whee
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
       p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === scope)!;
     const body = el.querySelector('.body')!;
-    for (let i = 0; i < times; i++) body.dispatchEvent(new WheelEvent('wheel', { clientX: x, clientY: y, bubbles: true, cancelable: true, ...init }));
+    for (let i = 0; i < times; i++) body.dispatchEvent(new WheelEvent('wheel', { clientX: x, clientY: y, bubbles: true, cancelable: true, ...init } as WheelEventInit));
   }, { scope, x, y, init, times });
 }
 

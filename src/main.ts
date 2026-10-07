@@ -45,7 +45,7 @@ import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, 
 import { SOURCE_ITEMS, mountMenu, refreshMenu, type MenuActions, type MenuState } from './menu/appMenu';
 import { openSettings, refreshSettings, registerSettingsSection } from './menu/settings';
 import { aboutSection, keysSection } from './menu/pages';
-import { LANG_NAMES, LANGS, langPref, num, setLangPref, systemLang, t, type LangPref } from './i18n';
+import { LANG_NAMES, LANGS, lang, langPref, num, setLangPref, systemLang, t, type LangPref } from './i18n';
 
 // ---------------------------------------------------------------- state
 
@@ -459,7 +459,7 @@ function renderSources() {
         h('div', { class: 'row' },
           running ? h('button', { onclick: () => s.stop() }, t('main.src.disconnect')) : h('button', { class: 'primary', onclick: connect }, t('main.src.connect')),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
-            h('button', { class: 'mini', title: `Testbild ${p}`, onclick: () => { urlIn.value = `test:${p}`; connect(); } }, p)),
+            h('button', { class: 'mini', title: t('main.src.testN', { name: p }), onclick: () => { urlIn.value = `test:${p}`; connect(); } }, p)),
             deviceButton(bridgeUi), deckLinkButton(bridgeUi), ndiButton(bridgeUi), folderButton(bridgeUi, (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop?.watchFolder))),
         ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
         ...(sourceFfmpegText(s.url, bridgeHealth) ? [h('p', { class: 'hint', 'data-ffmpeg-source': '' }, sourceFfmpegText(s.url, bridgeHealth))] : []),
@@ -493,7 +493,7 @@ function renderSources() {
           ['Video', (['709', 'p3', '2020', '601', '601-625'] as GamutId[]).map((k) => [k, GAMUTS[k].name])],
           [t('main.src.camAces'), (Object.keys(CAMERA_GAMUTS) as GamutId[]).map((k) => [k, GAMUTS[k].name])],
         ], (v) => upd({ gamut: v as SourceSettings['gamut'] }), t('main.src.gamutTitle')),
-        s.transfer === 'hlg' ? select(String(s.hlgLw), HLG_PEAKS.map((n) => [String(n), `HLG-Display ${n} cd/m²`]), (v) => upd({ hlgLw: Number(v) }), t('main.src.hlgTitle')) : ''));
+        s.transfer === 'hlg' ? select(String(s.hlgLw), HLG_PEAKS.map((n) => [String(n), t('main.src.hlgDisplay', { n })]), (v) => upd({ hlgLw: Number(v) }), t('main.src.hlgTitle')) : ''));
     if (s.kind !== 'audio') card.append(chainControls(s, upd));
     if (s.message) card.append(h('div', { class: 'msg' }, s.message));
     // LUT files dropped on a source card: LUT 1, with Shift LUT 2
@@ -584,7 +584,7 @@ function chainControls(s: Source, upd: (p: Partial<SourceSettings>) => void): No
       select(cst.tonemap ?? 'bt2390', Object.entries(TONEMAP_LABELS) as [string, string][], (v) => setCst({ tonemap: v as ToneMap }), t('main.chain.tonemapTitle')),
       num(cst.srcPeak, peaks.src, t('main.chain.srcPeak'), (n) => setCst({ srcPeak: n })),
       num(cst.tgtPeak, peaks.tgt, t('main.chain.tgtPeak'), (n) => setCst({ tgtPeak: n })),
-      cst.transfer === 'hlg' ? select(String(cst.lw ?? 1000), HLG_PEAKS.map((n) => [String(n), `Ziel-HLG ${n}`]), (v) => setCst({ lw: Number(v) })) : ''),
+      cst.transfer === 'hlg' ? select(String(cst.lw ?? 1000), HLG_PEAKS.map((n) => [String(n), t('main.chain.tgtHlg', { n })]), (v) => setCst({ lw: Number(v) })) : ''),
     h('div', { class: 'row' }, lutSel('lut1'), lutSel('lut2')),
     ch.lut1 || ch.lut2 ? h('div', { class: 'row' },
       groupedSelect(out.transfer ?? 'auto', transferGroups(t('main.chain.lutOutTransfer')), (v) => setChain({ lutOut: { ...out, transfer: v === 'auto' ? undefined : v as CstSettings['transfer'] } }), t('main.chain.lutOutTitle')),
@@ -786,16 +786,16 @@ function fillHead(v: PanelView) {
     select(p.scope, Object.entries(SCOPE_LABELS) as [string, string][], (val) => {
       p.scope = val as ScopeType; if (val === 'vector' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
     }),
-    sources.length > 1 && !isLight(p.scope) ? select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), 'Quelle – alle nicht angehefteten Panels folgen') : '',
+    sources.length > 1 && !isLight(p.scope) ? select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), t('panel.sourceTitle')) : '',
     stageChip(p),
-    sources.length > 1 && !isLight(p.scope) ? h('button', { class: `icon pin ${p.pin ? 'on' : ''}`, title: p.pin ? 'Angeheftet: behält seine Quelle' : 'Anheften: Panel behält seine Quelle, wenn andere umschalten', onclick: () => { p.pin = !p.pin; save(); fillHead(v); } }, '📌') : '',
+    sources.length > 1 && !isLight(p.scope) ? h('button', { class: `icon pin ${p.pin ? 'on' : ''}`, title: p.pin ? t('panel.pinned') : t('panel.pin'), onclick: () => { p.pin = !p.pin; save(); fillHead(v); } }, '📌') : '',
     h('div', { class: 'opts' },
       latencyChip(p),
       roiChip(p),
       h('details', { class: 'menu psettings' },
-        h('summary', { title: `Einstellungen ${SCOPE_LABELS[p.scope]}` }, '⚙'),
+        h('summary', { title: t('panel.settingsOf', { scope: SCOPE_LABELS[p.scope] }) }, '⚙'),
         h('div', { class: 'menu-body right' }, h('div', { class: 'mtitle' }, SCOPE_LABELS[p.scope]), ...panelSettings(p)))),
-    h('button', { class: 'icon', title: 'Groß / zurück (Doppelklick, Esc)', onclick: () => toggleSolo(idx) }, '⤢'),
+    h('button', { class: 'icon', title: t('panel.solo'), onclick: () => toggleSolo(idx) }, '⤢'),
   );
 }
 
@@ -803,7 +803,7 @@ function fillHead(v: PanelView) {
 function stageChip(p: PanelState): Node | string {
   if (isAudio(p.scope) || p.scope === 'clock' || isLight(p.scope)) return '';
   const n = stageNote(panelSource(p), p.stage ?? state.stage ?? 'signal');
-  return n.text ? h('span', { class: `stagechip${n.warn ? ' warn' : ''}`, title: 'Messpunkt in der CST/LUT-Kette (⚙ → Messpunkt, Taste C)' }, n.text) : '';
+  return n.text ? h('span', { class: `stagechip${n.warn ? ' warn' : ''}`, title: t('panel.stageChipTitle') }, n.text) : '';
 }
 
 /** Re-fill all panel headers (sources or settings changed). */
@@ -831,8 +831,8 @@ function panelSettings(p: PanelState): Node[] {
   }
   const rows: Node[] = [];
   const row = (label: string, ...kids: (Node | string)[]) => rows.push(h('label', { class: 'mrow' }, h('span', {}, label), ...kids));
-  row('Messpunkt', select(p.stage ?? 'auto', [['auto', `wie Standard (${STAGE_LABELS[state.stage ?? 'signal']})`], ...STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string])],
-    (v) => { p.stage = v === 'auto' ? undefined : v as Stage; save(); refreshHeads(); }, 'Wo in der Kette der Quelle (CST/LUT, Quellenkarte) dieses Panel misst'));
+  row(t('settings.stage.point'), select(p.stage ?? 'auto', [['auto', t('panel.stageDefault', { stage: STAGE_LABELS[state.stage ?? 'signal'] })], ...STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string])],
+    (v) => { p.stage = v === 'auto' ? undefined : v as Stage; save(); refreshHeads(); }, t('panel.stageTitle')));
   const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv' | 'skinBand' | 'greenBand' | 'greenWedge', label: string, dflt = false) => {
     const c = h('input', { type: 'checkbox', checked: p[key] ?? dflt }) as HTMLInputElement;
     c.onchange = () => { p[key] = c.checked; save(); refreshHeads(); };
@@ -840,25 +840,25 @@ function panelSettings(p: PanelState): Node[] {
   };
   const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot';
   if (scatter) {
-    const gain = h('input', { type: 'range', min: -3, max: 3, step: 0.1, value: Math.log2(p.gain), title: 'Doppelklick = Standard' }) as HTMLInputElement;
+    const gain = h('input', { type: 'range', min: -3, max: 3, step: 0.1, value: Math.log2(p.gain), title: t('panel.gainTitle') }) as HTMLInputElement;
     gain.oninput = () => { p.gain = 2 ** Number(gain.value); save(); };
     gain.ondblclick = () => { p.gain = 1; gain.value = '0'; save(); };
-    row('Helligkeit', gain);
+    row(t('panel.brightness'), gain);
   }
   if (p.scope === 'parade' || p.scope === 'yrgb' || p.scope === 'wf-rgb') {
-    row('Farbe', select(p.paradeColor ?? (p.scope === 'wf-rgb' || p.colorize ? 'channel' : 'mono'),
-      [['mono', 'Mono'], ['channel', 'Kanalfarben'], ['source', 'Bildfarben (Quellpixel)']], (v) => { p.paradeColor = v as PanelState['paradeColor']; save(); }));
+    row(t('panel.colour'), select(p.paradeColor ?? (p.scope === 'wf-rgb' || p.colorize ? 'channel' : 'mono'),
+      [['mono', 'Mono'], ['channel', t('panel.channelColours')], ['source', t('panel.sourceColours')]], (v) => { p.paradeColor = v as PanelState['paradeColor']; save(); }));
   } else if (scatter && p.scope !== 'wf-skin' && p.scope !== 'wf-green' && p.scope !== 'wf-color') {
-    row('Farbe', check('colorize', 'Spur in Bildfarbe'));
+    row(t('panel.colour'), check('colorize', t('panel.traceInColour')));
   }
   if (isWaveform(p.scope)) {
-    row('Skala', select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m² / Szene']], (v) => { state.unit = v as Unit; save(); renderHeader(); }));
-    row('Marken', check('marks', 'BT.2408 (HDR) / 18 % Grau (Log)', true));
-    row('EBU R 103', check('r103', 'Grenzen −5 / 105 %'));
-    row('Lupe', select(p.waveZoom ?? 'full', Object.entries(WAVE_ZOOM_LABELS) as [string, string][], (v) => { p.waveZoom = v as WaveZoom; save(); }, 'Vergrößert die Schwarz- bzw. Lichterbereiche, z. B. für den Schwarzabgleich'));
+    row(t('settings.scopes.scale'), select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', t('settings.scopes.nitsScene')]], (v) => { state.unit = v as Unit; save(); renderHeader(); }));
+    row(t('panel.marks'), check('marks', t('panel.marksText'), true));
+    row('EBU R 103', check('r103', t('panel.r103Text')));
+    row(t('panel.zoom'), select(p.waveZoom ?? 'full', Object.entries(WAVE_ZOOM_LABELS) as [string, string][], (v) => { p.waveZoom = v as WaveZoom; save(); }, t('panel.zoomTitle')));
     const chans = channelsOf(p.scope);
     if (chans.length) {
-      row('Kanäle', ...chans.map((c) => {
+      row(t('panel.channels'), ...chans.map((c) => {
         const box = h('input', { type: 'checkbox', checked: p.channels?.[c.key] !== false }) as HTMLInputElement;
         box.onchange = () => { p.channels = { ...p.channels, [c.key]: box.checked }; save(); };
         return h('label', { class: 'inline' }, box, c.name);
@@ -866,77 +866,77 @@ function panelSettings(p: PanelState): Node[] {
     }
     const names = h('input', { type: 'checkbox', checked: p.names !== false }) as HTMLInputElement;
     names.onchange = () => { p.names = names.checked; save(); };
-    row('Beschriftung', h('label', { class: 'inline' }, names, 'Kanalnamen und Einheit'));
+    row(t('panel.labels'), h('label', { class: 'inline' }, names, t('panel.labelsText')));
   }
-  if (p.scope === 'wf-skin') row('Hautton-Bereich', check('skinBand', 'Band und Linien einblenden (aus = nur farbige Hauttöne)', true));
-  if (p.scope === 'wf-green') row('Grün-Bereich', check('greenBand', 'Band und Linien einblenden (aus = nur farbige Grüntöne)', true));
+  if (p.scope === 'wf-skin') row(t('panel.skinRange'), check('skinBand', t('panel.skinBand'), true));
+  if (p.scope === 'wf-green') row(t('panel.greenRange'), check('greenBand', t('panel.greenBand'), true));
   if (p.scope === 'match') return [...rows, ...matchPanelSettings(p, panelSource(p), matchUi(p))];
   if (p.scope === 'cube') {
     const c = { ...DEFAULT_CUBE, ...p.cube };
     const setCube = (patch: Partial<CubeSettings>) => { p.cube = { ...c, ...patch }; Object.assign(c, patch); save(); };
-    row('Raum', select(c.space, (Object.keys(CUBE_SPACE_LABELS) as CubeSpace[]).map((k) => [k, CUBE_SPACE_LABELS[k]] as [string, string]), (v) => setCube({ space: v as CubeSpace }),
-      'R′G′B′-Würfel des Signals, CIELAB (D65, L* nach oben) oder ICtCp (BT.2100, I nach oben). Drehen: im Panel ziehen, Doppelklick = Ausgangsansicht'));
-    row('Drahtgitter', select(c.gamut, [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => setCube({ gamut: v as CubeSettings['gamut'] }), 'Zielgamut als Drahtgitter (CIELAB und ICtCp; im R′G′B′-Würfel ist es der 0–100-%-Würfel)'));
-    row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
-    row('LUT-Volumen', select(c.lut ?? '', [['', 'aus'], ...[...LUTS.keys()].map((n) => [n, n] as [string, string])], (v) => setCube({ lut: v || undefined }),
-      'Ausgabe einer geladenen LUT für ein Eingangsgitter als Punktwolke (in der Farbe des Ausgabewerts); LUTs auf eine Quellenkarte ziehen'));
+    row(t('panel.cube.space'), select(c.space, (Object.keys(CUBE_SPACE_LABELS) as CubeSpace[]).map((k) => [k, CUBE_SPACE_LABELS[k]] as [string, string]), (v) => setCube({ space: v as CubeSpace }),
+      t('panel.cube.spaceTitle')));
+    row(t('panel.cube.wire'), select(c.gamut, [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => setCube({ gamut: v as CubeSettings['gamut'] }), t('panel.cube.wireTitle')));
+    row(t('panel.colour'), check('colorize', t('panel.dotsInColour')));
+    row(t('panel.cube.lutVolume'), select(c.lut ?? '', [['', t('common.off')], ...[...LUTS.keys()].map((n) => [n, n] as [string, string])], (v) => setCube({ lut: v || undefined }),
+      t('panel.cube.lutTitle')));
     if (c.lut) {
-      row('Gitter', select(String(c.lutGrid ?? 17), [['9', '9³'], ['17', '17³'], ['33', '33³']], (v) => setCube({ lutGrid: Number(v) })));
+      row(t('panel.cube.grid'), select(String(c.lutGrid ?? 17), [['9', '9³'], ['17', '17³'], ['33', '33³']], (v) => setCube({ lutGrid: Number(v) })));
       const inp = h('input', { type: 'checkbox', checked: !!c.lutInput }) as HTMLInputElement;
       inp.onchange = () => setCube({ lutInput: inp.checked });
       const only = h('input', { type: 'checkbox', checked: !!c.lutOnly }) as HTMLInputElement;
       only.onchange = () => setCube({ lutOnly: only.checked });
-      row('', h('label', { class: 'inline' }, inp, 'Eingangsgitter'), h('label', { class: 'inline' }, only, 'nur LUT (ohne Bild)'));
+      row('', h('label', { class: 'inline' }, inp, t('panel.cube.inputGrid')), h('label', { class: 'inline' }, only, t('panel.cube.lutOnly')));
     }
-    rows.push(h('p', { class: 'hint' }, 'Wofür: Der Würfel zeigt das ganze Farbvolumen auf einmal – wo die Pixel im Gamut liegen, welche Ecken (Primär-/Sekundärfarben, Weiß, Schwarz) angefahren oder abgeschnitten werden, wie sich Farben verteilen und ob ein Farbstich die Graue Achse verschiebt. Vectorscope und Diamond zeigen jeweils nur eine Projektion (Farbton/Sättigung bzw. zwei Kanalpaare) und verlieren dabei die Helligkeit bzw. den dritten Kanal.'));
+    rows.push(h('p', { class: 'hint' }, t('panel.cube.hint')));
   }
   if (p.scope === 'chplot') {
-    row('Kanäle', select(String(p.pair ?? 0), CHANNEL_PAIRS.map((n, i) => [String(i), n] as [string, string]), (v) => { p.pair = Number(v); save(); }));
-    row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
+    row(t('panel.channels'), select(String(p.pair ?? 0), CHANNEL_PAIRS.map((n, i) => [String(i), n] as [string, string]), (v) => { p.pair = Number(v); save(); }));
+    row(t('panel.colour'), check('colorize', t('panel.dotsInColour')));
   }
   if (p.scope === 'minmax') {
-    row('Grenzen', select(p.minmax?.limits ?? 'r103', [['r103', 'EBU R 103 −5/105 %'], ['legal', 'Legal 0/100 %']], (v) => { p.minmax = { ...p.minmax, limits: v as 'r103' }; save(); }));
-    const t = h('input', { class: 'url', value: (p.minmax?.targets ?? []).join(', '), placeholder: 'Ziellinien in %, z. B. 18, 75 (max. 4)' }) as HTMLInputElement;
-    t.onchange = () => { p.minmax = { ...p.minmax, targets: t.value.split(/[,; ]+/).map(Number).filter((v) => Number.isFinite(v)).slice(0, 4) }; save(); };
-    row('Ziellinien', t);
+    row(t('panel.minmax.limits'), select(p.minmax?.limits ?? 'r103', [['r103', 'EBU R 103 −5/105 %'], ['legal', t('panel.legal')]], (v) => { p.minmax = { ...p.minmax, limits: v as 'r103' }; save(); }));
+    const tl = h('input', { class: 'url', value: (p.minmax?.targets ?? []).join(', '), placeholder: t('panel.minmax.targets') }) as HTMLInputElement;
+    tl.onchange = () => { p.minmax = { ...p.minmax, targets: tl.value.split(/[,; ]+/).map(Number).filter((v) => Number.isFinite(v)).slice(0, 4) }; save(); };
+    row(t('panel.minmax.targetLines'), tl);
   }
-  if (p.scope === 'satlum') row('Farbe', check('colorize', 'Punkte in Bildfarbe'));
+  if (p.scope === 'satlum') row(t('panel.colour'), check('colorize', t('panel.dotsInColour')));
   if (p.scope === 'qclog') {
     const q = { ...DEFAULT_QC, ...state.qc };
     const setQc = (patch: Partial<QcSettings>) => { state.qc = { ...q, ...patch }; Object.assign(q, patch); save(); };
     const on = h('input', { type: 'checkbox', checked: q.on }) as HTMLInputElement;
     on.onchange = () => setQc({ on: on.checked });
-    row('Prüfen', h('label', { class: 'inline' }, on, 'alle laufenden Quellen, 4× pro Sekunde'));
+    row(t('panel.qc.check'), h('label', { class: 'inline' }, on, t('panel.qc.all')));
     const shown = new Set(p.qcTypes ?? QC_TYPES);
-    rows.push(h('div', { class: 'mrow' }, ...QC_TYPES.map((t) => {
-      const c = h('input', { type: 'checkbox', checked: shown.has(t) }) as HTMLInputElement;
-      c.onchange = () => { if (c.checked) shown.add(t); else shown.delete(t); p.qcTypes = QC_TYPES.filter((x) => shown.has(x)); save(); };
-      return h('label', { class: 'inline' }, c, QC_LABELS[t]);
+    rows.push(h('div', { class: 'mrow' }, ...QC_TYPES.map((qt) => {
+      const c = h('input', { type: 'checkbox', checked: shown.has(qt) }) as HTMLInputElement;
+      c.onchange = () => { if (c.checked) shown.add(qt); else shown.delete(qt); p.qcTypes = QC_TYPES.filter((x) => shown.has(x)); save(); };
+      return h('label', { class: 'inline' }, c, QC_LABELS[qt]);
     })));
-    row('Clipping ab', numIn(q.clip * 100, 0.1, 10, (v) => setQc({ clip: v / 100 })), '% der Pixel');
-    row('Schwarzbild unter', numIn(q.black * 100, 0.5, 10, (v) => setQc({ black: v / 100 })), '% Y′');
-    row('Stille unter', numIn(-q.silenceDb, 30, 90, (v) => setQc({ silenceDb: -v })), '−dBFS');
-    row('Standbild ab', numIn(q.freezeMs / 1000, 0.5, 30, (v) => setQc({ freezeMs: v * 1000 })), 's');
+    row(t('panel.qc.clip'), numIn(q.clip * 100, 0.1, 10, (v) => setQc({ clip: v / 100 })), t('panel.qc.ofPixels'));
+    row(t('panel.qc.black'), numIn(q.black * 100, 0.5, 10, (v) => setQc({ black: v / 100 })), '% Y′');
+    row(t('panel.qc.silence'), numIn(-q.silenceDb, 30, 90, (v) => setQc({ silenceDb: -v })), '−dBFS');
+    row(t('panel.qc.freeze'), numIn(q.freezeMs / 1000, 0.5, 30, (v) => setQc({ freezeMs: v * 1000 })), 's');
     row('', h('button', { class: 'mini', onclick: () => {
       const blob = new Blob([toCsv(qcLog.events, p.qcTypes ?? QC_TYPES)], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `lz-scopes-qc-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`; a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    } }, 'CSV exportieren'), h('button', { class: 'mini', onclick: () => qcLog.clear() }, 'Leeren'));
+    } }, t('panel.qc.csv')), h('button', { class: 'mini', onclick: () => qcLog.clear() }, t('panel.qc.clear')));
   }
   if (p.scope === 'timeline') {
-    row('Zeitraum', select(String(p.span ?? 10), [['10', '10 s'], ['60', '1 min'], ['300', '5 min']], (v) => { p.span = Number(v) as PanelState['span']; save(); }));
+    row(t('panel.tl.span'), select(String(p.span ?? 10), [['10', '10 s'], ['60', '1 min'], ['300', '5 min']], (v) => { p.span = Number(v) as PanelState['span']; save(); }));
     const ef = h('input', { type: 'checkbox', checked: !!p.everyFrame }) as HTMLInputElement;
     ef.onchange = () => { p.everyFrame = ef.checked; save(); };
-    row('Abtastung', h('label', { class: 'inline', title: 'Aus: zehnmal pro Sekunde. An: jedes neue Bild (z. B. Videodatei beim Abspielen oder Bild für Bild)' }, ef, 'jedes Bild'));
-    row('Raster', select(String(p.grid ?? 96), GRIDS.map((g) => [String(g), `${g}×${Math.round((g * 9) / 16)}`] as [string, string]), (v) => { p.grid = Number(v); save(); }, 'Feiner = genauere Mittelwerte, mehr Rechenzeit'));
-    row('', h('button', { class: 'mini', onclick: () => panelSource(p)?.history.clear() }, 'Verlauf löschen'));
-    rows.push(h('p', { class: 'hint' }, 'Zehnmal pro Sekunde ein 96×54-Raster des Bildes: oben die mittlere Farbe (Movie-Barcode), darunter Farbtonanteile über die Zeit (Vectorscope-Verlauf, hell = viel von diesem Farbton), Sättigung (Mittel und 95 %) und Luma (Bereich min–max, Linie = Mittel). Neueste Werte rechts.'));
+    row(t('panel.tl.sampling'), h('label', { class: 'inline', title: t('panel.tl.samplingTitle') }, ef, t('panel.tl.everyFrame')));
+    row(t('panel.tl.grid'), select(String(p.grid ?? 96), GRIDS.map((g) => [String(g), `${g}×${Math.round((g * 9) / 16)}`] as [string, string]), (v) => { p.grid = Number(v); save(); }, t('panel.tl.gridTitle')));
+    row('', h('button', { class: 'mini', onclick: () => panelSource(p)?.history.clear() }, t('panel.tl.clear')));
+    rows.push(h('p', { class: 'hint' }, t('panel.tl.hint')));
   }
   if ((p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot') && !p.crt?.on) {
-    row('Nachleuchten', select(String(p.persist ?? 0), [['0', 'aus'], ['300', '0,3 s'], ['1000', '1 s'], ['3000', '3 s'], ['10000', '10 s'], ['-1', 'unendlich']], (v) => { p.persist = Number(v); save(); },
-      'Spur der letzten Bilder: ältere Werte verblassen mit exp(−t/τ), „unendlich“ hält alles (Bewegung und Ausreißer über die Zeit sichtbar)'));
+    row(t('panel.persist'), select(String(p.persist ?? 0), [['0', t('common.off')], ['300', `${num(0.3, 1)} s`], ['1000', '1 s'], ['3000', '3 s'], ['10000', '10 s'], ['-1', t('panel.infinite')]], (v) => { p.persist = Number(v); save(); },
+      t('panel.persistTitle')));
   }
-  if (p.scope === 'cie') row('Diagramm', check('cieUv', 'CIE 1976 u′v′ statt 1931 xy'));
+  if (p.scope === 'cie') row(t('panel.cie.diagram'), check('cieUv', t('panel.cie.uv')));
   if (scatter) {
     const c = { ...DEFAULT_CRT, ...p.crt };
     const reopen = () => {
@@ -944,28 +944,28 @@ function panelSettings(p: PanelState): Node[] {
       if (v) { fillHead(v); v.head.querySelector('details.psettings')?.setAttribute('open', ''); }
     };
     const setCrt = (patch: Partial<CrtSettings>, rebuild = false) => { p.crt = { ...c, ...patch }; Object.assign(c, patch); save(); if (rebuild) reopen(); };
-    row('Darstellung', select(c.on ? 'crt' : 'digital', [['digital', 'digital'], ['crt', 'CRT (analoger Strahl)']], (v) => setCrt({ on: v === 'crt' }, true),
-      'CRT: Spur als Elektronenstrahl zwischen benachbarten Abtastwerten (Helligkeit ∝ 1/Strahlgeschwindigkeit), Nachleuchten und Glow. Ein Look – gemessen wird dasselbe Signal.'));
+    row(t('panel.display'), select(c.on ? 'crt' : 'digital', [['digital', 'digital'], ['crt', t('panel.crt')]], (v) => setCrt({ on: v === 'crt' }, true),
+      t('panel.crtTitle')));
     if (c.on) {
       row('Phosphor', select(c.phosphor, (Object.keys(PHOSPHORS) as Phosphor[]).map((k) => [k, PHOSPHORS[k].name] as [string, string]),
-        (v) => setCrt({ phosphor: v as Phosphor, persist: PHOSPHORS[v as Phosphor].tau }, true), `${PHOSPHORS[c.phosphor].note}. Farben angenähert, nicht farbmetrisch.`));
+        (v) => setCrt({ phosphor: v as Phosphor, persist: PHOSPHORS[v as Phosphor].tau }, true), t('panel.phosphorTitle', { note: PHOSPHORS[c.phosphor].note })));
       const persist = PERSIST_CHOICES.some(([ms]) => ms === c.persist) ? PERSIST_CHOICES : [...PERSIST_CHOICES, [c.persist, `${c.persist} ms`] as [number, string]];
-      row('Nachleuchten', select(String(c.persist), persist.map(([ms, l]) => [String(ms), l] as [string, string]), (v) => setCrt({ persist: Number(v) }), 'Zeitkonstante τ: Helligkeit fällt mit exp(−t/τ); „unendlich“ hält jede Spur (Speicher-Oszilloskop)'));
-      const glow = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: c.glow, title: 'Lichthof um die Spur' }) as HTMLInputElement;
+      row(t('panel.persist'), select(String(c.persist), persist.map(([ms, l]) => [String(ms), l] as [string, string]), (v) => setCrt({ persist: Number(v) }), t('panel.crtPersistTitle')));
+      const glow = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: c.glow, title: t('panel.glowTitle') }) as HTMLInputElement;
       glow.oninput = () => setCrt({ glow: Number(glow.value) });
       row('Glow', glow);
-      row('Strahlbreite', select(String(c.beam), [['1', '1 px'], ['1.5', '1,5 px'], ['2', '2 px'], ['3', '3 px'], ['4', '4 px']], (v) => setCrt({ beam: Number(v) }), 'Halbwertsbreite des Strahls'));
-    } else row('Spurfarbe (Mono)', select(state.tint, [['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]], (v) => { state.tint = v as Tint; save(); }));
+      row(t('panel.beam'), select(String(c.beam), [['1', '1 px'], ['1.5', `${num(1.5, 1)} px`], ['2', '2 px'], ['3', '3 px'], ['4', '4 px']], (v) => setCrt({ beam: Number(v) }), t('panel.beamTitle')));
+    } else row(t('panel.monoTint'), select(state.tint, [['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]], (v) => { state.tint = v as Tint; save(); }));
   }
   if (p.scope === 'vector') {
-    row('Zoom', select(String(p.zoom), [['1', '×1'], ['2', '×2'], ['5', '×5']], (v) => { p.zoom = Number(v); save(); }));
+    row(t('panel.vzoom'), select(String(p.zoom), [['1', '×1'], ['2', '×2'], ['5', '×5']], (v) => { p.zoom = Number(v); save(); }));
     const gbox = (g: '709' | 'p3' | '2020', label: string) => {
       const c = h('input', { type: 'checkbox', checked: (p.gamuts ?? []).includes(g) }) as HTMLInputElement;
       c.onchange = () => { const set = new Set(p.gamuts ?? []); if (c.checked) set.add(g); else set.delete(g); p.gamuts = [...set]; save(); };
       return h('label', { class: 'inline' }, c, label);
     };
-    row('Gamut-Grenzen', gbox('709', '709'), gbox('p3', 'P3'), gbox('2020', '2020'));
-    row('Grün-Keil', check('greenWedge', 'Rasen/Laub-Bereich einblenden'));
+    row(t('panel.gamutLimits'), gbox('709', '709'), gbox('p3', 'P3'), gbox('2020', '2020'));
+    row(t('panel.greenWedge'), check('greenWedge', t('panel.greenWedgeText')));
     rows.push(...targetEditor(panelSource(p), matchUi(p)));
   }
   if (p.scope === 'wf-green' || (p.scope === 'vector' && p.greenWedge) || (p.scope === 'picture' && p.picture === 'green')) rows.push(...greenSettings(greenState(), panelSource(p), matchUi(p), p.scope === 'wf-green'));
@@ -975,69 +975,69 @@ function panelSettings(p: PanelState): Node[] {
       numIn(Math.round(state.skin.hi * 100), 0, 100, (v) => { state.skin.hi = v / 100; }), '%');
     row(t('settings.scopes.skinHue'), numIn(state.skin.tol, 2, 45, (v) => { state.skin.tol = v; }), '°');
     if (p.scope === 'wf-skin') {
-      row('', h('button', { title: 'Messrahmen im Bild aufs Gesicht ziehen, dann hier übernehmen', onclick: () => skinFromRoi(p) }, 'Bereich aus Messrahmen'));
-      rows.push(h('p', { class: 'hint' }, 'Im Waveform: Linien ziehen = Bereich, Mausrad = Farbton-Toleranz.'));
+      row('', h('button', { title: t('panel.skin.fromRoiTitle'), onclick: () => skinFromRoi(p) }, t('panel.skin.fromRoi')));
+      rows.push(h('p', { class: 'hint' }, t('panel.skin.hint')));
     }
   }
   if (p.scope === 'picture' || p.scope === 'wf-skin' || isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'hist') {
     const s = panelSource(p);
     if (s) {
-      row('Gesichter', select(s.faceMode, [['off', 'Aus'], ['detect', 'Erkennen – anklicken zum Verfolgen'], ['all', 'Alle verfolgen']], (v) => {
+      row(t('panel.faces'), select(s.faceMode, [['off', t('panel.offCap')], ['detect', t('panel.facesDetect')], ['all', t('panel.facesAll')]], (v) => {
         s.faceMode = v as Source['faceMode'];
         if (s.faceMode === 'off') { s.faces = []; s.faceSel.clear(); }
-        refreshHeads();      }, 'Erkannte Gesichter erscheinen grau; ein Klick aufs Gesicht im Bild verfolgt es (erneut klicken hebt auf)'));
+        refreshHeads();      }, t('panel.facesTitle')));
     }
   }
   if (p.scope === 'stats') {
-    row('HDR10-Kennwerte', h('button', { class: 'mini', title: 'MaxCLL/MaxFALL (CTA-861.3) neu zählen – nur bei PQ-Quellen, nur ganze Bilder', onclick: () => { panelSource(p)?.resetLightLevel(); } }, 'MaxCLL/MaxFALL zurücksetzen'));
+    row(t('panel.hdr10'), h('button', { class: 'mini', title: t('panel.hdr10Title'), onclick: () => { panelSource(p)?.resetLightLevel(); } }, t('panel.hdr10Reset')));
   }
   if (p.scope === 'picture') {
-    row('Overlay', select(p.picture, [['normal', 'Normal'], ['false', t('settings.scopes.falseColour')], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', 'Hautton'], ['green', 'Grüntöne (Rasen)'], ['luma', 'Luma'], ['gamut', 'Gamut-Warnung'], ['r103', 'EBU R 103'], ['neutral', 'Neutral (Farbstich)']], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
+    row('Overlay', select(p.picture, [['normal', t('panel.ov.normal')], ['false', t('settings.scopes.falseColour')], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', t('panel.ov.skin')], ['green', t('panel.ov.green')], ['luma', 'Luma'], ['gamut', t('panel.ov.gamut')], ['r103', 'EBU R 103'], ['neutral', t('panel.ov.neutral')]], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
     const ab = p.ab ?? { mode: 'off' as const, b: 'stage:cst', pos: 0.5, gain: 4 };
     const setAb = (patch: Partial<NonNullable<PanelState['ab']>>, rebuild = false) => {
       p.ab = { ...ab, ...patch }; Object.assign(ab, patch); save(); refreshHeads();
       if (rebuild) { const v = [...views.values()].find((x) => state.panels[x.idx] === p); if (v) { fillHead(v); v.head.querySelector('details.psettings')?.setAttribute('open', ''); } }
     };
-    row('Vergleich A/B', select(ab.mode, [['off', 'aus'], ['split', 'Split 50 %'], ['wipe', 'Wipe'], ['diff', 'Differenz']], (v) => setAb({ mode: v as 'off' }, true),
-      'A = dieses Panel (Quelle und Messpunkt), B = anderer Messpunkt derselben Quelle oder eine andere Quelle'));
+    row(t('panel.ab'), select(ab.mode, [['off', t('common.off')], ['split', 'Split 50 %'], ['wipe', 'Wipe'], ['diff', t('panel.abDiff')]], (v) => setAb({ mode: v as 'off' }, true),
+      t('panel.abTitle')));
     if (ab.mode !== 'off') {
       const own = panelSource(p);
       row('B', select(ab.b, [
-        ...STAGES.map((st) => [`stage:${st}`, `${own?.name ?? 'Quelle'} · ${STAGE_LABELS[st]}`] as [string, string]),
-        ['rgc', `gleiches Bild ${p.rgc ? 'ohne' : 'mit'} ACES-1.3-Gamut-Kompression`],
+        ...STAGES.map((st) => [`stage:${st}`, `${own?.name ?? t('panel.source')} · ${STAGE_LABELS[st]}`] as [string, string]),
+        ['rgc', p.rgc ? t('panel.abRgcOff') : t('panel.abRgcOn')],
         ...sources.filter((s) => s !== own && s.kind !== 'audio').map((s) => [`src:${s.id}`, s.name] as [string, string]),
       ], (v) => setAb({ b: v })));
       if (ab.mode === 'wipe') {
         const pos = h('input', { type: 'range', min: 0, max: 1, step: 0.01, value: ab.pos ?? 0.5 }) as HTMLInputElement;
         pos.oninput = () => setAb({ pos: Number(pos.value) });
-        row('Wipe-Position', pos);
+        row(t('panel.wipePos'), pos);
       }
-      if (ab.mode === 'diff') row('Verstärkung', select(String(ab.gain ?? 4), [['1', '×1'], ['4', '×4'], ['16', '×16'], ['64', '×64']], (v) => setAb({ gain: Number(v) }), 'Differenz der angezeigten Bilder (nach Display-Wandlung), max. über R, G, B'));
+      if (ab.mode === 'diff') row(t('panel.gainAb'), select(String(ab.gain ?? 4), [['1', '×1'], ['4', '×4'], ['16', '×16'], ['64', '×64']], (v) => setAb({ gain: Number(v) }), t('panel.gainAbTitle')));
     }
     const rgcBox = h('input', { type: 'checkbox', checked: !!p.rgc }) as HTMLInputElement;
     rgcBox.onchange = () => { p.rgc = rgcBox.checked; save(); refreshHeads(); };
-    row('Gamut-Kompression', h('label', { class: 'inline', title: 'Vorschau der ACES-1.3-Reference-Gamut-Compression (in ACEScg). Wirkt auf Bild und Gamut-Warnung, nicht auf die Scopes.' }, rgcBox, 'ACES 1.3 (Vorschau)'));
+    row(t('panel.rgc'), h('label', { class: 'inline', title: t('panel.rgcTitle') }, rgcBox, t('panel.rgcPreview')));
     if (p.picture === 'neutral') {
-      row('Schwelle', select(String(p.neutral?.threshold ?? 5), [['2', '2 %'], ['5', '5 %'], ['10', '10 %']], (v) => { p.neutral = { ...p.neutral, threshold: Number(v) }; save(); }, 'Pixel mit weniger Sättigung (|CbCr|/0,5) gelten als fast neutral; ihr Stich wird verstärkt in Farbe gezeigt, exakt Neutrales grau'));
-      row('Bereich', select(p.neutral?.range ?? 'all', [['all', 'alles'], ['shadows', 'Schatten'], ['mids', 'Mitten'], ['highlights', 'Lichter']], (v) => { p.neutral = { ...p.neutral, range: v as 'all' }; save(); }));
+      row(t('panel.threshold'), select(String(p.neutral?.threshold ?? 5), [['2', '2 %'], ['5', '5 %'], ['10', '10 %']], (v) => { p.neutral = { ...p.neutral, threshold: Number(v) }; save(); }, t('panel.neutralTitle')));
+      row(t('panel.range'), select(p.neutral?.range ?? 'all', [['all', t('panel.rangeAll')], ['shadows', t('panel.shadows')], ['mids', t('panel.mids')], ['highlights', t('panel.highlights')]], (v) => { p.neutral = { ...p.neutral, range: v as 'all' }; save(); }));
     }
-    if (p.picture === 'gamut') row('Zielgamut', select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, 'Markiert Pixel, die im Zielgamut negative Anteile hätten'));
+    if (p.picture === 'gamut') row(t('panel.tgtGamut'), select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, t('panel.tgtGamutTitle')));
     if (p.picture === 'false') row(t('settings.scopes.falseColour'), select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); }));
-    if (p.picture === 'zebra') row('Zebra ab', numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%');
+    if (p.picture === 'zebra') row(t('panel.zebraFrom'), numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%');
     const clk = h('input', { type: 'checkbox', checked: !!p.clockOverlay }) as HTMLInputElement;
     clk.onchange = () => { p.clockOverlay = clk.checked; save(); };
-    row('Uhr', h('label', { class: 'inline', title: 'Tageszeit-Timecode (Systemuhr) und Quell-Timecode mit Differenz einblenden; Rate und PTP wie im Uhr-Panel' }, clk, 'Timecode einblenden'));
-    row('Display', select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])], (v) => setDisplaySpace(v as Persisted['display'])));
-    row('HDR-Vorschau', select(state.hdrPreview ?? 'bt2408', Object.entries(HDR_PREVIEW_LABELS) as [string, string][], (v) => { state.hdrPreview = v as HdrPreview; save(); renderHeader(); },
-      'Wie die Bildansicht HDR (PQ/HLG) und Log auf einem SDR-Display zeigt: BT.2408 hybrid-linear (Referenzweiß ≈ 93 %, Lichter per BT.2390-EETF) oder BT.2446 Methode A. Die Scopes messen immer das Signal.'));
+    row(t('panel.clock'), h('label', { class: 'inline', title: t('panel.clockTitle') }, clk, t('panel.clockText')));
+    row(t('settings.display'), select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])], (v) => setDisplaySpace(v as Persisted['display'])));
+    row(t('settings.display.hdrPreview'), select(state.hdrPreview ?? 'bt2408', Object.entries(HDR_PREVIEW_LABELS) as [string, string][], (v) => { state.hdrPreview = v as HdrPreview; save(); renderHeader(); },
+      t('panel.hdrTitle')));
     const bar = h('input', { type: 'checkbox', checked: p.audioBar !== false }) as HTMLInputElement;
     bar.onchange = () => { p.audioBar = bar.checked; save(); refreshHeads(); };
-    row(t('main.src.audio'), h('label', { class: 'inline', title: 'Pegel je Kanal (−60 … 0 dBFS, Marken −18 und −1) und Short-term-Lautheit am rechten Bildrand, wenn die Quelle Ton hat' }, bar, 'Kompakter Pegelbalken'));
-    rows.push(h('p', { class: 'hint' }, 'Klick = Messpunkt, Ziehen = Messrahmen, Rechtsklick löscht.'));
+    row(t('main.src.audio'), h('label', { class: 'inline', title: t('panel.audioBarTitle') }, bar, t('panel.audioBar')));
+    rows.push(h('p', { class: 'hint' }, t('panel.pictureHint')));
   }
   if (p.scope === 'hist') {
-    row('Darstellung', select(p.hist, [['rgb', 'RGB'], ['luma', 'Luma'], ['split', 'Getrennt']], (v) => { p.hist = v as PanelState['hist']; save(); }));
-    row('Skala', check('log', 'logarithmisch'));
+    row(t('panel.display'), select(p.hist, [['rgb', 'RGB'], ['luma', 'Luma'], ['split', t('panel.histSplit')]], (v) => { p.hist = v as PanelState['hist']; save(); }));
+    row(t('settings.scopes.scale'), check('log', t('panel.log')));
   }
   if (scatter) row(t('settings.scopes.precision'), select(String(state.maxSamples), [['250000', t('settings.scopes.fast')], ['1000000', t('settings.scopes.standard')], ['4000000', t('settings.scopes.full')]], (v) => { state.maxSamples = Number(v); save(); }));
   return rows;
@@ -1050,9 +1050,9 @@ function roiChip(p: PanelState): Node | string {
   const s = panelSource(p);
   if (!s || isLight(p.scope)) return '';
   const n = s.activeRois().length;
-  const label = s.faceTrack ? `☺ ${s.faceMode === 'all' ? 'alle Gesichter' : n ? `${n} Gesicht${n > 1 ? 'er' : ''}` : 'Gesicht anklicken'} ✕` : '▭ Rahmen ✕';
+  const label = s.faceTrack ? `☺ ${s.faceMode === 'all' ? t('panel.facesAllChip') : n ? t('panel.facesN', { n }) : t('panel.faceClick')} ✕` : t('panel.frameChip');
   if (!s.faceTrack && !s.roi) return '';
-  return h('button', { class: 'mini roichip', title: 'Messrahmen/Gesichtsverfolgung ausschalten (auch: ✕ am Rahmen, Rechtsklick, Esc)', onclick: () => { s.roi = null; s.faceMode = 'off'; s.faces = []; s.faceSel.clear(); refreshHeads(); } }, label);
+  return h('button', { class: 'mini roichip', title: t('panel.roiOffTitle'), onclick: () => { s.roi = null; s.faceMode = 'off'; s.faces = []; s.faceSel.clear(); refreshHeads(); } }, label);
 }
 
 // face tracking (MediaPipe is only loaded once someone switches it on)
@@ -1077,10 +1077,10 @@ function skinFromRoi(p: PanelState) {
   if (!s) return;
   const { kr, kb } = LUMA[s.colorspace];
   const r = s.skinLumaRange(kr, kb, state.skin.tol);
-  if (!r) { alertHud('Keine Hauttöne im Messrahmen gefunden'); return; }
+  if (!r) { alertHud(t('panel.skin.none')); return; }
   state.skin.lo = Math.round(r.lo * 100) / 100; state.skin.hi = Math.round(r.hi * 100) / 100;
   save(); renderHeader();
-  alertHud(`Hautton-Bereich ${Math.round(r.lo * 100)}–${Math.round(r.hi * 100)} % aus ${r.n} Pixeln`);
+  alertHud(t('panel.skin.set', { lo: Math.round(r.lo * 100), hi: Math.round(r.hi * 100), n: r.n }));
 }
 
 function alertHud(msg: string) {
@@ -1096,12 +1096,12 @@ async function offerFaceTracking(s: Source, body: HTMLElement) {
   try { face = await (await import('./face')).faceInRect(s, rect); } catch { return; }
   if (!face || s.roi !== rect) return;
   body.querySelector('.ask')?.remove();
-  const ask = h('div', { class: 'ask' }, h('span', {}, 'Gesicht im Rahmen – verfolgen?'),
+  const ask = h('div', { class: 'ask' }, h('span', {}, t('panel.face.ask')),
     h('button', { class: 'primary', onclick: () => {
       ask.remove();
       s.faces = [{ id: -1, box: face! }]; s.faceSel = new Set([-1]); s.faceMode = 'detect'; s.roi = null; refreshHeads();
-    } }, 'Verfolgen'),
-    h('button', { onclick: () => ask.remove() }, 'Nur Rahmen'));
+    } }, t('panel.face.track')),
+    h('button', { onclick: () => ask.remove() }, t('panel.face.frameOnly')));
   body.append(ask);
   setTimeout(() => ask.remove(), 8000);
 }
@@ -1242,12 +1242,12 @@ function transportControls(s: Source): Node[] {
   return [
     h('div', { class: 'row' }, range),
     h('div', { class: 'row transport' },
-      btn('⏮', 'Anfang (Pos1)', () => s.seek(0)),
-      btn('◀◀', 'Rückwärts (J, mehrfach = schneller)', () => s.shuttle(-1)),
-      btn('◀|', 'Frame zurück (←)', () => s.step(-1)),
-      btn(s.video?.paused === false ? '❚❚' : '▶', 'Start/Stopp (Leertaste, K)', () => s.togglePlay()),
-      btn('|▶', 'Frame vor (→)', () => s.step(1)),
-      btn('▶▶', 'Vorwärts (L, mehrfach = schneller)', () => s.shuttle(1)),
+      btn('⏮', t('main.tp.start'), () => s.seek(0)),
+      btn('◀◀', t('main.tp.rev'), () => s.shuttle(-1)),
+      btn('◀|', t('main.tp.back'), () => s.step(-1)),
+      btn(s.video?.paused === false ? '❚❚' : '▶', t('main.tp.play'), () => s.togglePlay()),
+      btn('|▶', t('main.tp.fwdFrame'), () => s.step(1)),
+      btn('▶▶', t('main.tp.fwd'), () => s.shuttle(1)),
       h('span', { class: 'tc', 'data-tc': s.id }, s.timecode())),
   ];
 }
@@ -1395,7 +1395,7 @@ function updateLatencyChips() {
 /** Measured latency next to the mode switch in the source card. */
 function latencyMeasureText(s: Source) {
   const l = s.latency.summary();
-  return l ? `gemessen ${Math.round(l.total.mean)} ms (${Math.round(l.total.min)}–${Math.round(l.total.max)})` : 'nicht gemessen';
+  return l ? t('main.ll.measured', { mean: Math.round(l.total.mean), min: Math.round(l.total.min), max: Math.round(l.total.max) }) : t('main.ll.notMeasured');
 }
 
 /**
@@ -1409,21 +1409,16 @@ function lowLatencyFields(cfg: Partial<LowLatencyConfig>, inherit: boolean, set:
     const list: [string, string][] = inherit ? [['', `global (${label(g[k])})`], ...options] : options;
     return select(cur === undefined ? (inherit ? '' : String(g[k])) : String(cur), list, (v) => set({ [k]: v === '' ? undefined : parse(v) } as Partial<LowLatencyConfig>));
   };
-  const onOff: [string, string][] = [['1', 'an'], ['0', 'aus']];
-  const yes = (v: boolean) => (v ? 'an' : 'aus');
+  const onOff: [string, string][] = [['1', t('common.on')], ['0', t('common.off')]];
+  const yes = (v: boolean) => (v ? t('common.on') : t('common.off'));
+  const field = (label: string, hint: string, el: HTMLElement): [string, HTMLElement] => { el.title = hint; return [label, el]; };
   return [
-    ['Analysebreite', opt('width', LL_WIDTHS, Number, (v) => (v ? `${v} px` : 'nativ'))],
-    ['Zeichnen bei Ankunft', opt('drawOnArrive', onOff, (v) => v === '1', yes)],
-    ['RTP-Eigenempfang', opt('ownRtp', onOff, (v) => v === '1', yes)],
-    ['Statistik', opt('statsMs', LL_STATS, Number, (v) => `${v} ms`)],
-  ].map(([l, el]) => { (el as HTMLElement).title = LL_FIELD_HINTS[l as string]; return [l as string, el as HTMLElement]; });
+    field(t('main.ll.width'), t('main.ll.widthHint'), opt('width', LL_WIDTHS, Number, (v) => (v ? `${v} px` : t('main.native')))),
+    field(t('main.ll.draw'), t('main.ll.drawHint'), opt('drawOnArrive', onOff, (v) => v === '1', yes)),
+    field(t('main.ll.rtp'), t('main.ll.rtpHint'), opt('ownRtp', onOff, (v) => v === '1', yes)),
+    field(t('main.ll.stats'), t('main.ll.statsHint'), opt('statsMs', LL_STATS, Number, (v) => `${v} ms`)),
+  ];
 }
-const LL_FIELD_HINTS: Record<string, string> = {
-  'Analysebreite': 'Obergrenze der Analysebreite. Weniger Pixel: weniger Daten durch Pipe, WebSocket und Textur – aber weniger Abtastpunkte in den Scopes.',
-  'Zeichnen bei Ankunft': 'Zeichnet ein Bild sofort statt im nächsten Bildschirmtakt. Gewinn gemessen bis „Zeichnung abgeschickt“; ob der Monitor es früher zeigt, hängt vom Compositor ab (ungeprüft). Mehr Zeichenarbeit bei mehreren Quellen.',
-  'RTP-Eigenempfang': 'rtsp://: die Bridge empfängt RTP selbst (H.264/HEVC, TCP oder UDP) und gibt jedes Bild beim RTP-Markerbit weiter – ffmpegs RTSP-Eingang hält eines zurück. Über UDP verworfene Bilder (Paketverlust) warten auf den nächsten Keyframe; ab 2 % Verlust wechselt die Bridge selbst auf TCP. Ton kommt dann über eine zweite Sitzung ohne gemeinsamen Zeitstempel (A/V-Versatz nicht messbar). Was nicht unterstützt wird, empfängt ffmpeg wie bisher.',
-  'Statistik': 'Wie oft Histogramm- und Clip-Werte auf der CPU berechnet werden. Seltener = weniger Arbeit im Hauptthread, Messwerte reagieren träger.',
-};
 
 function setGlobalLowLatencyConfig(patch: Partial<LowLatencyConfig>) {
   state.ll = { ...state.ll, ...patch };
@@ -1432,10 +1427,7 @@ function setGlobalLowLatencyConfig(patch: Partial<LowLatencyConfig>) {
   renderHeader(); renderSources(); refreshHeads();
 }
 
-const LOW_LATENCY_HINT = 'Low Latency (Bridge-Quellen): begrenzte Analysebreite, Zeichnen bei Ankunft, eigener RTP-Empfang für rtsp://, seltenere Statistik – jeweils einstellbar (global unter Einstellungen, je Quelle in der Quellenkarte). '
-  + 'Nachteile: weniger Abtastpunkte, mehr Zeichenarbeit, Ton ohne gemeinsamen Zeitstempel beim RTP-Eigenempfang. '
-  + 'Gemessen wird nur bis „Zeichnung abgeschickt“ (Compositor und Monitor kommen dazu) und nur mit gestempeltem Testbild (scripts/latency-source.mjs). '
-  + 'Details und Messwerte: docs/research/low-latency.md, docs/research/rtp-eigenempfang.md.';
+const LOW_LATENCY_HINT = t('main.ll.hint');
 
 function setGlobalLowLatency(on: boolean) {
   state.lowLatency = on; Source.globalLowLatency = on; save();
@@ -1467,7 +1459,7 @@ function drawOptions(): DrawOptions {
 
 function setStage(st: Stage) {
   state.stage = st; save(); renderHeader(); refreshHeads(); needClear = true;
-  alertHud(`Messpunkt: ${STAGE_LABELS[st]}`);
+  alertHud(t('main.stageSet', { stage: STAGE_LABELS[st] }));
 }
 
 // ---------------------------------------------------------------- saved layout configurations
@@ -1534,15 +1526,15 @@ function importLayouts(done: () => void = () => {}) {
       const data = JSON.parse(await f.text());
       const entries: Record<string, LayoutConfig> = data.panels ? { [f.name.replace(/\.json$/i, '')]: data } : data;
       storeLayouts({ ...loadLayouts(), ...entries }); done();
-      alertHud(`${Object.keys(entries).length} Layout(s) importiert`);
-    } catch (e) { alertHud(`Import fehlgeschlagen: ${(e as Error).message}`); }
+      alertHud(t('main.lay.imported', { n: Object.keys(entries).length }));
+    } catch (e) { alertHud(t('main.lay.importFailed', { error: (e as Error).message })); }
   };
   file.click();
 }
 
 function renderLayoutMenu() {
   const all = loadLayouts();
-  const name = h('input', { placeholder: 'Name, z. B. Grading, LED-Wand, Studio' }) as HTMLInputElement;
+  const name = h('input', { placeholder: t('main.lay.namePh') }) as HTMLInputElement;
   const saveAs = () => {
     const n = name.value.trim();
     if (!n) return;
@@ -1552,17 +1544,17 @@ function renderLayoutMenu() {
   const download = downloadJson;
   const names = Object.keys(all).sort((a, b) => a.localeCompare(b));
   $('#laybody').replaceChildren(
-    h('p', { class: 'hint' }, 'Eine Layout-Konfiguration speichert Anordnung und Einstellungen der Scopes, Skin, Display und die CST/LUT-Ketten der Quellen.'),
+    h('p', { class: 'hint' }, t('main.lay.hint')),
     ...(names.length ? names.map((n) => h('div', { class: 'mrow lay' },
-      h('button', { class: `lname${n === state.layoutName ? ' on' : ''}`, title: `Laden (gespeichert ${new Date(all[n].saved).toLocaleString('de-DE')})`, onclick: () => { applyLayout(all[n]); state.layoutName = n; save(); $<HTMLDialogElement>('#laymenu').close(); } }, n),
-      h('button', { class: 'mini', title: 'Mit dem aktuellen Stand überschreiben', onclick: () => { all[n] = currentLayout(); storeLayouts(all); renderLayoutMenu(); } }, '↻'),
-      h('button', { class: 'mini', title: 'Als Datei exportieren', onclick: () => download(all[n], `lz-scopes-layout-${n}.json`) }, '⤓'),
-      h('button', { class: 'mini', title: 'Löschen', onclick: () => { delete all[n]; storeLayouts(all); renderLayoutMenu(); } }, '✕')))
-      : [h('p', { class: 'hint' }, 'Noch keine gespeichert. Anordnung per Drag & Drop einrichten, Scopes über ⚙ einstellen, dann hier speichern.')]),
-    h('div', { class: 'mrow' }, name, h('button', { class: 'primary', onclick: saveAs }, 'Speichern')),
+      h('button', { class: `lname${n === state.layoutName ? ' on' : ''}`, title: t('main.lay.load', { date: new Date(all[n].saved).toLocaleString(lang() === 'de' ? 'de-DE' : 'en-GB') }), onclick: () => { applyLayout(all[n]); state.layoutName = n; save(); $<HTMLDialogElement>('#laymenu').close(); } }, n),
+      h('button', { class: 'mini', title: t('main.lay.overwrite'), onclick: () => { all[n] = currentLayout(); storeLayouts(all); renderLayoutMenu(); } }, '↻'),
+      h('button', { class: 'mini', title: t('main.lay.export'), onclick: () => download(all[n], `lz-scopes-layout-${n}.json`) }, '⤓'),
+      h('button', { class: 'mini', title: t('main.lay.delete'), onclick: () => { delete all[n]; storeLayouts(all); renderLayoutMenu(); } }, '✕')))
+      : [h('p', { class: 'hint' }, t('main.lay.none'))]),
+    h('div', { class: 'mrow' }, name, h('button', { class: 'primary', onclick: saveAs }, t('main.lay.save'))),
     h('div', { class: 'mrow' },
-      h('button', { onclick: () => download(all, 'lz-scopes-layouts.json') }, '⤓ Alle exportieren'),
-      h('button', { onclick: () => importLayouts(renderLayoutMenu) }, '⤒ Importieren')),
+      h('button', { onclick: () => download(all, 'lz-scopes-layouts.json') }, t('main.lay.exportAll')),
+      h('button', { onclick: () => importLayouts(renderLayoutMenu) }, t('main.lay.import'))),
   );
 }
 
@@ -1607,18 +1599,18 @@ const activeSceneObj = () => state.scenes.find((s) => s.id === state.activeScene
 
 async function renderOutputMenu() {
   const out: OutputOptions = { name: '', view: 'grid', idx: String(dock.openIdx()[0] ?? 0), src: sources[0]?.id ?? '', scene: activeSceneObj()?.id ?? '', bg: 'picture', display: '', fs: true, stream: '', target: '' };
-  const screens: [string, string][] = [['', 'Neues Fenster']];
+  const screens: [string, string][] = [['', t('main.out.newWindow')]];
   if (desktop) {
-    for (const d of await desktop.displays()) screens.push([String(d.id), `${d.label || 'Bildschirm'} ${d.bounds.width}×${d.bounds.height}${d.primary ? ' (Haupt)' : ''}`]);
+    for (const d of await desktop.displays()) screens.push([String(d.id), `${d.label || t('main.out.screen')} ${d.bounds.width}×${d.bounds.height}${d.primary ? t('main.out.main') : ''}`]);
   }
   const row = (label: string, ...kids: (Node | string)[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
   const txt = (key: 'stream' | 'target' | 'name', ph: string) => { const i = h('input', { placeholder: ph, spellcheck: 'false' }) as HTMLInputElement; i.oninput = () => (out[key] = i.value.trim()); return i; };
   const fsBox = h('input', { type: 'checkbox', checked: true }) as HTMLInputElement;
   fsBox.onchange = () => (out.fs = fsBox.checked);
-  const sceneName = h('input', { placeholder: 'Name der neuen Szene' }) as HTMLInputElement;
+  const sceneName = h('input', { placeholder: t('main.out.sceneName') }) as HTMLInputElement;
   const newScene = (copy: boolean) => {
     const base = copy ? state.scenes.find((s) => s.id === out.scene) : null;
-    const sc: OverlayScene = base ? { ...structuredClone(base), id: newId(), name: sceneName.value.trim() || `${base.name} Kopie` } : defaultScene(sceneName.value.trim() || `Szene ${state.scenes.length + 1}`);
+    const sc: OverlayScene = base ? { ...structuredClone(base), id: newId(), name: sceneName.value.trim() || t('main.out.copyOf', { name: base.name }) } : defaultScene(sceneName.value.trim() || t('main.out.sceneN', { n: state.scenes.length + 1 }));
     state.scenes.push(sc); state.activeScene = sc.id; save(); renderOutputMenu();
   };
   const delScene = () => {
@@ -1635,23 +1627,23 @@ async function renderOutputMenu() {
   refreshFfmpegInfo().then(showPush);
   const open = [...liveOutputs().entries()];
   $('#outbody').replaceChildren(
-    row('Inhalt', select(out.view, [['grid', 'Gesamtansicht (Layout)'], ['panel', 'Einzelnes Panel'], ['clean', 'Quellbild sauber'], ['overlay', 'Bild + Scope-Overlay']], (v) => (out.view = v))),
-    row('Panel', select(out.idx, dock.openIdx().map((i) => [String(i), panelTitle(i)]), (v) => (out.idx = v))),
-    row('Quelle', select(out.src, sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (v) => (out.src = v))),
-    row('Overlay-Szene', select(out.scene, state.scenes.map((s) => [s.id, `${s.name} (${s.elements.length})`]), (v) => { out.scene = v; state.activeScene = v; save(); }, 'Scopes über dem Bild; im Ausgabefenster mit E anordnen'),
-      h('button', { class: 'mini', title: 'Szene löschen', onclick: delScene }, '✕')),
-    row('', sceneName, h('button', { class: 'mini', title: 'Neue Szene mit einer Waveform', onclick: () => newScene(false) }, '+ Neu'), h('button', { class: 'mini', title: 'Gewählte Szene kopieren', onclick: () => newScene(true) }, 'Kopie')),
-    row('Overlay-Hintergrund', select(out.bg, [['picture', 'Bild'], ['black', 'Schwarz (für Luma-Key am Mischer)']], (v) => (out.bg = v))),
-    row('Ausgang', select('', screens, (v) => (out.display = v)), h('label', { class: 'inline' }, fsBox, 'Vollbild')),
-    row('Name', txt('name', 'optional, für Companion, z. B. beamer')),
-    row('Stream-Name', txt('stream', 'optional, z. B. scopes → /out/scopes.mjpeg')),
-    row('Push an', targetIn),
+    row(t('main.out.content'), select(out.view, [['grid', t('main.out.grid')], ['panel', t('main.out.panel')], ['clean', t('main.out.clean')], ['overlay', t('main.out.overlay')]], (v) => (out.view = v))),
+    row(t('main.out.panelRow'), select(out.idx, dock.openIdx().map((i) => [String(i), panelTitle(i)]), (v) => (out.idx = v))),
+    row(t('panel.source'), select(out.src, sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (v) => (out.src = v))),
+    row(t('main.out.scene'), select(out.scene, state.scenes.map((s) => [s.id, `${s.name} (${s.elements.length})`]), (v) => { out.scene = v; state.activeScene = v; save(); }, t('main.out.sceneTitle')),
+      h('button', { class: 'mini', title: t('main.out.sceneDel'), onclick: delScene }, '✕')),
+    row('', sceneName, h('button', { class: 'mini', title: t('main.out.sceneNewTitle'), onclick: () => newScene(false) }, t('main.out.sceneNew')), h('button', { class: 'mini', title: t('main.out.sceneCopyTitle'), onclick: () => newScene(true) }, t('main.out.sceneCopy'))),
+    row(t('main.out.bg'), select(out.bg, [['picture', t('main.out.bgPicture')], ['black', t('main.out.bgBlack')]], (v) => (out.bg = v))),
+    row(t('main.out.target'), select('', screens, (v) => (out.display = v)), h('label', { class: 'inline' }, fsBox, t('main.full'))),
+    row(t('main.out.nameRow'), txt('name', t('main.out.name'))),
+    row(t('main.out.streamName'), txt('stream', t('main.out.streamPh'))),
+    row(t('main.out.push'), targetIn),
     row('', pushHint),
-    h('div', { class: 'mrow' }, h('span', {}, ''), h('button', { class: 'primary', onclick: () => openOutputView(out) }, 'Ausgabe öffnen')),
-    ...(open.length ? [h('div', { class: 'mtitle' }, 'Offen'), ...open.map(([n, o]) => h('div', { class: 'mrow' },
+    h('div', { class: 'mrow' }, h('span', {}, ''), h('button', { class: 'primary', onclick: () => openOutputView(out) }, t('main.out.open'))),
+    ...(open.length ? [h('div', { class: 'mtitle' }, t('main.out.openList')), ...open.map(([n, o]) => h('div', { class: 'mrow' },
       h('span', {}, n), h('span', { class: 'hint' }, `${o.view}${o.view === 'overlay' ? ` · ${state.scenes.find((s) => s.id === o.scene)?.name ?? ''}` : ''}${outApi(o.win)?.stream() ? ` · Stream ${outApi(o.win)!.stream()}` : ''}`),
-      h('button', { class: 'mini', title: 'Schließen', onclick: () => { o.win.close(); outWins.delete(n); renderOutputMenu(); } }, '✕')))] : []),
-    h('p', { class: 'hint' }, `${desktop ? 'Vollbild auf dem gewählten Bildschirm.' : 'Im Browser: Fenster auf den Zielbildschirm ziehen, dann F oder Doppelklick für Vollbild. Die Desktop-App wählt den Bildschirm direkt.'} Overlay: im Ausgabefenster E drücken, um Scopes zu verschieben, zu skalieren, hinzuzufügen oder zu entfernen.`),
+      h('button', { class: 'mini', title: t('common.close'), onclick: () => { o.win.close(); outWins.delete(n); renderOutputMenu(); } }, '✕')))] : []),
+    h('p', { class: 'hint' }, `${desktop ? t('main.out.hintDesktop') : t('main.out.hintBrowser')} ${t('main.out.hintOverlay')}`),
   );
 }
 
@@ -1667,7 +1659,7 @@ function openOutputView(o: OutputOptions): string {
   if (o.display) q.set('display', o.display);
   if (o.fs) q.set('fs', '1');
   const win = window.open(`${location.pathname}?${q}`, `lzs-out-${name}`, 'popup,width=1280,height=720');
-  if (!win) throw new Error('Fenster wurde blockiert (Browser: Pop-ups für diese Seite erlauben)');
+  if (!win) throw new Error(t('main.out.blocked'));
   outWins.set(name, { win, view: o.view, scene: o.view === 'overlay' ? o.scene : '' });
   return name;
 }
@@ -1700,7 +1692,7 @@ function findSource(ref: unknown): Source | null {
 }
 function panelIndex(ref: unknown): number {
   const i = typeof ref === 'number' ? ref - 1 : Number(String(ref).replace(/^p/i, '')) - 1;
-  if (!Number.isInteger(i) || i < 0 || i >= state.panels.length) throw new Error(`Panel ${ref} gibt es nicht (1–${state.panels.length})`);
+  if (!Number.isInteger(i) || i < 0 || i >= state.panels.length) throw new Error(`Panel ${ref} does not exist (1–${state.panels.length})`);
   return i;
 }
 /** Source shown by the most open panels. */
@@ -1711,13 +1703,14 @@ function activeSource(): Source | null {
 }
 const maximizedPanel = () => { const p = dock.api.panels.find((x) => x.api.isMaximized()); return p ? panelIdx(p.id) + 1 : null; };
 
+// Control API (docs/control-api.md): errors are API answers for Companion and scripts, in English.
 function execute(c: Command): unknown {
   const need = <T,>(v: T | null | undefined, msg: string): T => { if (v === null || v === undefined) throw new Error(msg); return v; };
   const mode = (cur: boolean) => (c.mode === 'toggle' ? !cur : c.mode === 'on');
   switch (c.cmd) {
     case 'state': return controlState();
     case 'source.select': {
-      const s = need(findSource(c.source), `Quelle ${c.source} nicht gefunden`);
+      const s = need(findSource(c.source), `Source ${c.source} not found`);
       if (c.panel !== undefined) state.panels[panelIndex(c.panel)].sourceId = s.id;
       else state.panels.forEach((p) => (p.sourceId = s.id));
       save(); renderPanels();
@@ -1727,12 +1720,12 @@ function execute(c: Command): unknown {
       const keys = Object.keys(PRESETS), r = c.preset;
       const low = String(r).toLowerCase().replace('x', '×');
       const key = typeof r === 'number' ? keys[r - 1] : keys.find((k) => k === r || PRESETS[k].label.toLowerCase() === low);
-      setLayout(need(key, `Layout-Vorlage ${r} gibt es nicht (1–${keys.length} oder ${keys.map((k) => PRESETS[k].label).join(', ')})`));
+      setLayout(need(key, `Layout preset ${r} does not exist (1–${keys.length} or ${keys.map((k) => PRESETS[k].label).join(', ')})`));
       return { preset: state.layout };
     }
     case 'layout.load': {
       const all = loadLayouts(), low = String(c.name).toLowerCase();
-      const n = need(Object.keys(all).find((k) => k.toLowerCase() === low), `Layout-Konfiguration ${c.name} nicht gespeichert`);
+      const n = need(Object.keys(all).find((k) => k.toLowerCase() === low), `Layout configuration ${c.name} is not saved`);
       applyLayout(all[n]); state.layoutName = n; save();
       return { layout: n };
     }
@@ -1746,7 +1739,7 @@ function execute(c: Command): unknown {
     case 'panel.maximize': {
       if (c.panel === undefined) { dock.exitMaximized(); return { maximized: null }; }
       const i = panelIndex(c.panel);
-      const dp = need(dock.api.getPanel(panelId(i)), `Panel ${i + 1} ist nicht im Layout`);
+      const dp = need(dock.api.getPanel(panelId(i)), `Panel ${i + 1} is not in the layout`);
       if (mode(dp.api.isMaximized()) !== dp.api.isMaximized()) dock.toggleMaximize(i);
       return { maximized: maximizedPanel() };
     }
@@ -1757,24 +1750,24 @@ function execute(c: Command): unknown {
       qcLog.clear();
       return { qc: 0 };
     case 'roi.clear':
-      for (const s of c.source !== undefined ? [need(findSource(c.source), `Quelle ${c.source} nicht gefunden`)] : sources) { s.probe = null; s.roi = null; s.faceMode = 'off'; }
+      for (const s of c.source !== undefined ? [need(findSource(c.source), `Source ${c.source} not found`)] : sources) { s.probe = null; s.roi = null; s.faceMode = 'off'; }
       refreshHeads();
       return {};
     case 'pattern.select': case 'pattern.next': case 'pattern.prev': {
-      const s = need(c.source !== undefined ? findSource(c.source) : sources.find((x) => x.kind === 'pattern'), 'Keine Testbild-Quelle');
-      if (s.kind !== 'pattern') throw new Error(`${s.name} ist keine Testbild-Quelle`);
+      const s = need(c.source !== undefined ? findSource(c.source) : sources.find((x) => x.kind === 'pattern'), 'No test pattern source');
+      if (s.kind !== 'pattern') throw new Error(`${s.name} is not a test pattern source`);
       let i = PATTERNS.findIndex((p) => p.id === s.pattern.id);
       if (c.cmd === 'pattern.select') {
         const low = String(c.pattern).toLowerCase();
         i = typeof c.pattern === 'number' ? c.pattern - 1 : PATTERNS.findIndex((p) => p.id === c.pattern || p.name.toLowerCase() === low);
-        if (!PATTERNS[i]) throw new Error(`Testbild ${c.pattern} gibt es nicht`);
+        if (!PATTERNS[i]) throw new Error(`Test pattern ${c.pattern} does not exist`);
       } else i = (i + (c.cmd === 'pattern.next' ? 1 : -1) + PATTERNS.length) % PATTERNS.length;
       s.pattern.id = PATTERNS[i].id; save(); s.startPattern(); renderSources();
       return { pattern: PATTERNS[i].id, name: PATTERNS[i].name };
     }
     case 'output.open': {
-      const src = c.source !== undefined ? need(findSource(c.source), `Quelle ${c.source} nicht gefunden`) : activeSource();
-      const sc = c.scene !== undefined ? need(findScene(state.scenes, c.scene as string | number), `Szene ${c.scene} gibt es nicht`) : activeSceneObj();
+      const src = c.source !== undefined ? need(findSource(c.source), `Source ${c.source} not found`) : activeSource();
+      const sc = c.scene !== undefined ? need(findScene(state.scenes, c.scene as string | number), `Scene ${c.scene} does not exist`) : activeSceneObj();
       const name = openOutputView({
         name: String(c.name ?? ''), view: String(c.view), idx: String(c.panel !== undefined ? panelIndex(c.panel) : dock.openIdx()[0] ?? 0),
         src: src?.id ?? '', scene: sc?.id ?? '', bg: String(c.bg), display: String(c.display ?? ''), fs: c.fullscreen !== false,
@@ -1784,13 +1777,13 @@ function execute(c: Command): unknown {
     }
     case 'output.close': {
       const list = [...liveOutputs().entries()].filter(([n]) => c.name === undefined || n === c.name);
-      if (c.name !== undefined && !list.length) throw new Error(`Ausgabe ${c.name} ist nicht offen`);
+      if (c.name !== undefined && !list.length) throw new Error(`Output ${c.name} is not open`);
       for (const [n, o] of list) { o.win.close(); outWins.delete(n); }
       return { closed: list.map(([n]) => n) };
     }
     case 'scene.select': {
-      const sc = need(findScene(state.scenes, c.scene as string | number), `Szene ${c.scene} gibt es nicht`);
-      if (c.output !== undefined) need(liveOutputs().get(String(c.output)), `Ausgabe ${c.output} ist nicht offen`).scene = sc.id;
+      const sc = need(findScene(state.scenes, c.scene as string | number), `Scene ${c.scene} does not exist`);
+      if (c.output !== undefined) need(liveOutputs().get(String(c.output)), `Output ${c.output} is not open`).scene = sc.id;
       else {
         state.activeScene = sc.id;
         for (const o of liveOutputs().values()) if (o.view === 'overlay') o.scene = sc.id;
@@ -1801,13 +1794,13 @@ function execute(c: Command): unknown {
     case 'stream.start': {
       const outs = liveOutputs();
       let name = c.output !== undefined ? String(c.output) : [...outs.keys()][0];
-      if (c.output !== undefined && !outs.has(name)) throw new Error(`Ausgabe ${name} ist nicht offen`);
+      if (c.output !== undefined && !outs.has(name)) throw new Error(`Output ${name} is not open`);
       if (!name) {
         // nothing open yet: open the overlay output with the stream running
         name = openOutputView({ name: '', view: 'overlay', idx: '0', src: activeSource()?.id ?? '', scene: activeSceneObj()?.id ?? '', bg: 'picture', display: '', fs: false, stream: String(c.stream), target: String(c.target ?? ''), codec: String(c.codec ?? '') });
         return { output: name, stream: c.stream };
       }
-      need(outApi(outs.get(name)!.win), `Ausgabe ${name} lädt noch`).startStream(String(c.stream), String(c.target ?? ''), String(c.codec ?? ''));
+      need(outApi(outs.get(name)!.win), `Output ${name} is still loading`).startStream(String(c.stream), String(c.target ?? ''), String(c.codec ?? ''));
       return { output: name, stream: c.stream };
     }
     case 'stream.stop': {
@@ -1820,8 +1813,8 @@ function execute(c: Command): unknown {
       return { stopped };
     }
     case 'transport': {
-      const s = need(c.source !== undefined ? findSource(c.source) : activeVideo(), 'Keine Videodatei geöffnet');
-      const v = need(s.isVideoFile ? s.video : null, `${s.name} ist keine Videodatei`);
+      const s = need(c.source !== undefined ? findSource(c.source) : activeVideo(), 'No video file open');
+      const v = need(s.isVideoFile ? s.video : null, `${s.name} is not a video file`);
       const playing = !v.paused || !!s.reverseSpeed;
       switch (c.op) {
         case 'play': if (!playing) s.togglePlay(); break;
@@ -1837,9 +1830,9 @@ function execute(c: Command): unknown {
       return { source: s.name };
     }
     case 'audio.reset': case 'audio.pause': {
-      const list = c.source !== undefined ? [need(findSource(c.source), `Quelle ${c.source} nicht gefunden`)] : sources.filter((x) => x.audio);
+      const list = c.source !== undefined ? [need(findSource(c.source), `Source ${c.source} not found`)] : sources.filter((x) => x.audio);
       const withAudio = list.filter((x) => x.audio);
-      if (!withAudio.length) throw new Error(c.source !== undefined ? `${list[0].name} hat keinen Ton` : 'Keine Quelle mit Ton');
+      if (!withAudio.length) throw new Error(c.source !== undefined ? `${list[0].name} has no audio` : 'No source with audio');
       for (const x of withAudio) {
         if (c.cmd === 'audio.reset') x.audio!.reset(); else x.audio!.paused = mode(x.audio!.paused);
       }
@@ -1857,7 +1850,7 @@ function execute(c: Command): unknown {
       return { running: patch.running, signal: generator.cfg.signal, level: generator.cfg.level, freq: generator.cfg.freq };
     }
   }
-  throw new Error(`Befehl ${c.cmd} nicht umgesetzt`);
+  throw new Error(`Command ${c.cmd} is not implemented`);
 }
 
 /** Loudness of the active source with sound (else the first one); values rounded to 0.1, null = unknown. */

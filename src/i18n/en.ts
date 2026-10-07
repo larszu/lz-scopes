@@ -2,10 +2,12 @@
 // One file per area under en/, its German counterpart under de/ with the same name.
 // A new area: add en/<area>.ts and de/<area>.ts and one line in en.ts and de.ts.
 import common from './en/common';
+import panel from './en/panel';
 import main from './en/main';
 
 export const en = {
   ...common,
+  ...panel,
   ...main,
 };
 

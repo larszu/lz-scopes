@@ -5,6 +5,7 @@
 import type { Source, SourceSettings } from './sources';
 import { t } from './i18n';
 import { bridgeText } from './i18n/bridgeMessage';
+import { button, h, hint, link, row, select } from './ui';
 
 export interface BridgeUi {
   /** http(s) base of the bridge */
@@ -20,22 +21,6 @@ interface DeckLinkStatus { available: boolean; helper: boolean; devices: { index
 
 const formatCache = new Map<string, DeviceFormats | 'loading'>();
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, unknown> = {}, ...kids: (Node | string)[]) {
-  const e = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k.startsWith('on')) e.addEventListener(k.slice(2), v as EventListener);
-    else if (k === 'class') e.className = String(v);
-    else e.setAttribute(k, String(v));
-  }
-  e.append(...kids);
-  return e;
-}
-function sel(value: string, options: [string, string][], onchange: (v: string) => void, title = '') {
-  const s = el('select', { title }, ...options.map(([v, l]) => el('option', { value: v }, l))) as HTMLSelectElement;
-  s.value = value;
-  s.onchange = () => onchange(s.value);
-  return s;
-}
 
 const DEEP = /(p10|p12|p16|p210|p216|y210|v210|48)/;
 
@@ -49,7 +34,7 @@ export function deviceRow(s: Source, ui: BridgeUi, rerender: () => void): Node |
       .then((j: DeviceFormats) => { formatCache.set(s.url, j); rerender(); })
       .catch(() => formatCache.delete(s.url));
   }
-  if (!f || f === 'loading') return el('div', { class: 'row hint' }, t('bridgeui.readingFormats'));
+  if (!f || f === 'loading') return h('div', { class: 'row hint' }, t('bridgeui.readingFormats'));
   const d = s.settings.device ?? {};
   const sizes = [...new Set(f.modes.map((m) => `${m.width}x${m.height}`))];
   const rates = [...new Set(f.modes.filter((m) => !d.size || `${m.width}x${m.height}` === d.size).flatMap((m) => [m.fpsMax, m.fpsMin]).filter((r) => r > 0))].sort((a, b) => b - a);
@@ -59,11 +44,11 @@ export function deviceRow(s: Source, ui: BridgeUi, rerender: () => void): Node |
     // deep pixel formats only pay off with 16-bit transport
     ui.upd({ device, ...(patch.pixfmt && DEEP.test(patch.pixfmt) ? { depth: 16 as const } : {}) }, true);
   };
-  return el('div', { class: 'row' },
-    sizes.length ? sel(d.size ?? '', [['', `${t('bridgeui.modeAuto')}${f.defaultSize ? ` (${f.defaultSize})` : ''}`], ...sizes.map((x) => [x, x.replace('x', '×')] as [string, string])], (v) => set({ size: v, rate: '' }), t('bridgeui.resolutionTitle')) : '',
-    rates.length ? sel(d.rate ?? '', [['', 'fps auto'], ...rates.map((r) => [String(r), `${r} fps`] as [string, string])], (v) => set({ rate: v }), t('bridgeui.rateTitle')) : '',
-    f.pixfmts.length ? sel(d.pixfmt ?? '', [['', `Pixel auto${f.preferred ? ` (${f.preferred})` : ''}`], ...f.pixfmts.map((p) => [p, DEEP.test(p) ? `${p} · >8 bit` : p] as [string, string])], (v) => set({ pixfmt: v }),
-      t('bridgeui.pixfmtTitle')) : el('span', { class: 'hint' }, t('bridgeui.noFormatList')));
+  return row(
+    sizes.length ? select(d.size ?? '', [['', `${t('bridgeui.modeAuto')}${f.defaultSize ? ` (${f.defaultSize})` : ''}`], ...sizes.map((x) => [x, x.replace('x', '×')] as [string, string])], (v) => set({ size: v, rate: '' }), t('bridgeui.resolutionTitle')) : '',
+    rates.length ? select(d.rate ?? '', [['', 'fps auto'], ...rates.map((r) => [String(r), `${r} fps`] as [string, string])], (v) => set({ rate: v }), t('bridgeui.rateTitle')) : '',
+    f.pixfmts.length ? select(d.pixfmt ?? '', [['', `Pixel auto${f.preferred ? ` (${f.preferred})` : ''}`], ...f.pixfmts.map((p) => [p, DEEP.test(p) ? `${p} · >8 bit` : p] as [string, string])], (v) => set({ pixfmt: v }),
+      t('bridgeui.pixfmtTitle')) : h('span', { class: 'hint' }, t('bridgeui.noFormatList')));
 }
 
 /** Matrix and range the bridge uses for Y′CbCr → R′G′B′ (all bridge sources). */
@@ -71,64 +56,64 @@ export function decodeRow(s: Source, ui: BridgeUi): Node | null {
   if (s.kind !== 'stream' || s.url === 'resolve:' || s.url.startsWith('test:')) return null;
   const set = s.settings;
   const auto = (s.info as { decodeMatrix?: string } | null)?.decodeMatrix;
-  return el('div', { class: 'row' },
-    sel(set.decodeMatrix ?? 'auto', [['auto', `${t('bridgeui.convAuto')}${auto ? ` (${auto})` : ''}`], ['bt709', t('bridgeui.conv', { m: 'BT.709' })], ['bt601', t('bridgeui.conv', { m: 'BT.601' })], ['bt2020', t('bridgeui.conv', { m: 'BT.2020' })]],
+  return row(
+    select(set.decodeMatrix ?? 'auto', [['auto', `${t('bridgeui.convAuto')}${auto ? ` (${auto})` : ''}`], ['bt709', t('bridgeui.conv', { m: 'BT.709' })], ['bt601', t('bridgeui.conv', { m: 'BT.601' })], ['bt2020', t('bridgeui.conv', { m: 'BT.2020' })]],
       (v) => ui.upd({ decodeMatrix: v as SourceSettings['decodeMatrix'] }, true), t('bridgeui.matrixTitle')),
-    sel(set.decodeRange ?? 'auto', [['auto', t('bridgeui.rangeAuto')], ['tv', t('bridgeui.rangeTv')], ['pc', t('bridgeui.rangePc')]],
+    select(set.decodeRange ?? 'auto', [['auto', t('bridgeui.rangeAuto')], ['tv', t('bridgeui.rangeTv')], ['pc', t('bridgeui.rangePc')]],
       (v) => ui.upd({ decodeRange: v as SourceSettings['decodeRange'] }, true), t('bridgeui.rangeTitle')));
 }
 
 /** Button that lists capture devices of the bridge's machine (ffmpeg). */
 export function deviceButton(ui: BridgeUi): HTMLElement {
-  return el('button', { class: 'mini', title: t('bridgeui.deviceTitle'), onclick: async (e: Event) => {
+  return button(t('bridgeui.device'), async (e: Event) => {
     const btn = e.currentTarget as HTMLElement;
     let list: { name: string; url: string; kind?: string }[] = [];
     try { list = await (await fetch(`${ui.http()}/api/devices`)).json(); } catch { /* bridge missing */ }
     const video = list.filter((d) => d.kind !== 'audio'), audio = list.filter((d) => d.kind === 'audio');
     if (!video.length) { ui.hud(t('bridgeui.noCaptureDevices')); return; }
     // sound to the picture from the same ffmpeg process (#audio=…): A/V timestamps comparable (#24)
-    const snd = sel('', [['', t('bridgeui.noSound')], ...audio.map((d) => [d.url, t('bridgeui.soundOf', { name: d.name })] as [string, string])], () => {}, t('bridgeui.soundTitle'));
+    const snd = select('', [['', t('bridgeui.noSound')], ...audio.map((d) => [d.url, t('bridgeui.soundOf', { name: d.name })] as [string, string])], () => {}, t('bridgeui.soundTitle'));
     const guess = audio.find((a) => video.some((v) => v.name === a.name)) ?? audio.find((a) => /capture|hdmi|usb3/i.test(a.name));
     if (guess) snd.value = guess.url;
-    btn.replaceWith(sel('', [['', t('bridgeui.chooseDevice')], ...video.map((d) => [d.url, d.name] as [string, string])], (v) => {
+    btn.replaceWith(select('', [['', t('bridgeui.chooseDevice')], ...video.map((d) => [d.url, d.name] as [string, string])], (v) => {
       if (!v) return;
       // audio:<api>:<name> → #audio=<name> (ALSA: hw:…)
       const a = snd.value.replace(/^audio:[a-z]+:/, '');
       ui.connect(a ? `${v}#audio=${a}` : v, video.find((d) => d.url === v)?.name);
     }), snd);
-  } }, t('bridgeui.device'));
+  }, { small: true, title: t('bridgeui.deviceTitle') });
 }
 
 /** DeckLink/UltraStudio via the native helper; says plainly when it is not available. */
 export function deckLinkButton(ui: BridgeUi): HTMLElement {
-  return el('button', { class: 'mini', title: t('bridgeui.decklinkTitle'), onclick: async (e: Event) => {
+  return button('DeckLink…', async (e: Event) => {
     const btn = e.currentTarget as HTMLElement;
     let st: DeckLinkStatus | null = null;
     try { st = await (await fetch(`${ui.http()}/api/decklink`)).json(); } catch { /* bridge missing */ }
     if (!st) { ui.hud(t('bridgeui.bridgeUnreachable')); return; }
     if (!st.available) { ui.hud(t('bridgeui.decklinkUnavailable', { why: bridgeText(st, 'error') || t('bridgeui.decklinkNeeds') })); return; }
     if (!st.devices.length) { ui.hud(t('bridgeui.noDecklinkDevice')); return; }
-    btn.replaceWith(sel('', [['', t('bridgeui.chooseDecklink')], ...st.devices.map((d) => [`decklink:${d.index}`, d.name] as [string, string])], (v) => { if (v) ui.connect(v, st!.devices.find((d) => `decklink:${d.index}` === v)?.name); }));
-  } }, 'DeckLink…');
+    btn.replaceWith(select('', [['', t('bridgeui.chooseDecklink')], ...st.devices.map((d) => [`decklink:${d.index}`, d.name] as [string, string])], (v) => { if (v) ui.connect(v, st!.devices.find((d) => `decklink:${d.index}` === v)?.name); }));
+  }, { small: true, title: t('bridgeui.decklinkTitle') });
 }
 
 /** 8/10 bit for DeckLink sources. */
 export function deckLinkRow(s: Source, ui: BridgeUi): Node | null {
   if (!s.url.startsWith('decklink:')) return null;
-  return el('div', { class: 'row' },
-    sel(String(s.settings.deckLinkBits ?? 10), [['10', 'DeckLink 10 bit (v210)'], ['8', 'DeckLink 8 bit (UYVY)']], (v) => ui.upd({ deckLinkBits: Number(v) as 8 | 10, ...(v === '10' ? { depth: 16 as const } : {}) }, true), t('bridgeui.decklinkFormatTitle')),
-    el('span', { class: 'hint' }, t('bridgeui.untestedHw')));
+  return row(
+    select(String(s.settings.deckLinkBits ?? 10), [['10', 'DeckLink 10 bit (v210)'], ['8', 'DeckLink 8 bit (UYVY)']], (v) => ui.upd({ deckLinkBits: Number(v) as 8 | 10, ...(v === '10' ? { depth: 16 as const } : {}) }, true), t('bridgeui.decklinkFormatTitle')),
+    h('span', { class: 'hint' }, t('bridgeui.untestedHw')));
 }
 
 interface NdiStatus { available: boolean; helper: boolean; runtime: boolean; version?: string; sources: { name: string; url: string }[]; error?: string }
 
 /** NDI SDK licence: link to ndi.video close to where NDI is selected, trademark notice. */
 export const NDI_NOTICE = 'NDI® is a registered trademark of Vizrt NDI AB.';
-const ndiLink = () => el('a', { href: 'https://ndi.video/', target: '_blank', rel: 'noopener', title: NDI_NOTICE }, 'ndi.video');
+const ndiLink = () => { const a = link('https://ndi.video/', 'ndi.video'); a.title = NDI_NOTICE; return a; };
 
 /** NDI® sources found by the helper on the bridge's machine; says plainly when the runtime is missing. */
 export function ndiButton(ui: BridgeUi): HTMLElement {
-  return el('button', { class: 'mini', title: `${t('bridgeui.ndiTitle')} ${NDI_NOTICE}`, onclick: async (e: Event) => {
+  return button('NDI®…', async (e: Event) => {
     const btn = e.currentTarget as HTMLElement;
     btn.textContent = 'NDI® …';
     let st: NdiStatus | null = null;
@@ -137,36 +122,31 @@ export function ndiButton(ui: BridgeUi): HTMLElement {
     if (!st) { ui.hud(t('bridgeui.bridgeUnreachable')); return; }
     if (!st.available) { ui.hud(t('bridgeui.ndiUnavailable', { why: bridgeText(st, 'error') || t('bridgeui.ndiNeeds') })); return; }
     if (!st.sources.length) { ui.hud(t('bridgeui.noNdiSources')); return; }
-    btn.replaceWith(sel('', [['', t('bridgeui.chooseNdi')], ...st.sources.map((s) => [`ndi:${s.name}`, s.name] as [string, string])], (v) => { if (v) ui.connect(v, v.slice(4).replace(/^.*\((.*)\)$/, '$1').slice(0, 40)); }));
-  } }, 'NDI®…');
+    btn.replaceWith(select('', [['', t('bridgeui.chooseNdi')], ...st.sources.map((s) => [`ndi:${s.name}`, s.name] as [string, string])], (v) => { if (v) ui.connect(v, v.slice(4).replace(/^.*\((.*)\)$/, '$1').slice(0, 40)); }));
+  }, { small: true, title: `${t('bridgeui.ndiTitle')} ${NDI_NOTICE}` });
 }
 
 /** Link and trademark notice on NDI sources (NDI SDK licence). */
 export function ndiRow(s: Source): Node | null {
   if (!s.url.startsWith('ndi:')) return null;
-  return el('div', { class: 'row hint' }, `${t('bridgeui.ndiVia')} · `, ndiLink(), ` · ${NDI_NOTICE}`);
+  return h('div', { class: 'row hint' }, `${t('bridgeui.ndiVia')} · `, ndiLink(), ` · ${NDI_NOTICE}`);
 }
 
 /** Watch folders of the bridge (released with --watch-dir, in the desktop app by dialog). */
 export function folderButton(ui: BridgeUi, release?: () => Promise<{ name: string; url: string } | null>): HTMLElement {
-  return el('button', { class: 'mini', title: t('bridgeui.folderTitle'), onclick: async (e: Event) => {
+  return button(t('bridgeui.folder'), async (e: Event) => {
     const btn = e.currentTarget as HTMLElement;
     let list: { name: string; url: string }[] = [];
     try { list = await (await fetch(`${ui.http()}/api/folders`)).json(); } catch { /* bridge missing */ }
     const add = async () => { const r = await release?.(); if (r) ui.connect(r.url, r.name); };
     if (!list.length && !release) { ui.hud(t('bridgeui.noFolders')); return; }
     if (!list.length) { await add(); return; }
-    btn.replaceWith(sel('', [['', t('bridgeui.chooseFolder')], ...list.map((f) => [f.url, f.name] as [string, string]), ...(release ? [['+', t('bridgeui.releaseFolder')] as [string, string]] : [])],
+    btn.replaceWith(select('', [['', t('bridgeui.chooseFolder')], ...list.map((f) => [f.url, f.name] as [string, string]), ...(release ? [['+', t('bridgeui.releaseFolder')] as [string, string]] : [])],
       (v) => { if (v === '+') add(); else if (v) ui.connect(v, list.find((f) => f.url === v)?.name); }));
-  } }, t('bridgeui.folder'));
+  }, { small: true, title: t('bridgeui.folderTitle') });
 }
 
 /** How to get stills out of Lightroom, Capture One and Resolve into a watch folder. */
 export function STILL_WORKFLOW(): HTMLElement {
-  return el('div', {},
-    el('p', {}, t('bridgeui.still.1')),
-    el('p', {}, t('bridgeui.still.2')),
-    el('p', {}, t('bridgeui.still.3')),
-    el('p', {}, t('bridgeui.still.4')),
-    el('p', {}, t('bridgeui.still.5')));
+  return h('div', {}, ([1, 2, 3, 4, 5] as const).map((n) => hint(t(`bridgeui.still.${n}`))));
 }

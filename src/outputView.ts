@@ -29,6 +29,8 @@ import { HUD_STYLE, onThemeChange, storedTheme } from './theme';
 import { deepContext, isCodec10, pipelineText, pixelsToFrame10, readPixels, startStream10, type Codec10 } from './deep';
 import { t } from './i18n';
 import { bridgeMessage } from './i18n/bridgeMessage';
+// DOM helper only: output windows keep their own HUD look and never load the app styles (src/ui/*.css)
+import { h } from './ui/dom';
 
 export interface OutputHost {
   panels: PanelState[];
@@ -66,11 +68,8 @@ export function runOutputView() {
   const view = q.get('view') ?? 'grid';
   const outName = q.get('name') ?? '';
   document.title = `${t('output.title')} ${outName || view}`;
-  const root = document.createElement('div');
-  root.style.cssText = 'position:fixed;inset:0;display:grid;gap:2px;background:#000';
-  const glCanvas = document.createElement('canvas');
-  glCanvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
-  root.append(glCanvas);
+  const glCanvas = h('canvas', { style: 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none' });
+  const root = h('div', { style: 'position:fixed;inset:0;display:grid;gap:2px;background:#000' }, glCanvas);
   document.body.replaceChildren(root);
   const renderer = new Renderer(glCanvas, { deep: true });
 
@@ -78,11 +77,9 @@ export function runOutputView() {
   const sigs = new Map<number, string>();
   let clear = true;
   const addCell = (state: PanelState, src: () => Source | null, area = '') => {
-    const body = document.createElement('div');
-    body.style.cssText = `position:relative;min-width:0;min-height:0${area ? `;grid-area:${area}` : ''}`;
-    const overlay = document.createElement('canvas');
-    overlay.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
-    body.append(overlay); root.append(body);
+    const overlay = h('canvas', { style: 'position:absolute;inset:0;width:100%;height:100%' });
+    const body = h('div', { style: `position:relative;min-width:0;min-height:0${area ? `;grid-area:${area}` : ''}` }, overlay);
+    root.append(body);
     cells.push({ state, src, body, overlay });
   };
 
@@ -159,10 +156,9 @@ export function runOutputView() {
   };
   requestAnimationFrame(frame);
 
-  const hud = document.createElement('div');
+  const hud = h('div', { style: 'position:fixed;left:10px;bottom:10px;padding:4px 8px;transition:opacity .5s;pointer-events:none' });
   // chrome follows the UI skin; scopes, picture and the black surround never do
   const skinHud = () => { const s = HUD_STYLE[storedTheme()]; Object.assign(hud.style, { font: s.font, color: s.fg, background: s.bg, borderRadius: s.radius }); };
-  hud.style.cssText = 'position:fixed;left:10px;bottom:10px;padding:4px 8px;transition:opacity .5s;pointer-events:none';
   skinHud(); onThemeChange(skinHud);
   document.body.append(hud);
   let hudT = 0, streamMsg = '';
@@ -172,7 +168,7 @@ export function runOutputView() {
     const buf = renderer.bufferFormat === 'RGBA16F' ? 'WebGL RGBA16F' : t('output.webgl8');
     hud.replaceChildren(
       `${outName ? `${outName} · ` : ''}${view}${sc ? ` · ${sc.name}` : ''}${streamMsg ? ` · Stream ${streamMsg}` : ''}  ·  ${editor ? `${t('output.keyEdit')} · ` : ''}${t('output.keysView')}`,
-      Object.assign(document.createElement('div'), { textContent: `${pipelineText(`${buf}, ${t('output.labels8')}`)}` }),
+      h('div', {}, pipelineText(`${buf}, ${t('output.labels8')}`)),
     );
     hud.style.opacity = '1'; clearTimeout(hudT); hudT = window.setTimeout(() => (hud.style.opacity = '0'), 2500);
   };
@@ -255,12 +251,10 @@ function drawOverlay(renderer: Renderer, ctx: CanvasRenderingContext2D, src: Sou
 /** Edit layer of the overlay view: frames, handles and a toolbar – never streamed. */
 function createEditor(host: OutputHost, root: HTMLElement, scene: () => OverlayScene | null, windowSrc: () => Source | null) {
   let editing = false, sel = -1, sceneId = '';
-  const canvas = document.createElement('canvas');
-  canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:none;cursor:default';
+  const canvas = h('canvas', { style: 'position:absolute;inset:0;width:100%;height:100%;display:none;cursor:default' });
   root.append(canvas);
-  const bar = document.createElement('div');
   const sk = HUD_STYLE[storedTheme()];
-  bar.style.cssText = `position:fixed;left:50%;top:10px;transform:translateX(-50%);display:none;gap:6px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 20px);background:${sk.bg};color:${sk.fg};border:1px solid ${sk.line};border-radius:${sk.radius};padding:6px 8px;cursor:default;z-index:5`;
+  const bar = h('div', { style: `position:fixed;left:50%;top:10px;transform:translateX(-50%);display:none;gap:6px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 20px);background:${sk.bg};color:${sk.fg};border:1px solid ${sk.line};border-radius:${sk.radius};padding:6px 8px;cursor:default;z-index:5` });
   document.body.append(bar);
   const inputCss = `background:${sk.field};color:${sk.fg};border:1px solid ${sk.line};border-radius:${sk.radius};padding:2px 6px;font:${sk.font}`;
 
@@ -301,49 +295,32 @@ function createEditor(host: OutputHost, root: HTMLElement, scene: () => OverlayS
   });
   canvas.addEventListener('pointerup', () => { if (drag) { drag = null; changed(); renderBar(); } });
 
-  const el = (tag: string, attrs: Record<string, string> = {}, text = '') => {
-    const x = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) x.setAttribute(k, v);
-    if (text) x.textContent = text;
-    return x;
-  };
-  const selectEl = (value: string, options: [string, string][], onchange: (v: string) => void, title = '') => {
-    const s = el('select', { style: inputCss, title }) as HTMLSelectElement;
-    for (const [v, l] of options) { const o = el('option', { value: v }, l) as HTMLOptionElement; o.selected = v === value; s.append(o); }
-    s.onchange = () => onchange(s.value);
-    return s;
-  };
-  const button = (label: string, title: string, fn: () => void) => {
-    const b = el('button', { style: `${inputCss};cursor:pointer`, title }, label);
-    b.onclick = fn;
-    return b;
-  };
-  const slider = (label: string, value: number, set: (v: number) => void) => {
-    const wrap = el('label', { style: `display:flex;align-items:center;gap:4px;color:${sk.muted}` }, label);
-    const r = el('input', { type: 'range', min: '0', max: '100', step: '1', value: String(Math.round(value * 100)), style: 'width:90px' }) as HTMLInputElement;
-    r.oninput = () => set(Number(r.value) / 100);
-    r.onchange = changed;
-    wrap.append(r);
-    return wrap;
-  };
+  // the HUD skin's own small controls (inline styles: the app's component styles are not loaded here)
+  const selectEl = (value: string, options: [string, string][], onchange: (v: string) => void, title = '') =>
+    h('select', { style: inputCss, title, onchange: (e: Event) => onchange((e.target as HTMLSelectElement).value) },
+      options.map(([v, l]) => h('option', { value: v, selected: v === value }, l)));
+  const button = (label: string, title: string, fn: () => void) => h('button', { type: 'button', style: `${inputCss};cursor:pointer`, title, onclick: fn }, label);
+  const slider = (label: string, value: number, set: (v: number) => void) =>
+    h('label', { style: `display:flex;align-items:center;gap:4px;color:${sk.muted}` }, label,
+      h('input', { type: 'range', min: 0, max: 100, step: 1, value: Math.round(value * 100), style: 'width:90px', oninput: (e: Event) => set(Number((e.target as HTMLInputElement).value) / 100), onchange: changed }));
   const scopeOptions = (): [string, string][] => OVERLAY_SCOPES.map((k) => [k, SCOPE_LABELS[k as ScopeType]]);
 
   function renderBar() {
     const sc = scene();
-    if (!sc) { bar.replaceChildren(el('span', {}, t('output.noScene'))); return; }
-    const name = el('input', { style: `${inputCss};width:150px`, title: t('output.sceneName'), value: sc.name }) as HTMLInputElement;
+    if (!sc) { bar.replaceChildren(h('span', {}, t('output.noScene'))); return; }
+    const name = h('input', { style: `${inputCss};width:150px`, title: t('output.sceneName'), value: sc.name });
     name.onchange = () => { const n = name.value.trim(); if (n) { sc.name = n; changed(); } };
     const add = selectEl('', [['', t('output.addScope')], ...scopeOptions()], (v) => {
       if (!v || sc.elements.length >= MAX_ELEMENTS) return;
       sc.elements.push(newElement(v as ScopeType, sc.elements.length));
       sel = sc.elements.length - 1; changed(); renderBar();
     }, t('output.addScopeTitle'));
-    const kids: Node[] = [el('span', { style: 'color:#7fd08f' }, t('output.sceneEdit')), name, add];
+    const kids: Node[] = [h('span', { style: 'color:#7fd08f' }, t('output.sceneEdit')), name, add];
     const cur = sc.elements[sel];
     if (cur) {
       const sources: [string, string][] = [['', t('output.windowSource')], ...host.sources().map((s, i): [string, string] => [s.id, `${i + 1} ${s.name}`])];
       kids.push(
-        el('span', { style: `width:1px;height:18px;background:${sk.line}` }),
+        h('span', { style: `width:1px;height:18px;background:${sk.line}` }),
         selectEl(cur.scope, scopeOptions(), (v) => { cur.scope = v as ScopeType; changed(); }, 'Scope'),
         selectEl(cur.src, sources, (v) => { cur.src = v; changed(); }, t('output.scopeSource')),
         slider(t('output.opacity'), cur.opacity, (v) => { cur.opacity = v; }),
@@ -419,7 +396,7 @@ function startStream(host: OutputHost, gl: HTMLCanvasElement, cells: Cell[], nam
   const q = new URLSearchParams({ name, fps: String(fps) });
   if (target) q.set('target', target);
   const ws = new WebSocket(`${host.bridgeUrl()}/out?${q}`);
-  const comp = document.createElement('canvas');
+  const comp = h('canvas');
   let stopped = false;
   ws.onmessage = (e) => { try { const m = JSON.parse(e.data); status(bridgeMessage(m, m.type)); } catch { /* ignore */ } };
   ws.onclose = () => { if (!stopped) status(t('output.streamEnded')); };
@@ -449,7 +426,7 @@ function startStream(host: OutputHost, gl: HTMLCanvasElement, cells: Cell[], nam
  * display graphics, not the source signal). Returns stop().
  */
 function startDeepStream(host: OutputHost, gl: HTMLCanvasElement, cells: Cell[], name: string, target: string, codec: Codec10, fps: number, status: (m: string) => void) {
-  const comp = document.createElement('canvas');
+  const comp = h('canvas');
   const dc = deepContext(comp);
   return startStream10(host.bridgeUrl(), name, target, codec, fps, () => {
     const W = gl.width & ~1, H = gl.height;

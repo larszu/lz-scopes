@@ -1,5 +1,8 @@
 /* iOS/iPadOS app (docs/ios.md): only active with html.lzs-ios, set by src/native/ios.ts.
-   The browser and Electron builds are unchanged. data-idiom = pad | phone (UIDevice). */
+   The browser and Electron builds are unchanged. data-idiom = pad | phone (UIDevice).
+   Touch sizes (44 px on coarse pointers), the header overflow, the sources drawer and the
+   compact dock come from the shared layer (src/ui/tokens.css, src/style.css); only what is
+   specific to WKWebView stays here. */
 
 /* safe area (notch, home indicator, Stage Manager window chrome) */
 html.lzs-ios #app {
@@ -16,28 +19,17 @@ html.lzs-ios .side { touch-action: pan-y; -webkit-overflow-scrolling: touch; }
 /* WKWebView on iPhone has no element fullscreen; the app is full screen anyway */
 html.lzs-ios #full { display: none; }
 
-/* finger-sized targets (Apple HIG: 44 pt) where the pointer is coarse; Pencil and trackpad stay fine */
+/* Safari zooms into fields below 16 px when they get focus */
 @media (pointer: coarse) {
-  html.lzs-ios .bar button, html.lzs-ios .bar summary, html.lzs-ios .side button { min-height: 36px; min-width: 36px; }
-  html.lzs-ios .bar { gap: 6px; }
-  html.lzs-ios select, html.lzs-ios input:not([type='checkbox']):not([type='range']) { min-height: 32px; font-size: 16px; }
-  /* dockview sashes are 4 px: a wider invisible grip around them */
-  html.lzs-ios .dv-sash::after { content: ''; position: absolute; inset: -12px; }
-  html.lzs-ios .dv-tab { min-height: 32px; }
+  html.lzs-ios select, html.lzs-ios input:not([type='checkbox']):not([type='radio']):not([type='range']) { font-size: 16px; }
 }
 
-/* iPhone and narrow iPad windows (Split View, Slide Over, small Stage Manager window) */
+/* iPhone, also in landscape (wider than the phone breakpoint): product name and fps away */
 html.lzs-ios[data-idiom='phone'] .brand .product,
 html.lzs-ios[data-idiom='phone'] .fps { display: none; }
-@media (max-width: 700px) {
-  html.lzs-ios .bar { padding: 4px 6px; gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  html.lzs-ios .bar::-webkit-scrollbar { display: none; }
-  html.lzs-ios .bar > * { flex: none; }
-  html.lzs-ios .side { width: min(340px, 92vw); box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35); }
-}
 
 /* native panel in the sidebar: bridges found in the network, cameras the system sees */
 .lzs-native-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .lzs-native-list button { text-align: left; }
-.lzs-native-list .muted, .lzs-native-note { color: var(--text-muted); font-size: 11px; }
-.lzs-native-list .cam { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; }
+.lzs-native-list .muted, .lzs-native-note { color: var(--text-muted); font-size: var(--fs-sm); }
+.lzs-native-list .cam { display: flex; justify-content: space-between; gap: 6px; font-size: var(--fs-ui); }

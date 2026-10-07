@@ -13,6 +13,7 @@ import {
 } from './model';
 import { ShadingSim, SIM_URL } from './sim';
 import { T } from './text';
+import { button, checkbox, disclosure, h, hint, iconButton, row, select, textInput } from '../ui';
 
 const STORE = 'lz-scopes.shading';
 type Target = 'sim' | number;
@@ -40,16 +41,6 @@ export interface ShadingHost {
   hud(msg: string): void;
   redraw(): void;
 }
-
-const h = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, unknown> = {}, ...kids: (Node | string)[]) => {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k.startsWith('on')) (el as unknown as Record<string, unknown>)[k] = v;
-    else if (v !== undefined && v !== false) el.setAttribute(k, String(v));
-  }
-  el.append(...kids);
-  return el;
-};
 
 const SUPPORTED: ScopeType[] = ['parade', 'yrgb', 'wf-luma', 'wf-color', 'vector'];
 
@@ -398,30 +389,24 @@ export class ShadingControl {
     b.classList.toggle('top', this.atTop);
     if (!this.open) return;
     const cams = this.link.cameras;
-    const targetSel = h('select', {
-      title: T.targetTitle, 'data-shading-target': '',
-      onchange: (e: Event) => { const v = (e.target as HTMLSelectElement).value; void this.setTarget(v === '' ? null : v === 'sim' ? 'sim' : Number(v)); },
-    }, h('option', { value: '' }, T.chooseTarget), h('option', { value: 'sim' }, T.simOption),
-      ...cams.map((c) => h('option', { value: String(c.cameraNumber) }, T.camOption(c.cameraNumber, c.label, c.connected, c.mode)))) as HTMLSelectElement;
-    targetSel.value = this.target === null ? '' : String(this.target);
-    const url = h('input', { class: 'shading-url', value: this.bridgeUrl, title: T.urlTitle, spellcheck: 'false' }) as HTMLInputElement;
-    url.onchange = () => { this.bridgeUrl = url.value.trim(); this.persist(); this.link.disconnect(); this.link.connect(); };
+    const targetSel = select(this.target === null ? '' : String(this.target),
+      [['', T.chooseTarget], ['sim', T.simOption], ...cams.map((c) => [String(c.cameraNumber), T.camOption(c.cameraNumber, c.label, c.connected, c.mode)] as [string, string])],
+      (v) => { void this.setTarget(v === '' ? null : v === 'sim' ? 'sim' : Number(v)); }, T.targetTitle, { 'data-shading-target': '' });
+    const url = textInput(this.bridgeUrl, (v) => { this.bridgeUrl = v.trim(); this.persist(); this.link.disconnect(); this.link.connect(); }, { title: T.urlTitle, attrs: { class: 'shading-url' } });
     const linkTxt = this.link.status === 'open' ? T.linkOpen(cams.length) : this.link.status === 'connecting' ? T.linkConnecting : T.linkClosed;
     this.valuesEl = h('div', { class: 'shading-values' });
+    const arm = checkbox(this.active, h('span', {}, T.active), (on) => (on ? this.activate() : this.deactivate()), '', { 'data-shading-active': '' });
+    arm.classList.add('shading-arm');
     b.replaceChildren(
-      h('label', { class: 'shading-arm' },
-        h('input', { type: 'checkbox', 'data-shading-active': '', ...(this.active ? { checked: '' } : {}), onchange: (e: Event) => ((e.target as HTMLInputElement).checked ? this.activate() : this.deactivate()) }),
-        h('span', {}, T.active)),
+      arm,
       targetSel,
-      h('button', { class: 'shading-undo', title: T.undoTitle, disabled: !this.undoStack.length || !this.active, onclick: () => this.undo() }, T.undo),
-      h('button', { class: 'shading-stop', 'data-shading-stop': '', title: T.stopTitle, onclick: () => this.emergencyStop() }, T.stop),
+      button(T.undo, () => this.undo(), { title: T.undoTitle, disabled: !this.undoStack.length || !this.active, attrs: { class: 'btn shading-undo' } }),
+      button(T.stop, () => this.emergencyStop(), { title: T.stopTitle, attrs: { class: 'btn shading-stop', 'data-shading-stop': '' } }),
       this.valuesEl,
-      h('details', { class: 'shading-more' }, h('summary', {}, 'Bridge'),
-        h('div', { class: 'row' }, url), h('div', { class: 'hint' }, linkTxt),
-        h('p', { class: 'hint' }, T.help(LIMITS.step, LIMITS.span))),
-      h('span', { class: 'shading-msg', 'data-shading-msg': '' }, this.message),
-      h('button', { class: 'icon', title: T.moveBar, onclick: () => { this.atTop = !this.atTop; this.persist(); this.render(); } }, '⇅'),
-      h('button', { class: 'icon', title: T.close, onclick: () => { if (this.active) this.deactivate(); this.toggleBar(false); } }, '✕'),
+      disclosure('Bridge', [row(url), h('div', { class: 'hint' }, linkTxt), hint(T.help(LIMITS.step, LIMITS.span))], { cls: 'shading-more' }),
+      h('span', { class: 'shading-msg', 'data-shading-msg': '', role: 'status' }, this.message),
+      iconButton('⇅', T.moveBar, () => { this.atTop = !this.atTop; this.persist(); this.render(); }),
+      iconButton('✕', T.close, () => { if (this.active) this.deactivate(); this.toggleBar(false); }),
     );
     this.renderValues();
   }

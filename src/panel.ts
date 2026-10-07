@@ -31,6 +31,7 @@ import { clockOpts, drawClockOverlay, drawClockPanel, type ClockOptions } from '
 import { GREEN_DEFAULT, targetSignal } from './match/core';
 import { drawMatchPanel, matchSignature, type MatchSettings } from './match/panel';
 import { drawLightPanel, isLight, lightSignature, type LightPanelOptions } from './opple/scopes';
+import { t } from './i18n';
 
 export interface PanelState {
   scope: ScopeType; sourceId: string; gain: number; colorize: boolean; zoom: number;
@@ -151,9 +152,9 @@ export const warnMatrix = (src: Source, target: GamutId = '709') => gamutConvert
 
 /** Vectorscope targets: for camera log sources the 709 bars encoded into the source curve and gamut. */
 export function vectorTargets(src: Source): BarTargetSet | undefined {
-  const t = src.transfer;
-  if (!isLog(t)) return undefined;
-  return { t100: logBarTargets(t, src.gamut, src.colorspace, 1), t75: logBarTargets(t, src.gamut, src.colorspace, 0.75), label: `709-Balken in ${transferLabel(t)}/${GAMUTS[src.gamut].name}` };
+  const tr = src.transfer;
+  if (!isLog(tr)) return undefined;
+  return { t100: logBarTargets(tr, src.gamut, src.colorspace, 1), t75: logBarTargets(tr, src.gamut, src.colorspace, 0.75), label: t('panel.draw.logBars', { curve: transferLabel(tr), gamut: GAMUTS[src.gamut].name }) };
 }
 
 export const ROI_CLOSE = 16;
@@ -166,10 +167,10 @@ export function deLines(src: Source, rgb: [number, number, number], o: DrawOptio
   const r = o.deRef ?? 'off';
   if (r === 'off') return [];
   const refs: DeRef[] = r === 'bars' ? barRefs(src)
-    : (o.targets ?? []).filter((t) => r === 'targets' || r === `target:${t.name}`).map((t) => ({ name: t.name, rgb: targetSignal(t, src) }));
+    : (o.targets ?? []).filter((tg) => r === 'targets' || r === `target:${tg.name}`).map((tg) => ({ name: tg.name, rgb: targetSignal(tg, src) }));
   const n = nearest(src, rgb, refs);
-  if (!n) return [`ΔE        – (kein Bezug „${r.replace('target:', '')}“)`];
-  return [`${n.metric.padEnd(9)} ${n.value.toFixed(2)} zu ${n.ref.name}`];
+  if (!n) return [`ΔE        – ${t('panel.draw.noRef', { name: r.replace('target:', '') })}`];
+  return [`${n.metric.padEnd(9)} ${t('panel.draw.deTo', { value: n.value.toFixed(2), name: n.ref.name })}`];
 }
 
 /** B side of an A/B comparison: another stage of the panel's source or another source. */
@@ -180,18 +181,18 @@ export function abSource(b: string, a: Source, p: PanelState, o: DrawOptions): S
   return null;
 }
 
-export const abLabel = (b: string, s: Source | null) => (b === 'rgc' ? 'RGC umgeschaltet' : b.startsWith('stage:') ? STAGE_LABELS[b.slice(6) as Stage] ?? b : s?.name ?? 'fehlt');
+export const abLabel = (b: string, s: Source | null) => (b === 'rgc' ? t('panel.draw.rgcSwitched') : b.startsWith('stage:') ? STAGE_LABELS[b.slice(6) as Stage] ?? b : s?.name ?? t('panel.draw.missing'));
 
 function drawAbLabels(ctx: CanvasRenderingContext2D, r: Rect, ab: NonNullable<PanelState['ab']>, a: Source, b: Source | null) {
   ctx.save();
   ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'top';
-  const tag = (t: string, x: number, align: CanvasTextAlign) => {
-    ctx.textAlign = align; const w = ctx.measureText(t).width + 8;
+  const tag = (text: string, x: number, align: CanvasTextAlign) => {
+    ctx.textAlign = align; const w = ctx.measureText(text).width + 8;
     ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(align === 'left' ? x : x - w, r.y + r.h - 20, w, 14);
-    ctx.fillStyle = '#ddd'; ctx.fillText(t, align === 'left' ? x + 4 : x - 4, r.y + r.h - 18);
+    ctx.fillStyle = '#ddd'; ctx.fillText(text, align === 'left' ? x + 4 : x - 4, r.y + r.h - 18);
   };
   const aName = a.name + (chainOf(a) ? ` · ${STAGE_LABELS[chainOf(a)!.stage]}` : '');
-  if (!b || !b.ready) tag(`B: ${abLabel(ab.b, b)} – keine Daten, nur A`, r.x + 4, 'left');
+  if (!b || !b.ready) tag(t('panel.draw.bNoData', { b: abLabel(ab.b, b) }), r.x + 4, 'left');
   else if (ab.mode === 'diff') tag(`|A − B| × ${ab.gain ?? 4} · A ${aName} · B ${abLabel(ab.b, b)}`, r.x + 4, 'left');
   else {
     const x = r.x + r.w * (ab.mode === 'split' ? 0.5 : Math.max(0, Math.min(1, ab.pos ?? 0.5)));
@@ -240,8 +241,8 @@ const SCATTER: Partial<Record<ScopeType, ScatterMode>> = {
  */
 export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key: string, p: PanelState, src: Source | null, body: Rect, o: DrawOptions) {
   if (isAudio(p.scope)) {
-    const empty = src ? (src.kind === 'stream' && src.settings.audio === false ? 'Ton ist für diese Quelle aus (Quelle → Ton)'
-      : src.status === 'live' ? 'Kein Ton in dieser Quelle' : (src.message || 'Keine Daten – Quelle starten')) : (o.emptyText ?? 'Links eine Quelle hinzufügen');
+    const empty = src ? (src.kind === 'stream' && src.settings.audio === false ? t('panel.draw.audioOff')
+      : src.status === 'live' ? t('panel.draw.noAudio') : (src.message || t('panel.draw.noData'))) : (o.emptyText ?? t('panel.draw.addSource'));
     drawAudioPanel(ctx, p.scope, src?.audio ?? null, body.w, body.h, p.audio, empty, p);
     return;
   }
@@ -254,7 +255,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     renderer.clearRect(body);
     if (!src || !src.ready) {
       ctx.fillStyle = '#6b7078'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(src ? (src.message || 'Keine Daten – Quelle starten') : (o.emptyText ?? 'Links eine Quelle hinzufügen'), body.w / 2, body.h / 2);
+      ctx.fillText(src ? (src.message || t('panel.draw.noData')) : (o.emptyText ?? t('panel.draw.addSource')), body.w / 2, body.h / 2);
       return;
     }
     drawTimeline(ctx, { x: 4, y: 6, w: body.w - 8, h: body.h - 8 }, src.history, src.colorspace, p.span ?? 10);
@@ -278,7 +279,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
 
   if (!src || !src.ready) {
     ctx.fillStyle = '#6b7078'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(src ? (src.message || 'Keine Daten – Quelle starten') : (o.emptyText ?? 'Links eine Quelle hinzufügen'), body.w / 2, body.h / 2);
+    ctx.fillText(src ? (src.message || t('panel.draw.noData')) : (o.emptyText ?? t('panel.draw.addSource')), body.w / 2, body.h / 2);
     if (isWaveform(p.scope)) drawWaveGraticule(ctx, p.scope, r, o.unit, src?.transfer ?? 'sdr', waveOpts(p, src));
     return;
   }
@@ -380,8 +381,8 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
         ctx.fillStyle = '#111'; ctx.font = '600 11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(String(i + 1), rx + 9, ry - 7);
       });
-      if (!src.faces.length) drawTextBox(ctx, r.x + 6, r.y + r.h - 28, ['Suche Gesichter …']);
-      else if (src.faceMode === 'detect' && !src.faceSel.size) drawTextBox(ctx, r.x + 6, r.y + r.h - 28, ['Gesicht anklicken zum Verfolgen']);
+      if (!src.faces.length) drawTextBox(ctx, r.x + 6, r.y + r.h - 28, [t('panel.draw.searchFaces')]);
+      else if (src.faceMode === 'detect' && !src.faceSel.size) drawTextBox(ctx, r.x + 6, r.y + r.h - 28, [t('panel.draw.clickFace')]);
     } else if (src.roi) {
       const [x0, y0, x1, y1] = src.roi;
       ctx.strokeStyle = '#ffb840'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
@@ -398,7 +399,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       const bands = FALSE_COLOR_PRESETS[o.falsePreset] ?? [];
       ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
       const text = bands.map((bd) => `${bandRange(bd)} % ${bd.label}`);
-      const bw = Math.max(150, ...text.map((t) => ctx.measureText(t).width + 20));
+      const bw = Math.max(150, ...text.map((s) => ctx.measureText(s).width + 20));
       bands.forEach((bd, i) => {
         const y = r.y + r.h - 12 - (bands.length - 1 - i) * 14;
         ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(r.x + 4, y - 7, bw, 14);
@@ -409,10 +410,10 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     if (p.picture === 'r103') {
       const q = src.r103Stats();
       const legend: [string, string][] = [
-        ['#ffb31a', `R 103 außerhalb −5/105 %${q ? ` · ${(q.pref * 100).toFixed(2)} %${q.alarm ? ' ⚠' : ''}` : ''}`],
-        ['#ff1a33', `außerhalb 4–1019 (hart)${q ? ` · ${(q.total * 100).toFixed(2)} %` : ''}`],
+        ['#ffb31a', `${t('panel.draw.r103Pref')}${q ? ` · ${(q.pref * 100).toFixed(2)} %${q.alarm ? ' ⚠' : ''}` : ''}`],
+        ['#ff1a33', `${t('panel.draw.r103Total')}${q ? ` · ${(q.total * 100).toFixed(2)} %` : ''}`],
       ];
-      if (!src.yuv) legend.push(['#888', 'R′G′B′-Quelle beschnitten – Y′CbCr-Pfad nötig']);
+      if (!src.yuv) legend.push(['#888', t('panel.draw.rgbClipped')]);
       ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
       legend.forEach(([col, label], i) => {
         const y = r.y + r.h - 12 - (legend.length - 1 - i) * 14;
@@ -423,13 +424,13 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     }
     if (p.picture === 'neutral') {
       const np = neutralParams(p), nc = src.neutralCast(np.threshold, np.lo, np.hi);
-      const lines = [`Fast neutral (< ${(np.threshold * 100).toFixed(0)} % Sättigung, Y′ ${(np.lo * 100).toFixed(0)}–${(np.hi * 100).toFixed(0)} %)`,
-        nc ? `${(nc.share * 100).toFixed(1)} % der Fläche · Stich ${(nc.amount * 100).toFixed(2)} %${nc.amount > 0.002 ? ` Richtung ${castName(nc.deg, src.colorspace)}` : ' (neutral)'}` : 'keine CPU-Daten'];
+      const lines = [t('panel.draw.nearNeutral', { sat: (np.threshold * 100).toFixed(0), lo: (np.lo * 100).toFixed(0), hi: (np.hi * 100).toFixed(0) }),
+        nc ? `${t('panel.draw.castShare', { share: (nc.share * 100).toFixed(1), amount: (nc.amount * 100).toFixed(2) })}${nc.amount > 0.002 ? ` ${t('panel.draw.castTowards', { hue: castName(nc.deg, src.colorspace) })}` : t('panel.draw.castNeutral')}` : t('panel.draw.noCpu')];
       drawTextBox(ctx, r.x + 6, r.y + r.h - 6 - lines.length * 15 - 8, lines);
     }
     if (p.picture === 'gamut') {
       const legend: [string, string][] = [
-        ['#ffe61a', `knapp außerhalb ${GAMUTS[p.gamutTarget ?? '709'].name} (≤ 5 %)`], ['#ff730d', 'außerhalb (≤ 20 %)'], ['#ff1abf', 'weit außerhalb (> 20 %)'],
+        ['#ffe61a', t('panel.draw.justOutside', { gamut: GAMUTS[p.gamutTarget ?? '709'].name })], ['#ff730d', t('panel.draw.outside')], ['#ff1abf', t('panel.draw.farOutside')],
       ];
       ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
       legend.forEach(([col, label], i) => {
@@ -446,14 +447,14 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       ctx.moveTo(x, y - 10); ctx.lineTo(x, y - 3); ctx.moveTo(x, y + 3); ctx.lineTo(x, y + 10); ctx.stroke();
       drawTextBox(ctx, r.x + r.w - 6, r.y + 6, [...probeLines(src, probeRgb, o.unit), ...deLines(src, probeRgb, o)], 'right');
     }
-    if (o.frozen) drawTextBox(ctx, r.x + 6, r.y + 6, ['STANDBILD']);
+    if (o.frozen) drawTextBox(ctx, r.x + 6, r.y + 6, [t('panel.draw.frozen')]);
     if (p.clockOverlay) drawClockOverlay(ctx, clockOpts(p.clock), src, r.x + r.w - 6, r.y + r.h - 6);
     if (p.audioBar !== false && src.audio) drawAudioBar(ctx, src.audio, r);
   } else if (p.scope === 'match') {
     drawMatchPanel(ctx, body.w, body.h, p.match, src, matchCtx(o));
   } else if (p.scope === 'stats') {
     const lines = statsLines(src, o.displayFps);
-    if (probeRgb) lines.push('', 'Messpunkt', ...[...probeLines(src, probeRgb, o.unit), ...deLines(src, probeRgb, o)]);
+    if (probeRgb) lines.push('', t('settings.stage.point'), ...[...probeLines(src, probeRgb, o.unit), ...deLines(src, probeRgb, o)]);
     ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.fillStyle = '#d6d6d6'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     lines.forEach((l, i) => ctx.fillText(l, 12, 10 + i * 15));
   }

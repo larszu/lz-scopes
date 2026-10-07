@@ -1,8 +1,10 @@
 name: iOS
 
 # Builds the iPhone/iPad app (Capacitor, ios/) for the iOS Simulator without signing, starts it
-# on an iPhone and an iPad simulator next to a bridge on the runner (Bonjour discovery) and
-# uploads screenshots plus the app's console. Signing and TestFlight: docs/ios.md.
+# on an iPhone and an iPad simulator next to a bridge on the runner (Bonjour discovery) and a
+# local RTSP test server (RTSP direct, #90), and uploads screenshots plus the app's console.
+# The Swift package ios/LzRtsp (RTSP/RTP, VideoToolbox, frame server) is unit-tested with
+# recorded packets and end to end against the same RTSP server. Signing and TestFlight: docs/ios.md.
 # The repo is public, macOS minutes are free.
 
 on:
@@ -11,6 +13,9 @@ on:
       - 'ios/**'
       - 'src/**'
       - 'server/bonjour.mjs'
+      - 'server/rtsp.mjs'
+      - 'server/rtp.mjs'
+      - 'scripts/ios-rtsp-*.mjs'
       - 'capacitor.config.json'
       - 'package.json'
       - 'package-lock.json'
@@ -21,6 +26,9 @@ on:
       - 'ios/**'
       - 'src/**'
       - 'server/bonjour.mjs'
+      - 'server/rtsp.mjs'
+      - 'server/rtp.mjs'
+      - 'scripts/ios-rtsp-*.mjs'
       - 'capacitor.config.json'
       - 'package.json'
       - 'package-lock.json'
@@ -34,7 +42,41 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  MEDIAMTX_VERSION: v1.21.1
+
 jobs:
+  # Swift unit tests (recorded packets, VideoToolbox) and live tests against mediamtx
+  lzrtsp:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: RTSP test server (mediamtx + the shipped ffmpeg)
+        run: |
+          node scripts/ffmpeg-fetch.mjs darwin-arm64
+          curl -fsSL "https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMTX_VERSION}/mediamtx_${MEDIAMTX_VERSION}_darwin_arm64.tar.gz" | tar -xz -C /usr/local/bin mediamtx
+          mediamtx --version
+          nohup node scripts/ios-rtsp-testserver.mjs 8554 > rtsp-server.log 2>&1 &
+          sleep 6
+          cat rtsp-server.log
+      - name: swift test (ios/LzRtsp)
+        working-directory: ios/LzRtsp
+        env:
+          LZS_RTSP_TEST_PORT: '8554'
+        run: swift test 2>&1 | tee ../../swift-test.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lzrtsp-tests
+          path: |
+            swift-test.log
+            rtsp-server.log
+          retention-days: 14
+
   simulator:
     runs-on: macos-26
     timeout-minutes: 45
@@ -62,6 +104,15 @@ jobs:
           nohup node server/index.mjs --host 0.0.0.0 --port 4192 > bridge.log 2>&1 &
           sleep 3
           cat bridge.log
+      # RTSP direct (#90): H.264 (WebCodecs in the WebView) and HEVC (Main 10 from the shipped
+      # x265 → VideoToolbox in the app); the simulator reaches the runner's 127.0.0.1
+      - name: RTSP test server for the simulator
+        run: |
+          node scripts/ffmpeg-fetch.mjs darwin-arm64
+          curl -fsSL "https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMTX_VERSION}/mediamtx_${MEDIAMTX_VERSION}_darwin_arm64.tar.gz" | tar -xz -C /usr/local/bin mediamtx
+          nohup node scripts/ios-rtsp-testserver.mjs 8554 > rtsp-server.log 2>&1 &
+          sleep 6
+          cat rtsp-server.log
       - name: Run on iPhone and iPad simulators, take screenshots
         run: |
           mkdir -p ios-shots
@@ -90,7 +141,8 @@ jobs:
             xcrun simctl install "$UDID" "$APP"
             # camera, microphone and local network without prompts (simulator only)
             xcrun simctl privacy "$UDID" grant all de.zumpelars.lzscopes || true
-            xcrun simctl launch --console-pty "$UDID" de.zumpelars.lzscopes > "ios-shots/$kind-console.txt" 2>&1 &
+            # debug build: opens both RTSP sources directly at start (-LzsAutoStreams, ios/App/App/LzNative.swift)
+            xcrun simctl launch --console-pty "$UDID" de.zumpelars.lzscopes -LzsAutoStreams "rtsp://127.0.0.1:8554/h264 rtsp://127.0.0.1:8554/hevc" > "ios-shots/$kind-console.txt" 2>&1 &
             # the first boot of a large iPad simulator keeps SpringBoard busy for a while
             sleep 30
             xcrun simctl io "$UDID" screenshot "ios-shots/$kind-30s.png"
@@ -100,7 +152,9 @@ jobs:
             xcrun simctl shutdown "$UDID" || true
           done
           ls -la ios-shots
-          grep -h "lzs-ios\|ERROR\|Error" ios-shots/*-console.txt | head -n 40 || true
+          grep -h "lzs-ios\|ERROR\|Error" ios-shots/*-console.txt | head -n 60 || true
+      - name: RTSP direct arrived in the WebView (75 % bar ≈ 191)
+        run: node scripts/ios-rtsp-check.mjs ios-shots/*-console.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -108,4 +162,5 @@ jobs:
           path: |
             ios-shots
             bridge.log
+            rtsp-server.log
           retention-days: 14

@@ -282,7 +282,7 @@ float pqNits(float v) {
   return 10000.0 * pow(max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125);
 }
 float hlgOetfG(float e) { e = max(e, 0.0); return e <= 1.0 / 12.0 ? sqrt(3.0 * e) : 0.17883277 * log(12.0 * e - 0.28466892) + 0.55991073; }
-// BT.2390 EETF in the PQ domain (color.ts bt2390Eetf, from alwan alwan_hdr_core.inc l. 235–265, MIT)
+// BT.2390 EETF in the PQ domain (port of color.ts bt2390Eetf; source and licence noted there)
 float eetf(float e) {
   float range = max(uSrcPQ, 1e-10);
   float en = clamp(e / range, 0.0, 1.0), maxLum = min(1.0, uTgtPQ / range);

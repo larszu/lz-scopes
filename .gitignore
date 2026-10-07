@@ -7,3 +7,5 @@ public/mediapipe
 test-results
 helpers/bin
 vendor/ffmpeg
+vendor/decklink-sdk
+helpers/decklink/win-gen

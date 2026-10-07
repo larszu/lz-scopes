@@ -165,7 +165,30 @@ const MACBETH: RGB[] = [
   [243, 243, 242], [200, 200, 200], [160, 160, 160], [122, 122, 121], [85, 85, 85], [52, 52, 52],
 ];
 
-function testCard(ctx: CanvasRenderingContext2D, w: number, h: number, t: number) {
+/** Uploaded logo for the logo patterns (#52, src/userPatterns.ts); null = none. */
+export const userLogo: { image: HTMLImageElement | null; name: string } = { image: null, name: '' };
+
+/** Draw the logo fitted into a box (aspect kept), centred. */
+function drawLogo(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
+  const s = Math.min(w / img.naturalWidth, h / img.naturalHeight);
+  const dw = img.naturalWidth * s, dh = img.naturalHeight * s;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(img, Math.round(x + (w - dw) / 2), Math.round(y + (h - dh) / 2), Math.round(dw), Math.round(dh));
+}
+
+/** Logo alone: centred on black, inside the EBU R 95 graphics safe area (90 %), at most half the height. */
+export function logoCard(ctx: CanvasRenderingContext2D, w: number, h: number, bg: RGB = [0, 0, 0]) {
+  fill(ctx, bg, 0, 0, w, h);
+  const img = userLogo.image;
+  if (!img) { text(ctx, 'Kein Logo hochgeladen (Testbilder → Logo)', w / 2, h / 2, h * 0.04, '#888'); return; }
+  drawLogo(ctx, img, w * 0.25, h * 0.25, w * 0.5, h * 0.5);
+}
+
+export function testCardLogo(ctx: CanvasRenderingContext2D, w: number, h: number, t: number) {
+  testCard(ctx, w, h, t, userLogo.image);
+}
+
+function testCard(ctx: CanvasRenderingContext2D, w: number, h: number, t: number, logo: HTMLImageElement | null = null) {
   fill(ctx, gray(0.35), 0, 0, w, h);
   const cell = h / 14;
   ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1, Math.round(h / 540));
@@ -194,7 +217,14 @@ function testCard(ctx: CanvasRenderingContext2D, w: number, h: number, t: number
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(cx - R * 0.08, cy); ctx.lineTo(cx + R * 0.08, cy); ctx.moveTo(cx, cy - R * 0.08); ctx.lineTo(cx, cy + R * 0.08); ctx.stroke();
   void t;
-  text(ctx, new Date().toLocaleTimeString('de-DE'), cx, cy + R * 0.72, R * 0.16, '#fff');
+  if (logo) {
+    // logo in the black lower segment, the clock moves below it (smaller)
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.clip();
+    drawLogo(ctx, logo, cx - R * 0.6, cy + R * 0.58, R * 1.2, R * 0.2);
+    ctx.restore();
+    text(ctx, new Date().toLocaleTimeString('de-DE'), cx, cy + R * 0.88, R * 0.1, '#fff');
+  } else text(ctx, new Date().toLocaleTimeString('de-DE'), cx, cy + R * 0.72, R * 0.16, '#fff');
   arrows(ctx, w, h, '#fff');
 }
 
@@ -494,14 +524,6 @@ export function patternById(id: string) {
   return PATTERNS.find((p) => p.id === id) ?? PATTERNS.find((p) => p.id === 'smpte75')!;
 }
 
-/** Register user images for this session as extra patterns. */
-export function addImagePatterns(files: File[]): PatternDef[] {
-  const added = files.filter((f) => f.type.startsWith('image/')).map((f, i) => ({
-    id: `user-${Date.now()}-${i}`, name: f.name, group: 'Eigene Bilder', src: URL.createObjectURL(f),
-  }));
-  PATTERNS.push(...added);
-  return added;
-}
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
 function loadImage(src: string) {

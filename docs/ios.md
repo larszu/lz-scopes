@@ -1,64 +1,66 @@
-# iPhone- und iPad-App
+[Deutsch](ios.de.md) | **English**
 
-Die App ist dieselbe Web-App wie im Browser und in der Desktop-App, verpackt mit [Capacitor](https://capacitorjs.com) (MIT) in `ios/`. Hintergrund und Quellen stehen in [research/ios-app.md](research/ios-app.md).
+# iPhone and iPad app
 
-**Stand:** baut in der CI und startet im iOS-Simulator (iPhone und iPad, Bildschirmfotos als Artefakt des Workflows `iOS`). **Auf echten Geräten ist nichts geprüft:** Bluetooth (Opple), USB-Capture, Kamera, Bonjour im WLAN, Leistung der Scopes und Stage Manager.
+The app is the same web app as in the browser and the desktop app, wrapped with [Capacitor](https://capacitorjs.com) (MIT) in `ios/`. Background and sources are in [research/ios-app.md](research/ios-app.md) (German).
 
-## Was die App kann
+**Status:** builds in CI and starts in the iOS Simulator (iPhone and iPad; screenshots are an artefact of the `iOS` workflow). **Nothing has been tested on real devices:** Bluetooth (Opple), USB capture, camera, Bonjour over Wi-Fi, scope performance and Stage Manager.
 
-| Eingang | iPhone | iPad | Weg |
+## What the app can do
+
+| Input | iPhone | iPad | Path |
 |---|---|---|---|
-| Testbilder, Dateien, Fotos | ja | ja | wie im Browser |
-| Eingebaute Kamera | ja | ja | getUserMedia |
-| USB-C-Capture-Karte (UVC) | nein | ab iPadOS 17 | getUserMedia, Liste der Systemkameras im Abschnitt „iPad: Kameras und USB-Capture“ |
-| RTSP, SRT, HLS, NDI, DeckLink, Resolve | über die Bridge | über die Bridge | Bridge auf einem Rechner im selben Netz |
-| Opple Light Master | ja | ja | CoreBluetooth (@capacitor-community/bluetooth-le); nimmt den Light Master mit dem stärksten Signal |
-| Bildschirm/Fenster, Ordner beobachten | nein | nein | gibt es in WKWebView nicht, Schaltflächen deaktiviert |
+| Test patterns, files, photos | yes | yes | as in the browser |
+| Built-in camera | yes | yes | getUserMedia |
+| USB-C capture card (UVC) | no | iPadOS 17 and later | getUserMedia; the system camera list is under “iPad: Kameras und USB-Capture” (iPad: cameras and USB capture) |
+| RTSP, SRT, HLS, NDI, DeckLink, Resolve | via the bridge | via the bridge | bridge on a computer in the same network |
+| Opple Light Master | yes | yes | CoreBluetooth (@capacitor-community/bluetooth-le); picks the Light Master with the strongest signal |
+| Screen/window, watch folder | no | no | not available in WKWebView, buttons disabled |
 
-Bedienung: Auf dem iPad gilt das normale Layout mit Seitenleiste. Split View, Slide Over und Stage Manager werden unterstützt (alle Ausrichtungen, kein Vollbildzwang). Unter 700 px Breite wird die Kopfleiste waagerecht scrollbar. Auf dem iPhone startet die App beim ersten Mal mit Bild über Waveform (Layout „1/1“), die Seitenleiste ist zu. Scopes nehmen alle Berührungen an, die Seite selbst scrollt nicht. Apple Pencil und Trackpad laufen über die normalen Pointer-Events.
+Operation: on the iPad the normal layout with sidebar applies. Split View, Slide Over and Stage Manager are supported (all orientations, no forced full screen). Below 700 px width the header bar scrolls horizontally. On the iPhone the app starts the first time with the picture above the waveform (layout “1/1”) and the sidebar closed. Scopes take all touches; the page itself does not scroll. Apple Pencil and trackpad work through the normal pointer events.
 
-## Bridge im Netz
+## Bridge on the network
 
-Auf dem Rechner mit den Quellen:
+On the computer with the sources:
 
 ```bash
-npm start -- --host 0.0.0.0                  # aus dem Repo
-open --env LZS_HOST=0.0.0.0 -a "LZ Scopes"   # Desktop-App am Mac
+npm start -- --host 0.0.0.0                  # from the repo
+open --env LZS_HOST=0.0.0.0 -a "LZ Scopes"   # desktop app on the Mac
 ```
 
-Lauscht die Bridge nicht nur auf 127.0.0.1, meldet sie sich per Bonjour als `_lz-scopes._tcp` (`LZS_BONJOUR=0` schaltet das ab). In der App: Seitenleiste → Bridge → „Bridge im Netz suchen“. Ist das Feld leer und es gibt genau eine Bridge, trägt die App sie selbst ein. Sonst die Adresse von Hand eingeben, `192.168.1.20` reicht (Port 4192 und `ws://` werden ergänzt).
+When the bridge listens on more than 127.0.0.1, it announces itself via Bonjour as `_lz-scopes._tcp` (`LZS_BONJOUR=0` turns this off). In the app: sidebar → Bridge → “Bridge im Netz suchen” (find bridge on the network). If the field is empty and there is exactly one bridge, the app fills it in itself. Otherwise enter the address by hand; `192.168.1.20` is enough (port 4192 and `ws://` are added).
 
-Achtung: Im Netz kann dann jeder Rechner über die Bridge Streams öffnen, also auch die Kameras und Capture-Geräte des Rechners. Nur in vertrauenswürdigen Netzen. Steuerung, Messgeräte und PTP bleiben auf den Rechner selbst beschränkt.
+Caution: any computer on the network can then open streams through the bridge, including the cameras and capture devices of that computer. Use only in trusted networks. Control, meters and PTP stay limited to the computer itself.
 
-## Bauen
+## Building
 
-Voraussetzung: Mac mit Xcode 26 oder neuer (Capacitor 8).
+Requirement: a Mac with Xcode 26 or later (Capacitor 8).
 
 ```bash
 npm ci
 npm run ios:sync      # vite build + cap sync ios
-npm run ios:open      # öffnet ios/App/App.xcodeproj in Xcode
+npm run ios:open      # opens ios/App/App.xcodeproj in Xcode
 ```
 
-In Xcode Ziel „App“, ein Simulator oder ein angeschlossenes Gerät, dann Run. Für ein eigenes Gerät unter Signing & Capabilities das Team wählen. Mit einem kostenlosen Apple-Konto geht das nur für eigene Geräte, und die App läuft dann nur einige Tage.
+In Xcode choose the target “App”, a simulator or a connected device, then Run. For your own device, choose the team under Signing & Capabilities. With a free Apple account this works only for your own devices, and the app then runs for only a few days.
 
-CI: `.github/workflows/ios.yml` baut auf `macos-26` ohne Signierung für den Simulator. Dann startet sie neben einer Bridge auf dem Runner je einen iPhone- und einen iPad-Simulator und lädt Bildschirmfotos und das Konsolenlog hoch. Das Log enthält die Zeile `[lzs-ios] … WebGL2 …` mit den Float-Erweiterungen der WebView.
+CI: `.github/workflows/ios.yml` builds on `macos-26` without signing for the simulator. It then starts an iPhone and an iPad simulator next to a bridge on the runner and uploads screenshots and the console log. The log contains the line `[lzs-ios] … WebGL2 …` with the float extensions of the WebView.
 
-## Signierung und TestFlight: was Lars braucht
+## Signing and TestFlight: what is needed
 
-Das kostet Geld und ist deshalb Lars' Entscheidung. Empfehlung: TestFlight.
+This costs money and is therefore the owner's decision. Recommendation: TestFlight.
 
-1. **Apple Developer Program** (99 USD pro Jahr, developer.apple.com/programs). Als Einzelperson oder als Firma. Die Firma braucht eine D-U-N-S-Nummer und erscheint dann als Anbieter im Store.
-2. **Team-ID** (10 Zeichen, unter Membership). In Xcode unter Signing & Capabilities das Team wählen. Für die CI kommt sie als Secret `APPLE_TEAM_ID` ins Repo.
-3. **App-ID** `de.zumpelars.lzscopes` registrieren und in App Store Connect die App „LZ Scopes“ anlegen (Plattform iOS, ein Build für iPhone und iPad).
-4. **Signierung in der CI.** Empfohlen ist ein App-Store-Connect-API-Schlüssel (Users and Access → Integrations → Team Keys, Rolle „App Manager“). Damit signiert Xcode automatisch (`-allowProvisioningUpdates` mit `-authenticationKeyPath/-ID/-IssuerID`), Zertifikate und Profile muss niemand von Hand pflegen. Secrets:
+1. **Apple Developer Program** (USD 99 per year, developer.apple.com/programs), as an individual or as a company. A company needs a D-U-N-S number and then appears as the seller in the store.
+2. **Team ID** (10 characters, under Membership). Choose the team in Xcode under Signing & Capabilities. For CI it goes into the repo as the secret `APPLE_TEAM_ID`.
+3. Register the **App ID** `de.zumpelars.lzscopes` and create the app “LZ Scopes” in App Store Connect (platform iOS, one build for iPhone and iPad).
+4. **Signing in CI.** Recommended is an App Store Connect API key (Users and Access → Integrations → Team Keys, role “App Manager”). Xcode then signs automatically (`-allowProvisioningUpdates` with `-authenticationKeyPath/-ID/-IssuerID`); nobody has to maintain certificates and profiles by hand. Secrets:
    - `ASC_KEY_ID`, `ASC_ISSUER_ID`
-   - `ASC_KEY_P8` (Inhalt der .p8-Datei, Base64)
+   - `ASC_KEY_P8` (content of the .p8 file, Base64)
    - `APPLE_TEAM_ID`
 
-   Alternative: Distributionszertifikat als .p12 plus Provisioning-Profil als Secrets (`IOS_DIST_P12`, `IOS_DIST_P12_PASSWORD`, `IOS_PROFILE`).
-5. **Hochladen** mit `xcodebuild archive`, dann `-exportArchive` (Methode App Store Connect, Ziel Upload). Danach in TestFlight die Tester einladen.
+   Alternative: distribution certificate as .p12 plus provisioning profile as secrets (`IOS_DIST_P12`, `IOS_DIST_P12_PASSWORD`, `IOS_PROFILE`).
+5. **Upload** with `xcodebuild archive`, then `-exportArchive` (method App Store Connect, destination upload). Then invite the testers in TestFlight.
 
-Der Upload-Workflow ist noch nicht gebaut, weil es ohne Konto und Secrets nichts zu prüfen gibt. Schritte 4 und 5 sind deshalb ungeprüft. Mit den Secrets lässt er sich nach dem Muster von `release.yml` ergänzen, ausgelöst durch einen `ios-v*`-Tag.
+The upload workflow has not been built yet, because without an account and secrets there is nothing to test. Steps 4 and 5 are therefore untested. With the secrets it can be added following the pattern of `release.yml`, triggered by an `ios-v*` tag.
 
-Vor dem App Store zusätzlich nötig: Datenschutzangaben (Kamera, Mikrofon, Bluetooth, lokales Netz; es werden keine Daten erhoben), Screenshots echter Geräte und eine Support-URL.
+Also needed before the App Store: privacy details (camera, microphone, Bluetooth, local network; no data is collected), screenshots from real devices and a support URL.

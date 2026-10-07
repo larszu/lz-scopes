@@ -1,9 +1,10 @@
 // Native application menu, built from the model the page sends (src/menu/appMenu.ts).
 // macOS: the app menu (About, Settings …, Services, Hide, Quit) comes first, as the HIG
 // prescribes; items flagged `appMenu` move there. Windows/Linux: the menu bar sits in the
-// window, Settings stays in Datei and About in Hilfe.
+// window, Settings stays in File and About in Help.
 // Clicks are sent back to the page as `lzs:menu` with the command id.
 const { Menu, app } = require('electron');
+const { text } = require('./i18n.cjs');
 
 const mac = process.platform === 'darwin';
 const ROLES = new Set(['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll', 'minimize', 'zoom', 'front', 'quit', 'close', 'togglefullscreen']);
@@ -54,16 +55,16 @@ function setAppMenu(model, send) {
     tops.unshift({
       label: name,
       submenu: [
-        about ? { label: `Über ${name}`, click: () => send('settings:about') } : { role: 'about', label: `Über ${name}` },
+        about ? { label: text('about', name), click: () => send('settings:about') } : { role: 'about', label: text('about', name) },
         { type: 'separator' },
-        ...(settings ? [{ id: 'settings', label: 'Einstellungen …', accelerator: 'Cmd+,', click: () => send('settings') }, { type: 'separator' }] : []),
-        { role: 'services', label: 'Dienste' },
+        ...(settings ? [{ id: 'settings', label: text('settings'), accelerator: 'Cmd+,', click: () => send('settings') }, { type: 'separator' }] : []),
+        { role: 'services', label: text('services') },
         { type: 'separator' },
-        { role: 'hide', label: `${name} ausblenden` },
-        { role: 'hideOthers', label: 'Andere ausblenden' },
-        { role: 'unhide', label: 'Alle einblenden' },
+        { role: 'hide', label: text('hide', name) },
+        { role: 'hideOthers', label: text('hideOthers') },
+        { role: 'unhide', label: text('showAll') },
         { type: 'separator' },
-        { role: 'quit', label: `${name} beenden` },
+        { role: 'quit', label: text('quit', name) },
       ],
     });
   }

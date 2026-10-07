@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 // Menu model shared by the in-page menu bar (browser, GitHub Pages) and the native
 // application menu of the desktop app (electron/menu.cjs builds it from this JSON).
 // Order and names follow the macOS HIG menu bar anatomy (app menu, File, Edit, View,
@@ -34,18 +35,18 @@ export const sep = (): MenuItem => ({ type: 'separator' });
 /** Accelerators with a modifier are registered natively; single keys are display-only. */
 export const registersNatively = (accel: string) => /(Cmd|Ctrl|CmdOrCtrl|CommandOrControl|Alt|Option|Super)\+/i.test(accel);
 
-/** Human-readable shortcut: ⌘, on the Mac, Strg+, elsewhere. */
+/** Human-readable shortcut: ⌘, on the Mac, Ctrl+, (German: Strg+,) elsewhere. */
 export function formatAccel(accel: string, mac: boolean): string {
   const parts = accel.split('+');
   const key = parts.pop() ?? '';
-  const keyName: Record<string, string> = { Space: 'Leertaste', Escape: 'Esc', Left: '←', Right: '→', Up: '↑', Down: '↓', Home: 'Pos1', End: 'Ende' };
+  const keyName: Record<string, string> = { Space: t('key.space'), Escape: 'Esc', Left: '←', Right: '→', Up: '↑', Down: '↓', Home: t('key.home'), End: t('key.end') };
   const k = keyName[key] ?? key;
   const mods = parts.map((m) => {
     const x = m.toLowerCase();
-    if (x === 'cmdorctrl' || x === 'commandorcontrol') return mac ? '⌘' : 'Strg+';
+    if (x === 'cmdorctrl' || x === 'commandorcontrol') return mac ? '⌘' : t('key.ctrl');
     if (x === 'cmd' || x === 'command') return '⌘';
-    if (x === 'ctrl' || x === 'control') return mac ? '⌃' : 'Strg+';
-    if (x === 'shift') return mac ? '⇧' : 'Umschalt+';
+    if (x === 'ctrl' || x === 'control') return mac ? '⌃' : t('key.ctrl');
+    if (x === 'shift') return mac ? '⇧' : t('key.shift');
     if (x === 'alt' || x === 'option') return mac ? '⌥' : 'Alt+';
     return `${m}+`;
   });

@@ -150,7 +150,6 @@ export default {
   'opple.m.noCal': '(without calibration factors – values less accurate)',
   'opple.m.noAnswer': 'Device not responding: {msg}',
   'opple.drv.starting': 'Starting spotread via the bridge …',
-  'calib.meter.closed': 'Connection to the meter closed',
   'opple.drv.ready': 'Meter ready (ArgyllCMS, unverified)',
   'opple.drv.busy': 'Reading still running',
   'opple.drv.argyll': 'Spectrometer/colorimeter via ArgyllCMS',

@@ -4,6 +4,9 @@ import { ffmpegCandidates, ffmpegFor, ffmpegInfo, ffmpegOrigin, hostTarget, lice
 import { checkFlags, configureFlags } from '../scripts/ffmpeg-fetch.mjs';
 import { shippedFfmpeg } from './shippedFfmpeg';
 import { bridgeFfmpegText, ffmpegLine, pushFfmpegText, sourceFfmpegText, type FfmpegInfo } from '../src/ffmpegInfo';
+import { setLang } from '../src/i18n';
+
+setLang('de'); // the UI texts below are checked in German
 
 const manifest = JSON.parse(readFileSync(new URL('../scripts/ffmpeg-builds.json', import.meta.url), 'utf8'));
 

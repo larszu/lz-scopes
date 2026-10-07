@@ -1,8 +1,8 @@
-# lz-decklink – DeckLink/UltraStudio-Helfer
+# lz-decklink – DeckLink-Helfer
 
-Nimmt von einer Blackmagic DeckLink-Karte oder einem UltraStudio auf und schreibt die Bilder im Helfer-Protokoll (`docs/frame-protocol.md`) auf stdout. Die Bridge startet ihn für Quellen `decklink:<n>` und rechnet wie bei Streams mit ffmpeg nach R′G′B′ um.
+Nimmt von einem Gerät mit DeckLink-Schnittstelle auf (LZ Scopes compatible with Blackmagic Design DeckLink) und schreibt die Bilder im Helfer-Protokoll (`docs/frame-protocol.md`) auf stdout. Die Bridge startet ihn für Quellen `decklink:<n>` und rechnet wie bei Streams mit ffmpeg nach R′G′B′ um.
 
-**Stand:** Quelltext fertig, auf macOS gegen die Header des DeckLink SDK 12.0 kompiliert (universal, ohne Warnungen) und ohne Treiber ausgeführt (meldet sauber „Desktop Video ist nicht installiert“). **Nie mit echter Hardware gelaufen.** Windows- und Linux-Zweig sind nach den SDK-Headern geschrieben, aber nicht kompiliert.
+**Stand:** In der Desktop-App enthalten (macOS universal, Windows x64; gebaut in `release.yml`). Auf macOS gegen die Include-Dateien des DeckLink SDK 12.0 kompiliert und ohne Treiber ausgeführt (meldet „Blackmagic Desktop Video ist nicht installiert (DeckLink-Treiber fehlt)“). Der Windows-Zweig wird in CI kompiliert, aber nirgends ausgeführt. **Nie mit echter Hardware gelaufen.** Bezeichnung nach SDK-EULA §6.2: „LZ Scopes compatible with Blackmagic Design DeckLink“.
 
 ## Warum ein eigener Helfer
 
@@ -10,24 +10,15 @@ ffmpeg kann DeckLink selbst (`-f decklink`), aber nur mit `--enable-decklink`, u
 
 ## Bauen
 
-1. **Blackmagic Desktop Video** installieren (Treiber; ohne ihn findet der Helfer keine Geräte).
-2. **Desktop Video SDK** herunterladen: blackmagicdesign.com/developer → Capture and Playback → SDK, kostenlos, mit Registrierung. Das SDK wird **nicht** in dieses Repository eingecheckt.
-3. Bauen:
+1. **Blackmagic Desktop Video** installieren (Treiber; ohne ihn findet der Helfer keine Geräte; zum Bauen nicht nötig).
+2. Include-Dateien des SDK holen: `npm run decklink:fetch`. Das lädt sie aus der Kopie im OBS-Studio-Repository (fester Commit, jede Datei per Blob-Hash geprüft, `scripts/decklink-sdk.json`) nach `vendor/decklink-sdk/`. Alternativ zeigt `DECKLINK_SDK_DIR` auf ein heruntergeladenes SDK. Im Repository liegen die Dateien nicht.
+3. Bauen: `node scripts/build-helpers.mjs decklink`
 
-```sh
-DECKLINK_SDK_DIR="$HOME/SDKs/Blackmagic DeckLink SDK 16.0" node scripts/build-helpers.mjs decklink
-```
+- macOS: `clang++`, universal (arm64 + x86_64), mit `Mac/include/DeckLinkAPIDispatch.cpp`, das den Treiber zur Laufzeit lädt.
+- Linux: `g++` mit `Linux/include/DeckLinkAPIDispatch.cpp`.
+- Windows: `midl` + `cl` aus einer MSVC-Umgebung („x64 Native Tools“-Konsole; in CI `ilammy/msvc-dev-cmd`). Der Treiber wird per COM geladen.
 
-macOS: `clang++`, universal (arm64 + x86_64), bindet `Mac/include/DeckLinkAPIDispatch.cpp` ein, das den Treiber zur Laufzeit lädt. Linux: `g++` mit `Linux/include/DeckLinkAPIDispatch.cpp`.
-
-Windows (von Hand, in der „x64 Native Tools“-Konsole):
-
-```bat
-midl /h DeckLinkAPI.h /iid DeckLinkAPI_i.c "%DECKLINK_SDK_DIR%\Win\include\DeckLinkAPI.idl"
-cl /EHsc /O2 /std:c++17 helpers\decklink\lz-decklink.cpp DeckLinkAPI_i.c /Fe:helpers\bin\lz-decklink.exe ole32.lib oleaut32.lib
-```
-
-Das Ergebnis landet in `helpers/bin/`; `npm run dist:*` nimmt es in die Desktop-App auf. Ohne gebauten Helfer zeigt die Oberfläche bei *DeckLink…* „nicht verfügbar“. `LZS_DECKLINK_HELPER=/pfad/zu/lz-decklink` überschreibt den Ort.
+Das Ergebnis landet in `helpers/bin/`; `npm run dist:*` und `release.yml` nehmen es in die Desktop-App auf. Ohne Helfer zeigt die Oberfläche bei *DeckLink…* „nicht verfügbar“, ohne Treiber „Desktop Video nicht installiert“. `LZS_DECKLINK_HELPER=/pfad/zu/lz-decklink` überschreibt den Ort.
 
 ## Schnittstelle
 
@@ -45,4 +36,4 @@ lz-decklink --reference <index>       → {"ok":true,"hasReference":true,"refere
 
 ## Lizenz
 
-Die DeckLink-SDK-Header tragen eine eigene freizügige Lizenz von Blackmagic Design („Permission is hereby granted, free of charge … to use, reproduce, display, distribute, execute, and transmit the Software …“, Hinweis muss in Quellkopien erhalten bleiben, nicht in reinem Maschinencode). Die Lizenzbedingungen des SDK-Downloads selbst stehen erst nach der Registrierung zur Verfügung und wurden hier nicht eingesehen – vor einer Weitergabe des gebauten Helfers prüfen. Siehe `docs/research/geraete-eingaenge.md`.
+Die Include-Dateien tragen eine eigene freizügige Lizenz von Blackmagic Design ([licenses/decklink-sdk-headers.txt](../../licenses/decklink-sdk-headers.txt)). Die SDK-EULA nimmt `/Mac/Include`, `/Win/Include` und `/Linux/Include` von ihren Klauseln 1, 4.3, 4.4, 5, 7 und 8 aus (§0.1) und erlaubt Software, die mit Blackmagic-Produkten kompatibel ist (§1.2). Der Treiber wird nicht mitgeliefert. Details: `docs/research/geraete-eingaenge.md`, THIRD_PARTY.md.

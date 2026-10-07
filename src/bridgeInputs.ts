@@ -3,6 +3,7 @@
 // explicit decode matrix of the bridge's Y′CbCr → R′G′B′ step.
 
 import type { Source, SourceSettings } from './sources';
+import { t } from './i18n';
 import { bridgeText } from './i18n/bridgeMessage';
 
 export interface BridgeUi {
@@ -48,7 +49,7 @@ export function deviceRow(s: Source, ui: BridgeUi, rerender: () => void): Node |
       .then((j: DeviceFormats) => { formatCache.set(s.url, j); rerender(); })
       .catch(() => formatCache.delete(s.url));
   }
-  if (!f || f === 'loading') return el('div', { class: 'row hint' }, 'Formate des Geräts werden gelesen …');
+  if (!f || f === 'loading') return el('div', { class: 'row hint' }, t('bridgeui.readingFormats'));
   const d = s.settings.device ?? {};
   const sizes = [...new Set(f.modes.map((m) => `${m.width}x${m.height}`))];
   const rates = [...new Set(f.modes.filter((m) => !d.size || `${m.width}x${m.height}` === d.size).flatMap((m) => [m.fpsMax, m.fpsMin]).filter((r) => r > 0))].sort((a, b) => b - a);
@@ -59,10 +60,10 @@ export function deviceRow(s: Source, ui: BridgeUi, rerender: () => void): Node |
     ui.upd({ device, ...(patch.pixfmt && DEEP.test(patch.pixfmt) ? { depth: 16 as const } : {}) }, true);
   };
   return el('div', { class: 'row' },
-    sizes.length ? sel(d.size ?? '', [['', `Modus auto${f.defaultSize ? ` (${f.defaultSize})` : ''}`], ...sizes.map((x) => [x, x.replace('x', '×')] as [string, string])], (v) => set({ size: v, rate: '' }), 'Auflösung des Geräts') : '',
-    rates.length ? sel(d.rate ?? '', [['', 'fps auto'], ...rates.map((r) => [String(r), `${r} fps`] as [string, string])], (v) => set({ rate: v }), 'Aufnahmerate des Geräts') : '',
+    sizes.length ? sel(d.size ?? '', [['', `${t('bridgeui.modeAuto')}${f.defaultSize ? ` (${f.defaultSize})` : ''}`], ...sizes.map((x) => [x, x.replace('x', '×')] as [string, string])], (v) => set({ size: v, rate: '' }), t('bridgeui.resolutionTitle')) : '',
+    rates.length ? sel(d.rate ?? '', [['', 'fps auto'], ...rates.map((r) => [String(r), `${r} fps`] as [string, string])], (v) => set({ rate: v }), t('bridgeui.rateTitle')) : '',
     f.pixfmts.length ? sel(d.pixfmt ?? '', [['', `Pixel auto${f.preferred ? ` (${f.preferred})` : ''}`], ...f.pixfmts.map((p) => [p, DEEP.test(p) ? `${p} · >8 bit` : p] as [string, string])], (v) => set({ pixfmt: v }),
-      'Rohformat vom Gerät. 10-/16-bit-Formate bleiben bis zur Messung ohne 8-bit-Rundung (dann 16 bit wählen).') : el('span', { class: 'hint' }, 'Gerät meldet keine Formatliste'));
+      t('bridgeui.pixfmtTitle')) : el('span', { class: 'hint' }, t('bridgeui.noFormatList')));
 }
 
 /** Matrix and range the bridge uses for Y′CbCr → R′G′B′ (all bridge sources). */
@@ -71,43 +72,43 @@ export function decodeRow(s: Source, ui: BridgeUi): Node | null {
   const set = s.settings;
   const auto = (s.info as { decodeMatrix?: string } | null)?.decodeMatrix;
   return el('div', { class: 'row' },
-    sel(set.decodeMatrix ?? 'auto', [['auto', `Wandlung auto${auto ? ` (${auto})` : ''}`], ['bt709', 'Wandlung BT.709'], ['bt601', 'Wandlung BT.601'], ['bt2020', 'Wandlung BT.2020']],
-      (v) => ui.upd({ decodeMatrix: v as SourceSettings['decodeMatrix'] }, true), 'Matrix der Bridge für Y′CbCr → R′G′B′. auto = Kennzeichnung im Signal, sonst BT.709 über SD und BT.601 bei SD. Fest einstellen, wenn eine Karte oder Kamera falsch oder gar nicht kennzeichnet.'),
-    sel(set.decodeRange ?? 'auto', [['auto', 'Pegel auto'], ['tv', 'Pegel begrenzt (64–940)'], ['pc', 'Pegel voll (0–1023)']],
-      (v) => ui.upd({ decodeRange: v as SourceSettings['decodeRange'] }, true), 'Wertebereich des Y′CbCr-Signals; auto = Kennzeichnung, sonst begrenzt'));
+    sel(set.decodeMatrix ?? 'auto', [['auto', `${t('bridgeui.convAuto')}${auto ? ` (${auto})` : ''}`], ['bt709', t('bridgeui.conv', { m: 'BT.709' })], ['bt601', t('bridgeui.conv', { m: 'BT.601' })], ['bt2020', t('bridgeui.conv', { m: 'BT.2020' })]],
+      (v) => ui.upd({ decodeMatrix: v as SourceSettings['decodeMatrix'] }, true), t('bridgeui.matrixTitle')),
+    sel(set.decodeRange ?? 'auto', [['auto', t('bridgeui.rangeAuto')], ['tv', t('bridgeui.rangeTv')], ['pc', t('bridgeui.rangePc')]],
+      (v) => ui.upd({ decodeRange: v as SourceSettings['decodeRange'] }, true), t('bridgeui.rangeTitle')));
 }
 
 /** Button that lists capture devices of the bridge's machine (ffmpeg). */
 export function deviceButton(ui: BridgeUi): HTMLElement {
-  return el('button', { class: 'mini', title: 'Capture-Gerät des Bridge-Rechners über ffmpeg (roh, eigene Matrix, auch entfernte Bridges): UVC/AVFoundation/DirectShow/V4L2 – z. B. Magewell, MEI, Blackmagic-Karten mit WDM-/AVFoundation-Treiber', onclick: async (e: Event) => {
+  return el('button', { class: 'mini', title: t('bridgeui.deviceTitle'), onclick: async (e: Event) => {
     const btn = e.currentTarget as HTMLElement;
     let list: { name: string; url: string; kind?: string }[] = [];
     try { list = await (await fetch(`${ui.http()}/api/devices`)).json(); } catch { /* bridge missing */ }
     const video = list.filter((d) => d.kind !== 'audio'), audio = list.filter((d) => d.kind === 'audio');
-    if (!video.length) { ui.hud('Keine Capture-Geräte über die Bridge gefunden'); return; }
+    if (!video.length) { ui.hud(t('bridgeui.noCaptureDevices')); return; }
     // sound to the picture from the same ffmpeg process (#audio=…): A/V timestamps comparable (#24)
-    const snd = sel('', [['', 'ohne Ton'], ...audio.map((d) => [d.url, `Ton: ${d.name}`] as [string, string])], () => {}, 'Ton zum Bild, z. B. HDMI-Ton der Capture-Karte oder Dante Virtual Soundcard (Audiogerät des Bridge-Rechners)');
+    const snd = sel('', [['', t('bridgeui.noSound')], ...audio.map((d) => [d.url, t('bridgeui.soundOf', { name: d.name })] as [string, string])], () => {}, t('bridgeui.soundTitle'));
     const guess = audio.find((a) => video.some((v) => v.name === a.name)) ?? audio.find((a) => /capture|hdmi|usb3/i.test(a.name));
     if (guess) snd.value = guess.url;
-    btn.replaceWith(sel('', [['', 'Gerät wählen …'], ...video.map((d) => [d.url, d.name] as [string, string])], (v) => {
+    btn.replaceWith(sel('', [['', t('bridgeui.chooseDevice')], ...video.map((d) => [d.url, d.name] as [string, string])], (v) => {
       if (!v) return;
       // audio:<api>:<name> → #audio=<name> (ALSA: hw:…)
       const a = snd.value.replace(/^audio:[a-z]+:/, '');
       ui.connect(a ? `${v}#audio=${a}` : v, video.find((d) => d.url === v)?.name);
     }), snd);
-  } }, 'Gerät…');
+  } }, t('bridgeui.device'));
 }
 
 /** DeckLink/UltraStudio via the native helper; says plainly when it is not available. */
 export function deckLinkButton(ui: BridgeUi): HTMLElement {
-  return el('button', { class: 'mini', title: 'Eingang über den DeckLink-Helfer (kompatibel mit Blackmagic Design DeckLink): v210 10 bit, Formaterkennung, Timecode, HDR-Kennung. Der Helfer ist in der Desktop-App enthalten; er braucht den Treiber Blackmagic Desktop Video auf diesem Rechner. Mit echter Hardware ungeprüft.', onclick: async (e: Event) => {
+  return el('button', { class: 'mini', title: t('bridgeui.decklinkTitle'), onclick: async (e: Event) => {
     const btn = e.currentTarget as HTMLElement;
     let st: DeckLinkStatus | null = null;
     try { st = await (await fetch(`${ui.http()}/api/decklink`)).json(); } catch { /* bridge missing */ }
-    if (!st) { ui.hud('Bridge nicht erreichbar'); return; }
-    if (!st.available) { ui.hud(`DeckLink nicht verfügbar – ${bridgeText(st, 'error', 'Desktop Video/SDK nötig')}`); return; }
-    if (!st.devices.length) { ui.hud('Desktop Video installiert, aber kein DeckLink-Gerät gefunden'); return; }
-    btn.replaceWith(sel('', [['', 'DeckLink wählen …'], ...st.devices.map((d) => [`decklink:${d.index}`, d.name] as [string, string])], (v) => { if (v) ui.connect(v, st!.devices.find((d) => `decklink:${d.index}` === v)?.name); }));
+    if (!st) { ui.hud(t('bridgeui.bridgeUnreachable')); return; }
+    if (!st.available) { ui.hud(t('bridgeui.decklinkUnavailable', { why: bridgeText(st, 'error') || t('bridgeui.decklinkNeeds') })); return; }
+    if (!st.devices.length) { ui.hud(t('bridgeui.noDecklinkDevice')); return; }
+    btn.replaceWith(sel('', [['', t('bridgeui.chooseDecklink')], ...st.devices.map((d) => [`decklink:${d.index}`, d.name] as [string, string])], (v) => { if (v) ui.connect(v, st!.devices.find((d) => `decklink:${d.index}` === v)?.name); }));
   } }, 'DeckLink…');
 }
 
@@ -115,8 +116,8 @@ export function deckLinkButton(ui: BridgeUi): HTMLElement {
 export function deckLinkRow(s: Source, ui: BridgeUi): Node | null {
   if (!s.url.startsWith('decklink:')) return null;
   return el('div', { class: 'row' },
-    sel(String(s.settings.deckLinkBits ?? 10), [['10', 'DeckLink 10 bit (v210)'], ['8', 'DeckLink 8 bit (UYVY)']], (v) => ui.upd({ deckLinkBits: Number(v) as 8 | 10, ...(v === '10' ? { depth: 16 as const } : {}) }, true), 'Aufnahmeformat der Karte; RGB-4:4:4-Signale kommen immer als 10-bit-RGB'),
-    el('span', { class: 'hint' }, 'ungeprüft mit Hardware'));
+    sel(String(s.settings.deckLinkBits ?? 10), [['10', 'DeckLink 10 bit (v210)'], ['8', 'DeckLink 8 bit (UYVY)']], (v) => ui.upd({ deckLinkBits: Number(v) as 8 | 10, ...(v === '10' ? { depth: 16 as const } : {}) }, true), t('bridgeui.decklinkFormatTitle')),
+    el('span', { class: 'hint' }, t('bridgeui.untestedHw')));
 }
 
 interface NdiStatus { available: boolean; helper: boolean; runtime: boolean; version?: string; sources: { name: string; url: string }[]; error?: string }
@@ -127,45 +128,45 @@ const ndiLink = () => el('a', { href: 'https://ndi.video/', target: '_blank', re
 
 /** NDI® sources found by the helper on the bridge's machine; says plainly when the runtime is missing. */
 export function ndiButton(ui: BridgeUi): HTMLElement {
-  return el('button', { class: 'mini', title: `NDI®-Quellen im Netz über den NDI-Helfer der Bridge (8 bit UYVY bzw. 16 bit P216). Braucht die NDI-Runtime (NDI Tools, ndi.video). ${NDI_NOTICE}`, onclick: async (e: Event) => {
+  return el('button', { class: 'mini', title: `${t('bridgeui.ndiTitle')} ${NDI_NOTICE}`, onclick: async (e: Event) => {
     const btn = e.currentTarget as HTMLElement;
     btn.textContent = 'NDI® …';
     let st: NdiStatus | null = null;
     try { st = await (await fetch(`${ui.http()}/api/ndi`)).json(); } catch { /* bridge missing */ }
     btn.textContent = 'NDI®…';
-    if (!st) { ui.hud('Bridge nicht erreichbar'); return; }
-    if (!st.available) { ui.hud(`NDI nicht verfügbar – ${bridgeText(st, 'error', 'NDI-Runtime nötig (ndi.video)')}`); return; }
-    if (!st.sources.length) { ui.hud('Keine NDI-Quellen gefunden'); return; }
-    btn.replaceWith(sel('', [['', 'NDI-Quelle wählen …'], ...st.sources.map((s) => [`ndi:${s.name}`, s.name] as [string, string])], (v) => { if (v) ui.connect(v, v.slice(4).replace(/^.*\((.*)\)$/, '$1').slice(0, 40)); }));
+    if (!st) { ui.hud(t('bridgeui.bridgeUnreachable')); return; }
+    if (!st.available) { ui.hud(t('bridgeui.ndiUnavailable', { why: bridgeText(st, 'error') || t('bridgeui.ndiNeeds') })); return; }
+    if (!st.sources.length) { ui.hud(t('bridgeui.noNdiSources')); return; }
+    btn.replaceWith(sel('', [['', t('bridgeui.chooseNdi')], ...st.sources.map((s) => [`ndi:${s.name}`, s.name] as [string, string])], (v) => { if (v) ui.connect(v, v.slice(4).replace(/^.*\((.*)\)$/, '$1').slice(0, 40)); }));
   } }, 'NDI®…');
 }
 
 /** Link and trademark notice on NDI sources (NDI SDK licence). */
 export function ndiRow(s: Source): Node | null {
   if (!s.url.startsWith('ndi:')) return null;
-  return el('div', { class: 'row hint' }, 'NDI® über die NDI-Runtime · ', ndiLink(), ` · ${NDI_NOTICE}`);
+  return el('div', { class: 'row hint' }, `${t('bridgeui.ndiVia')} · `, ndiLink(), ` · ${NDI_NOTICE}`);
 }
 
 /** Watch folders of the bridge (released with --watch-dir, in the desktop app by dialog). */
 export function folderButton(ui: BridgeUi, release?: () => Promise<{ name: string; url: string } | null>): HTMLElement {
-  return el('button', { class: 'mini', title: 'Neuestes Standbild eines Ordners auf dem Bridge-Rechner, in voller Tiefe (16-bit-TIFF, 10-bit-DPX, 16-bit-PNG, EXR) – Exporte aus Lightroom, Capture One, Resolve. Freigabe: Desktop-App per Dialog, sonst Bridge mit --watch-dir starten.', onclick: async (e: Event) => {
+  return el('button', { class: 'mini', title: t('bridgeui.folderTitle'), onclick: async (e: Event) => {
     const btn = e.currentTarget as HTMLElement;
     let list: { name: string; url: string }[] = [];
     try { list = await (await fetch(`${ui.http()}/api/folders`)).json(); } catch { /* bridge missing */ }
     const add = async () => { const r = await release?.(); if (r) ui.connect(r.url, r.name); };
-    if (!list.length && !release) { ui.hud('Keine Ordner freigegeben – Bridge mit --watch-dir <Ordner> starten'); return; }
+    if (!list.length && !release) { ui.hud(t('bridgeui.noFolders')); return; }
     if (!list.length) { await add(); return; }
-    btn.replaceWith(sel('', [['', 'Ordner wählen …'], ...list.map((f) => [f.url, f.name] as [string, string]), ...(release ? [['+', 'Weiteren Ordner freigeben …'] as [string, string]] : [])],
+    btn.replaceWith(sel('', [['', t('bridgeui.chooseFolder')], ...list.map((f) => [f.url, f.name] as [string, string]), ...(release ? [['+', t('bridgeui.releaseFolder')] as [string, string]] : [])],
       (v) => { if (v === '+') add(); else if (v) ui.connect(v, list.find((f) => f.url === v)?.name); }));
-  } }, 'Ordner…');
+  } }, t('bridgeui.folder'));
 }
 
 /** How to get stills out of Lightroom, Capture One and Resolve into a watch folder. */
 export function STILL_WORKFLOW(): HTMLElement {
   return el('div', {},
-    el('p', {}, 'Gezeigt wird immer das neueste Bild im Ordner. Im Browser nur JPG/PNG/WebP/AVIF in 8 bit; 16-bit-TIFF, DPX und EXR in voller Tiefe über „Ordner…“ in einer Stream-Karte (Bridge).'),
-    el('p', {}, 'Lightroom Classic: Datei → Exportieren, Speicherort = überwachter Ordner, TIFF 16 bit; als Vorgabe sichern, danach Datei → Mit Vorgabe exportieren.'),
-    el('p', {}, 'Capture One: Verarbeitungsrezept mit Ausgabeordner = überwachter Ordner, TIFF 16 bit, dann Verarbeiten.'),
-    el('p', {}, 'DaVinci Resolve: Quelle „DaVinci Resolve“ (Scripting-API, 16 bit, laufend) – oder auf der Color-Seite ein Standbild aufnehmen und in der Galerie per Rechtsklick in den Ordner exportieren.'),
-    el('p', {}, 'Farbraum des Exports an der Quelle einstellen (sRGB-Export → Transfer „sRGB“). Eingebettete ICC-Profile werden nicht gelesen, Adobe RGB/ProPhoto nicht erkannt. Mit echten Lightroom-/Capture-One-Installationen nicht geprüft.'));
+    el('p', {}, t('bridgeui.still.1')),
+    el('p', {}, t('bridgeui.still.2')),
+    el('p', {}, t('bridgeui.still.3')),
+    el('p', {}, t('bridgeui.still.4')),
+    el('p', {}, t('bridgeui.still.5')));
 }

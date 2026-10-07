@@ -11,6 +11,7 @@
 import { readStamp } from '../server/stamp.mjs';
 import { meanLuma } from './luma';
 import { yuv420ToRgba } from './yuv';
+import { t as tr } from './i18n';
 
 export interface FrameMeta {
   /** Date.now() when the frame arrived here (raw) or left the decoder (H.264) */
@@ -73,7 +74,7 @@ async function onDecodedAsync(frame: VideoFrame, t: { bridge: number; t0: number
   const w = frame.codedWidth, h = frame.codedHeight, vw = info?.width || frame.displayWidth, vh = info?.height || frame.displayHeight;
   const fmt = frame.format;
   if (fmt !== 'I420' && fmt !== 'NV12') {
-    post({ type: 'text', data: JSON.stringify({ type: 'stats', message: `H.264: Bildformat ${fmt ?? 'unbekannt'} nicht unterstützt` }) });
+    post({ type: 'text', data: JSON.stringify({ type: 'stats', message: tr('render.h264Format', { fmt: fmt ?? tr('render.unknown') }) }) });
     return;
   }
   const buf = new Uint8Array(frame.allocationSize());
@@ -120,7 +121,7 @@ function open(url: string) {
       if (m.type === 'info') {
         info = m;
         if (m.transport === 'h264' && typeof VideoDecoder === 'undefined') {
-          post({ type: 'text', data: JSON.stringify({ type: 'error', message: 'H.264-Übertragung braucht WebCodecs (Chrome, Edge, Desktop-App) – auf „roh“ umstellen' }) });
+          post({ type: 'text', data: JSON.stringify({ type: 'error', message: tr('render.h264NeedsWebCodecs') }) });
           return;
         }
       } else if (m.type === 'video') {

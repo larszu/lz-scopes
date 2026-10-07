@@ -10,6 +10,7 @@ import { CIE_VIEW, CIE_VIEW_UV, WAVE_MAX, WAVE_MIN, type Rect } from './renderer
 import { latencyLines, rtpLines } from './latency';
 import type { Source } from './sources';
 import { CUBE_SPACE_LABELS, SIGNAL_SPACES, cubeProject, cubeRotation, cubeWireframe, qFromChl, qFromHsv, qFromIctcp, qFromLab, qFromRgb, qFromXyz, qFromYcc, type CubeSettings } from './cube';
+import { t, type Key } from './i18n';
 import { bridgeText } from './i18n/bridgeMessage';
 
 export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats'
@@ -17,16 +18,14 @@ export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-gre
   | 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map' | 'light-spectrum' | 'light-swatch';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits';
 
-export const SCOPE_LABELS: Record<ScopeType, string> = {
-  picture: 'Bild', 'wf-luma': 'Waveform Luma', 'wf-color': 'Waveform Farbe', 'wf-skin': 'Waveform Hauttöne', 'wf-green': 'Waveform Grüntöne', 'wf-rgb': 'Waveform RGB', parade: 'RGB-Parade', yrgb: 'YRGB-Parade',
-  ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', diamond: 'Diamond (Gamut)', cube: '3D-Farbvolumen', satlum: 'Sättigung über Luma', chplot: 'Kanal-Plot', minmax: 'Min/Max je Zeile', qclog: 'QC-Protokoll', timeline: 'Zeitverlauf', hist: 'Histogramm', stats: 'Messwerte', match: 'Farbabgleich',
-  'audio-meter': 'Audio Pegel & Lautheit', 'audio-loudness': 'Audio Lautheitsverlauf', 'audio-spectrum': 'Audio Spektrum', 'audio-phase': 'Audio Goniometer', 'audio-check': 'Audio Ident & A/V-Versatz',
-  clock: 'Uhr / Timecode',
-  genlock: 'Referenz / Genlock',
+const SCOPE_IDS: ScopeType[] = [
+  'picture', 'wf-luma', 'wf-color', 'wf-skin', 'wf-green', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'cie', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'qclog', 'timeline', 'hist', 'stats', 'match',
+  'audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check', 'clock', 'genlock',
   // Opple Light Master (src/opple/scopes.ts, LIGHT_LABELS)
-  'light-cie': 'Licht: Farbort (CIE)', 'light-vector': 'Licht: Vectorscope', 'light-bands': 'Licht: Filterkanäle',
-  'light-trend': 'Licht: Zeitverlauf', 'light-map': 'Licht: Messfeld', 'light-spectrum': 'Licht: Wellenlängen', 'light-swatch': 'Licht: Farbfläche',
-};
+  'light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch',
+];
+/** Panel names in the UI language (keys scope.name.<id>); the order is the order of the menus. */
+export const SCOPE_LABELS = Object.fromEntries(SCOPE_IDS.map((s) => [s, t(`scope.name.${s}` as Key)])) as Record<ScopeType, string>;
 
 export const isAudio = (s: ScopeType) => s.startsWith('audio-');
 
@@ -77,7 +76,7 @@ export function plotRect(scope: ScopeType, w: number, h: number, aspect = 16 / 9
 export type WaveRange = [number, number];
 export type WaveZoom = 'full' | 'black' | 'white';
 export const WAVE_ZOOMS: Record<WaveZoom, WaveRange> = { full: [WAVE_MIN, WAVE_MAX], black: [-0.05, 0.15], white: [0.85, 1.1] };
-export const WAVE_ZOOM_LABELS: Record<WaveZoom, string> = { full: 'voll (−7 … 110 %)', black: 'Schwarz-Lupe (−5 … 15 %)', white: 'Lichter-Lupe (85 … 110 %)' };
+export const WAVE_ZOOM_LABELS: Record<WaveZoom, string> = { full: t('scope.zoom.full'), black: t('scope.zoom.black'), white: t('scope.zoom.white') };
 
 /** Channels of the multi-trace waveforms, with the instance index the renderer uses. */
 export interface WaveChannels { y?: boolean; r?: boolean; g?: boolean; b?: boolean }
@@ -161,10 +160,10 @@ export interface WaveMark { level: number; label: string; color: string }
 export function waveMarks(transfer: Transfer, o: { r103?: boolean; marks?: boolean } = {}): WaveMark[] {
   const out: WaveMark[] = [];
   if (o.marks !== false) {
-    if (transfer === 'hlg') out.push({ level: 0.75, label: 'HLG 75 % Ref.-Weiß', color: 'rgba(255, 214, 90, 0.9)' });
-    if (transfer === 'pq') out.push({ level: 0.58, label: 'PQ 58 % Ref.-Weiß', color: 'rgba(255, 214, 90, 0.9)' });
-    if (transfer === 'hlg' || transfer === 'pq') out.push({ level: 0.38, label: 'Graukarte 38 %', color: 'rgba(150, 220, 255, 0.85)' });
-    if (isLog(transfer)) out.push({ level: sceneToSignal(0.18, transfer), label: `18 % Grau ${transferLabel(transfer)}`, color: 'rgba(150, 220, 255, 0.85)' });
+    if (transfer === 'hlg') out.push({ level: 0.75, label: t('scope.mark.hlgRef'), color: 'rgba(255, 214, 90, 0.9)' });
+    if (transfer === 'pq') out.push({ level: 0.58, label: t('scope.mark.pqRef'), color: 'rgba(255, 214, 90, 0.9)' });
+    if (transfer === 'hlg' || transfer === 'pq') out.push({ level: 0.38, label: t('scope.mark.greyCard'), color: 'rgba(150, 220, 255, 0.85)' });
+    if (isLog(transfer)) out.push({ level: sceneToSignal(0.18, transfer), label: t('scope.mark.grey18Log', { curve: transferLabel(transfer) }), color: 'rgba(150, 220, 255, 0.85)' });
   }
   if (o.r103) {
     out.push({ level: 1.05, label: 'R 103 +105 %', color: 'rgba(255, 90, 90, 0.9)' });
@@ -208,11 +207,11 @@ export function drawWaveGraticule(ctx: CanvasRenderingContext2D, scope: ScopeTyp
   names.forEach((nm, i) => { ctx.fillStyle = colors[nm]; ctx.fillText(nm, r.x + (r.w * i) / n + 4, r.y + 2); });
   if (range !== WAVE_ZOOMS.full && (range[0] !== WAVE_MIN || range[1] !== WAVE_MAX)) {
     ctx.fillStyle = 'rgba(255, 184, 64, 0.95)'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-    ctx.fillText(`LUPE ${Math.round(range[0] * 100)} … ${Math.round(range[1] * 100)} %`, r.x + 4, r.y + r.h - 2);
+    ctx.fillText(t('scope.zoomBadge', { lo: Math.round(range[0] * 100), hi: Math.round(range[1] * 100) }), r.x + 4, r.y + r.h - 2);
     ctx.textBaseline = 'top';
   }
   ctx.fillStyle = LABEL; ctx.textAlign = 'right';
-  const nits = isLog(transfer) ? `Szene %` : `cd/m² ${transferLabel(transfer)}${transfer === 'hlg' && (o.lw ?? 1000) !== 1000 ? ` ${o.lw}` : ''}`;
+  const nits = isLog(transfer) ? t('scope.unitScene') : `cd/m² ${transferLabel(transfer)}${transfer === 'hlg' && (o.lw ?? 1000) !== 1000 ? ` ${o.lw}` : ''}`;
   ctx.fillText(unit === 'nits' ? nits : unit === 'percent' ? '%' : unit === 'bit8' ? '8 bit' : '10 bit', r.x + r.w - 4, r.y + 2);
 }
 
@@ -225,7 +224,7 @@ export function drawSkinRange(ctx: CanvasRenderingContext2D, r: Rect, skin: { lo
   for (const y of [y0, y1]) { ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke(); }
   ctx.setLineDash([]);
   ctx.font = FONT; ctx.fillStyle = green ? 'rgba(150, 240, 150, 0.95)' : 'rgba(255, 190, 140, 0.95)'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-  ctx.fillText(`${green ? 'Grün' : 'Hautton'} ${Math.round(skin.lo * 100)}–${Math.round(skin.hi * 100)} %  ${green ? `${Math.round(skin.hue ?? 0)}° ` : ''}±${skin.tol}°`, r.x + 4, y0 - 2);
+  ctx.fillText(`${green ? t('scope.green') : t('scope.skinTone')} ${Math.round(skin.lo * 100)}–${Math.round(skin.hi * 100)} %  ${green ? `${Math.round(skin.hue ?? 0)}° ` : ''}±${skin.tol}°`, r.x + 4, y0 - 2);
 }
 
 export function drawWaveProbe(ctx: CanvasRenderingContext2D, scope: ScopeType, r: Rect, src: Source, rgb: [number, number, number], o: WaveOpts = {}) {
@@ -559,38 +558,41 @@ export function drawTextBox(ctx: CanvasRenderingContext2D, x: number, y: number,
   lines.forEach((l, i) => ctx.fillText(l, bx + 6, y + 5 + i * 15));
 }
 
+/** Label column of the Measurements panel (monospace, at least 11 characters wide). */
+const col = (k: Key) => `${t(k).padEnd(10)} `;
+
 export function statsLines(src: Source, displayFps: number): string[] {
   const st = src.stats, info = src.info;
   const lines = [
     src.name,
-    `Status     ${src.status}${src.message ? ` – ${src.message}` : ''}`,
-    `Analyse    ${src.width}×${src.height}  ${src.yuv ? `16 bit Y′CbCr ${src.yuv.full ? 'full' : 'narrow'}, unbeschnitten (Quelle ${src.yuv.bits} bit)` : `${src.depth} bit R′G′B′`}`,
+    `${col('scope.stats.status')}${src.status}${src.message ? ` – ${src.message}` : ''}`,
+    `${col('scope.stats.analysis')}${src.width}×${src.height}  ${src.yuv ? t('scope.stats.yuvPath', { range: src.yuv.full ? 'full' : 'narrow', bits: src.yuv.bits }) : `${src.depth} bit R′G′B′`}`,
   ];
-  if (info?.note) lines.push(`Hinweis    ${bridgeText(info, 'note')}`);
-  if (info) lines.push(`Abtastung  ${info.interlaced ? 'interlaced – beide Halbbilder als ein Bild, feldweise skaliert' : 'progressiv (bzw. nicht als interlaced gemeldet)'}; Scopes messen immer ganze Bilder`);
+  if (info?.note) lines.push(`${col('scope.stats.note')}${bridgeText(info, 'note')}`);
+  if (info) lines.push(`${col('scope.stats.scan')}${info.interlaced ? t('scope.stats.interlaced') : t('scope.stats.progressive')}; ${t('scope.stats.wholeFrames')}`);
   if (info) {
-    lines.push(`Quelle     ${info.sourceWidth}×${info.sourceHeight}  ${info.codec ?? ''} ${info.pixFmt ?? ''}`);
-    if (info.transport === 'h264') lines.push('Übertragung H.264 · 8 bit 4:2:0, verlustbehaftet (im Browser dekodiert)');
-    lines.push(`Metadaten  ${info.matrix}/${info.primaries}/${info.transfer}  ${info.range}`);
+    lines.push(`${col('scope.stats.source')}${info.sourceWidth}×${info.sourceHeight}  ${info.codec ?? ''} ${info.pixFmt ?? ''}`);
+    if (info.transport === 'h264') lines.push(`${col('scope.stats.transport')}${t('scope.stats.h264')}`);
+    lines.push(`${col('scope.stats.metadata')}${info.matrix}/${info.primaries}/${info.transfer}  ${info.range}`);
   }
-  lines.push(`Auswertung Rec.${src.colorspace}  ${transferLabel(src.transfer)}${src.transfer === 'hlg' ? ` (Lw ${src.hlgLw})` : ''}  ${GAMUTS[src.gamut].name}`);
-  lines.push(`Frames     ${src.fps} fps Eingang  ${displayFps} fps Anzeige${src.dropped ? `  ${src.dropped} verworfen` : ''}`);
+  lines.push(`${col('scope.stats.evaluation')}Rec.${src.colorspace}  ${transferLabel(src.transfer)}${src.transfer === 'hlg' ? ` (Lw ${src.hlgLw})` : ''}  ${GAMUTS[src.gamut].name}`);
+  lines.push(`${col('scope.stats.frames')}${t('scope.stats.fps', { fps: src.fps, shown: displayFps })}${src.dropped ? `  ${t('scope.stats.dropped', { n: src.dropped })}` : ''}`);
   if (st) {
     const n = (v: number) => (isGamma(src.transfer) ? '' : `  (${levelText(v, src.transfer, src.hlgLw)})`);
     lines.push('');
     lines.push(`Y' min     ${pct(st.yMin)}${n(st.yMin)}`);
     lines.push(`Y' max     ${pct(st.yMax)}${n(st.yMax)}`);
-    lines.push(`Y' Mittel  ${pct(st.yAvg)}${n(st.yAvg)}`);
+    lines.push(`${`Y' ${t('scope.stats.mean')}`.padEnd(10)} ${pct(st.yAvg)}${n(st.yAvg)}`);
     lines.push(`Clip ▲ RGB ${st.clipHigh.map((v) => (v * 100).toFixed(2)).join(' / ')} %`);
     lines.push(`Clip ▼ RGB ${st.clipLow.map((v) => (v * 100).toFixed(2)).join(' / ')} %`);
     if (st.cll) {
       // CTA-861.3: MaxCLL / MaxFALL since the last reset (whole frames), plus this frame
       const l = src.lightLevel;
       lines.push(`CLL/FALL   ${Math.round(st.cll.max)} / ${Math.round(st.cll.avg)} cd/m² (Frame)`);
-      lines.push(`MaxCLL     ${l.frames ? `${Math.round(l.maxCll)} cd/m²  MaxFALL ${Math.round(l.maxFall)} cd/m²  (${l.frames} Frames)` : '– (nur ohne Messrahmen)'}`);
+      lines.push(`MaxCLL     ${l.frames ? `${Math.round(l.maxCll)} cd/m²  MaxFALL ${Math.round(l.maxFall)} cd/m²  (${l.frames} Frames)` : t('scope.stats.noRoiOnly')}`);
     }
   }
-  if (st) lines.push(`Statistik  ${src.statsPerf.path === 'gpu' ? 'GPU, volle Auflösung' : 'CPU, unterabgetastet'} · ${src.statsPerf.ms.toFixed(2)} ms Hauptthread`);
+  if (st) lines.push(`${col('scope.stats.statistics')}${src.statsPerf.path === 'gpu' ? t('scope.stats.gpu') : t('scope.stats.cpu')} · ${t('scope.stats.mainThread', { ms: src.statsPerf.ms.toFixed(2) })}`);
   lines.push(...latencyLines(src.latency.summary(), src.kind === 'stream' && src.lowLatency), ...rtpLines(src.rtpInfo, src.rtpStats));
   lines.push('', ...r103Lines(src));
   return lines;
@@ -606,13 +608,13 @@ export function r103Lines(src: Source): string[] {
   const p2 = (v: number) => `${(v * 100).toFixed(2)} %`;
   const ext = (v: number) => `${(v * 100).toFixed(1)}`;
   const out = [
-    `R 103      Vorzug −5/105 %: ${p2(r.pref)} der Fläche${r.alarm ? '  ⚠ außerhalb (> 1 %)' : '  (Meldung ab 1 %)'}`,
-    `           Gesamt 4–1019: ${p2(r.total)}${r.total > 0 ? '  ⚠ harte Grenze' : ''}`,
+    `R 103      ${t('scope.r103.pref', { pct: p2(r.pref) })}${r.alarm ? `  ${t('scope.r103.alarm')}` : `  ${t('scope.r103.reportFrom')}`}`,
+    `           ${t('scope.r103.total', { pct: p2(r.total) })}${r.total > 0 ? `  ${t('scope.r103.hardLimit')}` : ''}`,
     `           min R/G/B/Y ${r.min.map(ext).join(' / ')} %  max ${r.max.map(ext).join(' / ')} %`,
   ];
-  if (!src.yuv) out.push('           Quelle ist R′G′B′ 0–100 % (beschnitten): nur mit Y′CbCr-Pfad aussagekräftig');
-  else if (src.yuv.full) out.push('           Quelle Full Range: R 103 ist für Narrow Range definiert, hier nur Prozentvergleich');
-  if (src.info && src.info.sourceWidth > r.width) out.push(`           gemessen auf ${r.width}×${r.height} (skaliert; normgerecht bei Analysebreite „nativ“)`);
+  if (!src.yuv) out.push(`           ${t('scope.r103.rgbSource')}`);
+  else if (src.yuv.full) out.push(`           ${t('scope.r103.fullRange')}`);
+  if (src.info && src.info.sourceWidth > r.width) out.push(`           ${t('scope.r103.scaled', { w: r.width, h: r.height })}`);
   return out;
 }
 
@@ -655,7 +657,7 @@ export function drawCubeGraticule(ctx: CanvasRenderingContext2D, r: Rect, c: Cub
     axis((v) => qFromRgb([v, 0, 0]), steps, pct, 'R′ %', 1.14);
     axis((v) => qFromRgb([0, v, 0]), steps, pct, 'G′ %', 1.14);
     axis((v) => qFromRgb([0, 0, v]), steps, pct, 'B′ %', 1.14);
-    label('Weiß', qFromRgb([1.06, 1.06, 1.06]));
+    label(t('scope.cube.white'), qFromRgb([1.06, 1.06, 1.06]));
   } else if (c.space === 'ycbcr') {
     for (const l of cubeWireframe('ycbcr', srcGamut, srcGamut, nits, 24, LUMA[cs])) line(l, STRONG, 1.5);
     axis((v) => qFromYcc([v, 0, 0]), steps, (v) => `${Math.round(v * 100)}`, 'Y′ %', 1.1);
@@ -692,7 +694,7 @@ export function drawCubeGraticule(ctx: CanvasRenderingContext2D, r: Rect, c: Cub
   ctx.setLineDash([]);
   if (probe) { ctx.strokeStyle = '#00dcff'; ctx.lineWidth = 1.5; const [x, y] = P(probe); ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.stroke(); }
   ctx.fillStyle = LABEL; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-  ctx.fillText(`${CUBE_SPACE_LABELS[c.space]}${SIGNAL_SPACES.includes(c.space) ? ' · 0–100 %' : ` · Drahtgitter ${GAMUTS[c.gamut].name}`} · ziehen = drehen, ⇧ = schieben, Rad = Zoom`, r.x + 4, r.y + r.h - 4);
+  ctx.fillText(`${CUBE_SPACE_LABELS[c.space]}${SIGNAL_SPACES.includes(c.space) ? ' · 0–100 %' : ` · ${t('scope.cube.wireframe', { gamut: GAMUTS[c.gamut].name })}`} · ${t('scope.cube.hint')}`, r.x + 4, r.y + r.h - 4);
   ctx.restore();
 }
 
@@ -716,7 +718,7 @@ export function drawSatLumGraticule(ctx: CanvasRenderingContext2D, r: Rect) {
     ctx.strokeStyle = s === 0 || s === 1 ? GRID : GRID_DIM; ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke();
     ctx.fillStyle = LABEL; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(`${s * 100}`, r.x - 4, y);
   }
-  ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('Sättigung % (|CbCr|)  über  Luma Y′ %', r.x + 4, r.y + 4);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(t('scope.satlum.axes'), r.x + 4, r.y + 4);
   ctx.restore();
 }
 
@@ -743,7 +745,7 @@ export function drawChannelPlotGraticule(ctx: CanvasRenderingContext2D, r: Rect,
     ctx.setLineDash([]);
   }
   ctx.fillStyle = LABEL; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  ctx.fillText(`${ny} (senkrecht) über ${nx}${pair < 3 ? ' · Diagonale = gleiche Kanäle' : ''}`, r.x + 4, r.y + 4);
+  ctx.fillText(`${t('scope.chplot.axes', { y: ny, x: nx })}${pair < 3 ? ` · ${t('scope.chplot.diagonal')}` : ''}`, r.x + 4, r.y + 4);
   ctx.restore();
 }
 

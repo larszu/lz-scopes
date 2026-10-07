@@ -1,6 +1,8 @@
 // Source sidebar: "DaVinci Resolve läuft: Projekt / Timeline – Verbinden". Polls the
 // bridge's /api/resolve (server/resolve.mjs) while the page is visible.
 
+import { t } from './i18n';
+
 export interface ResolveStatus {
   running: boolean; scripting?: boolean; reason?: 'off' | 'python' | 'module'; error?: string;
   product?: string; version?: string; page?: string; project?: string | null; timeline?: string | null; tc?: string;
@@ -20,13 +22,13 @@ export function resolveLines(st: ResolveStatus): { title: string; detail: string
   if (!st.running) return null;
   const name = `${st.product ?? 'DaVinci Resolve'}${st.version ? ` ${st.version.split('.').slice(0, 3).join('.')}` : ''}`;
   if (!st.scripting) {
-    const detail = st.reason === 'python' ? 'Python 3 fehlt auf diesem Rechner (für die Scripting-Anbindung nötig).'
-      : st.reason === 'module' ? `Scripting-Modul nicht gefunden: ${st.error ?? ''}`
-        : 'Externes Scripting ist aus. In Resolve: Einstellungen → System → Allgemein → „Externes Scripting“ auf „Lokal“ stellen (laut Blackmagic-Doku in Resolve Studio).';
-    return { title: 'DaVinci Resolve läuft', detail, canConnect: false };
+    const detail = st.reason === 'python' ? t('source.resolve.noPython')
+      : st.reason === 'module' ? t('source.resolve.noModule', { error: st.error ?? '' })
+        : t('source.resolve.scriptingOff');
+    return { title: t('source.resolve.resolveRunning'), detail, canConnect: false };
   }
-  const where = st.project ? `${st.project}${st.timeline ? ` / ${st.timeline}` : ' – keine Timeline offen'}` : 'kein Projekt offen';
-  return { title: `${name} läuft`, detail: where, canConnect: true };
+  const where = st.project ? `${st.project}${st.timeline ? ` / ${st.timeline}` : ` – ${t('source.resolve.noTimeline')}`}` : t('source.resolve.noProject');
+  return { title: t('source.resolve.running', { name }), detail: where, canConnect: true };
 }
 
 export function mountResolveLive(host: HTMLElement, o: ResolveLiveOptions) {
@@ -41,9 +43,9 @@ export function mountResolveLive(host: HTMLElement, o: ResolveLiveOptions) {
     host.hidden = false;
     const btn = document.createElement('button');
     btn.className = 'primary mini';
-    btn.textContent = o.connected() ? 'verbunden' : 'Verbinden';
+    btn.textContent = o.connected() ? t('source.resolve.connected') : t('source.resolve.connect');
     btn.disabled = !l.canConnect || o.connected();
-    btn.title = 'Aktuelles Bild aus dem Resolve-Viewer (gegradet, 16 bit) über die Scripting-API';
+    btn.title = t('source.resolve.connectTitle');
     btn.onclick = () => { o.connect(); last = ''; poll(); };
     const title = document.createElement('div'); title.className = 'rl-title'; title.textContent = l.title;
     const detail = document.createElement('div'); detail.className = 'rl-detail'; detail.textContent = l.detail;

@@ -10,14 +10,15 @@ import {
 import { LOG_CURVES, NO_LOG, logEncodeGlsl, logGlsl, logSignalToScene, logUniforms, type LogCurve } from './camera';
 import { LUTS, applyLut, type Lut } from './lut';
 import type { Source, Stats } from './sources';
+import { t } from './i18n';
 
 export type Stage = 'signal' | 'cst' | 'lut';
 export const STAGES: Stage[] = ['signal', 'cst', 'lut'];
-export const STAGE_LABELS: Record<Stage, string> = { signal: 'Signal (vor CST)', cst: 'nach CST', lut: 'nach LUT' };
+export const STAGE_LABELS: Record<Stage, string> = { signal: t('chain.stage.signal'), cst: t('chain.stage.cst'), lut: t('chain.stage.lut') };
 export type ToneMap = 'none' | 'clip' | 'bt2390' | 'reinhard' | 'aces2';
 export const TONEMAP_LABELS: Record<ToneMap, string> = {
-  none: 'keins (linear durchreichen)', clip: 'Clip an der Zielspitze', bt2390: 'BT.2390-EETF (je Kanal, PQ)',
-  reinhard: 'Reinhard erweitert (Luminanz)', aces2: 'ACES-2.0-Tonescale (Luminanz)',
+  none: t('chain.tm.none'), clip: t('chain.tm.clip'), bt2390: t('chain.tm.bt2390'),
+  reinhard: t('chain.tm.reinhard'), aces2: t('chain.tm.aces2'),
 };
 
 /**
@@ -157,7 +158,7 @@ export const hasChain = (src: Source) => !!(src.settings.chain?.cst?.on || src.s
 
 /** Short description for panel headers, e.g. "nach LUT · Rec.709 SDR". */
 export function stageBadge(c: Compiled) {
-  return `${STAGE_LABELS[c.stage].replace(' (vor CST)', '')} · ${GAMUTS[c.view.gamut].name} ${transferLabel(c.view.transfer)}`;
+  return `${c.stage === 'signal' ? t('chain.stageShort.signal') : STAGE_LABELS[c.stage]} · ${GAMUTS[c.view.gamut].name} ${transferLabel(c.view.transfer)}`;
 }
 
 /** A Source seen at a stage of its chain: same frames, other transfer/gamut, processed values. */
@@ -189,10 +190,10 @@ export function stageNote(src: Source | null, stage: Stage): { text: string; war
   if (!src || stage === 'signal') return { text: '', warn: false };
   const ch = src.settings.chain ?? {};
   const missing = [ch.lut1, ch.lut2].filter((n): n is string => !!n && !LUTS.has(n));
-  if (stage === 'cst' && !ch.cst?.on) return { text: 'nach CST – keine CST aktiv, zeigt das Signal', warn: true };
+  if (stage === 'cst' && !ch.cst?.on) return { text: t('chain.note.noCst'), warn: true };
   if (stage === 'lut') {
-    if (missing.length) return { text: `nach LUT – ${missing.join(', ')} nicht geladen`, warn: true };
-    if (!ch.lut1 && !ch.lut2) return { text: `nach LUT – keine LUT gesetzt, zeigt ${ch.cst?.on ? 'nach CST' : 'das Signal'}`, warn: true };
+    if (missing.length) return { text: t('chain.note.lutMissing', { luts: missing.join(', ') }), warn: true };
+    if (!ch.lut1 && !ch.lut2) return { text: t(ch.cst?.on ? 'chain.note.noLutAfterCst' : 'chain.note.noLutSignal'), warn: true };
   }
   return { text: stageBadge(compileChain(src, stage)), warn: false };
 }

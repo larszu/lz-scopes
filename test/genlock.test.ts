@@ -11,6 +11,10 @@ import { startHelperStream } from '../server/helper-input.mjs';
 // @ts-expect-error plain JS module
 import { decodeParams, ffmpegCandidates, outputSize } from '../server/index.mjs';
 import { genlockLines, modeText, referenceKind, type RefStatus } from '../src/genlock';
+import { setLang } from '../src/i18n';
+
+// German expectations; the CI runs with an English locale (#94)
+setLang('de');
 
 const fake = fileURLToPath(new URL('./fixtures/fake-helper.mjs', import.meta.url));
 

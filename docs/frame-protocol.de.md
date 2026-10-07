@@ -1,3 +1,5 @@
+**Deutsch** | [English](frame-protocol.md)
+
 # LZ Scopes – Frame-Protokoll
 
 Ein WebSocket liefert unkomprimierte Einzelbilder an den Browser. Die Bridge dieses Repos (`/stream?url=…`) spricht es, und jeder Host kann es nachbauen, zum Beispiel lz-camera-bridge unter `/scope/<n>`. Auf der Browserseite verbindet `Source.connectFrames(wsUrl)`.

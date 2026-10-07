@@ -1,6 +1,6 @@
 # lz-decklink – DeckLink/UltraStudio-Helfer
 
-Nimmt von einer Blackmagic DeckLink-Karte oder einem UltraStudio auf und schreibt die Bilder im Helfer-Protokoll (`docs/frame-protocol.md`) auf stdout. Die Bridge startet ihn für Quellen `decklink:<n>` und rechnet wie bei Streams mit ffmpeg nach R′G′B′ um.
+Nimmt von einer Blackmagic DeckLink-Karte oder einem UltraStudio auf und schreibt die Bilder im Helfer-Protokoll (`docs/frame-protocol.de.md`) auf stdout. Die Bridge startet ihn für Quellen `decklink:<n>` und rechnet wie bei Streams mit ffmpeg nach R′G′B′ um.
 
 **Stand:** Quelltext fertig, auf macOS gegen die Header des DeckLink SDK 12.0 kompiliert (universal, ohne Warnungen) und ohne Treiber ausgeführt (meldet sauber „Desktop Video ist nicht installiert“). **Nie mit echter Hardware gelaufen.** Windows- und Linux-Zweig sind nach den SDK-Headern geschrieben, aber nicht kompiliert.
 

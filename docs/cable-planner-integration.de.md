@@ -1,3 +1,5 @@
+**Deutsch** | [English](cable-planner-integration.md)
+
 # LZ Scopes im cable-planner – Konzept
 
 Stand 29.09.2026. Nichts davon ist gebaut. Es beschreibt, wie die Scopes in den cable-planner passen, ohne zu einem „Extra-Tool“ zu werden.
@@ -24,7 +26,7 @@ Das sind genau die Riegel, die Live-Scopes auch brauchen. Die Scopes erweitern a
 
 Hauptprozess:
 - `streamScopeService.start(endpointId, { width, depth })` prüft dasselbe wie `streamPreviewService`: lokal, freigegeben, Zugangsdaten aus dem Schlüsselbund.
-- Danach startet er ffmpeg mit `-f rawvideo -pix_fmt rgba|rgba64le`. Der Aufruf und die explizite Matrix stehen in `frame-protocol.md`.
+- Danach startet er ffmpeg mit `-f rawvideo -pix_fmt rgba|rgba64le`. Der Aufruf und die explizite Matrix stehen in [`frame-protocol.de.md`](frame-protocol.de.md).
 - Die Frames gehen über einen `MessageChannelMain`-Port an den Renderer, als übertragbarer `ArrayBuffer`, also ohne Kopie.
 
 Renderer:

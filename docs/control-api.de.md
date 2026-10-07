@@ -1,3 +1,5 @@
+**Deutsch** | [English](control-api.md)
+
 # Steuer-API (Bitfocus Companion, curl)
 
 Die Bridge (`server/index.mjs`, in der Desktop-App eingebaut) nimmt Befehle an und reicht sie an das **Hauptfenster** weiter. Das Hauptfenster hält eine WebSocket-Verbindung zur Bridge (`/control?role=app`), führt die Befehle aus und meldet seinen Zustand zurück. Ohne offenes Hauptfenster antwortet die Bridge mit `503`.
@@ -37,14 +39,14 @@ Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen
 | `output.open` | `name`, `view` (`overlay` Standard, `grid`, `panel`, `clean`), `panel`, `source`, `scene`, `bg` `picture`\|`black`, `display` (Bildschirm-id), `fullscreen` (Standard `true`), `stream`, `target`, `codec` (10-bit-Stream: `hevc10`, `hevc422`, `v210`, `prores`; braucht `target`) |
 | `output.close` | `name` optional (ohne = alle) |
 | `scene.select` | `scene`; `output` optional (ohne = Vorgabe und alle offenen Overlay-Ausgaben) |
-| `stream.start` | `stream` (Name → `/out/<stream>.mjpeg`), `output` optional (sonst die erste offene Ausgabe; ist keine offen, öffnet sich ein Overlay-Fenster), `target` optional (`rtmp://`, `srt://`, `rtsp://`, `udp://`, `tcp://`, `rtp://`), `codec` optional (10 bit, wie bei `output.open`; ohne MJPEG, RTMP geht dann nicht) |
+| `stream.start` | `stream` (Name → `/out/<stream>.mjpeg`), `output` optional (sonst die erste offene Ausgabe; ist keine offen, öffnet sich ein Overlay-Fenster), `target` optional (`rtmp://`, `srt://`, `rtsp://`, `udp://`, `tcp://`, `rtp://`), `codec` optional (10 bit, wie bei `output.open`; ohne Angabe MJPEG; ein 10-bit-Codec geht nicht über RTMP) |
 | `stream.stop` | `output` oder `stream` optional (ohne = alle) |
 | `transport` | `op` `play`\|`pause`\|`toggle`\|`stop`\|`next`\|`prev`\|`forward`\|`rewind`\|`start`\|`end`, `source` optional (sonst die gezeigte Videodatei) |
 | `audio.reset` | `source` optional (sonst alle Quellen mit Ton): I, LRA, Max M/S, Max TP, Zähler und Protokoll zurücksetzen (EBU Tech 3341) |
 | `audio.pause` | `mode` `toggle`\|`on`\|`off`, `source` optional: I und LRA anhalten/fortsetzen (Tech 3341) |
 | `generator` | `mode` `toggle`\|`on`\|`off`, `signal` optional (`sine`, `ebu-ident`, `glits`, `blits`, `ebu-multi`, `ident-lr`, `pink`, `pink-band`, `white`, `sweep`, `steps`, `polarity`, `avsync`, …), `freq` 10–20000 Hz, `level` −90–0 dBFS; über −6 dBFS nur mit `"force": true` |
 
-Antwort: `{ ok, result?, error?, state }`. Status `400` = ungültiger Befehl, `422` = nicht ausführbar (z. B. Szene unbekannt), `503` = kein Hauptfenster, `401`/`403` = Zugriff.
+Antwort: `{ ok, result?, error?, state }`. `error` ist ein kurzer englischer Text, der Befehl und Problem nennt (bei ungültigen Feldern das Feld und die erlaubten Werte). Status `400` = ungültiger Befehl, `422` = nicht ausführbar (z. B. Szene unbekannt), `503` = kein Hauptfenster, `401`/`403` = Zugriff. Skripte sollten sich auf `ok` und den Statuscode stützen, nicht auf den Wortlaut von `error`.
 
 ## Zustand (Feedbacks)
 
@@ -66,6 +68,8 @@ Antwort: `{ ok, result?, error?, state }`. Status `400` = ungültiger Befehl, `4
   "sources": [], "layouts": [], "presets": [], "panels": [], "scenes": [], "patterns": []
 }
 ```
+
+Namen (Quellen, Szenen, Testbilder, Ident) stehen so da, wie die App sie zeigt; selbst vergebene Namen bleiben, wie eingegeben.
 
 `clip`, `yMin`, `yMax` sind Prozent (0,1-genau) der aktiven Quelle – das ist die Quelle, die die meisten sichtbaren Panels zeigen. Ohne Statistik stehen sie auf `null`. `audio` gilt für die aktive Quelle mit Ton (sonst die erste mit Ton), Werte in LUFS/LU/dBTP auf 0,1 gerundet, `avOffsetMs` nach ITU-R BT.1359-1 (+ = Ton vor Bild), `null` ohne Messwert. `layoutName` ist die zuletzt geladene Layout-Konfiguration bzw. die Beschriftung der Vorlage.
 

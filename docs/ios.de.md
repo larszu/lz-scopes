@@ -1,3 +1,5 @@
+**Deutsch** | [English](ios.md)
+
 # iPhone- und iPad-App
 
 Die App ist dieselbe Web-App wie im Browser und in der Desktop-App, verpackt mit [Capacitor](https://capacitorjs.com) (MIT) in `ios/`. Hintergrund und Quellen stehen in [research/ios-app.md](research/ios-app.md).

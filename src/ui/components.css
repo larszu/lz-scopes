@@ -46,7 +46,7 @@ button.mini { padding: 1px 5px; min-height: var(--control-h-sm); font-size: var(
 .spacer { flex: 1; }
 .hint { color: var(--text-muted); margin: var(--sp-1) 0 0; max-width: 68ch; }
 .hint.ok, .hint .ok { color: var(--meas-ok); }
-.hint.bad, .hint .bad { color: var(--meas-bad); }
+.hint.bad, .hint .bad { color: var(--err-text); }
 .unit { color: var(--text-muted); white-space: nowrap; }
 
 /* field: label column + controls; the label column collapses above the control in narrow containers */

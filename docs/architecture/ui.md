@@ -102,6 +102,17 @@ kit replaces the off-white one.
   open/close logic, focus back to the trigger, arrow keys, visible focus ring, targets ≥ 24 px
   (≥ 44 px on touch), no cut-off labels, no console errors, WCAG AA text contrast in every skin
   and scheme, and the native menu of the desktop app (hidden window, `LZS_HIDDEN=1`).
+- The same test audits the tool dialogs (LED wall, calibration, output, manual, test videos and
+  images, layouts, colour-match logo picker, every settings page), the touch-shading bar, the
+  ⚙ menus of the genlock, clock and colour-match panels and the light meter: at 375 px in German
+  and English no sideways overflow and 44 px targets, focus inside a dialog when it opens, Tab
+  stays inside (focus trap), Esc closes, the focus returns to a visible control
+  (`restoreFocus()` in `src/ui/dom.ts`: the opener, else the trigger of the closed popover or
+  menu); WCAG AA contrast of the same surfaces in all five skins. `test/uiLayer.test.ts` keeps
+  dialogs and popovers in `src/ui/` (plus the menu bar).
+- Not covered: how the native menu of the desktop app looks. A screenshot needs a visible,
+  focused window on the user's screen; the test only checks its structure (labels, submenus,
+  accelerators) in a hidden window.
 
 ### Migration
 
@@ -135,5 +146,13 @@ Größen in hell und dunkel ohne waagerechtes Scrollen. `e2e/ui-audit.spec.ts` p
 Untermenü, Popover und jeden Dialog in Deutsch und Englisch: im Bild, nicht überdeckt, dieselbe
 Logik zum Öffnen und Schließen (Auslöser, Esc, Klick daneben, nur eins offen, Fokus zurück),
 Pfeiltasten, sichtbarer Fokus, Zielgrößen, abgeschnittene Texte, Konsolenfehler, Kontrast nach
-WCAG AA in allen Oberflächen sowie das native Menü der Desktop-App. Die Menüleiste nutzt dasselbe
+WCAG AA in allen Oberflächen sowie das native Menü der Desktop-App. Dazu kommen die
+Werkzeug-Dialoge (LED-Wand, Kalibrierung, Ausgabe, Anleitung, Testvideos und -bilder, Layouts,
+Logo-Pipette des Farbabgleichs, alle Rubriken der Einstellungen), die Touch-Shading-Leiste, die
+⚙-Menüs von Genlock, Uhr und Farbabgleich und der Lichtmesser: bei 375 px auf Deutsch und
+Englisch kein seitlicher Überlauf, 44-px-Ziele, Fokus beim Öffnen im Dialog, Tab bleibt im
+Dialog, Esc schließt, der Fokus kehrt auf ein sichtbares Element zurück (`restoreFocus()`), dazu
+der Kontrast in allen fünf Oberflächen. Wie das native Menü aussieht, prüft der Test nicht: Ein
+Bildschirmfoto bräuchte ein sichtbares Fenster mit Fokus auf dem Bildschirm des Nutzers; geprüft
+wird nur der Aufbau im verborgenen Fenster. Die Menüleiste nutzt dasselbe
 Popover-Modell wie die ⚙-Menüs (`place()` mit Flip und Klemmen an den Rand).

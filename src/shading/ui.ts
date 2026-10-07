@@ -13,7 +13,7 @@ import {
 } from './model';
 import { ShadingSim, SIM_URL } from './sim';
 import { T } from './text';
-import { button, checkbox, disclosure, h, hint, iconButton, row, select, textInput } from '../ui';
+import { button, checkbox, disclosure, h, hint, iconButton, restoreFocus, row, select, textInput } from '../ui';
 
 const STORE = 'lz-scopes.shading';
 type Target = 'sim' | number;
@@ -70,6 +70,13 @@ export class ShadingControl {
     this.link = new CameraBridgeLink(() => this.bridgeUrl, () => { this.syncFromBridge(); this.render(); });
     this.bar = h('div', { class: 'shading-bar hidden', role: 'region', 'aria-label': 'Touch Shading' });
     mount.append(this.bar);
+    // Esc in the bar closes it like ✕ (while a finger is down Esc stays the emergency stop below)
+    this.bar.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || (this.active && this.touched.size)) return;
+      e.preventDefault(); e.stopPropagation();
+      if (this.active) this.deactivate();
+      this.toggleBar(false);
+    });
     window.addEventListener('keydown', (e) => { if (this.active && e.key === 'Escape' && this.touched.size) { e.preventDefault(); this.emergencyStop(); } });
     this.render();
   }
@@ -80,10 +87,16 @@ export class ShadingControl {
   /** While active, pointer gestures on these scopes go to the camera (zoom/pan only by wheel/trackpad, #89). */
   owns(scope: ScopeType) { return this.active && SUPPORTED.includes(scope); }
 
+  private opener: Element | null = null;
+
   toggleBar(force?: boolean) {
+    const was = this.open;
     this.open = force ?? !this.open;
     if (this.open) this.link.connect();
     this.render();
+    // focus into the bar when it opens, back to where it came from when it closes
+    if (this.open && !was) { this.opener = document.activeElement; this.bar.querySelector<HTMLElement>('input, select, button')?.focus(); }
+    if (!this.open && was && this.bar.contains(document.activeElement)) { (document.activeElement as HTMLElement).blur(); restoreFocus(this.opener); }
   }
 
   private persist() { try { localStorage.setItem(STORE, JSON.stringify({ bridgeUrl: this.bridgeUrl, atTop: this.atTop })); } catch { /* private window */ } }

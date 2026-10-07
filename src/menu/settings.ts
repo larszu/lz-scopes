@@ -52,7 +52,13 @@ function build() {
 }
 
 function renderNav() {
+  // a click on a tab rebuilds the list: keep the focus on the (new) selected tab, keep it in view
+  const hadFocus = nav.contains(document.activeElement);
   nav.replaceWith(nav = tabs({ items: settingsSections(), current, onSelect: show, label: t('common.settings'), orientation: innerWidth <= 640 ? 'horizontal' : 'vertical' }));
+  const on = nav.querySelector<HTMLElement>('[role=tab][aria-selected=true]');
+  if (hadFocus) on?.focus();
+  // horizontal strip on phones scrolls sideways: show the selected tab (only the strip scrolls)
+  if (on && nav.scrollWidth > nav.clientWidth) requestAnimationFrame(() => { nav.scrollLeft = Math.max(0, on.offsetLeft - (nav.clientWidth - on.offsetWidth) / 2); });
 }
 
 function show(id: string) {

@@ -16,7 +16,9 @@ import { ROOT, freePort, launchApp, until } from './app';
 //   - targets ≥ 24 px (WCAG 2.2 2.5.8), ≥ 44 px on touch viewports
 //   - no horizontal scroll, no cut-off labels, no console errors
 // Findings land in test-results/ui-audit/<case>.json; the test fails on any finding.
-// The native menu of the desktop app is checked at the end (Electron, hidden window).
+// The native menu of the desktop app is checked at the end (Electron, hidden window): structure
+// only. How it looks is not checked: that needs a visible, focused window on the user's screen.
+// Tool dialogs, shading bar, panel menus and light meter: see "tool dialogs" below.
 
 const SIZES = [[375, 812], [768, 1024], [1280, 800], [1920, 1080]] as const;
 const OUT = join(ROOT, 'test-results', 'ui-audit');
@@ -367,5 +369,149 @@ for (const lang of ['de', 'en'] as const) {
       }), 30_000, 'natives Menü');
       expect(problems).toEqual([]);
     } finally { await a.close(); }
+  });
+}
+
+// ---------------------------------------------------------------- tool dialogs (#111 follow-up)
+// Every tool dialog, the touch-shading bar, the clock/genlock/colour-match panel menus, the light
+// meter and every settings page at 375 px (DE and EN): overflow, targets ≥ 44 px, focus inside
+// the dialog on open, Tab stays inside (focus trap), Esc closes, focus returns to a visible
+// control. Contrast of the same surfaces in all five skins at 1280 px.
+
+/** Run a menu command like a user: open the top menus (and their submenus) until the item shows. */
+async function menuCmd(page: Page, cmd: string) {
+  const burger = await page.locator('#menubar .mb-burger').isVisible();
+  if (burger && !await isOpen(page, '#menubar .mb-items')) await page.locator('#menubar .mb-burger').click();
+  const item = page.locator(`#menubar .mb-item[data-cmd="${cmd}"]`);
+  const n = await page.locator('#menubar .mb-title').count();
+  for (let i = 0; i < n && !await item.isVisible(); i++) {
+    const title = page.locator('#menubar .mb-title').nth(i);
+    await title.hover(); await page.waitForTimeout(60); // hover opens it while another menu is open
+    if (await title.getAttribute('aria-expanded') !== 'true') await title.click();
+    await page.waitForTimeout(60);
+    const subs = page.locator('#menubar .mb-drop:is(:popover-open, .open) > .mb-subwrap > .mb-item');
+    for (let k = 0; k < await subs.count() && !await item.isVisible(); k++) { await subs.nth(k).click(); await page.waitForTimeout(60); }
+  }
+  if (!await item.isVisible()) { await page.keyboard.press('Escape'); return false; }
+  await item.click(); await page.waitForTimeout(500);
+  return true;
+}
+
+type AuditOpts = { touch: boolean; modal?: boolean; esc?: boolean; overlay?: boolean };
+
+/** Overlay audit: geometry, overflow, targets, focus on open, focus trap, Esc, focus return. */
+async function overlayAudit(page: Page, sel: string, where: string, f: Finding[], o: AuditOpts) {
+  if (!await isOpen(page, sel)) { f.push({ check: 'open', where, detail: `${sel} nicht offen` }); return; }
+  // in-flow sections (light meter in the sidebar) scroll with the page: no viewport check
+  if (o.overlay !== false) await geometry(page, sel, where, f);
+  await truncation(page, sel, where, f);
+  await targets(page, sel, where, o.touch, f);
+  // content wider than its scroll box (sideways scrolling inside a dialog); a tab strip may scroll,
+  // but its selected tab has to be in view
+  const ov = await page.evaluate((sel) => [...document.querySelectorAll<HTMLElement>(`${sel}, ${sel} *`)]
+    .filter((e) => e.getClientRects().length > 0 && e.scrollWidth > e.clientWidth + 1 && ['auto', 'scroll'].includes(getComputedStyle(e).overflowX) && !e.matches('canvas, pre, table, .table-wrap, textarea'))
+    .map((e) => {
+      if (e.matches('[role=tablist]')) {
+        const on = e.querySelector('[aria-selected=true]')?.getBoundingClientRect(), b = e.getBoundingClientRect();
+        return !on || (on.left >= b.left - 1 && on.right <= b.right + 1) ? '' : `selected tab out of view ${Math.round(on.left)}–${Math.round(on.right)} in ${Math.round(b.left)}–${Math.round(b.right)}`;
+      }
+      return `${e.tagName.toLowerCase()}.${e.className} ${e.scrollWidth}>${e.clientWidth}`.slice(0, 70);
+    }).filter(Boolean), sel);
+  for (const s of new Set(ov)) f.push({ check: 'h-overflow', where, detail: s });
+  if (o.modal) {
+    if (!await focusIs(page, `${sel}, ${sel} *`)) f.push({ check: 'focus-open', where, detail: `Fokus beim Öffnen auf ${await page.evaluate(() => document.activeElement?.tagName)}` });
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.press('Tab');
+      const r = await page.evaluate((sel) => { const a = document.activeElement; return !a || a === document.body || a.closest(sel) ? '' : `${a.tagName.toLowerCase()}.${a.className}`.slice(0, 50); }, sel);
+      if (r) { f.push({ check: 'focus-trap', where, detail: `Tab verlässt den Dialog: ${r}` }); break; }
+    }
+  }
+  if (o.esc === false) return;
+  await page.keyboard.press('Escape'); await page.waitForTimeout(250);
+  if (await isOpen(page, sel)) { f.push({ check: 'esc', where, detail: 'Esc schließt nicht' }); return; }
+  const back = await page.evaluate(() => { const a = document.activeElement as HTMLElement | null; return !a || a === document.body || !a.getClientRects().length ? `${a?.tagName}.${a?.className}`.slice(0, 50) : ''; });
+  if (back) f.push({ check: 'focus-return', where, detail: `Fokus nach dem Schließen auf ${back}` });
+}
+
+type Surface = { sel: string; where: string; modal: boolean; esc: boolean; overlay?: boolean };
+
+/** Open each tool surface in turn and hand it to `check` (which may close it). */
+async function eachTool(page: Page, lang: 'de' | 'en', check: (s: Surface) => Promise<void>, f: Finding[]) {
+  const closeDialog = async () => { if (await isOpen(page, 'dialog[open]')) await page.locator('dialog[open] .modal-head button.icon').last().click().catch(() => {}); };
+  for (const cmd of ['led', 'calibration', 'output', `manual:${lang}`, 'testvideos', 'testimages', 'layouts']) {
+    if (!await menuCmd(page, cmd)) { f.push({ check: 'missing', where: `dialog ${cmd}`, detail: 'Menüpunkt nicht gefunden' }); continue; }
+    await check({ sel: 'dialog[open]', where: `dialog ${cmd}`, modal: true, esc: true });
+    await closeDialog();
+  }
+  // settings: every page (Esc once at the end)
+  await page.locator('#settings-btn').click(); await page.waitForTimeout(300);
+  const tabs = await page.locator('dialog#settings [role=tab]').count();
+  for (let i = 0; i < tabs; i++) {
+    const tab = page.locator('dialog#settings [role=tab]').nth(i);
+    await tab.click(); await page.waitForTimeout(150);
+    await check({ sel: 'dialog#settings', where: `settings › ${(await tab.textContent())?.trim()}`, modal: true, esc: i === tabs - 1 });
+  }
+  await closeDialog();
+  // touch shading: a bar over the scopes (non-modal)
+  if (await menuCmd(page, 'shading')) {
+    await page.locator('.shading-bar:not(.hidden) :is(select, button)').first().focus();
+    await check({ sel: '.shading-bar:not(.hidden)', where: 'shading bar', modal: false, esc: true });
+    if (await isOpen(page, '.shading-bar:not(.hidden)')) await page.locator('.shading-bar button.icon').last().click();
+  } else f.push({ check: 'missing', where: 'shading', detail: 'Menüpunkt nicht gefunden' });
+  // panels with their own menus: genlock, clock, colour match (+ logo dialog)
+  for (const scope of ['genlock', 'clock', 'match']) {
+    if (!await menuCmd(page, `scope:${scope}`)) { f.push({ check: 'missing', where: `panel ${scope}`, detail: 'Menüpunkt nicht gefunden' }); continue; }
+    const gear = page.locator('.panel .pop-trigger >> visible=true').last();
+    await gear.scrollIntoViewIfNeeded(); await gear.click(); await page.waitForTimeout(300);
+    await check({ sel: '.panel .popover:popover-open', where: `popover ${scope}`, modal: false, esc: true });
+    if (scope === 'match') {
+      if (!await isOpen(page, '.panel .popover:popover-open')) { await gear.click(); await page.waitForTimeout(300); }
+      await page.locator('.panel .popover:popover-open button', { hasText: 'Logo' }).first().click(); await page.waitForTimeout(300);
+      await check({ sel: 'dialog[open]', where: 'dialog match logo', modal: true, esc: true });
+      await closeDialog();
+    }
+    if (await isOpen(page, '.panel .popover:popover-open')) await page.keyboard.press('Escape');
+  }
+  // light meter: a section of the sources sidebar
+  if (!await page.locator('#side').isVisible()) { await page.locator('#toggle-side').click(); await page.waitForTimeout(300); }
+  const lm = page.locator('#opple-wrap > summary');
+  await lm.scrollIntoViewIfNeeded(); await lm.click(); await page.waitForTimeout(300);
+  await check({ sel: '#opple-wrap', where: 'light meter', modal: false, esc: false, overlay: false });
+}
+
+for (const lang of ['de', 'en'] as const) {
+  test(`tools 375 ${lang}`, async ({ browser }) => {
+    test.setTimeout(480_000);
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, colorScheme: 'dark' });
+    const page = await ctx.newPage();
+    const f: Finding[] = [];
+    page.on('pageerror', (e) => f.push({ check: 'console', where: 'page', detail: e.message.slice(0, 160) }));
+    await openApp(page, { lang });
+    const sw = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    await eachTool(page, lang, async (s) => {
+      await overlayAudit(page, s.sel, s.where, f, { touch: true, modal: s.modal, esc: s.esc, overlay: s.overlay });
+      if (await sw() > 0) f.push({ check: 'h-scroll', where: s.where, detail: `${await sw()} px` });
+    }, f);
+    writeFileSync(join(OUT, `tools-375-${lang}.json`), JSON.stringify(f, null, 1));
+    await page.screenshot({ path: join(OUT, `tools-375-${lang}.png`) });
+    await ctx.close();
+    expect(f, JSON.stringify(f, null, 1)).toEqual([]);
+  });
+}
+
+for (const [theme, scheme] of [['neutral', 'dark'], ['neutral', 'light'], ['lzm', 'dark'], ['lzm', 'light'], ['original', 'dark']] as const) {
+  test(`tools contrast ${theme} ${scheme}`, async ({ browser }) => {
+    test.setTimeout(300_000);
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: scheme });
+    const page = await ctx.newPage();
+    const f: Finding[] = [];
+    await openApp(page, { lang: 'en', theme, scheme });
+    await eachTool(page, 'en', async (s) => {
+      await contrast(page, s.sel, s.where, f);
+      if (s.where.startsWith('popover')) await page.keyboard.press('Escape');
+    }, f);
+    writeFileSync(join(OUT, `tools-contrast-${theme}-${scheme}.json`), JSON.stringify(f, null, 1));
+    await ctx.close();
+    expect(f, JSON.stringify(f, null, 1)).toEqual([]);
   });
 }

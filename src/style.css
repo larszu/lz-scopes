@@ -246,7 +246,7 @@ dialog.lutlib table td.hint { margin: 0; }
 .selftest table.st { border-collapse: collapse; font: 10px var(--mono); margin-top: 4px; }
 .selftest table.st td { padding: 1px 4px; border-bottom: 1px solid var(--line-1); vertical-align: top; }
 .selftest tr.ok td:first-child { color: var(--meas-ok); }
-.selftest tr.bad td { color: var(--meas-bad); }
+.selftest tr.bad td { color: var(--err-text); }
 
 /* light meter in the sidebar (src/opple/ui.ts) */
 .opple .big { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 6px; }
@@ -326,7 +326,7 @@ dialog.ledtool ul { margin: 4px 0; padding-left: 18px; }
 .shading-bar.hidden { display: none; }
 .shading-bar.top { top: 64px; bottom: auto; }
 .shading-bar.live { border-color: var(--signal); }
-.shading-bar button, .shading-bar select, .shading-arm { min-height: 40px; }
+.shading-bar button, .shading-bar select, .shading-arm { min-height: max(40px, var(--control-h)); }
 .shading-arm { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0 6px; cursor: pointer; }
 .shading-arm input { width: 22px; height: 22px; }
 .shading-stop { background: var(--signal); color: #fff; font-weight: 700; padding: 0 16px; border: 0; }

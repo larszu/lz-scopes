@@ -8,7 +8,7 @@ Ein WebSocket liefert unkomprimierte Einzelbilder an den Browser. Die Bridge die
 | Server → Client | Binär | ein Bild: `width × height × 4` Samples R, G, B, A, zeilenweise von oben; `depth` 8 → Uint8, 16 → Uint16 LE |
 | Server → Client | Text | `{"type":"stats","sent":n,"dropped":n}` (optional, 1 Hz) |
 | Server → Client | Text | `{"type":"tc","tc":"10:00:07:05","tcPts":7.2,"pts":7.4,"first":0.96,"kind":"gop"\|"s12m"}` (optional, höchstens 25/s): letzter Timecode aus den Bild-Seitendaten und die PTS des neuesten decodierten Bildes; Resolve: `{"type":"tc","tc":…,"kind":"resolve","fps":25,"df":false}` vor jedem Bild |
-| Server → Client | Text | `{"type":"error"\|"end","message":"…"}`, danach schließt der Server |
+| Server → Client | Text | `{"type":"error"\|"end","message":"…","code":"…","params":{…}}`, danach schließt der Server. `message` ist englisch; `code`/`params` (optional, `server/messages.mjs`) übersetzt die Oberfläche als `bridge.<code>`, unbekannte Codes zeigt sie mit `message`. `stats` kann ebenso `message`/`code`/`params` tragen. |
 
 Die Werte sind Full-Range-R'G'B' (0 = 0 %, Maximum = 100 %). Die Transferfunktion bleibt unverändert, PQ und HLG kommen als Codewerte an. `transfer`, `matrix` und `primaries` entsprechen den ffprobe-Namen; fehlen sie, setzt der Client SDR und BT.709 bei HD beziehungsweise BT.601 bei SD an.
 
@@ -116,8 +116,8 @@ Geräte ohne freien ffmpeg-Weg (DeckLink, NDI) laufen über einen eigenen Helfer
 
 - `INFO` (JSON, vor dem ersten Bild und bei jedem Formatwechsel): `{"width":1920,"height":1080,"fpsNum":50,"fpsDen":1,"pixel":"v210","matrix":"bt709","range":"tv","transfer":"unknown","primaries":"unknown","name":"1080i50","timecode":"10:00:00:00"}`
 - `FRAM`: ein Bild im Format `pixel`, Zeilen ohne weiteres Padding. `pixel` ∈ `v210` (48 Pixel je 128 Byte), `uyvy422`, `p216le`, `rgb48le`, `bgra`, `bgr0`, `rgba`, `rgb0`, `nv12`, `yuv420p`.
-- `STAT` (JSON `{"message":"…"}`): Zustand, z. B. „kein Eingangssignal“.
-- `ERR `: Fehlertext; der Helfer beendet sich danach.
+- `STAT` (JSON `{"message":"…","code":"…"}`): Zustand, z. B. „no input signal“ (`code` optional, siehe oben).
+- `ERR `: Fehler als JSON `{"message":"…","code":"…","params":{…}}` oder als reiner Text; der Helfer beendet sich danach.
 - `TIME` (JSON `{"tc":"10:00:00:00","df":false}`, optional, je Bild vor `FRAM`): Timecode der Quelle (DeckLink: RP 188). Die Bridge schickt ihn als `{"type":"tc","tc":…,"kind":"decklink","fps":…,"df":…}` weiter.
 
 Bei Helfer-Quellen enthält `stats` zusätzlich `phase`: Lage der Bild-Ankunft im SMPTE-ST-2059-1-Raster `{periodMs, meanMs, sdMs, driftPpm, n, spanS, ref:"system"|"ptp"}` (server/phase.mjs). `GET /api/decklink/reference?index=n` liefert den Referenz-/Genlock-Status der Karte (`lz-decklink --reference n`, docs/research/genlock.md).

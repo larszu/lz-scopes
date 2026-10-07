@@ -27,7 +27,7 @@ describe('ffmpeg: manifest and licence rules', () => {
     expect(licenseOf('--enable-gpl --enable-libx264')).toBe('GPL-2.0-or-later');
     expect(licenseOf('--enable-version3')).toBe('LGPL-3.0-or-later');
     expect(licenseOf('')).toBe('LGPL-2.1-or-later');
-    expect(licenseOf('--enable-gpl --enable-version3 --enable-nonfree')).toMatch(/nicht weitergebbar/);
+    expect(licenseOf('--enable-gpl --enable-version3 --enable-nonfree')).toMatch(/not redistributable/);
   });
   it('fetch check rejects nonfree and builds without SRT/x264/x265', () => {
     expect(checkFlags(new Set(['--enable-gpl', '--enable-libsrt', '--enable-libx264', '--enable-libx265']))).toEqual([]);
@@ -47,8 +47,9 @@ describe('ffmpeg: manifest and licence rules', () => {
     expect(ffmpegOrigin('/x/ffmpeg', { FFMPEG: '/x/ffmpeg' })).toBe('env');
     expect(ffmpegOrigin('/usr/bin/ffmpeg', {})).toBe('system');
     expect(ffmpegOrigin(null)).toBe('none');
-    expect(noFfmpegMessage('srt://h:1', ['/x/ffmpeg'])).toMatch(/SRT/);
-    expect(noFfmpegMessage('rtsp://h/1', [])).toMatch(/nicht gefunden/);
+    expect(noFfmpegMessage('srt://h:1', ['/x/ffmpeg'])).toMatchObject({ code: 'ffmpeg.noSrt', message: expect.stringMatching(/SRT/) });
+    expect(noFfmpegMessage('rtsp://h/1', [])).toMatchObject({ code: 'ffmpeg.none', message: expect.stringMatching(/not found/) });
+    expect(noFfmpegMessage('rtsp://h/1', ['/x/ffmpeg']).code).toBe('ffmpeg.missing');
   });
 });
 

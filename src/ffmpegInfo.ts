@@ -1,6 +1,5 @@
 // Which ffmpeg the bridge runs (server/ffmpeg.mjs → /api/health): origin, version, licence,
 // SRT. Everything is read from the binary by the bridge; the UI only shows it.
-
 import { t, type Key } from './i18n';
 
 export interface FfmpegInfo {
@@ -25,7 +24,8 @@ const ORIGIN: Record<FfmpegInfo['origin'], Key> = {
 export function ffmpegLine(i: FfmpegInfo | null | undefined): string {
   if (!i) return t('source.ffmpeg.notFoundLine');
   const srt = i.srt && i.inputSrt ? t('source.ffmpeg.srtYes') : t('source.ffmpeg.srtNo');
-  return `ffmpeg ${i.version ?? '?'} · ${ORIGIN[i.origin] ? t(ORIGIN[i.origin]) : i.origin} · ${i.license ?? t('source.ffmpeg.licenceUnknown')} · ${srt}`;
+  const license = i.license?.startsWith('nonfree') ? t('bridge.license.nonfree') : i.license;
+  return `ffmpeg ${i.version ?? '?'} · ${ORIGIN[i.origin] ? t(ORIGIN[i.origin]) : i.origin} · ${license ?? t('source.ffmpeg.licenceUnknown')} · ${srt}`;
 }
 
 /** Text for the bridge section: the main ffmpeg, plus the one used for srt:// when it differs. */

@@ -12,12 +12,13 @@ import { registerPlugin } from '@capacitor/core';
 import { BleClient } from '@capacitor-community/bluetooth-le';
 import { bridgeAddress, normaliseBridgeInput, uniqueBridges, type FoundBridge } from './discovery';
 import { createBluetooth } from './webBluetooth';
+import { bridgeText } from '../i18n/bridgeMessage';
 
 export interface NativeInfo { idiom: 'pad' | 'phone' | 'mac' | 'other'; system: string; version: string; model: string; iosAppOnMac: boolean; multitasking: boolean }
 export interface NativeCamera { id: string; name: string; manufacturer: string; external: boolean; position: string }
 interface LzNativePlugin {
   info(): Promise<NativeInfo>;
-  browseBridges(o: { timeout?: number }): Promise<{ bridges: FoundBridge[]; error?: string }>;
+  browseBridges(o: { timeout?: number }): Promise<{ bridges: FoundBridge[]; error?: string; errorCode?: string; errorParams?: Record<string, unknown> }>;
   cameras(): Promise<{ cameras: NativeCamera[]; authorization: string }>;
 }
 const LzNative = registerPlugin<LzNativePlugin>('LzNative');
@@ -84,7 +85,7 @@ export function afterApp() {
     console.info(`[lzs-ios] Bonjour: ${found.length} Bridge(s)${r.error ? ` · ${r.error}` : ''}`);
     search.disabled = false; search.textContent = 'Bridge im Netz suchen';
     if (!found.length) {
-      list.replaceChildren(el('span', { className: 'muted', textContent: r.error ?? 'Keine Bridge gefunden. Läuft sie mit --host 0.0.0.0 im selben WLAN? Adresse sonst oben eintragen.' }));
+      list.replaceChildren(el('span', { className: 'muted', textContent: bridgeText(r, 'error') || 'Keine Bridge gefunden. Läuft sie mit --host 0.0.0.0 im selben WLAN? Adresse sonst oben eintragen.' }));
       return;
     }
     list.replaceChildren(...found.map((b) => {

@@ -9,6 +9,7 @@
 // NOT TESTED WITH HARDWARE (no DeckLink card with reference input was available).
 
 import type { Source } from './sources';
+import { bridgeText } from './i18n/bridgeMessage';
 
 export interface RefMode { name: string; width: number; height: number; fpsNum: number; fpsDen: number; field: 'progressive' | 'interlaced' | 'psf' }
 export interface RefStatus {
@@ -70,7 +71,7 @@ export function genlockLines(st: RefStatus | null, phase: PhaseReport | null, tc
   const t = (k: Key) => TEXTS[lang][k];
   const ref: { label: string; value: string; tone: 'good' | 'bad' | 'warn' | 'dim' | 'fg' }[] = [];
   if (!st) ref.push({ label: t('reference'), value: '…', tone: 'dim' });
-  else if (!st.ok) ref.push({ label: t('noHelper'), value: st.error ?? '', tone: 'warn' });
+  else if (!st.ok) ref.push({ label: t('noHelper'), value: bridgeText(st, 'error'), tone: 'warn' });
   else {
     ref.push({ label: t('device'), value: `${st.index ?? 0} · ${st.name ?? ''}`, tone: 'fg' });
     if (!st.hasReference) ref.push({ label: t('reference'), value: t('noRefInput'), tone: 'warn' });

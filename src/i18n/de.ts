@@ -14,6 +14,7 @@ import pattern from './de/pattern';
 import lut from './de/lut';
 import chain from './de/chain';
 import match from './de/match';
+import bridge from './de/bridge';
 import type { Key } from './en';
 import type { Msg } from './types';
 
@@ -32,4 +33,5 @@ export const de: Record<Key, Msg> = {
   ...lut,
   ...chain,
   ...match,
+  ...bridge,
 };

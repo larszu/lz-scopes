@@ -92,8 +92,8 @@ static std::string loadNdi(Ndi& n) {
 #endif
   LibHandle h = nullptr;
   for (const auto& p : tries) { h = openLib(p); if (h) { n.path = p; break; } }
-  if (!h) return "NDI-Runtime nicht gefunden – NDI Tools oder die NDI-Runtime von ndi.video installieren";
-#define LOAD(field, name) n.field = (decltype(n.field))sym(h, name); if (!n.field) return std::string("NDI-Runtime unvollständig: ") + name;
+  if (!h) return "NDI runtime not found – install NDI Tools or the NDI runtime from ndi.video";
+#define LOAD(field, name) n.field = (decltype(n.field))sym(h, name); if (!n.field) return std::string("NDI runtime incomplete: ") + name;
   LOAD(initialize, "NDIlib_initialize")
   LOAD(destroy, "NDIlib_destroy")
   LOAD(version, "NDIlib_version")
@@ -109,8 +109,15 @@ static std::string loadNdi(Ndi& n) {
   LOAD(send_send_video_v2, "NDIlib_send_send_video_v2")
   LOAD(send_destroy, "NDIlib_send_destroy")
 #undef LOAD
-  if (!n.initialize()) return "NDI lässt sich auf diesem Rechner nicht initialisieren (CPU ohne SSE4.2?)";
+  if (!n.initialize()) return "NDI cannot be initialised on this computer (CPU without SSE4.2?)";
   return "";
+}
+
+/** Code of a loadNdi() error for the UI (server/messages.mjs). */
+static const char* ndiErrCode(const std::string& err) {
+  if (err.rfind("NDI runtime not found", 0) == 0) return "ndi.noRuntime";
+  if (err.rfind("NDI runtime incomplete", 0) == 0) return "ndi.runtimeIncomplete";
+  return "ndi.initFailed";
 }
 
 // ---------------------------------------------------------------- --list
@@ -118,10 +125,10 @@ static std::string loadNdi(Ndi& n) {
 static int listSources(int waitMs) {
   Ndi n;
   std::string err = loadNdi(n);
-  if (!err.empty()) { printf("{\"ok\":false,\"runtime\":false,\"error\":\"%s\"}\n", jsonEscape(err).c_str()); return 0; }
+  if (!err.empty()) { printf("{\"ok\":false,\"runtime\":false,\"code\":\"%s\",\"error\":\"%s\"}\n", ndiErrCode(err), jsonEscape(err).c_str()); return 0; }
   NDI_find_create fc = { true, nullptr, nullptr };
   NDI_find_instance f = n.find_create_v2(&fc);
-  if (!f) { printf("{\"ok\":false,\"runtime\":true,\"error\":\"NDI-Suche lässt sich nicht starten\"}\n"); return 0; }
+  if (!f) { printf("{\"ok\":false,\"runtime\":true,\"code\":\"ndi.findFailed\",\"error\":\"NDI search cannot be started\"}\n"); return 0; }
   // sources announce themselves over mDNS; give them a moment
   auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(waitMs);
   while (std::chrono::steady_clock::now() < until) n.find_wait_for_sources(f, 250);
@@ -177,7 +184,7 @@ static const char* repack(const NDI_video_frame_v2& v, std::vector<uint8_t>& out
 static int capture(const std::string& name) {
   Ndi n;
   std::string err = loadNdi(n);
-  if (!err.empty()) { writeText("ERR ", err); return 2; }
+  if (!err.empty()) { writeText("ERR ", "{\"code\":\"" + std::string(ndiErrCode(err)) + "\",\"message\":\"" + jsonEscape(err) + "\"}"); return 2; }
   NDI_find_create fc = { true, nullptr, nullptr };
   NDI_find_instance f = n.find_create_v2(&fc);
   NDI_source found = { nullptr, nullptr };
@@ -189,15 +196,15 @@ static int capture(const std::string& name) {
     for (uint32_t k = 0; k < count; k++) if (src[k].p_ndi_name && name == src[k].p_ndi_name) {
       foundName = src[k].p_ndi_name; foundUrl = src[k].p_url_address ? src[k].p_url_address : "";
     }
-    if (i == 4 && foundName.empty()) writeText("STAT", "{\"message\":\"suche NDI-Quelle …\"}");
+    if (i == 4 && foundName.empty()) writeText("STAT", "{\"code\":\"ndi.searching\",\"message\":\"searching for the NDI source …\"}");
   }
-  if (foundName.empty()) { writeText("ERR ", "NDI-Quelle \"" + name + "\" nicht gefunden"); return 2; }
+  if (foundName.empty()) { const std::string en = jsonEscape(name); writeText("ERR ", "{\"code\":\"ndi.notFound\",\"message\":\"NDI source \\\"" + en + "\\\" not found\",\"params\":{\"name\":\"" + en + "\"}}"); return 2; }
   found.p_ndi_name = foundName.c_str();
   found.p_url_address = foundUrl.empty() ? nullptr : foundUrl.c_str();
   NDI_recv_create_v3 rc = { found, NDI_recv_color_format_best, NDI_recv_bandwidth_highest, false, "LZ Scopes" };
   NDI_recv_instance r = n.recv_create_v3(&rc);
   n.find_destroy(f);
-  if (!r) { writeText("ERR ", "NDI-Empfänger lässt sich nicht anlegen"); return 2; }
+  if (!r) { writeText("ERR ", "{\"code\":\"ndi.recvFailed\",\"message\":\"NDI receiver cannot be created\"}"); return 2; }
   std::string lastInfo;
   std::vector<uint8_t> buf;
   auto lastFrame = std::chrono::steady_clock::now();
@@ -205,16 +212,16 @@ static int capture(const std::string& name) {
     NDI_video_frame_v2 v;
     std::memset(&v, 0, sizeof v);
     const int32_t t = n.recv_capture_v3(r, &v, nullptr, nullptr, 1000);
-    if (t == NDI_frame_type_error) { writeText("ERR ", "Verbindung zur NDI-Quelle verloren"); return 3; }
+    if (t == NDI_frame_type_error) { writeText("ERR ", "{\"code\":\"ndi.lost\",\"message\":\"Connection to the NDI source lost\"}"); return 3; }
     if (t != NDI_frame_type_video) {
-      if (std::chrono::steady_clock::now() - lastFrame > std::chrono::seconds(2)) { writeText("STAT", "{\"message\":\"warte auf Bild von der NDI-Quelle\"}"); lastFrame = std::chrono::steady_clock::now(); }
+      if (std::chrono::steady_clock::now() - lastFrame > std::chrono::seconds(2)) { writeText("STAT", "{\"code\":\"ndi.waiting\",\"message\":\"waiting for a picture from the NDI source\"}"); lastFrame = std::chrono::steady_clock::now(); }
       continue;
     }
     lastFrame = std::chrono::steady_clock::now();
     const char* pixel = repack(v, buf);
     if (!pixel) {
       char cc[5] = { (char)(v.FourCC & 0xff), (char)((v.FourCC >> 8) & 0xff), (char)((v.FourCC >> 16) & 0xff), (char)(v.FourCC >> 24), 0 };
-      writeText("STAT", std::string("{\"message\":\"NDI-Format ") + cc + " nicht unterstützt\"}");
+      writeText("STAT", std::string("{\"code\":\"ndi.format\",\"message\":\"NDI format ") + jsonEscape(cc) + " not supported\",\"params\":{\"fourcc\":\"" + jsonEscape(cc) + "\"}}");
       n.recv_free_video_v2(r, &v);
       continue;
     }
@@ -239,7 +246,7 @@ static int sendTest(const std::string& name, int seconds) {
   if (!err.empty()) { fprintf(stderr, "%s\n", err.c_str()); return 2; }
   NDI_send_create sc = { name.c_str(), nullptr, true, false };
   NDI_send_instance s = n.send_create(&sc);
-  if (!s) { fprintf(stderr, "NDI-Sender lässt sich nicht anlegen\n"); return 2; }
+  if (!s) { fprintf(stderr, "NDI sender cannot be created\n"); return 2; }
   const int w = 320, h = 180;
   std::vector<uint16_t> p((size_t)w * h * 2);
   for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {

@@ -100,7 +100,7 @@ export const NAL = {
  */
 export class Depacketizer {
   constructor(codec, onAccessUnit) {
-    if (!NAL[codec]) throw new Error(`RTP: Codec ${codec} nicht unterstützt`);
+    if (!NAL[codec]) throw new Error(`RTP: codec ${codec} not supported`);
     this.codec = codec; this.onAccessUnit = onAccessUnit;
     this.nals = []; this.ts = null; this.fu = null; this.broken = false; this.needKey = true;
     this.aus = 0; this.dropped = 0;

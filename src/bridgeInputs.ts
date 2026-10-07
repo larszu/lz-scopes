@@ -4,6 +4,7 @@
 
 import type { Source, SourceSettings } from './sources';
 import { t } from './i18n';
+import { bridgeText } from './i18n/bridgeMessage';
 
 export interface BridgeUi {
   /** http(s) base of the bridge */
@@ -105,7 +106,7 @@ export function deckLinkButton(ui: BridgeUi): HTMLElement {
     let st: DeckLinkStatus | null = null;
     try { st = await (await fetch(`${ui.http()}/api/decklink`)).json(); } catch { /* bridge missing */ }
     if (!st) { ui.hud(t('bridgeui.bridgeUnreachable')); return; }
-    if (!st.available) { ui.hud(t('bridgeui.decklinkUnavailable', { why: st.error ?? t('bridgeui.decklinkNeeds') })); return; }
+    if (!st.available) { ui.hud(t('bridgeui.decklinkUnavailable', { why: bridgeText(st, 'error') || t('bridgeui.decklinkNeeds') })); return; }
     if (!st.devices.length) { ui.hud(t('bridgeui.noDecklinkDevice')); return; }
     btn.replaceWith(sel('', [['', t('bridgeui.chooseDecklink')], ...st.devices.map((d) => [`decklink:${d.index}`, d.name] as [string, string])], (v) => { if (v) ui.connect(v, st!.devices.find((d) => `decklink:${d.index}` === v)?.name); }));
   } }, 'DeckLink…');
@@ -134,7 +135,7 @@ export function ndiButton(ui: BridgeUi): HTMLElement {
     try { st = await (await fetch(`${ui.http()}/api/ndi`)).json(); } catch { /* bridge missing */ }
     btn.textContent = 'NDI®…';
     if (!st) { ui.hud(t('bridgeui.bridgeUnreachable')); return; }
-    if (!st.available) { ui.hud(t('bridgeui.ndiUnavailable', { why: st.error ?? t('bridgeui.ndiNeeds') })); return; }
+    if (!st.available) { ui.hud(t('bridgeui.ndiUnavailable', { why: bridgeText(st, 'error') || t('bridgeui.ndiNeeds') })); return; }
     if (!st.sources.length) { ui.hud(t('bridgeui.noNdiSources')); return; }
     btn.replaceWith(sel('', [['', t('bridgeui.chooseNdi')], ...st.sources.map((s) => [`ndi:${s.name}`, s.name] as [string, string])], (v) => { if (v) ui.connect(v, v.slice(4).replace(/^.*\((.*)\)$/, '$1').slice(0, 40)); }));
   } }, 'NDI®…');

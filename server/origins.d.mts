@@ -11,5 +11,6 @@ export class OriginStore {
 export function clockAccess(r: { remote?: string; origin?: string; host?: string; store?: OriginStore }): null | { status: number; error: string };
 export function newNonce(now?: number): string;
 export function takeNonce(n: string, now?: number): boolean;
-export function consentPage(requested: string | null, store: OriginStore, nonce: string): string;
+export function consentLang(acceptLanguage: string | null | undefined): 'de' | 'en';
+export function consentPage(requested: string | null, store: OriginStore, nonce: string, lang?: 'de' | 'en'): string;
 export const CONSENT_HEADERS: Record<string, string>;

@@ -8,4 +8,4 @@ export function outputProtocols(text: string): Set<string>;
 export function ffmpegInfo(path: string | null | undefined, env?: Record<string, string | undefined>): Promise<FfmpegInfo | null>;
 export function hasSrt(path: string): Promise<boolean>;
 export function ffmpegFor(url: string, candidates?: string[]): Promise<string | null>;
-export function noFfmpegMessage(url: string, candidates?: string[]): string;
+export function noFfmpegMessage(url: string, candidates?: string[]): import('./messages.mjs').BridgeMsg & { code: string };

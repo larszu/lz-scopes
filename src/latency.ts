@@ -13,6 +13,7 @@
 
 import { stampAge } from '../server/stamp.mjs';
 import type { FrameMeta } from './frameLink';
+import { bridgeText } from './i18n/bridgeMessage';
 
 export interface LatencySummary {
   /** stamp → draw submitted (or → next animation frame without draw hook), ms */
@@ -132,11 +133,11 @@ export function rtpLines(
   st: RtpStats | null | undefined,
 ): string[] {
   if (!info) return [];
-  if (!info.own) return [`Empfang    ${info.note ?? 'ffmpeg-RTSP'}`];
+  if (!info.own) return [`Empfang    ${bridgeText(info, 'note', 'ffmpeg-RTSP')}`];
   const codec = info.codec === 'hevc' ? 'HEVC' : 'H.264';
   const transport = (st?.transport ?? info.transport ?? 'tcp').toUpperCase();
   const lines = [`Empfang    RTP eigen · ${codec} · ${transport}${st?.udpBuffer ? ` · Puffer ${(st.udpBuffer / 1048576).toFixed(1)} MB` : ''}`];
-  if (st?.switched) lines.push(`           ${st.switched}`);
+  if (st?.switched) lines.push(`           ${bridgeText(st, 'switched')}`);
   if (st) {
     const total = st.packets + st.lost;
     const pct = total ? (100 * st.lost) / total : 0;

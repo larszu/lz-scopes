@@ -224,7 +224,7 @@ describe('spotread bridge', () => {
     expect(() => writeCorrection({ name: 'a.txt', text: 'CCMX' })).toThrow();
     expect(() => writeCorrection({ name: 'a.ccmx', text: 'hello' })).toThrow();
     const w = writeCorrection({ name: 'wled.ccss', text: 'CCSS\n\nDESCRIPTOR "x"\n' });
-    expect(w.file).toMatch(/korrektur\.ccss$/);
+    expect(w.file).toMatch(/correction\.ccss$/);
   });
   it('looks for spotread.exe on Windows and in the PATH', () => {
     // path.join of the test machine: backslashes when the suite runs on Windows

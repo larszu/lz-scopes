@@ -33,7 +33,7 @@ export default {
   // no installer without the redistributable ffmpeg (a missing folder would be skipped silently)
   beforePack: async (ctx) => {
     const os = ctx.electronPlatformName === 'darwin' ? 'mac' : ctx.electronPlatformName === 'win32' ? 'win' : null
-    if (os && !existsSync(`${ffmpegDir[os]}/BUILD.json`)) throw new Error(`${ffmpegDir[os]} fehlt – node scripts/ffmpeg-fetch.mjs ${ffmpegDir[os].split('/').pop()}`)
+    if (os && !existsSync(`${ffmpegDir[os]}/BUILD.json`)) throw new Error(`${ffmpegDir[os]} missing – node scripts/ffmpeg-fetch.mjs ${ffmpegDir[os].split('/').pop()}`)
   },
   directories: { buildResources: 'build', output: 'release' },
   mac: {
@@ -46,7 +46,11 @@ export default {
     // ffmpeg/ffprobe are fat binaries (lipo in scripts/ffmpeg-fetch.mjs), identical in both
     // halves; the helpers are built universal as well
     x64ArchFiles: '{**/ffmpeg/ffmpeg,**/ffmpeg/ffprobe,**/helpers/bin/*}',
-    extraResources: ffmpegResources('mac', ['ffmpeg', 'ffprobe', 'BUILD.json']),
+    // InfoPlist.strings: German permission texts (the English ones are extendInfo below). Electron
+    // already ships <lang>.lproj folders in Contents/Resources (Chromium locales); these files are
+    // added to them. Do not set `electronLanguages` without en and de, it would drop the folders.
+    extraResources: [...ffmpegResources('mac', ['ffmpeg', 'ffprobe', 'BUILD.json']),
+      { from: 'build/mac/en.lproj', to: 'en.lproj' }, { from: 'build/mac/de.lproj', to: 'de.lproj' }],
     mergeASARs: false,
     icon: 'build/icon.png',
     // Ad-hoc signature: Apple Silicon refuses fully unsigned binaries ("damaged").
@@ -54,11 +58,16 @@ export default {
     hardenedRuntime: false,
     gatekeeperAssess: false,
     extendInfo: {
-      NSCameraUsageDescription: 'LZ Scopes misst das Bild einer angeschlossenen Kamera oder Capture-Karte.',
+      // English (development region); German in build/mac/de.lproj/InfoPlist.strings
+      CFBundleDevelopmentRegion: 'en',
+      NSCameraUsageDescription: 'LZ Scopes measures the picture of a connected camera or capture card.',
       // required when the app uses Bluetooth (Apple: NSBluetoothAlwaysUsageDescription, macOS 11+)
-      NSBluetoothAlwaysUsageDescription: 'LZ Scopes verbindet sich per Bluetooth mit einem Lichtmesser (Opple Light Master).',
+      NSBluetoothAlwaysUsageDescription: 'LZ Scopes connects to a light meter (Opple Light Master) over Bluetooth.',
       // audio devices (getUserMedia and the bridge's ffmpeg avfoundation input)
-      NSMicrophoneUsageDescription: 'LZ Scopes misst den Ton eines Audiogeräts, einer Capture-Karte oder eines Mikrofons.',
+      NSMicrophoneUsageDescription: 'LZ Scopes measures the sound of an audio device, a capture card or a microphone.',
+      // Electron sets generic English defaults ("This app needs access to …") for these two; replaced
+      NSAudioCaptureUsageDescription: 'LZ Scopes measures captured sound (levels, loudness, phase).',
+      NSBluetoothPeripheralUsageDescription: 'LZ Scopes connects to a light meter (Opple Light Master) over Bluetooth.',
     },
   },
   win: {

@@ -46,7 +46,7 @@
   --meas-bad: #ff5c5c;
   --meas-warn: #ffb44a;
   /* calibration grades (src/calib/ui.ts): measurement colours, not part of a skin */
-  --grade-good: #1d3324; --grade-ok: #3a3414; --grade-fail: #4a1c1c;
+  --grade-good: #1d3324; --grade-ok: #3a3414; --grade-fail: #4a1c1c; --on-grade: #e6e6e6;
 
   /* type scale (tool mode: sentence case, dense) */
   --fs-xs: 10px; --fs-sm: 11px; --fs-ui: 12px; --fs-md: 13px; --fs-lg: 15px; --fs-xl: 18px;

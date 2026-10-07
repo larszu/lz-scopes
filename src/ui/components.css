@@ -95,6 +95,9 @@ table.table { border-collapse: collapse; font-size: var(--fs-ui); }
 table.table td, table.table th { padding: 3px 8px; border-top: 1px solid var(--line-1); vertical-align: top; text-align: left; }
 table.table th { color: var(--text-muted); font-weight: 700; font-size: var(--fs-sm); }
 .table-wrap { max-width: 100%; overflow-x: auto; }
+/* tables of figures: right-aligned, tabular numbers; the first column is the label */
+table.num-table td, table.num-table th { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.num-table td:first-child, table.num-table th:first-child { text-align: left; }
 
 /* ---------------------------------------------------------------- popover (src/ui/popover.ts) */
 .pop { display: inline-flex; }

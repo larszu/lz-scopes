@@ -241,7 +241,7 @@ final class DirectStream {
         }
         c.onEnd = { [weak self, weak c] e in
             guard let self, let c, self.client === c, !self.stopped else { return }
-            if let e { self.fail(e) } else { self.end() }
+            if let e { self.retryOrFail(e) } else { self.end() }
         }
         c.start { [weak self, weak c] r in
             guard let self, let c, self.client === c, !self.stopped else { return }
@@ -250,7 +250,7 @@ final class DirectStream {
                 if self.params.isEmpty { self.params = info.params }
                 self.log("[lzs-ios] rtsp-direct: \(info.codec.rawValue) over \(info.transport.rawValue), \(info.params.count) parameter sets in the SDP")
                 self.startStats()
-            case .failure(let e): self.fail(e)
+            case .failure(let e): self.retryOrFail(e)
             }
         }
     }
@@ -360,6 +360,26 @@ final class DirectStream {
         lastReport = nil
         waitKey = true
         open(.tcp)
+    }
+
+    /// Network trouble (no answer, refused, lost) is retried: 5 attempts before the first picture,
+    /// then indefinitely every 2 s (camera reboot, Wi-Fi gap). Credentials and format errors fail at once.
+    static let retryable: Set<String> = ["rtsp.noAnswer", "rtsp.timeout", "rtsp.connectFailed", "rtsp.connectionLost", "rtsp.status"]
+    private var attempts = 0
+
+    private func retryOrFail(_ e: RtspError) {
+        guard !stopped, Self.retryable.contains(e.code), format != nil || attempts < 5 else { fail(e); return }
+        attempts += 1
+        log("[lzs-ios] rtsp-direct: \(e.message) – retry \(attempts)")
+        out?.sendText(["type": "stats", "dropped": dropped, "message": "\(e.message) – new attempt \(attempts)", "code": "ios.rtspRetry",
+                       "params": ["reason": ["message": e.message, "code": e.code, "params": e.params], "n": attempts]])
+        client?.stop(); client = nil
+        statsTimer?.cancel(); statsTimer = nil
+        waitKey = true
+        queue.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self, !self.stopped else { return }
+            self.open(self.opts.transport)
+        }
     }
 
     private func fail(_ e: RtspError) {

@@ -117,6 +117,7 @@ export default {
   'bridge.rtsp.connectFailed': 'RTSP: Verbindung fehlgeschlagen ({reason})',
   'bridge.rtsp.connectionLost': 'RTSP: Verbindung abgerissen',
   'bridge.rtsp.headerTooLong': 'RTSP: Kopfzeilen zu lang',
+  'bridge.ios.rtspRetry': '{reason} – neuer Versuch {n}',
   'bridge.ios.rtspEnded': 'RTSP: Die Kamera hat den Stream beendet',
   'bridge.ios.decoderFailed': 'VideoToolbox: Dekoder nicht verfügbar ({status})',
   'bridge.ios.decodeFailed': 'VideoToolbox: Bild nicht dekodiert ({status})',

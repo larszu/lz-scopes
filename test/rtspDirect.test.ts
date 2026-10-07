@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { frameUrl, hostKey, installRtspDirect, isDirectUrl, splitCredentials, type RtspNative } from '../src/native/rtspDirect';
 import { streamRoute } from '../src/streamRoute';
 import type { SourceSettings } from '../src/sources';
+import { decodedFullRange } from '../src/yuv';
 
 // iOS RTSP direct (#90): routing, credentials out of the URL, frame-server URL.
 
@@ -59,5 +60,12 @@ describe('RTSP direkt (iOS)', () => {
     expect(ws).toMatch(/^ws:\/\/127\.0\.0\.1:4000\/rtsp\?token=t&url=rtsp%3A%2F%2Fcam%3A8554%2Fs&transport=tcp/);
     expect(ws).not.toContain('geheim');
     streamRoute.set(null); streamRoute.setNormaliser((u) => u);
+  });
+
+  it('Bereich der dekodierten Ebenen: colorSpace des VideoFrame vor dem Stream-Tag', () => {
+    expect(decodedFullRange({ colorSpace: { fullRange: true } }, 'tv')).toBe(true);
+    expect(decodedFullRange({ colorSpace: { fullRange: false } }, 'pc')).toBe(false);
+    expect(decodedFullRange({ colorSpace: { fullRange: null } }, 'pc')).toBe(true);
+    expect(decodedFullRange({}, 'tv')).toBe(false);
   });
 });

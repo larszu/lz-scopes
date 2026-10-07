@@ -110,7 +110,9 @@ struct LiveTests {
 
     @Test func unreachableCameraReportsAnError() async throws {
         let s = try await startedServer()
-        let r = try await receive(s, path: "/rtsp", query: ["token": s.token, "url": "rtsp://127.0.0.1:9/none"]) { $0.first("error") != nil }
+        // five attempts 2 s apart before giving up
+        let r = try await receive(s, path: "/rtsp", query: ["token": s.token, "url": "rtsp://127.0.0.1:9/none"], until: { $0.first("error") != nil }, seconds: 40)
+        #expect(r.texts.filter { $0["code"] as? String == "ios.rtspRetry" }.count == 5)
         let code = r.first("error")?["code"] as? String
         #expect(code == "rtsp.connectFailed" || code == "rtsp.timeout")
     }

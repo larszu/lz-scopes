@@ -116,4 +116,13 @@ export default {
   // iOS app: Bonjour search for the bridge (ios/App/App/LzNative.swift)
   'bridge.ios.localNetworkDenied': 'Access to the local network denied (Settings → Privacy & Security → Local Network)',
   'bridge.ios.browseFailed': 'Bonjour search failed ({code})',
+  // iOS app: RTSP direct (ios/LzRtsp, #90)
+  'bridge.rtsp.status': 'RTSP {method}: {status}',
+  'bridge.rtsp.connectFailed': 'RTSP: connection failed ({reason})',
+  'bridge.rtsp.connectionLost': 'RTSP: connection lost',
+  'bridge.rtsp.headerTooLong': 'RTSP: header too long',
+  'bridge.ios.rtspEnded': 'RTSP: the camera ended the stream',
+  'bridge.ios.decoderFailed': 'VideoToolbox: decoder not available ({status})',
+  'bridge.ios.decodeFailed': 'VideoToolbox: frame not decoded ({status})',
+  'bridge.ios.frameServer': 'RTSP direct: local frame server did not start',
 } as const satisfies Messages;

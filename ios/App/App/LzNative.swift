@@ -6,7 +6,10 @@
 //     server/bonjour.mjs announces), because WebKit has no mDNS API;
 //   - listing the cameras the system sees (built-in and, from iPadOS 17, USB/UVC), so the app
 //     can say honestly whether a capture card is attached even if WebKit does not offer it;
-//   - device facts (iPhone or iPad) for the compact layout.
+//   - device facts (iPhone or iPad) for the compact layout;
+//   - RTSP cameras directly, without a bridge (#90): the LzRtsp package (ios/LzRtsp) receives
+//     RTP itself and serves the frame protocol on a loopback WebSocket; camera credentials
+//     live in the Keychain, never in the web side's storage.
 // Bluetooth for the Opple Light Master comes from @capacitor-community/bluetooth-le (MIT).
 //
 // Registered as a local plugin as described in https://capacitorjs.com/docs/ios/custom-code.
@@ -14,6 +17,7 @@
 import AVFoundation
 import Capacitor
 import Foundation
+import LzRtsp
 import UIKit
 
 /// Bridge view controller that registers the app's own plugin.
@@ -31,7 +35,19 @@ public class LzNativePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "info", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "browseBridges", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cameras", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtspServer", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtspSaveCredentials", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtspCredentials", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rtspForget", returnType: CAPPluginReturnPromise),
     ]
+
+    /// Loopback frame server for RTSP direct (one per app run, started on first use).
+    private lazy var frameServer: FrameServer = {
+        let s = FrameServer()
+        s.credentials = { CredentialStore.load(for: $0) }
+        s.log = { NSLog("%@", $0) }
+        return s
+    }()
 
     private var browses: [BridgeBrowse] = []
 
@@ -54,8 +70,47 @@ public class LzNativePlugin: CAPPlugin, CAPBridgedPlugin {
                 "model": device.model,
                 "iosAppOnMac": onMac,
                 "multitasking": UIApplication.shared.supportsMultipleScenes,
+                "autoStreams": LzNativePlugin.autoStreams(),
             ])
         }
+    }
+
+    /// Debug builds only: RTSP URLs from the launch argument `-LzsAutoStreams "url1 url2"`, which the
+    /// web side opens at start (iOS workflow: simulator test against a local mediamtx).
+    static func autoStreams() -> [String] {
+        #if DEBUG
+        return (UserDefaults.standard.string(forKey: "LzsAutoStreams") ?? "").split(separator: " ").map(String.init)
+        #else
+        return []
+        #endif
+    }
+
+    /// Port and token of the loopback frame server (ws://127.0.0.1:<port>/rtsp?token=…).
+    @objc func rtspServer(_ call: CAPPluginCall) {
+        let server = frameServer
+        server.start { result in
+            switch result {
+            case .success(let port): call.resolve(["port": Int(port), "token": server.token])
+            case .failure(let e): call.reject("RTSP frame server: \(e.localizedDescription)", "ios.frameServer")
+            }
+        }
+    }
+
+    /// Store user and password for the URL's host:port in the Keychain (replaces an older entry).
+    @objc func rtspSaveCredentials(_ call: CAPPluginCall) {
+        guard let url = call.getString("url"), let user = call.getString("user") else { call.reject("url and user needed"); return }
+        let ok = CredentialStore.save(Credentials(user: user, pass: call.getString("pass") ?? ""), for: url)
+        call.resolve(["saved": ok])
+    }
+
+    /// Hosts with stored credentials: host, port and user, never the password.
+    @objc func rtspCredentials(_ call: CAPPluginCall) {
+        call.resolve(["entries": CredentialStore.list().map { ["host": $0.host, "port": $0.port, "user": $0.user] }])
+    }
+
+    @objc func rtspForget(_ call: CAPPluginCall) {
+        guard let host = call.getString("host") else { call.reject("host needed"); return }
+        call.resolve(["removed": CredentialStore.remove(host: host, port: call.getInt("port") ?? 554)])
     }
 
     /// Browse for `_lz-scopes._tcp` for `timeout` ms and resolve every service found.

@@ -113,4 +113,12 @@ export default {
 
   'bridge.ios.localNetworkDenied': 'Zugriff auf das lokale Netzwerk verweigert (Einstellungen → Datenschutz & Sicherheit → Lokales Netzwerk)',
   'bridge.ios.browseFailed': 'Bonjour-Suche fehlgeschlagen ({code})',
+  'bridge.rtsp.status': 'RTSP {method}: {status}',
+  'bridge.rtsp.connectFailed': 'RTSP: Verbindung fehlgeschlagen ({reason})',
+  'bridge.rtsp.connectionLost': 'RTSP: Verbindung abgerissen',
+  'bridge.rtsp.headerTooLong': 'RTSP: Kopfzeilen zu lang',
+  'bridge.ios.rtspEnded': 'RTSP: Die Kamera hat den Stream beendet',
+  'bridge.ios.decoderFailed': 'VideoToolbox: Dekoder nicht verfügbar ({status})',
+  'bridge.ios.decodeFailed': 'VideoToolbox: Bild nicht dekodiert ({status})',
+  'bridge.ios.frameServer': 'RTSP direkt: lokaler Bildserver startet nicht',
 } satisfies Translation<typeof en>;

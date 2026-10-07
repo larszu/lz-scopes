@@ -120,7 +120,7 @@ function open(url: string) {
       const m = JSON.parse(ev.data);
       if (m.type === 'info') {
         info = m;
-        if (m.transport === 'h264' && typeof VideoDecoder === 'undefined') {
+        if ((m.transport === 'h264' || m.transport === 'hevc') && typeof VideoDecoder === 'undefined') {
           post({ type: 'text', data: JSON.stringify({ type: 'error', message: tr('render.h264NeedsWebCodecs') }) });
           return;
         }

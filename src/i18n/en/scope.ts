@@ -80,8 +80,9 @@ export default {
   'scope.r103.scaled': 'measured at {w}×{h} (scaled; compliant with analysis width “native”)',
   'scope.cube.white': 'White',
   'scope.cube.wireframe': 'wireframe {gamut}',
-  'scope.cube.hint': 'drag = rotate, ⇧ = pan, wheel = zoom',
+  'scope.cube.hint': 'drag = rotate, ⇧ + drag = pan, wheel or pinch = zoom, double click = reset',
   'scope.chplot.axes': '{y} (vertical) vs {x}',
   'scope.chplot.diagonal': 'diagonal = equal channels',
+  'gesture.chipTitle': 'Zoomed view. Click here or double-click the scope to reset. Wheel or pinch = zoom; ⇧ or middle button + drag, two-finger scroll = pan',
   'scope.satlum.axes': 'Saturation % (|CbCr|)  vs  luma Y′ %',
 } as const satisfies Messages;

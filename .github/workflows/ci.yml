@@ -33,6 +33,7 @@ jobs:
       - run: node scripts/ffmpeg-fetch.mjs linux-x64
       - run: npx tsc --noEmit
       - run: npx tsc -p e2e --noEmit
+      - run: npm run lang:check -- --strict
       - run: npm test
       - run: npm run build
       # the NDI helper builds without any SDK (helpers/ndi/ndi-min.h); run it once without runtime

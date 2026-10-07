@@ -1,14 +1,24 @@
 name: Release
 
-# Tag v* → Windows (nsis + portable) and macOS (universal dmg + zip), attached
-# directly to the GitHub release. No workflow artifacts: a full account artifact
-# quota made uploads fail elsewhere (pi-media-station), so each job uploads to the
-# release itself. The repo is public, Actions minutes are free; workflow_dispatch is a
-# dry run (build + checks, nothing attached).
+# Tag v* → Windows (NSIS + portable) and macOS (universal dmg + zip) plus the ffmpeg
+# sources, attached directly to the GitHub release.
 #
-# ffmpeg: the redistributable builds of scripts/ffmpeg-builds.json (no nonfree, GPLv3,
-# with libsrt), SHA-256-checked; the job `sources` attaches the corresponding source
-# (GPLv3 section 6d). Research: docs/research/ffmpeg-lizenz.md.
+# The release is created as a DRAFT first and published only when every asset is there
+# (job `publish`, scripts/release-check.mjs), so a release without installers is never
+# visible (#51: v1.1.0 failed half-way and stayed empty). Notes: docs/releases/<tag>.md
+# if present (English first, German below; a line `<!-- prerelease -->` makes it a
+# pre-release), else GitHub's generated notes.
+#
+# No workflow artifacts: a full account artifact quota made uploads fail elsewhere
+# (pi-media-station); each job uploads to the draft itself, with retries (v1.1.0:
+# api.github.com timed out once). workflow_dispatch is a dry run (build + checks, nothing
+# attached).
+#
+# ffmpeg: the builds of scripts/ffmpeg-builds.json (GPLv3, no nonfree, with libsrt),
+# SHA-256-checked; job `sources` attaches the corresponding source (GPLv3 section 6d).
+# DeckLink: helper compiled against the SDK include files (Blackmagic's permissive header
+# licence, EULA §0.1); the driver (Desktop Video) is the user's. Research:
+# docs/research/ffmpeg-lizenz.md, docs/research/geraete-eingaenge.md.
 
 on:
   push:
@@ -19,7 +29,32 @@ permissions:
   contents: write
 
 jobs:
+  draft:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" >/dev/null 2>&1; then echo "Release $tag existiert schon"; exit 0; fi
+          notes="docs/releases/$tag.md"
+          args=(--draft --verify-tag --title "LZ Scopes ${tag#v}")
+          if [ -f "$notes" ]; then
+            args+=(--notes-file "$notes")
+            if grep -q '<!-- prerelease -->' "$notes"; then args+=(--prerelease); fi
+          else
+            args+=(--generate-notes)
+          fi
+          gh release create "$tag" "${args[@]}"
+
   build:
+    needs: draft
+    # also for workflow_dispatch (dry run), where `draft` is skipped
+    if: ${{ !cancelled() && (needs.draft.result == 'success' || needs.draft.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
@@ -45,14 +80,26 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: npm version "${GITHUB_REF#refs/tags/v}" --no-git-tag-version --allow-same-version
-      - name: ffmpeg (redistributable build, SHA-256 and configure checked)
+      - name: ffmpeg (SHA-256 and configure checked)
         run: node scripts/ffmpeg-fetch.mjs ${{ matrix.ffmpeg }}
       # includes the shipped ffmpeg on this OS: licence, SRT, v210/HEVC 10 over TCP and SRT
       - run: npm test
       - run: npm run build
-      - name: NDI helper (macOS, universal; loads the user's NDI runtime, ships nothing of NDI)
-        if: runner.os == 'macOS'
-        run: node scripts/build-helpers.mjs ndi
+      - name: DeckLink SDK include files (git-blob-checked)
+        run: node scripts/decklink-sdk-fetch.mjs
+      - name: MSVC (Windows helpers)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      # DeckLink loads the user's Desktop Video driver, NDI the user's NDI runtime; nothing of either is shipped
+      - name: Helpers (DeckLink, NDI; macOS universal)
+        run: node scripts/build-helpers.mjs decklink ndi
+      - name: Helpers built and runnable without driver
+        shell: bash
+        run: |
+          set -eu
+          exe=""; if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
+          ls -la helpers/bin
+          for h in lz-decklink lz-ndi; do test -f "helpers/bin/$h$exe"; echo "$h:"; "helpers/bin/$h$exe" --list || true; done
       - name: Package
         # bash on every OS: pwsh swallowed electron-builder's exit code in cable-planner v0.2.35
         shell: bash
@@ -62,38 +109,45 @@ jobs:
       - name: List release/
         shell: bash
         run: ls -lh release/
-      - name: ffmpeg inside the packaged app
+      - name: ffmpeg and helpers inside the packaged app
         shell: bash
         run: |
           set -eu
           if [ "$RUNNER_OS" = macOS ]; then
-            dir="$(ls -d release/mac-universal/*.app)/Contents/Resources/ffmpeg"
-            lipo -archs "$dir/ffmpeg"
-            exe="$dir/ffmpeg"
+            res="$(ls -d release/mac-universal/*.app)/Contents/Resources"
+            dir="$res/ffmpeg"; lipo -archs "$dir/ffmpeg"; exe="$dir/ffmpeg"
+            lipo -archs "$res/app.asar.unpacked/helpers/bin/lz-decklink"
+            test -f "$res/app.asar.unpacked/helpers/bin/lz-ndi"
           else
-            dir="release/win-unpacked/resources/ffmpeg"
-            exe="$dir/ffmpeg.exe"
+            res="release/win-unpacked/resources"
+            dir="$res/ffmpeg"; exe="$dir/ffmpeg.exe"
+            test -f "$res/app.asar.unpacked/helpers/bin/lz-decklink.exe"
+            test -f "$res/app.asar.unpacked/helpers/bin/lz-ndi.exe"
           fi
           ls -la "$dir" "$dir/licenses"
           "$exe" -hide_banner -L | head -3
           if "$exe" -hide_banner -version | grep -q -- --enable-nonfree; then echo "nonfree ffmpeg im Paket"; exit 1; fi
           "$exe" -hide_banner -protocols | grep -qw srt
-          echo "ffmpeg im Paket: weitergebbar (kein nonfree), mit SRT"
-      - name: Attach to release
+          echo "Paket: ffmpeg weitergebbar (kein nonfree) mit SRT, DeckLink- und NDI-Helfer enthalten"
+      - name: Attach to the draft (with retries)
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v3
-        with:
-          fail_on_unmatched_files: false
-          files: |
-            release/*.exe
-            release/*.dmg
-            release/*.zip
-            release/*.blockmap
-            release/latest*.yml
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          shopt -s nullglob
+          files=(release/*.exe release/*.dmg release/*.zip release/*.blockmap release/latest*.yml)
+          printf '%s\n' "${files[@]}"
+          for i in 1 2 3 4 5; do
+            gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber && exit 0
+            echo "Upload fehlgeschlagen (Versuch $i), neuer Versuch in $((i * 20)) s"; sleep $((i * 20))
+          done
+          exit 1
 
   sources:
     # corresponding source of the shipped ffmpeg builds as release assets (GPLv3 section 6d)
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: draft
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -101,25 +155,32 @@ jobs:
         with:
           node-version: '24'
       - run: node scripts/ffmpeg-fetch.mjs --source
-      - name: Attach to release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: vendor/ffmpeg/sources/*
+      - name: Attach to the draft (with retries)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for i in 1 2 3 4 5; do
+            gh release upload "$GITHUB_REF_NAME" vendor/ffmpeg/sources/* --clobber && exit 0
+            sleep $((i * 20))
+          done
+          exit 1
 
-  check:
+  publish:
     needs: [build, sources]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - name: Release complete?
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: Complete? Then publish the draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
-          assets="$(gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name')"
-          echo "$assets"
-          fehlt=0
-          for p in '\.exe$' '\.dmg$' '\.zip$' '^latest\.yml$' '^latest-mac\.yml$' '^ffmpeg-9\.0\.2\.tar\.xz$' '^BtbN-FFmpeg-Builds'; do
-            if echo "$assets" | grep -qE "$p"; then echo "ok    $p"; else echo "FEHLT $p"; fehlt=1; fi
-          done
-          exit $fehlt
+          if ! gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[].name' | node scripts/release-check.mjs; then
+            echo "::error::Release unvollständig – bleibt Entwurf"; exit 1
+          fi
+          gh release edit "$GITHUB_REF_NAME" --draft=false
+          gh release view "$GITHUB_REF_NAME" --json url,isPrerelease,isDraft

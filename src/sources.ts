@@ -633,6 +633,23 @@ export class Source {
     }
   }
 
+  /** Play a video from a URL (cached test videos, lzs-media://, #52); CORS keeps WebGL readable. */
+  async openVideoUrl(url: string, name: string) {
+    this.stop();
+    this.name = name;
+    const v = document.createElement('video');
+    v.crossOrigin = 'anonymous';
+    v.muted = true; v.loop = true; v.playsInline = true; v.src = url;
+    try {
+      await v.play();
+      this.attachVideo(v);
+      this.set('live', `${v.videoWidth}×${v.videoHeight} Video`);
+      this.tapElement(v).catch(() => { /* no sound track or no AudioContext */ });
+    } catch (e) {
+      this.set('error', `Nicht abspielbar: ${(e as Error).message}`);
+    }
+  }
+
   /** Generate a test pattern into a canvas; animated patterns redraw at 25 fps. */
   async startPattern() {
     this.stop();

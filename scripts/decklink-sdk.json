@@ -1,0 +1,552 @@
+{
+  "_doc": "DeckLink SDK include files (OBS Studio copy), git blob hashes. scripts/decklink-sdk-fetch.mjs",
+  "repo": "obsproject/obs-studio",
+  "commit": "a93fae1cce4823b8cfce6dcc4c5105b112806617",
+  "dirs": {
+    "Mac": "plugins/decklink/mac/decklink-sdk",
+    "Win": "plugins/decklink/win/decklink-sdk",
+    "Linux": "plugins/decklink/linux/decklink-sdk"
+  },
+  "files": [
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI.h",
+      "sha": "f874e1e0782d2632a65f9d29c0238bb255e4ce94"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIConfiguration.h",
+      "sha": "d96872727eb4f3007f0c9d52dfdd615ac4146798"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIConfiguration_v10_11.h",
+      "sha": "a50a4e402b7588a69cfdc0b9573508ebe680faf0"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIConfiguration_v10_2.h",
+      "sha": "2c989a06949c8f9db0608ce2fc32209e37ae616d"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIConfiguration_v10_4.h",
+      "sha": "21e02ee353934f19b228907ef23c6714d29c2f9e"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIConfiguration_v10_5.h",
+      "sha": "0808367d5b1aacf7370e7e069c19153647dfcaf5"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIConfiguration_v10_9.h",
+      "sha": "e49a3ee3bb63b45c6efc95dc549bec39c6b42232"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIDeckControl.h",
+      "sha": "a81fd1f3f67b7188eb186e0aeef392d29e3f6134"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIDiscovery.h",
+      "sha": "c323d474753d09553f4620613f97a314951e277d"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIDispatch.cpp",
+      "sha": "afce428f5f28658ba3bb7eab2690b0687c8f5630"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIDispatch_v10_11.cpp",
+      "sha": "f5b528ff6e78629c55578165b681d60bc0f0195d"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIDispatch_v10_8.cpp",
+      "sha": "c412a107ec6cb64f3e8325ffa2d0c69ae772b37f"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIDispatch_v7_6.cpp",
+      "sha": "ba918b061e0a7744138d7518ba7c126ba1ab82b2"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIDispatch_v8_0.cpp",
+      "sha": "3791bf48d1efbfe8d8ee0656ef106c6a0ebd21a3"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIModes.h",
+      "sha": "46416891c4f5e332bd8961f7c8192204a7d68bb3"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIStreaming.h",
+      "sha": "9343bcf0770b02202dcd4be5cc2fb7efeccc95eb"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIStreaming_v10_11.h",
+      "sha": "3ef8dd786c4da8556c0e62370314e15bc29b079b"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPITypes.h",
+      "sha": "285738e65f2280ca85e1fac2a625e69afbb956ba"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIVersion.h",
+      "sha": "6187cc7b2c1525d85a76490b9dd11a71f7ee064f"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIVideoEncoderInput_v10_11.h",
+      "sha": "80921c2d952cadff7feb8dd3a1c13dfa6742d48b"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIVideoInput_v10_11.h",
+      "sha": "b8268ddd4cc4158c9bb32c3e54a262f7dfd7e218"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIVideoInput_v11_4.h",
+      "sha": "e7bba7832b518b4dd698f0e6bfd38ade8dc7e3a3"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIVideoInput_v11_5_1.h",
+      "sha": "cd031bd4bf02e09b2cafbb6c74fc281aef7f3d32"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIVideoOutput_v10_11.h",
+      "sha": "41db8d56c49aec282b22add54382e6d25eb65dd2"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPIVideoOutput_v11_4.h",
+      "sha": "6ce584dd18929511ae66012d1a04606cd8476dd5"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v10_11.h",
+      "sha": "70a372e5b92d09fbe0e4ec286a1b551ef15b2bd6"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v10_2.h",
+      "sha": "e5c95e476cd09666d6c2a86b766345353aaea5f4"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v10_4.h",
+      "sha": "7e5019ca2b05a04eb4bc8f983dc709a09ca78d41"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v10_5.h",
+      "sha": "4439daef7b024e1fc5027431d4da4b18a2f1ccfb"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v10_6.h",
+      "sha": "7f78e53e6d13268d0d8acea17707129c10505405"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v10_9.h",
+      "sha": "aec8c7c2018646cb5895821c4fc0129c0ac3f304"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v11_5.h",
+      "sha": "01b74fa9f3947ccd5bb0669b6f43daeba5872278"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v11_5_1.h",
+      "sha": "71ca171f6f6b86ee2f597d1c9ecefe4bd13d7637"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v7_1.h",
+      "sha": "8e38f07e785362ba2283601eaedff16e82f6156d"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v7_3.h",
+      "sha": "a0232b3765b1a024019ec220eb97f6f055b13dd8"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v7_6.h",
+      "sha": "45505c4667eeb5f66ab971db29e98ab66452f253"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v7_9.h",
+      "sha": "c882f61863cb5f2f8b77cc391ecba3da8f75c044"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v8_0.h",
+      "sha": "ea061834f5ac64cfab96d743964abf4b3a00c591"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v8_1.h",
+      "sha": "0eea69532dc7b1de556114484caf5fb711c405b8"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v9_2.h",
+      "sha": "22630b9567dfcf70688cee278ba352f135d8736f"
+    },
+    {
+      "os": "Mac",
+      "name": "DeckLinkAPI_v9_9.h",
+      "sha": "751cc7380060943c2a5bf0497c2e4c71a81b95ef"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI.idl",
+      "sha": "0cdcb94011231486286e8051aa32294876bed82a"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPIConfiguration.idl",
+      "sha": "0cc3e37f0bb3bc9a8108b893a40a368101fcc977"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPIDeckControl.idl",
+      "sha": "3a63b255455ab5eee6e71957a9d6e218aa995b96"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPIDiscovery.idl",
+      "sha": "94e98fe0091a892d1c08799e6fef1c87bed8ceaa"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPIModes.idl",
+      "sha": "8a475d2c1a1957910509b7bc547c5b2bacefe067"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPIStreaming.idl",
+      "sha": "83ae8de1e13264e209935644f8bdf65090927c6c"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPIStreaming_v10_8.idl",
+      "sha": "7d8aa5af70fcec506371ecfec6aeed4b1c8182ec"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPITypes.idl",
+      "sha": "40f909f36d4405a3913e8c11611bb95a2e7ba047"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPIVersion.h",
+      "sha": "6187cc7b2c1525d85a76490b9dd11a71f7ee064f"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v10_11.idl",
+      "sha": "dd7f730d1646779e1a27d7af4f9906f76c2d7c79"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v10_2.idl",
+      "sha": "02a58a29749b55f6583021aa380e7f1fde6765d4"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v10_4.idl",
+      "sha": "8787e968bfcf1e53b8ffad79110040ae4193711b"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v10_5.idl",
+      "sha": "1e89d3989f3d510874c49824269ae26c0f60adfc"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v10_6.idl",
+      "sha": "1e43bd29c6ef56cd57fdf62b47a8fbcc4d99b463"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v10_8.idl",
+      "sha": "c23b993655fedf35a4612b95d4b674e58927a334"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v10_9.idl",
+      "sha": "5506387b4c2205f66c6b5e7e3c5ed21f58b474ca"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v11_4.idl",
+      "sha": "34fab91545d335223e588a78430914f1f966f814"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v11_5.idl",
+      "sha": "c03012cab05140b7330c32f7543879ad75aa6447"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v11_5_1.idl",
+      "sha": "03aa23ad5ecd41843d8794e5edc0b90ceecd402f"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v7_1.idl",
+      "sha": "e855671e30af12f2e50eecb64a331db6f14bda89"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v7_3.idl",
+      "sha": "9fef2499fad57e3fd909388b932b8fd822218fea"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v7_6.idl",
+      "sha": "80df6b4124a1ebff066ecaaee4355533329383ff"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v7_9.idl",
+      "sha": "b2228999e279ad26a34125e65851c73616661458"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v8_0.idl",
+      "sha": "079f60bf2c323b6b351ece5a1b44c56b670cfed5"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v8_1.idl",
+      "sha": "5d163ae45867d31e90eeb032569d3c27c8751f6b"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v9_2.idl",
+      "sha": "cc37f34acf4031d6921291bced8c260c347b5421"
+    },
+    {
+      "os": "Win",
+      "name": "DeckLinkAPI_v9_9.idl",
+      "sha": "ece3bff1b9d82e9b1ae6c1477d3572d154ef1ad6"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI.h",
+      "sha": "35240c0f56cf624f5e91ec7b8bc87624c07a8d73"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIConfiguration.h",
+      "sha": "0fc68cf925f589645b748889617d3fafc1f7cf02"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIConfiguration_v10_11.h",
+      "sha": "e715b2078fbc34095173efe9aaee1f2e24afc29b"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIConfiguration_v10_2.h",
+      "sha": "457f041e99a88c2044e1b6e384c370647ac89df6"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIConfiguration_v10_4.h",
+      "sha": "c4d340f6f34606c630fcc58ba14bb1f572457edc"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIConfiguration_v10_5.h",
+      "sha": "684b83bf04a1cede6f0d6e81dee1e6350eae4731"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIConfiguration_v10_9.h",
+      "sha": "f507637a4bff4c11f8fa5f7d852fce68e0a8ee93"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIDeckControl.h",
+      "sha": "9e1c6d769e9f3e9fe6c6449af7772aabeee6e89d"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIDiscovery.h",
+      "sha": "613c02002ec311bf70eb8ae3008ade2f6e51f4ed"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIDispatch.cpp",
+      "sha": "faef47011c44e1304ce8bc70efd2c79f1dc60ddf"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIDispatch_v10_11.cpp",
+      "sha": "219aaa1aa7382f45383298e4aeee48dbfb04ed2e"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIDispatch_v10_8.cpp",
+      "sha": "3172ba5d9ab4c563299abc07f168ac6780816799"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIDispatch_v7_6.cpp",
+      "sha": "372662439212836d20fd07b7bc8d8cbe024294d2"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIDispatch_v8_0.cpp",
+      "sha": "1a924f7cf10c2467be2a72c17d0984aea41df7b0"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIModes.h",
+      "sha": "240bc9de7d45da70e4742738514e82bf9c482ee9"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPITypes.h",
+      "sha": "850c7223c5be5b9ba9b7d02521f3a3cad279909b"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIVersion.h",
+      "sha": "6187cc7b2c1525d85a76490b9dd11a71f7ee064f"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIVideoEncoderInput_v10_11.h",
+      "sha": "0ddd8bbebae8cfcbbb80d37e2a5908c5bf45a48d"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIVideoInput_v10_11.h",
+      "sha": "d8e286f2b4144cb45c4a12020680690bf754d01b"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIVideoInput_v11_4.h",
+      "sha": "2b411ff971342ea88a68cc5ca831c0704355dabe"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIVideoInput_v11_5_1.h",
+      "sha": "cd031bd4bf02e09b2cafbb6c74fc281aef7f3d32"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIVideoOutput_v10_11.h",
+      "sha": "a593898702048092be7ad3f2a49ce603983ab3ca"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPIVideoOutput_v11_4.h",
+      "sha": "65de9c6cca5a247e748dd42d90abf37d58d356c2"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v10_11.h",
+      "sha": "35aa3d4e33ca29e56e3126ab785540cc808611ce"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v10_2.h",
+      "sha": "ad2ff32d7058916611971be16b1380abcb60c831"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v10_4.h",
+      "sha": "7e5019ca2b05a04eb4bc8f983dc709a09ca78d41"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v10_5.h",
+      "sha": "4439daef7b024e1fc5027431d4da4b18a2f1ccfb"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v10_6.h",
+      "sha": "3c935789514292e5d7228f61923b2a504fad041c"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v10_9.h",
+      "sha": "aec8c7c2018646cb5895821c4fc0129c0ac3f304"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v11_5.h",
+      "sha": "ad2df1f5aec5142f86c75efc9fd1a7fb10684e18"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v11_5_1.h",
+      "sha": "35d347716b9045a88c875366d87feaa8a47af545"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v7_1.h",
+      "sha": "beb3a32c176d1da0a4b21f945a01c84667ff69e0"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v7_3.h",
+      "sha": "fed1b5fd41dfe5cc99c562ef0792b42f414cc40a"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v7_6.h",
+      "sha": "547ba997201346aa757982751df822eacb89a024"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v7_9.h",
+      "sha": "c8e3faa28dd77c2b39f73bf426d2257c229e693a"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v8_0.h",
+      "sha": "6cace7e10049f9f17802dd7bd3c83bc850cb58cb"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v8_1.h",
+      "sha": "c7362aa4db4f3eeafdb4b8297373cf63493fe69b"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v9_2.h",
+      "sha": "2b6a395ae4e741984cff4e2146d714231f6129aa"
+    },
+    {
+      "os": "Linux",
+      "name": "DeckLinkAPI_v9_9.h",
+      "sha": "501d16c74d61c27f178d31bf6c8d99782ed5ed71"
+    },
+    {
+      "os": "Linux",
+      "name": "LinuxCOM.h",
+      "sha": "663602bc529eedbc6b74278e15028423b3fe2a7c"
+    }
+  ]
+}

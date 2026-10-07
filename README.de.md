@@ -55,6 +55,8 @@ Installer im [neuesten Release](https://github.com/larszu/lz-scopes/releases/lat
 
 **Web-Fassung:** <https://larszu.github.io/lz-scopes/>. Dort gehen Testbilder, Kamera, Bildschirm und Dateien. RTSP, SRT und andere Netzwerkstreams brauchen die Desktop-App oder `npm start`, weil ein Browser sie nicht öffnen kann.
 
+**iPhone und iPad** (`ios/`, Capacitor): dieselbe App in einer nativen Hülle. Die CI baut sie und startet sie im iOS-Simulator; auf echten Geräten ist sie noch ungeprüft, im App Store oder per TestFlight gibt es sie noch nicht (dafür ist ein Apple-Developer-Konto nötig). Möglich sind Kamera, USB-C-Capture-Karten ab iPadOS 17, Dateien und der Opple über CoreBluetooth. Netzwerkstreams kommen von einer Bridge auf einem Rechner im selben Netz (`npm start -- --host 0.0.0.0`), die App findet sie per Bonjour. Siehe [docs/ios.md](docs/ios.md).
+
 ## Schnellstart
 
 1. App starten. Die erste Quelle ist ein Testbild (SMPTE 75 %, Variante „(LZ)“ – deren Schwarzfeld lohnt einen Blick in die Waveform mit der Schwarz-Lupe), alle Panels folgen ihr.

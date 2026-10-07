@@ -99,7 +99,7 @@ export function deviceButton(ui: BridgeUi): HTMLElement {
 
 /** DeckLink/UltraStudio via the native helper; says plainly when it is not available. */
 export function deckLinkButton(ui: BridgeUi): HTMLElement {
-  return el('button', { class: 'mini', title: 'Blackmagic DeckLink / UltraStudio über den DeckLink-Helfer (v210 10 bit, Formaterkennung, Timecode, HDR-Kennung). Braucht Blackmagic Desktop Video und einen mit dem DeckLink SDK gebauten Helfer – ungeprüft mit echter Hardware.', onclick: async (e: Event) => {
+  return el('button', { class: 'mini', title: 'Eingang über den DeckLink-Helfer (kompatibel mit Blackmagic Design DeckLink): v210 10 bit, Formaterkennung, Timecode, HDR-Kennung. Der Helfer ist in der Desktop-App enthalten; er braucht den Treiber Blackmagic Desktop Video auf diesem Rechner. Mit echter Hardware ungeprüft.', onclick: async (e: Event) => {
     const btn = e.currentTarget as HTMLElement;
     let st: DeckLinkStatus | null = null;
     try { st = await (await fetch(`${ui.http()}/api/decklink`)).json(); } catch { /* bridge missing */ }

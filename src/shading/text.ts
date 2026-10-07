@@ -1,0 +1,81 @@
+// All visible texts of Touch Shading in German and English, in one place, so they move into
+// src/i18n (t()) in one step once that exists. Until then: browser language decides (de → German).
+
+const de = {
+  menu: 'Touch Shading …',
+  buttonTitle: 'Touch Shading: Kamera über Parade, Waveform und Vectorscope steuern',
+  simName: 'Shading-Simulator',
+  simCard: 'Bild ohne Kamera für Touch Shading – gesteuert über Scopes → Touch Shading.',
+  chooseTargetFirst: 'Erst ein Ziel wählen',
+  simNote: 'Simulator – keine Kamera',
+  restored: (n: number) => `Shading: ${n} Wert(e) auf Ausgangswerte zurückgesetzt`,
+  notConnected: 'lz-camera-bridge nicht verbunden – nichts gesendet',
+  vectorCentre: 'Am Vectorscope außerhalb der Mitte greifen: drehen = Hue, nach außen/innen = Sättigung',
+  notControllable: (labels: string, mode: string) => `${labels}: an diesem Ziel nicht steuerbar (Bridge-Modus „${mode}“)`,
+  unknownValue: (labels: string) => `${labels}: aktueller Wert unbekannt – die Kamera hat ihn der Bridge noch nicht gemeldet`,
+  hueSimOnly: 'Hue: kein Kommando im Bus von lz-camera-bridge – nur im Simulator',
+  tripleUnknown: (k: string) => `${k} R/G/B: nicht alle drei Werte bekannt`,
+  hueNotOnBus: 'Hue: kein Kommando im Bus von lz-camera-bridge',
+  badgeSim: 'SHADING · Simulator',
+  badgeCam: (n: number) => `SHADING · Kamera ${n}`,
+  target: (lvl: string, grab: string) => `Ziel ${lvl} % (gegriffen ${grab} %)`,
+  vectorHint: 'drehen = Hue · radial = Sättigung',
+  targetTitle: 'Ziel der Gesten',
+  chooseTarget: '– Ziel wählen –',
+  simOption: 'Simulator (ohne Kamera)',
+  camOption: (n: number, label: string, connected: boolean, mode: string) => `Kamera ${n} · ${label}${connected ? '' : ' (getrennt)'}${mode ? ` · ${mode}` : ''}`,
+  urlTitle: 'Adresse von lz-camera-bridge (WebSocket)',
+  linkOpen: (n: number) => `Bridge verbunden · ${n} Kamera(s)`,
+  linkConnecting: 'Bridge: verbinde …',
+  linkClosed: 'Bridge nicht erreichbar',
+  active: 'Shading aktiv',
+  undoTitle: 'Letzte Geste zurücknehmen',
+  undo: '↶ Rückgängig',
+  stopTitle: 'Alle Werte dieser Sitzung auf die Ausgangswerte und Shading aus (Esc)',
+  stop: '■ Ausgangswerte',
+  help: (step: number, span: number) => `Parade: unten greifen = Black R/G/B, oben = White R/G/B. Luma-Waveform: Schatten = Master Black, Mitten = Master Gamma, Lichter = White R=G=B. Vectorscope: drehen = Hue (nur Simulator), radial = Sättigung. Höchstens ±${step} je Bewegung, ±${span} je Sitzung.`,
+  close: 'Leiste schließen',
+};
+
+const en: typeof de = {
+  menu: 'Touch Shading …',
+  buttonTitle: 'Touch Shading: control a camera from the parade, waveform and vectorscope',
+  simName: 'Shading simulator',
+  simCard: 'Picture without a camera for Touch Shading – controlled from Scopes → Touch Shading.',
+  chooseTargetFirst: 'Choose a target first',
+  simNote: 'Simulator – no camera',
+  restored: (n: number) => `Shading: ${n} value(s) restored to their starting values`,
+  notConnected: 'lz-camera-bridge not connected – nothing sent',
+  vectorCentre: 'Grab the vectorscope away from the centre: turn = hue, outwards/inwards = saturation',
+  notControllable: (labels: string, mode: string) => `${labels}: not controllable on this target (bridge mode “${mode}”)`,
+  unknownValue: (labels: string) => `${labels}: current value unknown – the camera has not reported it to the bridge yet`,
+  hueSimOnly: 'Hue: no command on the lz-camera-bridge bus – simulator only',
+  tripleUnknown: (k: string) => `${k} R/G/B: not all three values known`,
+  hueNotOnBus: 'Hue: no command on the lz-camera-bridge bus',
+  badgeSim: 'SHADING · Simulator',
+  badgeCam: (n: number) => `SHADING · Camera ${n}`,
+  target: (lvl: string, grab: string) => `Target ${lvl} % (grabbed ${grab} %)`,
+  vectorHint: 'turn = hue · radial = saturation',
+  targetTitle: 'Target of the gestures',
+  chooseTarget: '– choose target –',
+  simOption: 'Simulator (no camera)',
+  camOption: (n: number, label: string, connected: boolean, mode: string) => `Camera ${n} · ${label}${connected ? '' : ' (disconnected)'}${mode ? ` · ${mode}` : ''}`,
+  urlTitle: 'Address of lz-camera-bridge (WebSocket)',
+  linkOpen: (n: number) => `Bridge connected · ${n} camera(s)`,
+  linkConnecting: 'Bridge: connecting …',
+  linkClosed: 'Bridge not reachable',
+  active: 'Shading active',
+  undoTitle: 'Undo the last gesture',
+  undo: '↶ Undo',
+  stopTitle: 'Every value of this session back to its starting value, shading off (Esc)',
+  stop: '■ Restore',
+  help: (step: number, span: number) => `Parade: grab low = Black R/G/B, high = White R/G/B. Luma waveform: shadows = Master Black, mids = Master Gamma, highlights = White R=G=B. Vectorscope: turn = hue (simulator only), radial = saturation. At most ±${step} per movement, ±${span} per session.`,
+  close: 'Close the bar',
+};
+
+export const TEXTS = { de, en };
+const lang = (): 'de' | 'en' => {
+  try { return /^de\b/i.test(navigator.language) ? 'de' : 'en'; } catch { return 'de'; }
+};
+/** Texts in the current language. */
+export const T: typeof de = lang() === 'de' ? de : en;

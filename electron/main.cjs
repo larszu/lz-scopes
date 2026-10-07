@@ -7,6 +7,10 @@ const { pathToFileURL } = require('node:url');
 const { setupDisplayProfiles } = require('./displayProfile.cjs');
 const { setAppMenu } = require('./menu.cjs');
 const { text, setLang } = require('./i18n.cjs');
+const { registerScheme, setupTestVideos } = require('./testVideos.cjs');
+
+// test videos (#52) are played over lzs-media://; schemes must be registered before ready
+registerScheme();
 
 // Own profile (localStorage, single-instance lock) for automated tests: LZS_USER_DATA.
 if (process.env.LZS_USER_DATA) app.setPath('userData', process.env.LZS_USER_DATA);
@@ -51,6 +55,8 @@ async function createWindow() {
     setLang(lang);
     setAppMenu(model, (id) => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send('lzs:menu', id); });
   });
+  // Test videos (#52): download, check, cache in userData, play over lzs-media://
+  setupTestVideos(() => mainWindow);
   // System display profile / monitor mode (#17): restored on quit and after a crash.
   setupDisplayProfiles(ipcMain, app);
   ipcMain.handle('lzs:displays', () => screen.getAllDisplays().map((d) => ({

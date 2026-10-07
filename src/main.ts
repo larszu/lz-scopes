@@ -24,7 +24,9 @@ import { audioPanelSettings, audioRow, audioSourceControls, mountGenerator } fro
 import { setClockHooks } from './clock/panel';
 import { clockPanelSettings } from './clock/ui';
 import { generator } from './audio/io';
-import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
+import { PATTERNS, RESOLUTIONS, patternById } from './patterns';
+import { addUserImages, favouritePatterns, isFavourite, loadUserPatterns, onUserPatternsChange, setFavourite } from './userPatterns';
+import { openTestImages, openTestVideos, type TestMediaHost } from './testMedia';
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
 import { openLedTool } from './led/ui';
@@ -42,10 +44,12 @@ import { mountResolveLive } from './resolveLive';
 import { openManual } from './manual';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
-import { SOURCE_ITEMS, mountMenu, refreshMenu, type MenuActions, type MenuState } from './menu/appMenu';
+import { SOURCE_ITEMS, mountMenu, refreshMenu, registerMenuCommand, type MenuActions, type MenuState } from './menu/appMenu';
 import { openSettings, refreshSettings, registerSettingsSection } from './menu/settings';
 import { aboutSection, keysSection } from './menu/pages';
 import { LANG_NAMES, LANGS, lang, langPref, num, setLangPref, systemLang, t, type LangPref } from './i18n';
+import { ShadingControl, SIM_URL } from './shading/ui';
+import { T as SHADING_T } from './shading/text';
 
 // ---------------------------------------------------------------- state
 
@@ -464,6 +468,8 @@ function renderSources() {
         ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
         ...(sourceFfmpegText(s.url, bridgeHealth) ? [h('p', { class: 'hint', 'data-ffmpeg-source': '' }, sourceFfmpegText(s.url, bridgeHealth))] : []),
       );
+    } else if (s.url === SIM_URL) {
+      card.append(h('p', { class: 'hint' }, SHADING_T.simCard));
     } else if (s.kind === 'pattern') {
       card.append(...patternControls(s));
     } else if (s.kind === 'audio') {
@@ -607,9 +613,12 @@ function showLutLibrary() {
 
 function patternSelect(value: string, onchange: (id: string) => void) {
   const groups = [...new Set(PATTERNS.map((p) => p.group))];
+  const favs = favouritePatterns();
   return h('select', { class: 'pattern', title: t('main.pattern.title'), onchange: (e: Event) => onchange((e.target as HTMLSelectElement).value) },
+    // favourites first (#52); the same pattern also stays in its own group
+    ...(favs.length ? [h('optgroup', { label: t('main.pattern.favs') }, ...favs.map((p) => h('option', { value: p.id, selected: p.id === value }, p.name)))] : []),
     ...groups.map((g) => h('optgroup', { label: g },
-      ...PATTERNS.filter((p) => p.group === g).map((p) => h('option', { value: p.id, selected: p.id === value }, p.name)))));
+      ...PATTERNS.filter((p) => p.group === g).map((p) => h('option', { value: p.id, selected: p.id === value && !favs.includes(p) }, p.name)))));
 }
 
 function patternControls(s: Source): Node[] {
@@ -622,22 +631,27 @@ function patternControls(s: Source): Node[] {
   const label = h('input', { class: 'url', value: pt.label, placeholder: t('main.pattern.label') }) as HTMLInputElement;
   label.onchange = () => apply({ label: label.value });
   const imgs = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true }) as HTMLInputElement;
-  imgs.onchange = () => {
-    const added = addImagePatterns([...(imgs.files ?? [])]);
-    if (added.length) apply({ id: added[0].id });
+  imgs.onchange = async () => {
+    const r = await addUserImages([...(imgs.files ?? [])]);
+    r.errors.forEach(alertHud);
+    if (r.added.length) { apply({ id: r.added[0].id }); renderSources(); }
   };
+  const fav = isFavourite(pt.id);
   return [
     h('div', { class: 'row' },
       h('button', { class: 'mini', title: t('main.pattern.prev'), onclick: () => step(-1) }, '◀'),
-      patternSelect(pt.id, (id) => apply({ id })),
-      h('button', { class: 'mini', title: t('main.pattern.next'), onclick: () => step(1) }, '▶')),
+      patternSelect(pt.id, (id) => { apply({ id }); renderSources(); }),
+      h('button', { class: 'mini', title: t('main.pattern.next'), onclick: () => step(1) }, '▶'),
+      h('button', { class: `mini fav${fav ? ' on' : ''}`, title: fav ? t('main.pattern.unfav') : t('main.pattern.fav'), 'aria-pressed': String(fav), onclick: () => setFavourite(pt.id, !fav) }, fav ? '★' : '☆')),
     h('div', { class: 'row' },
       resolutionControls(pt, apply),
       label),
     ...(patternById(pt.id).note ? [h('p', { class: 'hint' }, patternById(pt.id).note!)] : []),
     h('div', { class: 'row' },
       h('button', { class: 'primary', title: t('main.pattern.outTitle'), onclick: () => openOutput(pt) }, t('main.pattern.out')),
-      h('button', { title: t('main.pattern.imagesTitle'), onclick: () => imgs.click() }, t('main.pattern.images')), imgs),
+      h('button', { title: t('main.pattern.imagesTitle'), onclick: () => imgs.click() }, t('main.pattern.images')), imgs,
+      h('button', { title: t('main.pattern.manageTitle'), onclick: () => openTestImages(testMediaHost) }, t('main.pattern.manage')),
+      h('button', { title: t('main.pattern.videosTitle'), onclick: () => openTestVideos(testMediaHost) }, t('main.pattern.videos'))),
   ];
 }
 
@@ -658,9 +672,31 @@ function resolutionControls(pt: PatternState, applyPt: (p: Partial<PatternState>
 
 function openOutput(pt: PatternState) {
   const q = new URLSearchParams({ out: pt.id, w: String(pt.width), h: String(pt.height), label: pt.label });
-  if (patternById(pt.id).group === 'Eigene Bilder') q.set('out', 'smpte75'); // object URLs don't cross windows
   window.open(`${location.pathname}?${q}`, 'lz-scopes-pattern', 'popup,width=1280,height=720');
 }
+
+// own pictures, logo, favourites and test videos (#52)
+const testMediaHost: TestMediaHost = {
+  usePattern: (id) => {
+    const s = sources.find((x) => x.kind === 'pattern') ?? addSource('pattern', 'Testbild');
+    s.pattern.id = id; save(); s.startPattern(); renderSources();
+  },
+  openVideo: (url, v) => {
+    const s = addSource('file', `${v.title} ${v.version}`.slice(0, 40));
+    // the HDR encodes carry no colour tags: set what the publisher states
+    if (v.transfer) s.settings.transfer = v.transfer;
+    if (v.gamut) s.settings.gamut = v.gamut;
+    s.openVideoUrl(url, `${v.title} ${v.version}`.slice(0, 40)).then(() => { renderSources(); renderPanels(); });
+  },
+  hud: (m) => alertHud(m),
+};
+onUserPatternsChange(() => {
+  // the logo patterns follow the chosen logo
+  sources.filter((x) => x.kind === 'pattern' && (x.pattern.id === 'logo' || x.pattern.id === 'testcard-logo' || x.pattern.id.startsWith('img:'))).forEach((x) => x.startPattern());
+  renderSources();
+});
+registerMenuCommand('sources', { id: 'testimages', label: 'Eigene Testbilder und Logo …' }, () => openTestImages(testMediaHost));
+registerMenuCommand('sources', { id: 'testvideos', label: 'Testvideos …', title: 'Big Buck Bunny, HDR-Testfilme (frei lizenziert)' }, () => openTestVideos(testMediaHost));
 
 async function startLocal(s: Source) {
   if (s.kind === 'pattern') return s.startPattern();
@@ -769,6 +805,7 @@ function panelElement(idx: number): HTMLElement {
     const head = h('div', { class: 'phead', ondblclick: () => toggleSolo(idx) });
     const el = h('div', { class: 'panel' }, head, body);
     body.addEventListener('dblclick', () => toggleSolo(idx));
+    shading.attach(body, idx, p);
     attachPointer(p(), body);
     attachSkinDrag(p(), body);
     attachCubeDrag(p(), body);
@@ -1348,7 +1385,7 @@ function drawAll(now: number) {
     const bodyRect = { x: b.left - g.left, y: b.top - g.top, w: b.width, h: b.height };
     const opts = drawOptions();
     // Skip panels whose inputs did not change: no GPU work, no overlay redraw.
-    const sig = panelSignature(p, src, bodyRect, opts) + dpr;
+    const sig = panelSignature(p, src, bodyRect, opts) + dpr + shading.sig();
     if (panelSigs.get(v.idx) === sig) continue;
     panelSigs.set(v.idx, sig);
     if (src?.latency.waiting && !drawnSources.has(src)) drawnSources.set(src, Date.now());
@@ -1359,6 +1396,7 @@ function drawAll(now: number) {
     ctx.clearRect(0, 0, b.width, b.height);
     renderer.clearRect(bodyRect, [0.043, 0.047, 0.055]);
     drawPanel(renderer, ctx, `p${v.idx}`, p, src, bodyRect, opts);
+    shading.drawOverlay(ctx, v.idx, p, b.width, b.height);
     // The WebGL canvas is off-screen; copy this panel's region into its own canvas.
     v.blit.getContext('2d')!.drawImage(glCanvas, Math.round(bodyRect.x * dpr), Math.round(bodyRect.y * dpr), W, H, 0, 0, W, H);
   }
@@ -1948,10 +1986,13 @@ for (const saved of state.sources) {
   const s = addSource(saved.kind, saved.name, saved.url, saved.settings);
   if (saved.pattern) Object.assign(s.pattern, saved.pattern);
   if (saved.audioIn) Object.assign(s.audioIn, saved.audioIn);
-  if (s.kind === 'pattern') s.startPattern();
+  // own images (img:…) and logo patterns come from IndexedDB: started once that is read
+  if (s.kind === 'pattern' && !/^(img:|logo$|testcard-logo$)/.test(s.pattern.id)) s.startPattern();
   if (s.kind === 'audio' && s.audioIn.mode === 'generator') s.startAudio();
   if (s.kind === 'audio' && s.audioIn.mode === 'bridge' && s.audioIn.bridgeUrl) s.startAudio(undefined, bridgeUrl());
 }
+// own images and logo from IndexedDB (#52); the change listener starts their pattern sources
+loadUserPatterns();
 mountOpple($('#opple'), {
   bridgeWs: () => bridgeUrl(),
   /** light scopes as their own layout (top: diagram, vectorscope, channels; bottom: time course, grid) */
@@ -1976,6 +2017,18 @@ mountGenerator($('#gen'), state.gen, state.genSink ?? '', (cfg, sink) => { state
 });
 applySidebar();
 renderHeader();
+// Touch Shading (#54): gestures on the scopes → lz-camera-bridge or the simulator
+const shading = new ShadingControl({
+  simSource: () => {
+    let s = sources.find((x) => x.url === SIM_URL);
+    if (!s) { s = addSource('file', SHADING_T.simName, SIM_URL, { colorspace: '709' }); if (state.panels[0]) switchSource(state.panels[0], s.id); }
+    return s;
+  },
+  panelSource,
+  hud: alertHud,
+  redraw: () => panelSigs.clear(),
+}, app);
+registerMenuCommand('scopes', { id: 'shading', label: SHADING_T.menu, title: SHADING_T.buttonTitle }, () => shading.toggleBar());
 const dock = createDock($('#dock'), {
   element: panelElement,
   title: panelTitle,

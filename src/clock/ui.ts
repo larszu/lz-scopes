@@ -5,6 +5,7 @@ import type { Source } from '../sources';
 import { clockOpts, type ClockOptions } from './panel';
 import { ptpClient } from './ptpClient';
 import { RATES, rateById } from './timecode';
+import { t } from '../i18n';
 
 type Kid = Node | string;
 const h = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, unknown> = {}, ...kids: Kid[]) => {
@@ -47,46 +48,46 @@ export function clockPanelSettings(p: PanelState, save: () => void, sources: Sou
   };
   const rows: Node[] = [];
   const row = (label: string, ...kids: Kid[]) => rows.push(h('label', { class: 'mrow' }, h('span', {}, label), ...kids));
-  const hint = (t: string) => rows.push(h('p', { class: 'hint' }, t));
+  const hint = (text: string) => rows.push(h('p', { class: 'hint' }, text));
 
-  rows.push(h('div', { class: 'mtitle' }, 'Tageszeit-Timecode (ST 2059-1)'));
-  row('Bildrate', select(o.rate, RATES.map((r) => [r.id, r.label]), (v) => set({ rate: v, df: rateById(v).dfAllowed && o.df }, true)));
+  rows.push(h('div', { class: 'mtitle' }, t('clock.set.todTitle')));
+  row(t('clock.set.rate'), select(o.rate, RATES.map((r) => [r.id, r.label]), (v) => set({ rate: v, df: rateById(v).dfAllowed && o.df }, true)));
   if (rateById(o.rate).nominal > 30) {
-    row('Anzeige > 30 fps', select(o.tcDisplay, [['frames', 'Bilder 0…' + (rateById(o.rate).nominal - 1) + ' (wie NLEs)'], ['pairs', 'Frame-Paare (ST 12-1)']], (v) => set({ tcDisplay: v as ClockOptions['tcDisplay'] })));
+    row(t('clock.set.display30'), select(o.tcDisplay, [['frames', t('clock.set.framesN', { n: rateById(o.rate).nominal - 1 })], ['pairs', t('clock.set.pairs')]], (v) => set({ tcDisplay: v as ClockOptions['tcDisplay'] })));
   }
-  if (rateById(o.rate).dfAllowed) row('Zählung', select(o.df ? 'df' : 'ndf', [['ndf', 'Non-Drop-Frame'], ['df', 'Drop-Frame']], (v) => set({ df: v === 'df' })));
-  row('Daily Jam', select(o.jam, JAMS, (v) => set({ jam: v })), 'Lokalzeit');
-  hint('Ohne PTP zählt die Uhr aus der Systemzeit (UTC + TAI−UTC nach IERS) in der Zeitzone des Systems. Das ist keine Referenz. Bei 1/1,001-Raten läuft Drop-Frame bis zum nächsten Jam um bis zu 3 Frames pro Tag weg (ST 2059-1 §9.1.2).');
+  if (rateById(o.rate).dfAllowed) row(t('clock.set.counting'), select(o.df ? 'df' : 'ndf', [['ndf', 'Non-Drop-Frame'], ['df', 'Drop-Frame']], (v) => set({ df: v === 'df' })));
+  row('Daily Jam', select(o.jam, JAMS, (v) => set({ jam: v })), t('clock.set.localTime'));
+  hint(t('clock.set.noPtpHint'));
 
-  rows.push(h('div', { class: 'mtitle' }, 'LTC aus dem Ton'));
+  rows.push(h('div', { class: 'mtitle' }, t('clock.set.ltcTitle')));
   const audioSources = sources.filter((s) => s.audio || s.kind === 'audio' || (s.kind === 'stream' && s.settings.audio !== false) || s.kind === 'file');
-  row('Quelle', select(o.ltcSource, [['', 'aus'], ...audioSources.map((s, i) => [s.id, `${i + 1} ${s.name}`] as [string, string])], (v) => set({ ltcSource: v }, true)));
+  row(t('clock.set.source'), select(o.ltcSource, [['', t('clock.set.off')], ...audioSources.map((s, i) => [s.id, `${i + 1} ${s.name}`] as [string, string])], (v) => set({ ltcSource: v }, true)));
   if (o.ltcSource) {
     const a = sources.find((s) => s.id === o.ltcSource)?.audio;
     const names = a ? a.names : ['1', '2'];
-    row('Kanal', select(String(o.ltcChannel), names.map((n, i) => [String(i), n]), (v) => set({ ltcChannel: Number(v) })));
-    hint('Eigener Biphase-Mark-Leser (24–30 fps, vorwärts und rückwärts). Die Latenz des Audiowegs ist nicht kompensiert.');
+    row(t('clock.set.channel'), select(String(o.ltcChannel), names.map((n, i) => [String(i), n]), (v) => set({ ltcChannel: Number(v) })));
+    hint(t('clock.set.ltcHint'));
   }
 
   rows.push(h('div', { class: 'mtitle' }, 'PTP (SMPTE ST 2059-2)'));
-  row('Monitor', check(o.ptp, 'passiv mithören (Bridge, UDP 319/320)', (v) => set({ ptp: v }, true), 'Die Node-Bridge lauscht auf 224.0.1.129; sie sendet nichts, solange „Laufzeit messen“ aus ist'));
+  row('Monitor', check(o.ptp, t('clock.set.passive'), (v) => set({ ptp: v }, true), t('clock.set.passiveTitle')));
   if (o.ptp) {
     if (ptpClient.conn === 'denied' && ptpClient.allowUrl) {
-      rows.push(h('div', { class: 'mrow' }, h('button', { title: 'Öffnet die Freigabe-Seite der lokalen Bridge; nur dort lässt sich diese Web-Oberfläche zulassen', onclick: () => window.open(ptpClient.allowUrl, '_blank', 'noopener') }, 'In der Bridge zulassen …')));
-      hint(`Die Uhr der Bridge zeigt Netzwerk-Schnittstellen und Grandmaster. Fremde Web-Oberflächen wie ${location.origin} brauchen deshalb eine Freigabe, die nur auf der Seite der Bridge selbst erteilt werden kann.`);
+      rows.push(h('div', { class: 'mrow' }, h('button', { title: t('clock.set.allowTitle'), onclick: () => window.open(ptpClient.allowUrl, '_blank', 'noopener') }, t('clock.set.allow'))));
+      hint(t('clock.set.allowHint', { origin: location.origin }));
     }
     const ifaces = ptpClient.status?.ifaces ?? [];
-    row('Schnittstelle', select(o.iface, [['', 'Standard (Routing)'], ...ifaces.map((i) => [i.address, `${i.name} ${i.address}`] as [string, string])], (v) => set({ iface: v })));
-    row('Laufzeit', check(o.delayReq, 'messen (sendet 1 Delay_Req/s)', (v) => set({ delayReq: v }), 'Aktiv: die Bridge sendet Delay_Req an 224.0.1.129; Ergebnis mit Software-Zeitstempeln'));
-    row('Uhr', check(o.usePtp, 'mit PTP-Offset korrigieren (Schätzung)', (v) => set({ usePtp: v })));
-    row('SM-TLV', check(o.useSm, 'Rate, DF, Lokal-Offset und Jam vom Grandmaster', (v) => set({ useSm: v })));
-    rows.push(h('div', { class: 'mtitle' }, 'ST 2110 RTP-Zeitstempel'));
+    row(t('clock.set.iface'), select(o.iface, [['', t('clock.set.ifaceDefault')], ...ifaces.map((i) => [i.address, `${i.name} ${i.address}`] as [string, string])], (v) => set({ iface: v })));
+    row(t('clock.set.delay'), check(o.delayReq, t('clock.set.delayMeasure'), (v) => set({ delayReq: v }), t('clock.set.delayTitle')));
+    row(t('clock.set.clock'), check(o.usePtp, t('clock.set.usePtp'), (v) => set({ usePtp: v })));
+    row('SM-TLV', check(o.useSm, t('clock.set.useSm'), (v) => set({ useSm: v })));
+    rows.push(h('div', { class: 'mtitle' }, t('clock.set.rtpTitle')));
     const g = h('input', { value: o.rtpGroup, placeholder: '239.x.x.x', class: 'num wide' }) as HTMLInputElement;
     const port = h('input', { value: o.rtpPort || '', placeholder: 'Port', type: 'number', min: 1024, max: 65535, class: 'num' }) as HTMLInputElement;
     const apply = () => set({ rtpGroup: g.value.trim(), rtpPort: Number(port.value) || 0 });
     g.onchange = apply; port.onchange = apply;
     row('Multicast', g, port);
-    hint('Vergleicht den RTP-Zeitstempel (90 kHz, Offset 0 zur Epoche: ST 2110-10 §7.3, ST 2110-20 §6.1.3) mit der Ankunftszeit und prüft das Frame-Raster. Bildrate = Einstellung oben.');
+    hint(t('clock.set.rtpHint'));
   }
   return rows;
 }

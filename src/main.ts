@@ -24,7 +24,9 @@ import { audioPanelSettings, audioRow, audioSourceControls, mountGenerator } fro
 import { setClockHooks } from './clock/panel';
 import { clockPanelSettings } from './clock/ui';
 import { generator } from './audio/io';
-import { PATTERNS, RESOLUTIONS, addImagePatterns, patternById } from './patterns';
+import { PATTERNS, RESOLUTIONS, patternById } from './patterns';
+import { addUserImages, favouritePatterns, isFavourite, loadUserPatterns, onUserPatternsChange, setFavourite } from './userPatterns';
+import { openTestImages, openTestVideos, type TestMediaHost } from './testMedia';
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
 import { openLedTool } from './led/ui';
@@ -601,9 +603,12 @@ function showLutLibrary() {
 
 function patternSelect(value: string, onchange: (id: string) => void) {
   const groups = [...new Set(PATTERNS.map((p) => p.group))];
+  const favs = favouritePatterns();
   return h('select', { class: 'pattern', title: 'Testbild', onchange: (e: Event) => onchange((e.target as HTMLSelectElement).value) },
+    // favourites first (#52); the same pattern also stays in its own group
+    ...(favs.length ? [h('optgroup', { label: '★ Favoriten' }, ...favs.map((p) => h('option', { value: p.id, selected: p.id === value }, p.name)))] : []),
     ...groups.map((g) => h('optgroup', { label: g },
-      ...PATTERNS.filter((p) => p.group === g).map((p) => h('option', { value: p.id, selected: p.id === value }, p.name)))));
+      ...PATTERNS.filter((p) => p.group === g).map((p) => h('option', { value: p.id, selected: p.id === value && !favs.includes(p) }, p.name)))));
 }
 
 function patternControls(s: Source): Node[] {
@@ -616,22 +621,27 @@ function patternControls(s: Source): Node[] {
   const label = h('input', { class: 'url', value: pt.label, placeholder: 'Kennung / Label (optional)' }) as HTMLInputElement;
   label.onchange = () => apply({ label: label.value });
   const imgs = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true }) as HTMLInputElement;
-  imgs.onchange = () => {
-    const added = addImagePatterns([...(imgs.files ?? [])]);
-    if (added.length) apply({ id: added[0].id });
+  imgs.onchange = async () => {
+    const r = await addUserImages([...(imgs.files ?? [])]);
+    r.errors.forEach(alertHud);
+    if (r.added.length) { apply({ id: r.added[0].id }); renderSources(); }
   };
+  const fav = isFavourite(pt.id);
   return [
     h('div', { class: 'row' },
       h('button', { class: 'mini', title: 'Vorheriges Testbild', onclick: () => step(-1) }, '◀'),
-      patternSelect(pt.id, (id) => apply({ id })),
-      h('button', { class: 'mini', title: 'Nächstes Testbild', onclick: () => step(1) }, '▶')),
+      patternSelect(pt.id, (id) => { apply({ id }); renderSources(); }),
+      h('button', { class: 'mini', title: 'Nächstes Testbild', onclick: () => step(1) }, '▶'),
+      h('button', { class: `mini fav${fav ? ' on' : ''}`, title: fav ? 'Aus den Favoriten nehmen' : 'Als Favorit (steht dann oben in der Auswahl)', 'aria-pressed': String(fav), onclick: () => setFavourite(pt.id, !fav) }, fav ? '★' : '☆')),
     h('div', { class: 'row' },
       resolutionControls(pt, apply),
       label),
     ...(patternById(pt.id).note ? [h('p', { class: 'hint' }, patternById(pt.id).note!)] : []),
     h('div', { class: 'row' },
       h('button', { class: 'primary', title: 'Testbild im eigenen Fenster ausgeben (für Monitor, Beamer, Capture)', onclick: () => openOutput(pt) }, '⧉ Ausgeben'),
-      h('button', { title: 'Eigene Bilder als Testbilder laden', onclick: () => imgs.click() }, '+ Bilder'), imgs),
+      h('button', { title: 'Eigene Bilder als Testbilder laden (bleiben gespeichert)', onclick: () => imgs.click() }, '+ Bilder'), imgs,
+      h('button', { title: 'Eigene Bilder, Logo und Favoriten verwalten', onclick: () => openTestImages(testMediaHost) }, 'Logo / Bilder …'),
+      h('button', { title: 'Frei lizenzierte Testvideos (Big Buck Bunny, HDR) laden', onclick: () => openTestVideos(testMediaHost) }, 'Testvideos …')),
   ];
 }
 
@@ -652,9 +662,31 @@ function resolutionControls(pt: PatternState, applyPt: (p: Partial<PatternState>
 
 function openOutput(pt: PatternState) {
   const q = new URLSearchParams({ out: pt.id, w: String(pt.width), h: String(pt.height), label: pt.label });
-  if (patternById(pt.id).group === 'Eigene Bilder') q.set('out', 'smpte75'); // object URLs don't cross windows
   window.open(`${location.pathname}?${q}`, 'lz-scopes-pattern', 'popup,width=1280,height=720');
 }
+
+// own pictures, logo, favourites and test videos (#52)
+const testMediaHost: TestMediaHost = {
+  usePattern: (id) => {
+    const s = sources.find((x) => x.kind === 'pattern') ?? addSource('pattern', 'Testbild');
+    s.pattern.id = id; save(); s.startPattern(); renderSources();
+  },
+  openVideo: (url, v) => {
+    const s = addSource('file', `${v.title} ${v.version}`.slice(0, 40));
+    // the HDR encodes carry no colour tags: set what the publisher states
+    if (v.transfer) s.settings.transfer = v.transfer;
+    if (v.gamut) s.settings.gamut = v.gamut;
+    s.openVideoUrl(url, `${v.title} ${v.version}`.slice(0, 40)).then(() => { renderSources(); renderPanels(); });
+  },
+  hud: (m) => alertHud(m),
+};
+onUserPatternsChange(() => {
+  // the logo patterns follow the chosen logo
+  sources.filter((x) => x.kind === 'pattern' && (x.pattern.id === 'logo' || x.pattern.id === 'testcard-logo' || x.pattern.id.startsWith('img:'))).forEach((x) => x.startPattern());
+  renderSources();
+});
+registerMenuCommand('sources', { id: 'testimages', label: 'Eigene Testbilder und Logo …' }, () => openTestImages(testMediaHost));
+registerMenuCommand('sources', { id: 'testvideos', label: 'Testvideos …', title: 'Big Buck Bunny, HDR-Testfilme (frei lizenziert)' }, () => openTestVideos(testMediaHost));
 
 async function startLocal(s: Source) {
   if (s.kind === 'pattern') return s.startPattern();
@@ -1951,10 +1983,13 @@ for (const saved of state.sources) {
   const s = addSource(saved.kind, saved.name, saved.url, saved.settings);
   if (saved.pattern) Object.assign(s.pattern, saved.pattern);
   if (saved.audioIn) Object.assign(s.audioIn, saved.audioIn);
-  if (s.kind === 'pattern') s.startPattern();
+  // own images (img:…) and logo patterns come from IndexedDB: started once that is read
+  if (s.kind === 'pattern' && !/^(img:|logo$|testcard-logo$)/.test(s.pattern.id)) s.startPattern();
   if (s.kind === 'audio' && s.audioIn.mode === 'generator') s.startAudio();
   if (s.kind === 'audio' && s.audioIn.mode === 'bridge' && s.audioIn.bridgeUrl) s.startAudio(undefined, bridgeUrl());
 }
+// own images and logo from IndexedDB (#52); the change listener starts their pattern sources
+loadUserPatterns();
 mountOpple($('#opple'), {
   bridgeWs: () => bridgeUrl(),
   /** light scopes as their own layout (top: diagram, vectorscope, channels; bottom: time course, grid) */

@@ -8,10 +8,10 @@ import type { Msg } from '../src/i18n/types';
 import { check, germanReason, strings } from '../scripts/lang-check.mjs';
 
 /**
- * Warning first (#94): while the migration runs in several PRs the guard only reports.
- * Set to true once everything is migrated – from then on new German strings fail the tests.
+ * Strict since the migration of #94 is complete: a new German string outside src/i18n fails
+ * the tests (exceptions: `// lang-ok: <reason>` or ALLOW_FILES in scripts/lang-check.mjs).
  */
-const STRICT = false;
+const STRICT = true;
 
 const placeholders = (m: Msg) => [...new Set((typeof m === 'string' ? m : `${m.one} ${m.other} ${m.zero ?? ''}`).match(/\{\w+\}/g) ?? [])].sort();
 

@@ -98,7 +98,7 @@ export async function until<T>(fn: () => Promise<T | false | null | undefined> |
  * `fractions` (0 … 1 of the picture width) in the visible panel showing `scope`. Reads the
  * blit canvas: trace only, the graticule is on a separate overlay canvas.
  */
-export async function waveProfile(page: Page, scope: string, fractions: number[]): Promise<{ level: number; v: number }[][]> {
+export async function waveProfile(page: Page, scope: string, fractions: number[], range: [number, number] = [WAVE_MIN, WAVE_MAX]): Promise<{ level: number; v: number }[][]> {
   return page.evaluate(({ scope, fr, wmin, wmax }) => {
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
       p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === scope);
@@ -122,12 +122,12 @@ export async function waveProfile(page: Page, scope: string, fractions: number[]
       }
       return rows.map((q) => ({ level: q.level, v: max ? q.v / max : 0 }));
     });
-  }, { scope, fr: fractions, wmin: WAVE_MIN, wmax: WAVE_MAX });
+  }, { scope, fr: fractions, wmin: range[0], wmax: range[1] });
 }
 
 /** Level of the brightest trace row per column (NaN = empty column). */
-export async function waveLevels(page: Page, scope: string, fractions: number[]): Promise<number[]> {
-  return (await waveProfile(page, scope, fractions)).map((col) => {
+export async function waveLevels(page: Page, scope: string, fractions: number[], range?: [number, number]): Promise<number[]> {
+  return (await waveProfile(page, scope, fractions, range)).map((col) => {
     let best = col[0];
     for (const q of col) if (q.v > best.v) best = q;
     return best && best.v > 0 ? best.level : NaN;

@@ -42,6 +42,7 @@ import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
 import { DEFAULT_LOW_LATENCY, LL_STATS, LL_WIDTHS, describeLowLatency, effectiveWidth, type LowLatencyConfig } from './lowLatency';
 import { mountResolveLive } from './resolveLive';
+import { attachResolvePlayback, isLocalHost, routeText } from './resolvePlayback';
 import { openManual } from './manual';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
 import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
@@ -503,6 +504,7 @@ function renderSources() {
         ], (v) => upd({ gamut: v as SourceSettings['gamut'] }), t('main.src.gamutTitle')),
         s.transfer === 'hlg' ? select(String(s.hlgLw), HLG_PEAKS.map((n) => [String(n), t('main.src.hlgDisplay', { n })]), (v) => upd({ hlgLw: Number(v) }), t('main.src.hlgTitle')) : ''));
     if (s.kind !== 'audio') card.append(chainControls(s, upd));
+    if (s.url === 'resolve:' && s.status === 'live') card.append(resolveRouteRow(s));
     if (s.message) card.append(h('div', { class: 'msg' }, s.message));
     // LUT files dropped on a source card: LUT 1, with Shift LUT 2
     card.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); card.classList.add('drop'); } });
@@ -737,6 +739,17 @@ async function pickWindow(s: Source) {
         h('img', { src: c.thumb, alt: '' }), h('span', {}, c.name)))),
       h('button', { onclick: close }, t('common.cancel'))));
   document.body.append(dlg);
+}
+
+/** Resolve source card (#88): which route the picture takes now, why, and how colour-accurate it is. */
+function resolveRouteRow(s: Source) {
+  const r = s.resolveRoute ?? { route: 'still' as const, playing: false };
+  const { label, detail } = routeText(r);
+  const pick = !desktop?.captureSources && r.playing && r.why === 'browser'
+    ? h('button', { class: 'mini', title: t('source.resolve.pickWindowTitle'), onclick: () => { void resolvePlayback.pickWindow(s); } }, t('source.resolve.pickWindow')) : '';
+  return h('div', { class: 'resolve-route', 'data-route': r.route },
+    h('div', { class: 'row' }, h('span', { class: `chip route-${r.route}` }, label), pick),
+    h('p', { class: 'hint' }, detail));
 }
 
 function addResolve() {
@@ -1630,6 +1643,12 @@ interface DesktopApi {
   watchFolder?: () => Promise<{ name: string; url: string } | null>;
 }
 const desktop = (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop;
+/** DaVinci Resolve during playback (#88), see src/resolvePlayback.ts */
+const resolvePlayback = attachResolvePlayback({
+  captureSources: desktop?.captureSources,
+  localBridge: () => isLocalHost(bridgeUrl()),
+  changed: () => renderSources(),
+});
 
 interface OutputOptions { name: string; view: string; idx: string; src: string; scene: string; bg: string; display: string; fs: boolean; stream: string; target: string; codec?: string }
 /** Open output windows by name (control API: output.close, scene.select, stream.*). */
@@ -2081,6 +2100,10 @@ requestAnimationFrame(frame);
 connectRemote(bridgeUrl, execute, controlState);
 // Auto-connect saved network sources (bridge must be running).
 sources.forEach((s) => { if (s.kind === 'stream' && s.url) s.connectStream(s.url, bridgeUrl()); });
+
+// Resolve playback (#88): live window capture while the timeline plays
+Source.onResolve = (s, msg) => resolvePlayback.onResolve(s, msg);
+Source.onStop = (s) => resolvePlayback.onStop(s);
 
 // running DaVinci Resolve on the bridge machine: one click to connect
 mountResolveLive($('#resolve-live'), {

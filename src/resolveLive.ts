@@ -4,7 +4,7 @@
 import { t } from './i18n';
 
 export interface ResolveStatus {
-  running: boolean; scripting?: boolean; reason?: 'off' | 'python' | 'module'; error?: string;
+  running: boolean; scripting?: boolean; busy?: boolean; reason?: 'off' | 'python' | 'module'; error?: string;
   product?: string; version?: string; page?: string; project?: string | null; timeline?: string | null; tc?: string;
 }
 
@@ -27,6 +27,8 @@ export function resolveLines(st: ResolveStatus): { title: string; detail: string
         : t('source.resolve.scriptingOff');
     return { title: t('source.resolve.resolveRunning'), detail, canConnect: false };
   }
+  // #88: during playback the probe gets no answer – last known project, and why
+  if (st.busy) return { title: t('source.resolve.running', { name }), detail: `${st.project ? `${st.project}${st.timeline ? ` / ${st.timeline}` : ''} – ` : ''}${t('source.resolve.busy')}`, canConnect: true };
   const where = st.project ? `${st.project}${st.timeline ? ` / ${st.timeline}` : ` – ${t('source.resolve.noTimeline')}`}` : t('source.resolve.noProject');
   return { title: t('source.resolve.running', { name }), detail: where, canConnect: true };
 }

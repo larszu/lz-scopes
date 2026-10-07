@@ -4,7 +4,7 @@ So kommt ein Bild in LZ Scopes. Alle Eingänge stehen links in der Seitenleiste 
 
 | Eingang | Bittiefe | Wann |
 |---|---|---|
-| DaVinci Resolve (Scripting) | 16 bit | gegradetes Bild aus dem Resolve-Viewer, ohne zusätzliche Hardware |
+| DaVinci Resolve (Scripting) | 16 bit (Pause), 8 bit (Wiedergabe) | gegradetes Bild aus dem Resolve-Viewer, ohne zusätzliche Hardware |
 | Clean Feed über Capture-Karte | 10 bit | Resolve gibt über eine DeckLink/UltraStudio aus, LZ Scopes nimmt über eine Karte auf |
 | Clean Feed oder Fenster per Bildschirm-Capture | 8 bit | schnell, ohne Hardware; der Bildschirm verfälscht Farben und Pegel |
 | Ordner | 8 bit (Browser), 16 bit (Bridge) | Standbilder aus Lightroom, Capture One, Resolve |
@@ -44,8 +44,23 @@ Einen eigenen Netzwerk-Scan gibt es nicht. Resolve legt das Standbild auf der Pl
 **Gut zu wissen**
 
 - Gemessen wird, was der Viewer zeigt, also das Bild an der aktuellen Abspielposition mit Grading.
-- Beim Abspielen hinkt die Messung dem Bild leicht hinterher. Für ein flüssiges Bild in Echtzeit eignet sich der Clean Feed (nächster Abschnitt).
 - Der Timecode der Timeline wird mitgeliefert.
+
+**Wiedergabe**
+
+Während die Timeline läuft, beantwortet Resolve keine Scripting-Anfrage. Standbilder kommen erst in der Pause wieder. LZ Scopes schaltet deshalb selbst um. Die Quellenkarte zeigt, welcher Weg aktiv ist und warum:
+
+| Weg | Wann | Farbgenauigkeit |
+|---|---|---|
+| **Exaktes Standbild** | Timeline pausiert | 16 bit, gegradet, so wie Resolve es rechnet. Farbgenau. |
+| **Live: Fensteraufnahme** | Timeline läuft, LZ Scopes auf dem Resolve-Rechner | 8 bit, auf die Viewer-Größe skaliert, nach dem Farbmanagement von Viewer und Betriebssystem (z. B. *Use Mac Display Color Profile for viewers*). Zeigt Bewegung und grobe Pegel, nicht für Farburteile. |
+| **Letztes Standbild gehalten** | Timeline läuft, keine Fensteraufnahme möglich | die Karte nennt den Grund, z. B. Bridge auf einem anderen Rechner |
+
+- Die Umschaltung auf die Fensteraufnahme dauert nach dem Start der Wiedergabe etwa eine Sekunde. Die Pause bringt das exakte Standbild zurück.
+- Die **Desktop-App** nimmt das Resolve-Fenster selbst auf und findet den Viewer darin über den Vergleich mit dem letzten Standbild. Unter macOS braucht sie dafür die Freigabe unter **Systemeinstellungen → Datenschutz & Sicherheit → Bildschirm- & Systemaudioaufnahme**.
+- Im **Browser** einmal in der Quellenkarte auf **Resolve-Fenster wählen** klicken und das Resolve-Fenster auswählen.
+- Wird der Viewer nicht gefunden (Viewer ausgeblendet, sehr klein oder Layout geändert), pausieren und neu abspielen.
+- Für ein exaktes Livebild während der Wiedergabe den Clean Feed über eine Capture-Karte nutzen (nächster Abschnitt).
 
 ## Clean Feed
 

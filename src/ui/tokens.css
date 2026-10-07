@@ -53,7 +53,7 @@
   /* spacing: 4 px grid, half steps allowed in the tool */
   --sp-0: 2px; --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-6: 24px;
   /* control sizes: fine pointer; coarse pointers get 44 px targets (WCAG 2.5.5 / Apple HIG) */
-  --control-h: 24px; --control-h-sm: 20px; --control-pad: 3px 7px;
+  --control-h: 24px; --control-h-sm: 24px; --control-pad: 3px 7px;
   --label-w: 120px;
 
   /* ---- skin "neutral", dark (also the fallback without data-theme): sRGB greys R = G = B,
@@ -143,7 +143,8 @@
   --line-3: rgba(246, 245, 240, 0.35);
   --text: var(--lzm-offwhite);
   --text-soft: var(--lzm-eisblau);
-  --text-muted: var(--lzm-stahlblau);
+  /* Stahlblau lifted towards Eisblau: AA (4.5:1) also on the raised dialog surface (e2e/ui-audit.spec.ts) */
+  --text-muted: color-mix(in oklab, var(--lzm-stahlblau), var(--lzm-eisblau) 50%);
   --text-faint: var(--lzm-schiefer);
   --accent: var(--lzm-offwhite);
   --sel-bg: rgba(246, 245, 240, 0.12);
@@ -190,7 +191,7 @@
   --primary-border: var(--lzm-navy);
   --primary-text: var(--lzm-offwhite);
   --primary-hover: var(--lzm-deep-navy);
-  --warn-text: #8a5a14; --warn-bg: rgba(200, 137, 43, 0.14);
+  --warn-text: #7a4e0f; --warn-bg: rgba(200, 137, 43, 0.14);
   --dot-idle: var(--lzm-stahlblau);
   --elev-float: 0 12px 32px color-mix(in oklab, var(--lzm-navy) 14%, transparent);
   --kicker-rule: 1px solid var(--lzm-navy);
@@ -241,7 +242,7 @@
 
 /* coarse pointers (touch): 44 px targets */
 @media (pointer: coarse) {
-  :root { --control-h: 44px; --control-h-sm: 36px; --control-pad: 6px 10px; }
+  :root { --control-h: 44px; --control-h-sm: 44px; --control-pad: 6px 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   :root { --dur-1: 0ms; --dur-2: 0ms; --dur-3: 120ms; }

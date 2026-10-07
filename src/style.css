@@ -377,6 +377,12 @@ dialog.calib .calib-log { max-height: 160px; overflow: auto; font: 11px var(--mo
 .resolve-live .rl-text { flex: 1; min-width: 0; }
 .resolve-live .rl-title { font-weight: 600; }
 .resolve-live .rl-detail { color: var(--muted); word-break: break-word; }
+/* Resolve source card (#88): route of the picture – exact still, live window, held */
+.resolve-route { margin: 4px 0; padding-left: 8px; border-left: 3px solid var(--ok); }
+.resolve-route[data-route="window"] { border-left-color: var(--warn); }
+.resolve-route[data-route="none"] { border-left-color: var(--err); }
+.resolve-route .chip { font-size: 11px; font-weight: 600; }
+.resolve-route .hint { margin: 2px 0 0; }
 
 /* Touch Shading (#54): fixed bar at the bottom, large touch targets, red frame while live */
 .shading-bar {

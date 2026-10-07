@@ -27,6 +27,7 @@ import { applyDecodeOverride, deviceInputArgs, deviceOptions, formatListArgs, pa
 import { helperList, helperPath, startHelperStream } from './helper-input.mjs';
 import { resolveFolder, startFolderStream, watchRoots } from './folder.mjs';
 import { resolveStatus } from './resolve.mjs';
+import { createPlaybackWatch } from './resolveWatch.mjs';
 import { handleMeterSocket, meterInfo } from './meter.mjs';
 import { PtpMonitor, RtpMonitor, ipv4Interfaces, isMulticastV4, nowUtcNs } from './ptp.mjs';
 import { taiMinusUtc } from './leap.mjs';
@@ -793,10 +794,18 @@ async function startResolve(ws, params) {
   if (!py) return fail(ws, bmsg('resolve.noPython', 'Python 3 not found (needed for the Resolve link)'));
   let sentInfo = false, busy = false, sent = 0, lastWait = '', stderr = '';
   py.stderr.on('data', (d) => { stderr = (stderr + d).slice(-1500); });
+  // #88: the scripting API blocks while the timeline plays – tell the page, which can switch
+  // to a live window capture meanwhile (src/resolvePlayback.ts)
+  const watch = createPlaybackWatch({ fps });
+  let project = null;
+  const sendState = (ev) => { if (ev && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'resolve', ...ev, project })); };
+  const watchTimer = setInterval(() => sendState(watch.check(Date.now())), 200);
   const lines = createInterface({ input: py.stdout });
   lines.on('line', async (line) => {
     let msg;
     try { msg = JSON.parse(line); } catch { return; }
+    if (msg.project) project = msg.project;
+    sendState(watch.line(Date.now(), msg.tc ?? null));
     if (msg.error) return fail(ws, { message: msg.error, code: msg.code, params: msg.params });
     if (msg.wait) { if (msg.wait !== lastWait && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: 0, ...toMsg({ message: msg.wait, code: msg.code }) })); lastWait = msg.wait; return; }
     if (busy || ws.readyState !== ws.OPEN || ws.bufferedAmount > 32 * 1024 * 1024) return;
@@ -820,8 +829,8 @@ async function startResolve(ws, params) {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: 0, ...toMsg(e) }));
     } finally { busy = false; }
   });
-  py.on('close', (code) => { if (ws.readyState === ws.OPEN) fail(ws, stderr.trim().split('\n').pop() || bmsg('resolve.exit', `Resolve link ended (${code})`, { code })); rm(dir, { recursive: true, force: true }).catch(() => {}); });
-  ws.on('close', () => { py.kill(); });
+  py.on('close', (code) => { clearInterval(watchTimer); if (ws.readyState === ws.OPEN) fail(ws, stderr.trim().split('\n').pop() || bmsg('resolve.exit', `Resolve link ended (${code})`, { code })); rm(dir, { recursive: true, force: true }).catch(() => {}); });
+  ws.on('close', () => { clearInterval(watchTimer); py.kill(); });
 }
 
 /**

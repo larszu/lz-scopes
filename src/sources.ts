@@ -123,6 +123,13 @@ export function bridgeInputParams(url: string, set: SourceSettings): Record<stri
   return q;
 }
 
+/**
+ * DaVinci Resolve source (#88): 'still' = exact still through the scripting API (paused),
+ * 'window' = live capture of the Resolve viewer (playing), 'none' = playing without a live
+ * picture (`why` says why).
+ */
+export interface ResolveRoute { route: 'still' | 'window' | 'none'; why?: 'remote' | 'browser' | 'noWindow' | 'noViewer' | 'denied' | 'starting'; playing: boolean }
+
 export const DEFAULT_SETTINGS: SourceSettings = { transfer: 'auto', colorspace: 'auto', gamut: 'auto', hlgLw: 1000, width: 960, fps: 0, depth: 8, transport: 'tcp', audio: true };
 
 let nextId = 1;
@@ -459,11 +466,16 @@ export class Source {
           this.rtpStats = msg.rtp ?? null;
           this.phase = msg.phase ?? null;
           if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', bridgeMessage(msg));
+        } else if (msg.type === 'resolve') {
+          // DaVinci Resolve (#88): timeline playing / paused again (server/resolveWatch.mjs)
+          Source.onResolve?.(this, msg);
         } else if (msg.type === 'error' || msg.type === 'end') {
           this.set(msg.type === 'end' ? 'ended' : 'error', bridgeMessage(msg));
         }
         return;
       }
+      // an exact still again after a live capture (#88): back to the stream's own format
+      if (this.liveShown) this.showLive(null);
       const buf = ev.data as ArrayBuffer;
       if (this.info?.proto === 2) {
         // 16-byte header: 'LZV1' | 'LZA1', uint32, float64 (docs/frame-protocol.md)
@@ -506,6 +518,31 @@ export class Source {
     ws.onerror = () => this.set('error', t('source.status.bridgeUnreachable'));
     ws.onclose = () => { if (this.ws === ws && this.status === 'live') this.set('ended', t('source.status.connectionEnded')); };
   }
+
+  /** DaVinci Resolve (#88): how the picture gets here right now – set by src/resolvePlayback.ts. */
+  resolveRoute: ResolveRoute | null = null;
+  /** a 'resolve' message of the bridge arrived (main.ts → src/resolvePlayback.ts) */
+  static onResolve: ((s: Source, msg: { state: 'playing' | 'paused'; played?: boolean; project?: string | null }) => void) | null = null;
+  /** called by stop(), e.g. to end a live capture that belongs to this source */
+  static onStop: ((s: Source) => void) | null = null;
+  private liveShown = false;
+  /**
+   * Show a captured picture instead of the bridge frames (Resolve playback, #88); null goes
+   * back to the frames – done by the next still as well.
+   */
+  showLive(el: HTMLCanvasElement | null) {
+    if (el) {
+      this.liveShown = true;
+      this.data = null; this.element = el; this.width = el.width; this.height = el.height; this.depth = 8;
+      this.tick();
+      return;
+    }
+    if (!this.liveShown) return;
+    this.liveShown = false;
+    this.element = null;
+    if (this.info) { this.width = this.info.width; this.height = this.info.height; this.depth = this.info.depth; }
+  }
+  get showingLive() { return this.liveShown; }
 
   /**
    * Feed frames without a WebSocket, e.g. from an Electron main process over a
@@ -799,6 +836,8 @@ export class Source {
   }
 
   stop() {
+    Source.onStop?.(this);
+    this.liveShown = false; this.resolveRoute = null;
     if (this.folderTimer) { clearInterval(this.folderTimer); this.folderTimer = null; }
     if (this.reverseTimer) { clearInterval(this.reverseTimer); this.reverseTimer = null; }
     if (this.patternTimer) { clearInterval(this.patternTimer); this.patternTimer = null; }

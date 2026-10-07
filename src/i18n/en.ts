@@ -31,6 +31,7 @@ import calib from './en/calib';
 import tools from './en/tools';
 import clock from './en/clock';
 import audio from './en/audio';
+import ui from './en/ui';
 
 export const en = {
   ...common,
@@ -38,6 +39,7 @@ export const en = {
   ...tools,
   ...clock,
   ...audio,
+  ...ui,
   ...bridgeui,
   ...chain,
   ...color,

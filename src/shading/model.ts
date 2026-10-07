@@ -228,14 +228,20 @@ export interface BusCommand { cmd: string; params: Record<string, number> }
  * known. Returns an error for anything the bus does not carry.
  */
 /** `error`: 'black' / 'white' = triple not fully known, 'hue' = not on the bus. */
-export function busCommands(changed: PaintField[], cur: Paint): { commands: BusCommand[]; error?: 'black' | 'white' | 'hue' } {
+export function busCommands(changed: PaintField[], cur: Paint, mode = ''): { commands: BusCommand[]; error?: 'black' | 'white' | 'hue' } {
   const out: BusCommand[] = [];
   const set = new Set(changed);
   const triple = (k: 'black' | 'white', cmd: string) => {
     if (![...set].some((f) => f.startsWith(k))) return null;
-    const r = cur[`${k}R` as PaintField], g = cur[`${k}G` as PaintField], b = cur[`${k}B` as PaintField];
-    if (r === undefined || g === undefined || b === undefined) return k;
-    out.push({ cmd, params: { r, g, b } });
+    // axes the camera does not have (Sony: no G gain) are not sent – and need not be known
+    const axes = (['R', 'G', 'B'] as const).filter((a) => !MISSING_AXES[mode]?.includes(`${k}${a}` as PaintField));
+    const params: Record<string, number> = {};
+    for (const a of axes) {
+      const v = cur[`${k}${a}` as PaintField];
+      if (v === undefined) return k;
+      params[a.toLowerCase()] = v;
+    }
+    out.push({ cmd, params });
     return null;
   };
   const e1 = triple('black', 'setBlackBalance');
@@ -266,18 +272,43 @@ export const BRIDGE_PAINT_CAPS: Record<string, string[]> = {
   serial: ['masterBlack', 'blackBalance', 'whiteBalance', 'masterGamma', 'saturation'],
   'lumix-http': ['masterBlack', 'whiteBalance', 'saturation'],
   blackmagic: ['masterBlack', 'blackBalance', 'whiteBalance', 'masterGamma', 'saturation'],
+  // HTTP-CGI with the Sony family (capabilitiesForMode(mode, family), lz-camera-bridge #77):
+  // manual white balance over imaging.cgi, R and B gain only – measured on an SRG-A40.
+  'http-cgi:sony': ['whiteBalance'],
 };
+
+/**
+ * How much steeper a real camera reacts than the simulator model, per field (factor on `slope`).
+ * Sony SRG-A40 over imaging.cgi, measured 07.10.2026 on the RTSP picture (mean of the frame):
+ * CrGain +30 → R′ 0.52 → 0.90, CbGain +30 → B′ 0.51 → 0.75. Per unit and relative to the level
+ * that is 0.024 (R) and 0.016 (B) against 0.0039 in the model: factors 6.2 and 4.0. Rough – a
+ * mean over a real scene with clipping – but it keeps the trace near the finger instead of 5×
+ * past it.
+ */
+export const MEASURED_SLOPE: Record<string, Partial<Record<PaintField, number>>> = {
+  'http-cgi:sony': { whiteR: 6.2, whiteB: 4.0 },
+};
+export const slopeScale = (mode: string, field: PaintField) => MEASURED_SLOPE[mode]?.[field] ?? 1;
+
+/** Axes a mode does not have although its balance flag is set. */
+export const MISSING_AXES: Record<string, PaintField[]> = {
+  'http-cgi:sony': ['whiteG'],
+};
+
+/** Key into the tables above: the bridge mode, plus the firmware family where it matters. */
+export const capsKey = (mode: string, family?: string) => (mode === 'http-cgi' && family ? `${mode}:${family}` : mode);
 
 /** Can this field be sent to a camera in this bridge mode? Simulator: everything. */
 export function fieldAvailable(field: PaintField, mode: string | 'sim'): boolean {
   if (mode === 'sim') return true;
   const cap = FIELD_CAP[field];
-  return !!cap && (BRIDGE_PAINT_CAPS[mode] ?? []).includes(cap);
+  return !!cap && (BRIDGE_PAINT_CAPS[mode] ?? []).includes(cap) && !MISSING_AXES[mode]?.includes(field);
 }
 
-export function formatValue(field: PaintField, v: number | undefined): string {
+/** Value and its distance to `ref` (the session's starting value; default the centre of the scale). */
+export function formatValue(field: PaintField, v: number | undefined, ref?: number): string {
   if (v === undefined) return '–';
   const f = FIELDS[field];
-  const d = v - f.centre;
+  const d = v - (ref ?? f.centre);
   return `${Math.round(v)}${f.unit} (${d >= 0 ? '+' : ''}${Math.round(d)})`;
 }

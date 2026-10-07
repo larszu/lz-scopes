@@ -249,7 +249,7 @@ Die Kommandos gehen über [lz-camera-bridge](https://github.com/larszu/lz-camera
 - Jede Änderung ist in der Schrittweite begrenzt.
 - **■ Ausgangswerte** (Esc) stellt die Werte vom Sitzungsbeginn wieder her.
 
-Ein Simulator läuft ohne Kamera. Bildwerte der Sony SRG-A40 über VISCA kann die Bridge noch nicht. Mehr in [docs/research/touch-shading.md](docs/research/touch-shading.md).
+Ein Simulator läuft ohne Kamera. An einer Sony SRG-A40 steuert die Bridge über HTTP-CGI R- und B-Gain des Weißabgleichs (gemessen). Hue, Schwarz und Gamma gibt es dort nicht. Mehr in [docs/research/touch-shading.md](docs/research/touch-shading.md).
 
 ## Einbetten
 

@@ -365,3 +365,95 @@ dialog.calib .calib-log { max-height: 160px; overflow: auto; font: 11px var(--mo
 .calib-grid td.g-gut { background: #1d3324; }
 .calib-grid td.g-ok { background: #3a3414; }
 .calib-grid td.g-aus { background: #4a1c1c; }
+
+/* running DaVinci Resolve in the source sidebar (src/resolveLive.ts) */
+.resolve-live { display: flex; gap: 8px; align-items: center; margin: 6px 0; padding: 6px 8px; border: 1px solid var(--line-2); border-left: 3px solid var(--ok, #3fb950); border-radius: 4px; font-size: 11px; }
+.resolve-live[hidden] { display: none; }
+.resolve-live .rl-text { flex: 1; min-width: 0; }
+.resolve-live .rl-title { font-weight: 600; }
+.resolve-live .rl-detail { color: var(--muted); word-break: break-word; }
+
+/* ---- application menu and settings window (#53, src/menu/) ---- */
+.bar .tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.menubar { position: relative; display: flex; align-items: center; }
+.native-menu .menubar { display: none; }
+.menubar .mb-burger { display: none; font-size: 14px; }
+.mb-items { display: flex; align-items: center; gap: 0; }
+.mb-top { position: relative; }
+.mb-title { background: transparent; border-color: transparent; color: var(--text-2); padding: 3px 8px; }
+.mb-title:hover, .mb-title.on { background: var(--on-bg); border-color: transparent; color: var(--text); }
+.mb-drop {
+  position: absolute; z-index: 60; top: calc(100% + 2px); left: 0; min-width: 240px; padding: 4px 0;
+  background: var(--panel-2); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--menu-shadow);
+  display: flex; flex-direction: column;
+}
+.mb-item {
+  display: grid; grid-template-columns: 16px 1fr auto; gap: 6px; align-items: center; text-align: left;
+  background: transparent; border: 0; border-radius: 0; padding: 4px 12px 4px 8px; min-height: 26px; color: var(--text); width: 100%;
+}
+.mb-item:hover, .mb-item:focus-visible { background: var(--on-bg); outline-offset: -2px; }
+.mb-item:disabled { opacity: 0.4; cursor: not-allowed; }
+.mb-check { color: var(--text); text-align: center; }
+.mb-key { color: var(--muted); font-family: var(--mono); font-size: 11px; padding-left: 16px; }
+.mb-sep { height: 1px; background: var(--line); margin: 4px 0; }
+.mb-subwrap { position: relative; }
+.mb-sub { display: none; position: absolute; left: 100%; top: -5px; }
+.mb-subwrap:hover > .mb-sub, .mb-subwrap.open > .mb-sub, .mb-subwrap:focus-within > .mb-sub { display: flex; }
+@media (max-width: 900px) {
+  .menubar .mb-burger { display: inline-block; }
+  .mb-items { display: none; position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; flex-direction: column; align-items: stretch; min-width: 200px;
+    background: var(--panel-2); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: 4px 0; box-shadow: var(--menu-shadow); }
+  .menubar.burger-open .mb-items { display: flex; }
+  .mb-title { width: 100%; text-align: left; }
+  .mb-drop { position: static; border: 0; box-shadow: none; padding-left: 8px; background: transparent; }
+  .mb-sub { position: static; padding-left: 8px; }
+}
+dialog.settings, dialog.tooldlg {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--radius-lg);
+  padding: 0; box-shadow: var(--menu-shadow);
+}
+dialog.settings::backdrop, dialog.tooldlg::backdrop { background: var(--modal-bg); }
+dialog.settings { width: min(860px, 96vw); height: min(640px, 90vh); }
+dialog.settings[open] { display: flex; flex-direction: column; }
+.set-head, .dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.set-head h2, .dlg-head h2 { margin: 0; font-size: 13px; font-weight: 700; }
+.set-main { flex: 1; display: flex; min-height: 0; }
+.set-nav { width: 180px; flex: none; display: flex; flex-direction: column; padding: 6px 0; border-right: 1px solid var(--line); overflow-y: auto; }
+.set-tab { text-align: left; background: transparent; border: 0; border-left: 2px solid transparent; border-radius: 0; padding: 6px 12px; color: var(--text-2); }
+.set-tab:hover { background: var(--on-bg); }
+.set-tab.on { border-left-color: var(--on-border); background: var(--on-bg); color: var(--text); }
+.set-body { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.set-body .set-kicker { margin: 0 0 4px; padding-bottom: 6px; border-bottom: var(--kicker-rule); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: var(--kicker-track); color: var(--muted); }
+.set-body .mrow > span:first-child { width: 150px; }
+.set-body .hint { margin: 0 0 6px; max-width: 68ch; }
+.set-body a { color: var(--text); }
+.set-body .about-name { font-size: 16px; font-weight: 800; margin: 0; }
+table.keys { border-collapse: collapse; }
+table.keys td { padding: 3px 10px 3px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.keys td.kgroup { padding-top: 10px; color: var(--muted); font-weight: 700; border-bottom: 0; }
+table.keys kbd { margin-right: 2px; }
+dialog.tooldlg { width: min(520px, 96vw); max-height: 90vh; }
+dialog.tooldlg[open] { display: flex; flex-direction: column; }
+.dlg-body { padding: 10px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+@media (max-width: 640px) {
+  .set-main { flex-direction: column; }
+  .set-nav { width: auto; flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+}
+/* colour targets (#55): logo pipette */
+dialog.logodlg canvas.logopick { display: block; max-width: 100%; max-height: 50vh; margin: 8px 0; background: repeating-conic-gradient(#555 0% 25%, #777 0% 50%) 0 0 / 16px 16px; cursor: crosshair; }
+dialog.logodlg .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.swatch.big { width: 28px; height: 28px; }
+.menu-body p.hint.narrow { max-width: 380px; }
+.mrow > span.swatch:first-child { width: 14px; }
+/* in-app manual (src/manual.ts) */
+.manual-dlg .modal-body.manual { width: min(860px, 94vw); max-height: 90vh; overflow: auto; text-align: left; }
+.manual .manual-bar { position: sticky; top: 0; display: flex; gap: 6px; justify-content: flex-end; padding: 2px 0 6px; background: var(--card-bg); z-index: 1; }
+.manual article { font-size: 13px; line-height: 1.55; }
+.manual article h2 { font-size: 18px; margin: 4px 0 10px; }
+.manual article h3 { font-size: 15px; margin: 18px 0 6px; }
+.manual article table { border-collapse: collapse; margin: 8px 0; font-size: 12px; }
+.manual article th, .manual article td { border: 1px solid var(--line-2); padding: 4px 6px; vertical-align: top; }
+.manual article figure { margin: 10px 0; }
+.manual article img { max-width: 100%; border: 1px solid var(--line-2); border-radius: 4px; }
+.manual article figcaption { color: var(--muted); font-size: 11px; }
+.manual article code { font-family: var(--mono); font-size: 12px; }

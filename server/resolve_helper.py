@@ -55,7 +55,41 @@ def timeline_rate(timeline):
     return fps, str(df) == "1"
 
 
+def probe():
+    """--probe: one JSON line about the running Resolve, for the source list (no export)."""
+    try:
+        import DaVinciResolveScript as dvr  # noqa: N813
+    except Exception as e:  # noqa: BLE001
+        out({"scripting": False, "error": f"Resolve-Scripting-Modul nicht gefunden: {e}"})
+        return
+    resolve = dvr.scriptapp("Resolve")
+    if not resolve:
+        # README (Developer/Scripting): Preferences > System > General > External scripting: None/Local/Network
+        out({"scripting": False})
+        return
+    info = {"scripting": True}
+    for key, fn in (("product", "GetProductName"), ("version", "GetVersionString"), ("page", "GetCurrentPage")):
+        try:
+            info[key] = getattr(resolve, fn)()
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        project = resolve.GetProjectManager().GetCurrentProject()
+        timeline = project.GetCurrentTimeline() if project else None
+        info["project"] = project.GetName() if project else None
+        info["timeline"] = timeline.GetName() if timeline else None
+        if timeline:
+            info["tc"] = timeline.GetCurrentTimecode()
+            info["fps"], info["df"] = timeline_rate(timeline)
+    except Exception:  # noqa: BLE001
+        pass
+    out(info)
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--probe":
+        probe()
+        return
     folder = sys.argv[1]
     fps = max(0.5, min(30.0, float(sys.argv[2]) if len(sys.argv) > 2 else 10.0))
     try:

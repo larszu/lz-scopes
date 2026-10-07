@@ -191,3 +191,9 @@ export async function startMediamtx(bin: string, opts: { srt?: boolean } = {}): 
   }), 15_000, `mediamtx startet nicht ${err}`);
   return { rtsp, srt, proc, stop: () => { proc.kill('SIGKILL'); rmSync(dir, { recursive: true, force: true }); } };
 }
+
+/** Click an item of the native application menu by its command id (src/menu/appMenu.ts). */
+export async function menuClick(a: App, id: string) {
+  await until(() => a.app.evaluate(({ Menu }, id) => !!Menu.getApplicationMenu()?.getMenuItemById(id), id), 30_000, `Menüpunkt ${id}`);
+  await a.app.evaluate(({ Menu }, id) => Menu.getApplicationMenu()!.getMenuItemById(id)!.click(), id);
+}

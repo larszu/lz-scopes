@@ -13,12 +13,16 @@ const ffmpegResources = (os, filter) => [
   { from: 'licenses/ffmpeg', to: 'ffmpeg/licenses' },
 ]
 
+// ArgyllCMS (AGPL-3) is never shipped: the app only calls a user-installed spotread
+// (docs/research/display-kalibrierung.md). Guard against a stray copy in helpers/bin or dist.
+export const ARGYLL_EXCLUDE = ['!**/spotread*', '!**/dispcal*', '!**/dispread*', '!**/colprof*', '!**/collink*', '!**/*[Aa]rgyll*', '!**/*.ccmx', '!**/*.ccss']
+
 export default {
   appId: 'de.zumpelars.lzscopes',
   productName: 'LZ Scopes',
   copyright: `Copyright © ${year} Lars Zumpe`,
   publish: [{ provider: 'github', owner: 'larszu', repo: 'lz-scopes', releaseType: 'release' }],
-  files: ['dist/**/*', 'server/**/*', 'electron/**/*', 'licenses/**/*', 'helpers/bin/**/*', 'package.json'],
+  files: ['dist/**/*', 'server/**/*', 'electron/**/*', 'licenses/**/*', 'helpers/bin/**/*', 'package.json', ...ARGYLL_EXCLUDE],
   // The packaged package.json must NOT say `type: module` (cable-planner v0.1.1
   // crashed on exactly that: the @electron/universal entry shim is CommonJS).
   // `.mjs` files (server/) stay ESM by extension, electron/main.cjs is CommonJS.

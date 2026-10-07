@@ -1,0 +1,19 @@
+{
+  "appId": "de.zumpelars.lzscopes",
+  "appName": "LZ Scopes",
+  "webDir": "dist",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0b0c0e"
+  },
+  "plugins": {
+    "BluetoothLe": {
+      "displayStrings": {
+        "scanning": "Suche Light Master …",
+        "cancel": "Abbrechen",
+        "availableDevices": "Gefundene Geräte",
+        "noDeviceFound": "Kein Gerät gefunden"
+      }
+    }
+  }
+}

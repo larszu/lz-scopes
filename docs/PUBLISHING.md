@@ -14,7 +14,7 @@ Ergebnis: **keine Geheimnisse, keine Zugangsdaten, keine privaten IPs, keine Anl
 | `127.0.0.1` als Bridge-Vorgabe | Loopback, unkritisch |
 | `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` in Workflows, `CSC_KEY_PASSWORD` im Kommentar von `electron-builder.js` | nur Verweise auf Secrets, keine Werte |
 | `/etc/passwd` in `test/` | Negativtest der Eingabeprüfung |
-| Commit-Autor `Lars Zumpe <sral89757@gmail.com>` in allen 14 Commits | **wird mit der Sichtbarkeit öffentlich.** Entscheidung offen: so lassen, oder vorher die Historie mit einer GitHub-noreply-Adresse umschreiben (Force-Push, nur solange das Repo privat ist) |
+| Commit-Autor mit privater Mail-Adresse in den ersten 14 Commits (seitdem GitHub-noreply) | **wird mit der Sichtbarkeit öffentlich.** Entscheidung offen: so lassen, oder vorher die Historie mit einer GitHub-noreply-Adresse umschreiben (Force-Push, nur solange das Repo privat ist) |
 | Alter Descriptor „Foto & Film" in einem Code-Kommentar (`src/patterns.ts`) | behoben |
 | `docs/research/*.md`: Zusammenfassungen mit Links, kein längeres Fremdzitat; einzige wörtliche Stelle ist ein Halbsatz aus § 69e UrhG (Gesetzestext, gemeinfrei) | unkritisch |
 | `docs/research/img/vma-audioanalyser.png`, `vma-audiogenerator.png`: Screenshots der Fremdsoftware VMA | **Urheberrecht Dritter, vor dem Veröffentlichen entfernen oder durch eigene Aufnahmen ersetzen** (eingebunden in `docs/research/audio.md`, Zeilen 15 und 37) |

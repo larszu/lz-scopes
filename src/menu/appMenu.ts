@@ -10,8 +10,8 @@ export const REPO = 'https://github.com/larszu/lz-scopes';
 /** Guides in the Help menu (links). The inputs manual (#78) opens inside the app, see `manual:`. */
 export const GUIDES: { id: string; label: string; url: string }[] = [
   { id: 'readme', label: t('menu.guide.readme'), url: `${REPO}/blob/main/${lang() === 'de' ? 'README.de.md' : 'README.md'}` },
-  { id: 'control', label: t('menu.guide.control'), url: `${REPO}/blob/main/docs/control-api.md` },
-  { id: 'cable', label: t('menu.guide.cable'), url: `${REPO}/blob/main/docs/cable-planner-integration.md` },
+  { id: 'control', label: t('menu.guide.control'), url: `${REPO}/blob/main/docs/control-api${lang() === 'de' ? '.de' : ''}.md` },
+  { id: 'cable', label: t('menu.guide.cable'), url: `${REPO}/blob/main/docs/cable-planner-integration${lang() === 'de' ? '.de' : ''}.md` },
 ];
 
 export interface MenuState {

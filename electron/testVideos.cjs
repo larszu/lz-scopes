@@ -2,6 +2,7 @@
 // unpack a single-entry ZIP (stored or deflate, CRC-32 checked) and keep the video in
 // <userData>/testvideos. The page plays it over lzs-media://video/<file> (range requests,
 // CORS for WebGL). Only URLs under ALLOWED and only with a SHA-256 are downloaded.
+const { text } = require('./i18n.cjs');
 const { app, ipcMain, protocol } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -47,9 +48,9 @@ async function download(v, send) {
       cb(null, chunk);
     } });
     await pipeline(Readable.fromWeb(r.body), meter, fs.createWriteStream(part));
-    if (got !== v.bytes) throw new Error(`Größe ${got} statt ${v.bytes} Bytes – Datei auf dem Server geändert?`);
+    if (got !== v.bytes) throw new Error(text('tvSize', got, v.bytes));
     const sha = hash.digest('hex');
-    if (sha !== v.sha256) throw new Error('SHA-256 stimmt nicht – Datei auf dem Server geändert? Nicht verwendet.');
+    if (sha !== v.sha256) throw new Error(text('tvSha'));
     send({ id: v.id, state: 'verifying', got, total: v.bytes });
     if (v.zip) { await unzipSingle(part, final, v.zip); await fs.promises.rm(part, { force: true }); }
     else await fs.promises.rename(part, final);
@@ -96,8 +97,8 @@ function setupTestVideos(getWindow) {
     return out;
   });
   ipcMain.handle('lzs:tv-download', (_e, v) => {
-    if (!validEntry(v)) return { ok: false, error: 'Eintrag ungültig oder Quelle nicht erlaubt' };
-    if (jobs.has(v.id)) return { ok: false, error: 'läuft schon' };
+    if (!validEntry(v)) return { ok: false, error: text('tvInvalid') };
+    if (jobs.has(v.id)) return { ok: false, error: text('tvRunning') };
     return download(v, send);
   });
   ipcMain.handle('lzs:tv-cancel', (_e, id) => { jobs.get(String(id))?.abort(); return true; });

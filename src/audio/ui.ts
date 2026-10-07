@@ -17,9 +17,6 @@ import { monitorSink } from '../sources';
 import { lang, t } from '../i18n';
 import { button, checkbox, download, field, filePicker, h, hint, numberInput, row, select, type Kid } from '../ui';
 
-/** Audio number fields: clamped to their range, small. */
-const num = (value: number, min: number, max: number, step: number, onchange: (v: number) => void, title = '') =>
-  numberInput(value, onchange, { min, max, step, title, clamp: true, size: 'm' });
 
 // ---------------------------------------------------------------- generator
 
@@ -66,15 +63,15 @@ export function mountGenerator(el: HTMLElement, saved: Partial<GenConfig> | unde
       select(c.signal, (Object.entries(SIGNAL_LABELS) as [Signal, string][]).map(([k, l]) => [k, l]), (v) => set({ signal: v as Signal }), 'Signal'),
       c.running ? button(t('audio.stop'), () => set({ running: false }), { pressed: true }) : button('▶ Start', () => set({ running: true }), { variant: 'primary' }),
     );
-    if (TONAL.includes(c.signal)) line(lbl(t('audio.gen.freq')), num(c.freq, 10, 20000, 1, (v) => set({ freq: v }), '10 Hz – 20 kHz'), 'Hz',
+    if (TONAL.includes(c.signal)) line(lbl(t('audio.gen.freq')), numberInput(c.freq, (v) => set({ freq: v }), { min: 10, max: 20000, step: 1, title: '10 Hz – 20 kHz', clamp: true }), 'Hz',
       ...[[997, '997'], [1000, '1k'], [440, '440'], [100, '100'], [10000, '10k']].map(([f, l]) => button(String(l), () => set({ freq: Number(f) }), { small: true, pressed: c.freq === f })));
-    line(lbl(t('audio.level')), num(c.level, -90, 0, 0.5, (v) => set({ level: v }), t('audio.gen.levelTitle')), 'dBFS',
+    line(lbl(t('audio.level')), numberInput(c.level, (v) => set({ level: v }), { min: -90, max: 0, step: 0.5, title: t('audio.gen.levelTitle'), clamp: true }), 'dBFS',
       ...LEVELS.map(([v, l]) => button(l, () => set({ level: v }), { small: true, pressed: c.level === v, title: v === -18 ? t('audio.gen.alignTitle') : '' })));
     if (c.signal === 'sweep') {
-      line(lbl('Sweep'), num(c.sweepFrom, 10, 20000, 1, (v) => set({ sweepFrom: v })), '–', num(c.sweepTo, 10, 20000, 1, (v) => set({ sweepTo: v })), 'Hz');
-      line(lbl(t('audio.gen.duration')), num(c.sweepSeconds, 0.5, 600, 0.5, (v) => set({ sweepSeconds: v })), 's', checkbox(c.sweepRepeat, t('audio.gen.repeat'), (v) => set({ sweepRepeat: v })));
+      line(lbl('Sweep'), numberInput(c.sweepFrom, (v) => set({ sweepFrom: v }), { min: 10, max: 20000, step: 1, clamp: true }), '–', numberInput(c.sweepTo, (v) => set({ sweepTo: v }), { min: 10, max: 20000, step: 1, clamp: true }), 'Hz');
+      line(lbl(t('audio.gen.duration')), numberInput(c.sweepSeconds, (v) => set({ sweepSeconds: v }), { min: 0.5, max: 600, step: 0.5, clamp: true }), 's', checkbox(c.sweepRepeat, t('audio.gen.repeat'), (v) => set({ sweepRepeat: v })));
     }
-    if (c.signal === 'steps') line(lbl(t('audio.gen.perStep')), num(c.stepSeconds, 0.2, 60, 0.1, (v) => set({ stepSeconds: v })), t('audio.gen.stepsHint'));
+    if (c.signal === 'steps') line(lbl(t('audio.gen.perStep')), numberInput(c.stepSeconds, (v) => set({ stepSeconds: v }), { min: 0.2, max: 60, step: 0.1, clamp: true }), t('audio.gen.stepsHint'));
     if (c.signal === 'white' || c.signal === 'pink' || c.signal === 'pink-band') {
       line(checkbox(c.correlated, t('audio.gen.correlated'), (v) => set({ correlated: v }), t('audio.gen.correlatedTitle')));
     }
@@ -94,7 +91,7 @@ export function mountGenerator(el: HTMLElement, saved: Partial<GenConfig> | unde
       return h('span', { class: 'route' },
         button(name, () => upd({ on: !r.on }), { small: true, pressed: r.on, title: t('audio.gen.routeOnOff', { name }) }),
         button('Ø', () => upd({ invert: !r.invert }), { small: true, pressed: r.invert, title: t('audio.gen.invert') }),
-        num(r.trim, -40, 0, 0.5, (v) => upd({ trim: v }), t('audio.gen.routeTrim', { name })));
+        numberInput(r.trim, (v) => upd({ trim: v }), { min: -40, max: 0, step: 0.5, title: t('audio.gen.routeTrim', { name }), clamp: true }));
     };
     const preset = (label: string, l: boolean, r: boolean, inv: boolean) =>
       button(label, () => set({ routes: [{ on: l, invert: false, trim: 0 }, { on: r, invert: inv, trim: 0 }] }), { small: true, title: label === 'L−R' ? t('audio.gen.antiphase') : '' });
@@ -145,7 +142,7 @@ export function mountGenerator(el: HTMLElement, saved: Partial<GenConfig> | unde
  */
 function avCalibrationRows(measuredAv: () => { ms: number; source: string } | null): Node[] {
   const cal = avCalibration();
-  const lead = num(cal.videoLeadMs, -500, 500, 1, (v) => setAvCalibration(v, cal.note || t('audio.cal.byHand')), t('audio.cal.leadTitle'));
+  const lead = numberInput(cal.videoLeadMs, (v) => setAvCalibration(v, cal.note || t('audio.cal.byHand')), { min: -500, max: 500, step: 1, title: t('audio.cal.leadTitle'), clamp: true });
   const m = measuredAv();
   return [
     row(h('span', { class: 'lbl' }, t('audio.cal.lead')), lead, 'ms',

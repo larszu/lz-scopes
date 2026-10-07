@@ -4,8 +4,9 @@
 //
 // beforeApp: device class on <html>, viewport, navigator.bluetooth (CoreBluetooth), compact
 //            first layout on the iPhone.
-// afterApp:  sidebar panel "iPhone/iPad" – bridges found via Bonjour, cameras the system sees
-//            (built-in and USB/UVC from iPadOS 17) compared with what WebKit offers.
+// afterApp:  Settings → Bridge gets the bridges found via Bonjour (src/bridgeField.ts, no DOM
+//            search); Settings → "iPhone/iPad: cameras" compares what the system sees (built-in
+//            and USB/UVC from iPadOS 17) with what WebKit offers.
 
 import './mobile.css';
 import { registerPlugin } from '@capacitor/core';
@@ -14,7 +15,9 @@ import { bridgeAddress, normaliseBridgeInput, uniqueBridges, type FoundBridge } 
 import { createBluetooth } from './webBluetooth';
 import { bridgeText } from '../i18n/bridgeMessage';
 import { t } from '../i18n';
-import { button, h } from '../ui';
+import { button, field, h, hint } from '../ui';
+import { bridgeField, type BridgeField } from '../bridgeField';
+import { extendSettingsSection, refreshSettings, registerSettingsSection, type SettingsSection } from '../menu/settings';
 
 export interface NativeInfo { idiom: 'pad' | 'phone' | 'mac' | 'other'; system: string; version: string; model: string; iosAppOnMac: boolean; multitasking: boolean }
 export interface NativeCamera { id: string; name: string; manufacturer: string; external: boolean; position: string }
@@ -58,42 +61,53 @@ function logGpu() {
   } catch (e) { console.warn('[lzs-ios] WebGL2 query failed', e); }
 }
 
-export function afterApp() {
-  const input = document.querySelector<HTMLInputElement>('#bridge');
-  const details = input?.closest('details');
-  if (!input || !details) return; // UI changed: the panel simply stays away
-  input.placeholder = t('native.bridgePh');
-  // "192.168.1.20:4192" → ws://192.168.1.20:4192 before main.ts reads the field (capture on the parent)
-  input.parentElement?.addEventListener('change', (e) => {
-    if (e.target === input) input.value = normaliseBridgeInput(input.value);
-  }, true);
+export interface AfterAppDeps {
+  bridge: BridgeField;
+  extend: typeof extendSettingsSection;
+  register: typeof registerSettingsSection;
+  refresh: typeof refreshSettings;
+}
+const DEFAULT_DEPS: AfterAppDeps = { bridge: bridgeField, extend: extendSettingsSection, register: registerSettingsSection, refresh: refreshSettings };
 
-  const list = h('div', { class: 'lzs-native-list' });
-  const note = h('p', { class: 'lzs-native-note hint' }, t('native.note'));
-  const search = button(t('native.search'), () => browse(false));
-  const set = (url: string) => { input.value = url; input.dispatchEvent(new Event('change', { bubbles: true })); };
-  const browse = async (auto: boolean) => {
-    search.disabled = true; search.textContent = t('native.searching');
-    list.replaceChildren(h('span', { class: 'muted' }, 'Bonjour: _lz-scopes._tcp …'));
-    const r = await LzNative.browseBridges({ timeout: 3000 }).catch((e: Error) => ({ bridges: [] as FoundBridge[], error: e.message }));
-    const found = uniqueBridges(r.bridges);
-    console.info(`[lzs-ios] Bonjour: ${found.length} Bridge(s)${r.error ? ` · ${r.error}` : ''}`);
-    search.disabled = false; search.textContent = t('native.search');
-    if (!found.length) {
-      list.replaceChildren(h('span', { class: 'muted' }, bridgeText(r, 'error') || t('native.noBridge')));
-      return;
-    }
-    list.replaceChildren(...found.map((b) => {
-      const url = bridgeAddress(b);
-      return button(`${b.name} · ${url.replace(/^ws:\/\//, '')}`, () => set(url), { title: b.host });
-    }));
-    // empty field and exactly one bridge: take it
-    if (auto && !input.value.trim() && found.length === 1) set(bridgeAddress(found[0]));
-  };
-  details.append(search, list, note);
-  if (!input.value.trim()) { details.open = true; void browse(true); }
+/** Bonjour state shown under Settings → Bridge; rendered when the page is shown. */
+let searching = false;
+let found: FoundBridge[] | null = null;
+let failure = '';
 
-  addInputsPanel(details);
+export async function browseBridges(d: Pick<AfterAppDeps, 'bridge' | 'refresh'>, auto: boolean) {
+  searching = true; d.refresh();
+  const r = await LzNative.browseBridges({ timeout: 3000 }).catch((e: Error) => ({ bridges: [] as FoundBridge[], error: e.message }));
+  found = uniqueBridges(r.bridges);
+  failure = bridgeText(r, 'error');
+  console.info(`[lzs-ios] Bonjour: ${found.length} Bridge(s)${'error' in r && r.error ? ` · ${r.error}` : ''}`);
+  searching = false;
+  // empty field and exactly one bridge: take it
+  if (auto && !d.bridge.get().trim() && found.length === 1) d.bridge.set(bridgeAddress(found[0]));
+  d.refresh();
+}
+
+function bonjourRows(d: AfterAppDeps): Node[] {
+  const search = button(searching ? t('native.searching') : t('native.search'), () => void browseBridges(d, false), { disabled: searching });
+  const list = h('div', { class: 'lzs-native-list' },
+    ...(searching ? [h('span', { class: 'muted' }, 'Bonjour: _lz-scopes._tcp …')]
+      : !found ? []
+      : found.length ? found.map((b) => {
+        const url = bridgeAddress(b);
+        return button(`${b.name} · ${url.replace(/^ws:\/\//, '')}`, () => d.bridge.set(url), { title: b.host });
+      })
+      : [h('span', { class: 'muted' }, failure || t('native.noBridge'))]));
+  return [field('', search), list, hint(t('native.note'))];
+}
+
+/** Hooks into the settings (bridge address, Bonjour, cameras) through explicit hooks, no DOM search. */
+export function afterApp(d: AfterAppDeps = DEFAULT_DEPS) {
+  // "192.168.1.20:4192" → ws://192.168.1.20:4192 before it is stored
+  d.bridge.setNormaliser(normaliseBridgeInput);
+  d.bridge.setPlaceholder(t('native.bridgePh'));
+  d.extend('bridge', () => bonjourRows(d));
+  d.register(camerasSection(75));
+  navigator.mediaDevices?.addEventListener?.('devicechange', () => d.refresh());
+  if (!d.bridge.get().trim()) void browseBridges(d, true);
   markUnavailable();
 }
 
@@ -109,25 +123,22 @@ function markUnavailable() {
 }
 
 /** Cameras the system sees vs. what WebKit's enumerateDevices offers (USB/UVC: iPadOS 17). */
-function addInputsPanel(after: Element) {
-  const body = h('div', { class: 'lzs-native-list' });
-  const wrap = h('details', { class: 'gen' }, h('summary', {}, info?.idiom === 'phone' ? t('native.camsPhone') : t('native.camsPad')), body);
-  after.before(wrap);
-  const refresh = async () => {
-    const sys = await LzNative.cameras().catch(() => ({ cameras: [] as NativeCamera[], authorization: 'unknown' }));
-    let web: MediaDeviceInfo[] = [];
-    try { web = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput'); } catch { /* none */ }
-    const labelled = web.some((d) => d.label);
-    const rows = sys.cameras.map((c) => {
-      const inWeb = web.some((d) => d.label && d.label === c.name);
-      const state = !labelled ? t('native.noPermission') : inWeb ? t('native.selectable') : t('native.notOffered');
-      return h('div', { class: 'cam' }, h('span', {}, `${c.external ? 'USB · ' : ''}${c.name}`), h('span', { class: 'muted' }, state));
-    });
-    body.replaceChildren(
-      ...(rows.length ? rows : [h('span', { class: 'muted' }, t('native.noCamera'))]),
-      h('p', { class: 'lzs-native-note hint' }, t('native.camHint')),
-    );
-  };
-  wrap.addEventListener('toggle', () => { if (wrap.open) void refresh(); });
-  navigator.mediaDevices?.addEventListener?.('devicechange', () => { if (wrap.open) void refresh(); });
+function camerasSection(order: number): SettingsSection {
+  const label = info?.idiom === 'phone' ? t('native.camsPhone') : t('native.camsPad');
+  return { id: 'ios-cameras', label, order, render: () => {
+    const body = h('div', { class: 'lzs-native-list' }, h('span', { class: 'muted' }, t('native.searching')));
+    void (async () => {
+      const sys = await LzNative.cameras().catch(() => ({ cameras: [] as NativeCamera[], authorization: 'unknown' }));
+      let web: MediaDeviceInfo[] = [];
+      try { web = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput'); } catch { /* none */ }
+      const labelled = web.some((d) => d.label);
+      const rows = sys.cameras.map((c) => {
+        const inWeb = web.some((d) => d.label && d.label === c.name);
+        const state = !labelled ? t('native.noPermission') : inWeb ? t('native.selectable') : t('native.notOffered');
+        return h('div', { class: 'cam' }, h('span', {}, `${c.external ? 'USB · ' : ''}${c.name}`), h('span', { class: 'muted' }, state));
+      });
+      body.replaceChildren(...(rows.length ? rows : [h('span', { class: 'muted' }, t('native.noCamera'))]));
+    })();
+    return [body, hint(t('native.camHint'))];
+  } };
 }

@@ -7,7 +7,6 @@ export default {
   'testmedia.meridianNote': 'PQ-encoded with P3 primaries according to Netflix, not signalled in the file and only 8 bit: transfer PQ and gamut P3 are set on opening.',
   'testmedia.rerendered': '2013 re-rendered, {fmt}',
   'testmedia.perFileName': '(according to the file name)',
-  'testmedia.close': 'Close',
   'testmedia.imagesTitle': 'Own test pictures, logo, favourites',
   'testmedia.name': 'Name',
   'testmedia.useAsLogo': 'Use as logo: own logo test picture and “circle and clock + logo”',

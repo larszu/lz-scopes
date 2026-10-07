@@ -16,9 +16,6 @@ import { gradeLabel } from './report';
 import { num, t } from '../i18n';
 import { button, checkbox, download, field, filePicker, h, hint, kicker, modal, numberInput, row, select as sel, table, textInput, type Kid } from '../ui';
 
-const numIn = (value: number, min: number, max: number, step: number, on: (v: number) => void, title = '') =>
-  numberInput(value, on, { min, max, step, title, size: 'l' });
-
 export interface CalibHost {
   /** http(s) base of the bridge, '' when there is none (static web build) */
   bridgeHttp: () => string;
@@ -118,11 +115,11 @@ export function openCalibration(host: CalibHost) {
     setupBox.replaceChildren(
       kicker(t('calib.setup.output')),
       field('', button(t('calib.setup.openWindow'), () => host.openPatchWindow()), button(t('calib.setup.showWhite'), () => sendPatch({ rgb: [1, 1, 1], window: S.window / 100, background: S.background / 100 })), button(t('calib.setup.patternBack'), () => sendPatch(null))),
-      field(t('calib.setup.window'), numIn(S.window, 1, 100, 1, (v) => (S.window = v)), t('calib.setup.windowUnit')),
-      field(t('calib.setup.background'), numIn(S.background, 0, 50, 1, (v) => (S.background = v)), t('calib.setup.backgroundUnit')),
-      field(t('calib.setup.settle'), numIn(S.settleMs, 20, 60000, 100, (v) => (S.settleMs = v)), t('calib.setup.settleUnit')),
+      field(t('calib.setup.window'), numberInput(S.window, (v) => (S.window = v), { min: 1, max: 100, step: 1, size: 'l' }), t('calib.setup.windowUnit')),
+      field(t('calib.setup.background'), numberInput(S.background, (v) => (S.background = v), { min: 0, max: 50, step: 1, size: 'l' }), t('calib.setup.backgroundUnit')),
+      field(t('calib.setup.settle'), numberInput(S.settleMs, (v) => (S.settleMs = v), { min: 20, max: 60000, step: 100, size: 'l' }), t('calib.setup.settleUnit')),
       field(t('calib.setup.insertion'), checkbox(S.insertion, t('calib.setup.insOn'), (v) => (S.insertion = v)),
-        t('calib.setup.insEvery'), numIn(S.insEvery, 1, 600, 1, (v) => (S.insEvery = v)), t('calib.setup.insFor'), numIn(S.insDur, 1, 60, 1, (v) => (S.insDur = v)), t('calib.setup.insLevel'), numIn(S.insLevel, 0, 100, 1, (v) => (S.insLevel = v)), '%'),
+        t('calib.setup.insEvery'), numberInput(S.insEvery, (v) => (S.insEvery = v), { min: 1, max: 600, step: 1, size: 'l' }), t('calib.setup.insFor'), numberInput(S.insDur, (v) => (S.insDur = v), { min: 1, max: 60, step: 1, size: 'l' }), t('calib.setup.insLevel'), numberInput(S.insLevel, (v) => (S.insLevel = v), { min: 0, max: 100, step: 1, size: 'l' }), '%'),
       hint(t('calib.setup.canvasHint')),
       kicker(t('calib.setup.measurement')),
       field(t('calib.setup.mode'), sel(S.mode, [['meter', t('calib.mode.meter')], ['manual', t('calib.mode.manual')], ['untethered', t('calib.mode.untethered')]], (v) => { S.mode = v as Mode; }),

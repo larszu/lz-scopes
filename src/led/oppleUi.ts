@@ -26,9 +26,6 @@ export interface MeterCheckHost {
   onStats: (s: PointStat[]) => void;
 }
 
-/** Number field: (value, title, onchange, step, size) – the order all rows here use. */
-const numIn = (value: number, title: string, onchange: (n: number) => void, step = '1', size: 's' | 'm' | 'l' = 'm') =>
-  numberInput(value, onchange, { title, step, size });
 /** Table of figures (right-aligned, tabular), scrolled inside .table-wrap on phones. */
 const numTable = (head: Kid[], rows: Kid[][]) => h('div', { class: 'table-wrap' }, table(rows, { head, cls: 'num-table' }));
 const de = (v: number, d: number) => (Number.isFinite(v) ? num(v, d) : '–');
@@ -133,13 +130,13 @@ export function mountMeterCheck(box: HTMLElement, host: MeterCheckHost) {
       row(
         lab(t('led.m.points'), sel(points, [['all', t('led.m.allCabinets')], ['list', t('led.m.selection')], ['full', t('led.m.fullOne')]], (v) => { points = v as typeof points; render(); })),
         points === 'list' && textInput(list, (v) => { list = v; }, { placeholder: 'C1-R1, C5-R3 …' }),
-        lab(t('led.m.whitePct'), numIn(white, t('led.m.whiteTitle'), (n) => { white = Math.min(100, Math.max(1, n)); })),
-        lab(t('led.m.greyPct'), numIn(gray, t('led.m.greyTitle'), (n) => { gray = Math.min(100, Math.max(0, n)); })),
+        lab(t('led.m.whitePct'), numberInput(white, (n) => { white = Math.min(100, Math.max(1, n)); }, { title: t('led.m.whiteTitle') })),
+        lab(t('led.m.greyPct'), numberInput(gray, (n) => { gray = Math.min(100, Math.max(0, n)); }, { title: t('led.m.greyTitle') })),
         checkbox(primaries, 'R G B', (v) => { primaries = v; }, t('led.m.primCheckTitle'))),
       row(
         lab(t('led.m.sequence'), sel(auto ? 'auto' : 'manual', [['manual', t('led.m.manualConfirm')], ['auto', t('led.m.autoFixed')]], (v) => { auto = v === 'auto'; })),
-        lab(t('led.m.settle'), numIn(settle, t('led.m.settleTitle'), (n) => { settle = Math.max(100, n); }, '100', 'l')),
-        lab(t('led.cam.average'), numIn(avgN, t('led.m.avgTitle'), (n) => { avgN = Math.max(1, Math.min(20, Math.round(n))); }, '1', 's')),
+        lab(t('led.m.settle'), numberInput(settle, (n) => { settle = Math.max(100, n); }, { title: t('led.m.settleTitle'), step: '100', size: 'l' })),
+        lab(t('led.cam.average'), numberInput(avgN, (n) => { avgN = Math.max(1, Math.min(20, Math.round(n))); }, { title: t('led.m.avgTitle'), size: 's' })),
         lab(t('led.m.distance'), textInput(distance, (v) => { distance = v; }, { title: t('led.m.distanceTitle') }))),
       row(
         running
@@ -162,7 +159,7 @@ export function mountMeterCheck(box: HTMLElement, host: MeterCheckHost) {
       row( h('b', {}, t('led.m.whiteBalance')),
         whiteOpts.length ? lab(t('led.m.measPoint'), sel(whitePoint || ref, whiteOpts, (v) => { whitePoint = v; render(); })) : h('span', { class: 'hint' }, t('led.m.measureFirst')),
         lab(t('led.m.targetLabel'), sel(targetId, [...WHITE_TARGETS.map((x) => [x.id, x.name] as [string, string]), ['custom', t('led.m.customXy')]], (v) => { targetId = v; render(); })),
-        targetId === 'custom' && h('span', { class: 'row' }, numIn(customXy[0], t('led.m.targetX'), (n) => { customXy = [n, customXy[1]]; render(); }, '0.0001', 'l'), numIn(customXy[1], t('led.m.targetY'), (n) => { customXy = [customXy[0], n]; render(); }, '0.0001', 'l')),
+        targetId === 'custom' && h('span', { class: 'row' }, numberInput(customXy[0], (n) => { customXy = [n, customXy[1]]; render(); }, { title: t('led.m.targetX'), step: '0.0001', size: 'l' }), numberInput(customXy[1], (n) => { customXy = [customXy[0], n]; render(); }, { title: t('led.m.targetY'), step: '0.0001', size: 'l' })),
         lab(t('led.m.primaries'), sel(primSource, [['measured', t('led.m.primMeasured')], ['xy', t('led.m.primEnter')]], (v) => { primSource = v as typeof primSource; render(); }))),
       primSource === 'xy' ? row(...['Rx', 'Ry', 'Gx', 'Gy', 'Bx', 'By'].map((c, i) =>
         textInput(primXy[i], (v) => { primXy[i] = v.replace(',', '.'); render(); }, { placeholder: c, title: t('led.m.primTitle', { c }), attrs: { class: 'xy', inputmode: 'decimal' } }))) : '',
@@ -199,7 +196,7 @@ export function mountMeterCheck(box: HTMLElement, host: MeterCheckHost) {
       c.gains ? h('p', {}, h('b', {}, t('led.m.corrHint', { r: de(c.gains[0], 1), g: de(c.gains[1], 1), b: de(c.gains[2], 1) })),
         ` ${t('led.m.corrDetail', { after: de(c.luminanceAfter ?? NaN, 0), src: c.primariesSource ? t(`led.m.src.${c.primariesSource}`) : '–', add: c.additivity != null ? t('led.m.additivity', { v: de(c.additivity, 1) }) : '' })}`)
         : hint(t('led.m.noGains')),
-      host.wall().processor === 'brompton' ? row(lab(t('led.m.tesseraAt'), numIn(currentK, t('led.m.tesseraTitle'), (n) => { currentK = Math.min(11000, Math.max(2000, n)); render(); }, '1', 'l'), 'K')) : '',
+      host.wall().processor === 'brompton' ? row(lab(t('led.m.tesseraAt'), numberInput(currentK, (n) => { currentK = Math.min(11000, Math.max(2000, n)); render(); }, { title: t('led.m.tesseraTitle'), size: 'l' }), 'K')) : '',
       ...whitePointHints(host.wall().processor, c, currentK).map((hint) => h('div', {}, h('b', {}, `${PROCESSOR_LABELS[host.wall().processor]} – ${hint.title}`), h('ul', {}, ...hint.lines.map((l) => h('li', {}, l))))),
       matchBox(),
       ...c.warnings.map((w) => h('p', { class: 'note' }, w)));

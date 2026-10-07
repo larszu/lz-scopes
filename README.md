@@ -55,6 +55,7 @@
 - **Face tracking.** Skin-tone waveform that follows a detected face; pick which face to track (MediaPipe BlazeFace, runs locally).
 - **Vectorscope tools.** Zoom, gamut boundaries and colour-match targets; per-scope settings behind the gear icon.
 - **Scopes over time.** Timeline panel with colour barcode, hue, saturation and luma over the last 10 s – 5 min; persistence (trace history) for vectorscope, CIE, diamond and 3D volume.
+- **Colour targets and colour match (#55).** Customer CI colours as hex, RGB 8/10 bit or legal 16–235/64–940, read as video value (graphics workflow) or as sRGB display light; picked from a probe, a frame or an uploaded logo; saved in named lists with JSON export/import. The *Farbabgleich* panel compares the probe or frame mean of a source with a target or with the same object in a second camera: side-by-side swatches for the display (sRGB/P3), ΔE00/ΔITP, ΔL/ΔC/ΔH, hue and saturation, and the correction in words, values and camera terms (Multi-Matrix, white balance, Resolve). Measurement series for effect paints (several spots or angles). *Waveform Grüntöne*, green wedge and picture overlay for grass and foliage (BT.2408 levels as presets). Hex/RGB at every probe read-out. Notes: [docs/research/farbziele.md](docs/research/farbziele.md).
 - **3D colour volume and ΔE.** Point cloud in the R′G′B′ cube, CIELAB or ICtCp with scaled axes, rotatable by dragging, with the target gamut as wire frame; ΔE 2000 (SDR) or ΔE ITP (HDR) of the probe point against the nearest colour bar or an own target. Extra curves: Sony S-Log2, ACEScct, ARRI LogC3 for EI 160–1600 (ARRI white paper).
 - **A/B comparison and gamut compression.** Picture panel: split, wipe or difference against another stage of the same source (signal / after CST / after LUT) or another source; ACES 1.3 reference gamut compression as a preview for picture and gamut warning.
 - **Outputs and overlay scenes.** Send a scope view or clean picture to another screen, as an MJPEG stream or by ffmpeg to RTMP / SRT / RTSP / UDP / TCP, or as a 10-bit stream (HEVC Main 10, v210, ProRes). Overlay scenes combine any number of scopes with position, size and opacity, editable in the output window (`E`).
@@ -87,15 +88,19 @@ The desktop app contains the bridge and a redistributable ffmpeg 9.0.2 (GPLv3, w
 
 **Web edition:** <https://larszu.github.io/lz-scopes/>. Test patterns, camera, screen and files work there. RTSP, SRT and other network streams need the desktop app or `npm start`, because a browser cannot open them.
 
+**iPhone and iPad** (`ios/`, Capacitor): the same app in a native shell, built and started in the iOS Simulator by CI, not yet on real devices and not in the App Store/TestFlight (needs an Apple Developer account). Camera, USB-C capture cards on iPadOS 17, files, Opple via CoreBluetooth; network streams come from a bridge on a computer in the same network (`npm start -- --host 0.0.0.0`), which the app finds via Bonjour. See [docs/ios.md](docs/ios.md).
+
 ## Quick start
 
 1. Start the app. The first source is a test pattern (SMPTE 75 % bars, the „(LZ)“ variant: look at its black field in the waveform with the black magnifier); all panels follow it.
 2. Pick another source per panel: *Test pattern*, *Camera*, *Screen*, *File* or *Stream*.
 3. For a stream enter the URL (for example `rtsp://user:pass@host:554/stream`) and connect. Resolution, frame rate, 8 / 16 bit, TCP / UDP, transfer and colour space are set per stream, *auto* reads the metadata.
 4. Drag a rectangle in the picture to measure only that area. Click sets a measurement point that is marked in waveform and vectorscope.
-5. Arrange the windows with drag and drop, store the result under *Layouts*.
+5. Arrange the windows with drag and drop, store the result under *Datei → Layouts …*.
 
-Keys: `1`-`6` layout, `C` measuring stage (signal / after CST / after LUT), `Space` freeze or play, `Left` / `Right` frame, `J` `K` `L` shuttle, `F` full screen, `S` PNG, `B` sidebar, `Esc` leave zoom, `E` edit overlay in an output window.
+**Menu and settings.** The desktop app has a native menu bar (macOS: system menu bar with the app menu first; Windows: in the window): *Datei, Bearbeiten, Ansicht, Quellen, Scopes, Ausgabe, Fenster, Hilfe*. In the browser the same menus sit at the top left of the header (below 900 px behind ☰). All global settings are in one window, *Einstellungen …* (`Cmd+,` / `Ctrl+,`, or ⚙ at the top right): interface skin, display, scopes, measuring stage, latency, clock, bridge/ffmpeg, audio, keyboard, about/licences. The ⚙ in a panel head holds only that panel's options. *Hilfe* links the guides and lists the shortcuts. Reasoning: [docs/research/menue.md](docs/research/menue.md).
+
+Keys: `Cmd+,` / `Ctrl+,` settings, `1`-`6` layout, `C` measuring stage (signal / after CST / after LUT), `Space` freeze or play, `Left` / `Right` frame, `Shift+Left` / `Shift+Right` second, `J` `K` `L` shuttle, `Home` / `End`, `F` full screen, `S` PNG, `B` sidebar, `Esc` leave zoom or clear the measuring point, `E` edit overlay in an output window. Full list: *Hilfe → Tastenkürzel*.
 
 ## Build from source
 
@@ -127,7 +132,7 @@ Tone generator and loudness/level analyser, measured with an own DSP core (`src/
 
 ## Display calibration and verification
 
-⚙ → *Kalibrierung / Verifikation …* (procedures after DisplayCAL, own code; [docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md)).
+*Einstellungen → Display → Kalibrierung / Verifikation …* (procedures after DisplayCAL, own code; [docs/research/display-kalibrierung.md](docs/research/display-kalibrierung.md)).
 
 - **Patch sequencer**: the pattern output window (`?out=`) shows the measuring patches (size, constant APL background, optional full-field insertion against ABL). The sequencer (`src/patchSequencer.ts`) is shared with the LED-wall tools.
 - **Meter**: ArgyllCMS `spotread`, started by the bridge as a separate program (desktop app or `npm start`), with CCMX/CCSS correction and display type. ArgyllCMS is not bundled; without it the dialog says “ArgyllCMS nicht gefunden” and takes XYZ or xyY by hand. *Untested with real hardware.*
@@ -135,21 +140,22 @@ Tone generator and loudness/level analyser, measured with an own DSP core (`src/
 - **Report**: ΔE00 and ΔITP (mean, median, 95th percentile, max) against BT.1886 with measured black / gamma / sRGB / PQ, grey curve with effective gamma, CCT and Duv, contrast; CSV, HTML, print to PDF.
 - **Uniformity** 3×3 to 9×9 at 100/75/50/25 %, ΔE00 to the centre (≤ 4 / ≤ 2 as quoted by DisplayCAL for ISO 14861) and contrast deviation.
 - **3D LUT** `.cube` 33/65 from a matrix/shaper model of the measurements, only if the model predicts the measured patches well enough (SDR only).
-- **System profile (desktop app)**: ⚙ → *Systemprofil mitschalten* sets the operating system's display profile to match the chosen display colour space (sRGB / Display P3 / Rec.709, profile per space selectable). The previous profile is backed up first and restored on quit, with *Zurücksetzen* and after a crash on the next start. macOS via a small Swift helper on the public ColorSync API (`npm run build:helpers`, checked on a built-in display), Windows via mscms (untested). Monitor preset/brightness over DDC/CI (VCP 0x14 / 0x10) where a tool is present, untested. Not available in the browser ([docs/research/systemprofil.md](docs/research/systemprofil.md)).
+- **System profile (desktop app)**: *Einstellungen → Display → Systemprofil mitschalten* sets the operating system's display profile to match the chosen display colour space (sRGB / Display P3 / Rec.709, profile per space selectable). The previous profile is backed up first and restored on quit, with *Zurücksetzen* and after a crash on the next start. macOS via a small Swift helper on the public ColorSync API (`npm run build:helpers`, checked on a built-in display), Windows via mscms (untested). Monitor preset/brightness over DDC/CI (VCP 0x14 / 0x10) where a tool is present, untested. Not available in the browser ([docs/research/systemprofil.md](docs/research/systemprofil.md)).
 
 ## Clock and time code
 
 Panel type **Clock / time code** (and an optional corner read-out in the picture panel). Sources and findings: [docs/research/clock-ptp.md](docs/research/clock-ptp.md).
 
+- **Above 30 fps** the time code counts 0…49/59 like editing software and FFmpeg; ST 12-1 frame pairs as an option. LTC runs at 25/30 code words (pairs) there.
 - **Time of day** after SMPTE ST 2059-1: system time → TAI (IERS Bulletin C 72, TAI − UTC = 37 s) → time address with Daily Jam, 23.98 … 60 fps, DF/NDF, frame phase to the SMPTE epoch. Labelled “system clock – no reference” unless PTP corrects it.
 - **Source time code**: container start time code (ffprobe tag), GOP/SEI time code per frame (ffmpeg `showinfo`), DaVinci Resolve timeline time code, browser video files from `currentTime`; difference to the time of day in frames.
 - **LTC** from any source with sound: own biphase-mark reader (24–30 fps, forward and reverse).
-- **PTP monitor** in the bridge (own code, UDP 319/320 on 224.0.1.129): grandmaster, domain, clockClass, rates, SMPTE SM TLV (lock, local offset, next jam), offset and optional mean path delay as software-timestamp estimates. No PTP on the network → “no PTP received”.
+- **PTP monitor** in the bridge (own code, UDP 319/320 on 224.0.1.129): grandmaster, domain, clockClass, rates, SMPTE SM TLV (lock, local offset, next jam), offset and optional mean path delay as software-timestamp estimates. No PTP on the network → “no PTP received”. The UI served by the bridge or the desktop app may use it directly; another web origin (e.g. GitHub Pages) only after the user allows it on the bridge's own `/allow` page.
 - **ST 2110 RTP check**: RTP timestamp (90 kHz, zero offset at the epoch) against arrival time and frame grid.
 
 ## Touch Shading
 
-**◐ Shading** controls a camera from the scopes:
+**Scopes → Touch Shading** controls a camera from the scopes:
 - **Parade:** grab a channel low to move Black R/G/B, high to move White R/G/B.
 - **Luma waveform:** shadows move Master Black, mids Master Gamma, highlights White.
 - **Vectorscope:** drag radially for saturation, turn for hue (hue in the simulator only).
@@ -158,10 +164,10 @@ Commands go through [lz-camera-bridge](https://github.com/larszu/lz-camera-bridg
 
 ## Architecture
 
-- **Bridge** (`server/index.mjs`): ffprobe for resolution and colour metadata, then ffmpeg scales to the analysis width and writes raw `rgba` / `rgba64le` frames (or `ayuv64le` in Y′CbCr mode, [docs/frame-protocol.md](docs/frame-protocol.md)) over a WebSocket. Slow browsers get frames dropped, no queue builds up. The Y'CbCr matrix is passed to ffmpeg explicitly, the transfer function is left untouched. It listens on `127.0.0.1` only and accepts network URLs and test patterns, never local files, ffmpeg options or a shell.
+- **Bridge** (`server/index.mjs`): ffprobe for resolution and colour metadata, then ffmpeg scales to the analysis width and writes raw `rgba` / `rgba64le` frames (or `ayuv64le` in Y′CbCr mode, [docs/frame-protocol.md](docs/frame-protocol.md)) over a WebSocket. Slow browsers get frames dropped, no queue builds up. The Y'CbCr matrix is passed to ffmpeg explicitly, the transfer function is left untouched. It listens on `127.0.0.1` by default (`--host 0.0.0.0` for the iPhone/iPad app, then announced via Bonjour) and accepts network URLs and test patterns, never local files, ffmpeg options or a shell.
 - **Reception and latency** (#16): the stream WebSocket runs in a worker (`src/frameWorker.ts`) that hands over only the newest frame. Optional H.264 transport for remote bridges (source card: `H.264 · 8 bit`; about 1/50 of the data rate, 8 bit 4:2:0, lossy, decoded with WebCodecs). Histogram and clip values of browser-decoded video come from a GPU reduction (`src/gpuStats.ts`). `node scripts/latency-source.mjs rtsp://…` publishes a stamped test picture; the Messwerte panel then shows its latency. Numbers: [docs/research/latency.md](docs/research/latency.md). **Low Latency** (per source in the source card, or globally in Settings), each part adjustable: analysis width cap (320–960 px or native), drawing on frame arrival, the bridge's own RTP reception for `rtsp://` (H.264/HEVC over TCP or UDP; access units end at the RTP marker bit instead of one frame later in ffmpeg's parser; ffmpeg stays the fallback) and the statistics rate. The panel head shows `Low Latency · … ms`; [docs/research/rtp-eigenempfang.md](docs/research/rtp-eigenempfang.md). ffmpeg's raw output runs without encoder frame threads (`-threads 1`, all sources) and hands every frame out at once. `node scripts/latency-bench.mjs` compares ffmpeg variants. Numbers and ranked proposals: [docs/research/low-latency.md](docs/research/low-latency.md).
 - **Renderer** (`src/renderer.ts`): one WebGL2 context behind all panels. Every sampled pixel is scattered as an additive point into a float target (up to 4 million per scope and frame) and mapped with `1 - e^(-k x)`.
-- **UI**: plain TypeScript, [dockview](https://github.com/mathuo/dockview) for the docking layout, Vite for the build, Electron for the desktop shell.
+- **UI**: plain TypeScript, [dockview](https://github.com/mathuo/dockview) for the docking layout, Vite for the build, Electron for the desktop shell, Capacitor for iPhone/iPad (`src/native/` only runs there).
 - **Web build**: asset paths are relative, so it runs at `/` and under `/lz-scopes/`.
 
 Details: [docs/control-api.md](docs/control-api.md) (control API), [docs/frame-protocol.md](docs/frame-protocol.md) (frame protocol), [docs/cable-planner-integration.md](docs/cable-planner-integration.md) (use inside cable-planner), [docs/research](docs/research) (standards and market research), [docs/PUBLISHING.md](docs/PUBLISHING.md) (going public).
@@ -193,6 +199,6 @@ Built and maintained by **Lars Zumpe**, Lars Zumpe Medienproduktion. Scopes can 
 Proprietary, &copy; 2026 Lars Zumpe, all rights reserved. Using the published builds is free; redistribution and derivative works are not. See [LICENSE](LICENSE). Not open source: the code is public to read.
 Bundled third-party components keep their own licences: [THIRD_PARTY.md](THIRD_PARTY.md) (including the GPL ffmpeg binary in the desktop app).
 
-The logo, signet and app icon of Lars Zumpe Medienproduktion are its own trademark and not free to use (LICENSE, section 10). The interface has three skins (⚙ → Oberfläche): *Neutral* (achromatic greys for colour-critical work, default), *LZM* (Brand Guide 2.0, navy) and *Original* (near black). Scope traces and measurement colours are the same in every skin. Reasoning: [docs/research/ui-farben.md](docs/research/ui-farben.md).
+The logo, signet and app icon of Lars Zumpe Medienproduktion are its own trademark and not free to use (LICENSE, section 10). The interface has three skins (*Einstellungen → Oberfläche*): *Neutral* (achromatic greys for colour-critical work, default), *LZM* (Brand Guide 2.0, navy) and *Original* (near black). Scope traces and measurement colours are the same in every skin. Reasoning: [docs/research/ui-farben.md](docs/research/ui-farben.md).
 
 NDI® is a registered trademark of Vizrt NDI AB.

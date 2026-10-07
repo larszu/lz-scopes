@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { type App, WAVE_MAX, WAVE_MIN, expectOk, launchApp, until, waveLevels } from './app';
+import { type App, WAVE_MAX, WAVE_MIN, expectOk, launchApp, menuClick, until, waveLevels } from './app';
 
 // Touch Shading (#54) against the simulator: grab the red trace of the parade in the highlights,
 // pull it up, and the red channel – only the red channel – rises in the scope. The stop button
@@ -15,7 +15,7 @@ const col = (sec: number, i: number) => (sec + (i + 0.5) / 11) / 3;
 test('Parade: Rot in den Lichtern hochziehen → nur Rot steigt, Ausgangswerte stellen zurück', async () => {
   const { page } = a;
   expectOk(await a.control({ cmd: 'layout.preset', preset: 1 }));
-  await page.click('#shading');
+  await menuClick(a, 'shading');
   await page.selectOption('[data-shading-target]', 'sim');
   expectOk(await a.control({ cmd: 'panel.scope', panel: 1, scope: 'parade' }));
   await page.check('[data-shading-active]');

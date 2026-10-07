@@ -19,8 +19,9 @@ export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector
 const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7, diamond: 8, cube: 9, satlum: 10, chplot: 11 };
 const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1, diamond: 2, cube: 1, satlum: 1, chplot: 1 };
 
-export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'gamut' | 'r103' | 'neutral';
-const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5, gamut: 6, r103: 7, neutral: 8 };
+export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'green' | 'gamut' | 'r103' | 'neutral';
+// 'green' = the skin overlay with the green qualifier's range (panel.ts passes it as skin)
+const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5, green: 5, gamut: 6, r103: 7, neutral: 8 };
 
 /** Region of interest in source pixels [x0, y0, x1, y1) and skin-tone detection window. */
 export type Roi = [number, number, number, number] | null;
@@ -37,12 +38,14 @@ bool inRoi(ivec2 p) {
   }
   return false;
 }`;
-export interface SkinRange { lo: number; hi: number; tol: number }
+/** Qualifier: luma window lo…hi and hue wedge ±tol around `hue` (° on the vectorscope, default skin line 123°). */
+export interface SkinRange { lo: number; hi: number; tol: number; hue?: number }
 
+// hue wedge around centre uSkin.w (skin 123°, green qualifier match/core.ts GREEN_DEFAULT)
 const SKIN_GLSL = `
 bool isSkin(float cb, float cr, float tol) {
-  float ang = degrees(atan(cr, cb));
-  return length(vec2(cb, cr)) > 0.012 && abs(ang - 123.0) <= tol;
+  float d = mod(degrees(atan(cr, cb)) - uSkin.w + 540.0, 360.0) - 180.0;
+  return length(vec2(cb, cr)) > 0.012 && abs(d) <= tol;
 }`;
 
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -89,7 +92,8 @@ uniform float uZoom, uIntensity, uWMin, uWMax, uPointSize;
 uniform mat3 uToXYZ;
 uniform vec4 uCie;
 ${ROI_GLSL}
-uniform vec3 uSkin, uTint;
+uniform vec4 uSkin;
+uniform vec3 uTint;
 out vec3 vColor;
 out float vW;
 ${SKIN_GLSL}
@@ -244,7 +248,7 @@ uniform float uZebra, uZebraLow;
 uniform vec4 uNeutral;
 uniform int uDisp;
 uniform mat3 uGamut, uWarn, uTo2020, uFrom2020;
-uniform vec3 uSkin;
+uniform vec4 uSkin;
 ${ROI_GLSL}
 in vec2 vUv; out vec4 o;
 ${SKIN_GLSL}
@@ -393,7 +397,10 @@ export class Renderer {
   constructor(readonly canvas: HTMLCanvasElement, private readonly opts: { deep?: boolean } = {}) {
     const gl = canvas.getContext('webgl2', { antialias: false, alpha: !!opts.deep, preserveDrawingBuffer: true, premultipliedAlpha: false });
     if (!gl) throw new Error('WebGL2 wird von diesem Browser nicht unterstützt.');
-    if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('EXT_color_buffer_float fehlt – Scopes brauchen Float-Rendertargets.');
+    // The scopes accumulate into RGBA16F (texture below). EXT_color_buffer_float covers that; iOS
+    // GPUs may offer only EXT_color_buffer_half_float, which the WebGL registry allows in WebGL 2
+    // for RGBA16F/RG16F/R16F (KhronosGroup/WebGL#3093, docs/research/ios-app.md).
+    if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) throw new Error('EXT_color_buffer_float/EXT_color_buffer_half_float fehlt – Scopes brauchen Float-Rendertargets (RGBA16F).');
     gl.getExtension('EXT_float_blend');
     this.gl = gl;
     this.vao = gl.createVertexArray()!;
@@ -659,7 +666,7 @@ export class Renderer {
       const cv = p.cieUv ? CIE_VIEW_UV : CIE_VIEW;
       gl.uniform4f(this.u(prog, 'uCie'), cv.x0, cv.x1, cv.y0, cv.y1);
       this.setRois(prog, p.roi);
-      gl.uniform3f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol);
+      gl.uniform4f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol, p.skin.hue ?? 123);
       gl.uniform3fv(this.u(prog, 'uTint'), p.tint);
       if (p.cube) {
         gl.uniform1i(this.u(prog, 'uCube'), p.cube.space);
@@ -841,7 +848,7 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
       gl.uniform3f(this.u(prog, 'uRgcScale'), rgcScale(RGC.limC, RGC.thrC, RGC.power), rgcScale(RGC.limM, RGC.thrM, RGC.power), rgcScale(RGC.limY, RGC.thrY, RGC.power));
       gl.uniform1f(this.u(prog, 'uRgcPow'), RGC.power);
     }
-    gl.uniform3f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol);
+    gl.uniform4f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol, p.skin.hue ?? 123);
     this.setRois(prog, p.roi);
     const bands = new Float32Array(48);
     p.bands.slice(0, 12).forEach((b, i) => {

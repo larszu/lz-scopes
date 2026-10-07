@@ -127,7 +127,7 @@ Geräte ohne freien ffmpeg-Weg (DeckLink, NDI) laufen über einen eigenen Helfer
 
 ## Uhr: `/clock`
 
-WebSocket nur für die lokale UI (gleiche Herkunft, 127.0.0.1). Server → Client 4 Hz `{"type":"ptp", state, domain, gm, rates, offsetNs, meanPathDelayNs, pathDelayIncluded, sm, history, ifaces, rtp}`; Client → Server `{"type":"config","iface":"","delayReq":false}` und `{"type":"rtp","group":"239.1.1.1","port":5004,"rateNum":25,"rateDen":1}` bzw. `{"type":"rtp","off":true}`. Siehe `server/ptp.mjs` und `docs/research/clock-ptp.md`.
+WebSocket nur von 127.0.0.1, für die UI gleicher Herkunft oder eine vom Nutzer freigegebene Web-Herkunft (`GET /allow?origin=…` zeigt die Freigabe-Seite der Bridge; `GET /api/clock-access` sagt einer Seite, ob sie freigegeben ist; Datei `allowed-origins.json` im Konfigurationsordner, CLI `--allow-origin`, `--config-dir`, `LZS_CONFIG_DIR`). Server → Client 4 Hz `{"type":"ptp", state, domain, gm, rates, offsetNs, meanPathDelayNs, pathDelayIncluded, sm, history, ifaces, rtp}`; Client → Server `{"type":"config","iface":"","delayReq":false}` und `{"type":"rtp","group":"239.1.1.1","port":5004,"rateNum":25,"rateDen":1}` bzw. `{"type":"rtp","off":true}`. Siehe `server/ptp.mjs` und `docs/research/clock-ptp.md`.
 
 ## H.264-Übertragung (`codec=h264`)
 

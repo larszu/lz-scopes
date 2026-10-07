@@ -2,10 +2,10 @@
 // src/i18n (t()) in one step once that exists. Until then: browser language decides (de → German).
 
 const de = {
-  button: '◐ Shading',
+  menu: 'Touch Shading …',
   buttonTitle: 'Touch Shading: Kamera über Parade, Waveform und Vectorscope steuern',
   simName: 'Shading-Simulator',
-  simCard: 'Bild ohne Kamera für Touch Shading – gesteuert über ◐ Shading.',
+  simCard: 'Bild ohne Kamera für Touch Shading – gesteuert über Scopes → Touch Shading.',
   chooseTargetFirst: 'Erst ein Ziel wählen',
   simNote: 'Simulator – keine Kamera',
   restored: (n: number) => `Shading: ${n} Wert(e) auf Ausgangswerte zurückgesetzt`,
@@ -38,10 +38,10 @@ const de = {
 };
 
 const en: typeof de = {
-  button: '◐ Shading',
+  menu: 'Touch Shading …',
   buttonTitle: 'Touch Shading: control a camera from the parade, waveform and vectorscope',
   simName: 'Shading simulator',
-  simCard: 'Picture without a camera for Touch Shading – controlled from ◐ Shading.',
+  simCard: 'Picture without a camera for Touch Shading – controlled from Scopes → Touch Shading.',
   chooseTargetFirst: 'Choose a target first',
   simNote: 'Simulator – no camera',
   restored: (n: number) => `Shading: ${n} value(s) restored to their starting values`,

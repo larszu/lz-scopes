@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { localOffset, ptpToUtc, taiMinusUtc, utcToPtp } from '../src/clock/tai';
 import {
-  RATES, emulatedJam, formatTc, fromFrames, framePhase, framesPerDay, ltcBitNumber, nextAlignmentTime, nextCodeword, parseTc, rateById,
+  RATES, emulatedJam, formatPairs, formatTc, fromFrames, fromPairs, pairRate, toPairs, framePhase, framesPerDay, ltcBitNumber, nextAlignmentTime, nextCodeword, parseTc, rateById,
   tcDiff, timeAddressAt, timeAddressOfCodeword, timeOfNextJam, toFrames, validTc, type JamParams,
 } from '../src/clock/timecode';
 
@@ -135,5 +135,27 @@ describe('time address from PTP time (ST 2059-1 §9.3.2, ST 2059-2 Annex A)', ()
     // one real hour = 3600 × 30000/1001 codewords ≈ 107892.1 → reads 00:59:56;12 NDF
     const ta = timeAddressOfCodeword(n0 + Math.round(3600 * 30000 / 1001), r2997, false, jam);
     expect(formatTc(ta)).toBe('00:59:56:12');
+  });
+});
+
+describe('above 30 fps: full count and ST 12-1 frame pairs', () => {
+  it('59.94 DF full count maps onto 29.97 DF pairs for a whole day', () => {
+    const r60 = rateById('59.94'), r30 = rateById('29.97');
+    expect(pairRate(r60)).toBe(r30);
+    const day = framesPerDay(r60, true);
+    expect(day).toBe(2 * framesPerDay(r30, true));
+    for (let f = 0; f < day; f += 7) {
+      const p = toPairs(fromFrames(f, r60, true), r60);
+      const q = fromFrames(Math.floor(f / 2), r30, true);
+      if (p.ff !== q.ff || p.ss !== q.ss || p.mm !== q.mm || p.hh !== q.hh || p.second !== (f % 2 === 1)) throw new Error(`frame ${f}`);
+      if (toFrames(fromPairs(p, r60), r60) !== f) throw new Error(`back ${f}`);
+    }
+  }, 60000);
+  it('50p: last frame of a second is pair 24, second frame', () => {
+    const r50 = rateById('50');
+    const p = toPairs({ hh: 10, mm: 0, ss: 0, ff: 49, df: false }, r50);
+    expect(p).toMatchObject({ ff: 24, second: true });
+    expect(formatPairs(p)).toBe('10:00:00:24.1');
+    expect(toPairs({ hh: 0, mm: 0, ss: 0, ff: 7, df: false }, rateById('25'))).toMatchObject({ ff: 7, second: false });
   });
 });

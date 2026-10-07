@@ -39,7 +39,11 @@ src/ui/
                   button, iconButton, segmented, field, row, toolbar, hint, kicker, section,
                   disclosure, chip, statusDot, table, inlineLabel
   popover.ts      popover(): native popover="auto" (top layer, Esc, outside click, one open),
-                  placed next to its trigger and clamped to the viewport; bottom sheet on phones
+                  placed next to its trigger and clamped to the viewport; bottom sheet on phones.
+                  place(): the one placement routine (below/above or beside, flip, clamp,
+                  height cap with scrolling), also used by the menu bar (src/menu/menubar.ts):
+                  its menus and submenus are popover="auto" too, so every overlay opens and
+                  closes the same way (trigger toggles, Esc one level, click outside, one open)
   modal.ts        modal()/openModal(): native <dialog> + showModal() (rest of the page inert,
                   focus stays inside), head with title and close, Esc, backdrop click, sizes
                   sm/md/lg/xl, full-screen sheet below 640 px
@@ -93,6 +97,11 @@ kit replaces the off-white one.
 - No horizontal page scroll at any size; `e2e/responsive.spec.ts` checks 375 × 812,
   768 × 1024, 1280 × 800 and 1920 × 1080 in light and dark (headless Chromium, no Electron) and
   writes screenshots to `test-results/responsive/`.
+- `e2e/ui-audit.spec.ts` audits every menu, submenu, popover and dialog at the same four
+  sizes in German and English: inside the viewport, not covered (`elementFromPoint`), the same
+  open/close logic, focus back to the trigger, arrow keys, visible focus ring, targets ≥ 24 px
+  (≥ 44 px on touch), no cut-off labels, no console errors, WCAG AA text contrast in every skin
+  and scheme, and the native menu of the desktop app (hidden window, `LZS_HIDDEN=1`).
 
 ### Migration
 
@@ -122,4 +131,9 @@ Responsiv: Unter 1000 px wandern Layout-Vorlagen und Skala in das „⋯“-Men�
 die Quellen eine Schublade über den Scopes, unter 640 px zeigt das Dock alle Panels als Tabs
 einer Gruppe (Ziehen nur auf breiten Bildschirmen), Popover werden Bottom Sheets und Dialoge
 bildschirmfüllend. Touch bekommt 44-px-Bedienflächen. `e2e/responsive.spec.ts` prüft vier
-Größen in hell und dunkel ohne waagerechtes Scrollen.
+Größen in hell und dunkel ohne waagerechtes Scrollen. `e2e/ui-audit.spec.ts` prüft jedes Menü,
+Untermenü, Popover und jeden Dialog in Deutsch und Englisch: im Bild, nicht überdeckt, dieselbe
+Logik zum Öffnen und Schließen (Auslöser, Esc, Klick daneben, nur eins offen, Fokus zurück),
+Pfeiltasten, sichtbarer Fokus, Zielgrößen, abgeschnittene Texte, Konsolenfehler, Kontrast nach
+WCAG AA in allen Oberflächen sowie das native Menü der Desktop-App. Die Menüleiste nutzt dasselbe
+Popover-Modell wie die ⚙-Menüs (`place()` mit Flip und Klemmen an den Rand).

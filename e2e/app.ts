@@ -41,7 +41,8 @@ export interface AppState {
 /** Launch the desktop app from this checkout (dist must be built: npm run test:e2e does that). */
 /** `profile` and `port` to restart with the same localStorage (it belongs to the origin, port included). */
 /** `lang` pins the UI language (LZS_LANG → Electron --lang); the tests below expect German by default. */
-export async function launchApp(opts: { profile?: string; port?: number; lang?: 'de' | 'en' } = {}): Promise<App> {
+/** `hidden` keeps the window off screen (LZS_HIDDEN): for checks that need no pixels, e.g. the native menu. */
+export async function launchApp(opts: { profile?: string; port?: number; lang?: 'de' | 'en'; hidden?: boolean } = {}): Promise<App> {
   if (!existsSync(join(ROOT, 'dist', 'index.html'))) throw new Error('dist fehlt – npm run test:e2e baut es');
   const port = opts.port ?? await freePort();
   const profile = opts.profile ?? mkdtempSync(join(tmpdir(), 'lzs-e2e-'));
@@ -49,7 +50,7 @@ export async function launchApp(opts: { profile?: string; port?: number; lang?: 
     // Linux CI (xvfb, no GPU): no SUID sandbox helper, WebGL through SwiftShader
     args: [ROOT, ...(process.platform === 'linux' ? ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : [])],
     cwd: ROOT,
-    env: { ...process.env, LZS_PORT: String(port), LZS_USER_DATA: profile, LZS_LANG: opts.lang ?? 'de', ELECTRON_ENABLE_LOGGING: '0' },
+    env: { ...process.env, LZS_PORT: String(port), LZS_USER_DATA: profile, LZS_LANG: opts.lang ?? 'de', ELECTRON_ENABLE_LOGGING: '0', ...(opts.hidden ? { LZS_HIDDEN: '1' } : {}) },
     timeout: 120_000,
   });
   const page = await app.firstWindow({ timeout: 120_000 });

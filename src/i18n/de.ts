@@ -2,6 +2,13 @@
 // catch extra or mistyped keys (`satisfies Translation<typeof en>`).
 import common from './de/common';
 import bridge from './de/bridge';
+
+
+
+import tools from './de/tools';
+import clock from './de/clock';
+import audio from './de/audio';
+
 import bridgeui from './de/bridgeui';
 import chain from './de/chain';
 import color from './de/color';
@@ -26,6 +33,9 @@ import type { Msg } from './types';
 export const de: Record<Key, Msg> = {
   ...common,
   ...bridge,
+  ...tools,
+  ...clock,
+  ...audio,
   ...bridgeui,
   ...chain,
   ...color,

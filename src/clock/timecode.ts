@@ -20,16 +20,21 @@
 // LTC at 50/60p runs at 25/30 code words per second, i.e. in frame pairs.
 // Colour frame identification (colorFrameIdentificationMode) is not implemented (always 0).
 
+import { lang } from '../i18n';
+
+/** Decimal comma in German labels. */
+const dec = (s: string) => (lang() === 'de' ? s.replace(/\./g, ',') : s);
+
 export interface Rate { id: string; label: string; num: number; den: number; nominal: number; dfAllowed: boolean }
 
 export const RATES: Rate[] = [
-  { id: '23.98', label: '23,98 (24/1,001)', num: 24000, den: 1001, nominal: 24, dfAllowed: false },
+  { id: '23.98', label: dec('23.98 (24/1.001)'), num: 24000, den: 1001, nominal: 24, dfAllowed: false },
   { id: '24', label: '24', num: 24, den: 1, nominal: 24, dfAllowed: false },
   { id: '25', label: '25', num: 25, den: 1, nominal: 25, dfAllowed: false },
-  { id: '29.97', label: '29,97 (30/1,001)', num: 30000, den: 1001, nominal: 30, dfAllowed: true },
+  { id: '29.97', label: dec('29.97 (30/1.001)'), num: 30000, den: 1001, nominal: 30, dfAllowed: true },
   { id: '30', label: '30', num: 30, den: 1, nominal: 30, dfAllowed: false },
   { id: '50', label: '50', num: 50, den: 1, nominal: 50, dfAllowed: false },
-  { id: '59.94', label: '59,94 (60/1,001)', num: 60000, den: 1001, nominal: 60, dfAllowed: true },
+  { id: '59.94', label: dec('59.94 (60/1.001)'), num: 60000, den: 1001, nominal: 60, dfAllowed: true },
   { id: '60', label: '60', num: 60, den: 1, nominal: 60, dfAllowed: false },
 ];
 export const rateById = (id: string) => RATES.find((r) => r.id === id) ?? RATES[2];

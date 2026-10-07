@@ -86,7 +86,7 @@ export interface SequencerStep<T> { index: number; frame: PatchFrame; result: T 
 
 const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((ok, fail) => {
   const t = setTimeout(ok, ms);
-  signal?.addEventListener('abort', () => { clearTimeout(t); fail(new DOMException('abgebrochen', 'AbortError')); }, { once: true });
+  signal?.addEventListener('abort', () => { clearTimeout(t); fail(new DOMException('aborted', 'AbortError')); }, { once: true });
 });
 
 /**

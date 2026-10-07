@@ -22,9 +22,17 @@ import source from './en/source';
 import testmedia from './en/testmedia';
 import theme from './en/theme';
 
+
+import tools from './en/tools';
+import clock from './en/clock';
+import audio from './en/audio';
+
 export const en = {
   ...common,
   ...bridge,
+  ...tools,
+  ...clock,
+  ...audio,
   ...bridgeui,
   ...chain,
   ...color,

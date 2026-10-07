@@ -7,6 +7,7 @@
 import { LoudnessMeter } from './loudness';
 import { LevelMeter } from './meters';
 import { toDb } from './truepeak';
+import { lang, t } from '../../i18n';
 
 export interface CaseResult { id: string; label: string; expected: string; measured: string; pass: boolean }
 export interface TestCase { id: string; label: string; run: (fs: number) => CaseResult }
@@ -41,7 +42,8 @@ export function measure(chs: Float32Array[], fs: number, hooks: Hooks = {}, layo
   return { lm, lv };
 }
 
-const f1 = (v: number) => (Number.isFinite(v) ? v.toFixed(1) : '−∞').replace('.', ',').replace('-', '−');
+const dec = (s: string) => (lang() === 'de' ? s.replace('.', ',') : s);
+const f1 = (v: number) => dec(Number.isFinite(v) ? v.toFixed(1) : '−∞').replace('-', '−');
 const stereo = (x: Float32Array) => [x, x];
 
 function loudnessCase(id: string, label: string, segs: Seg[], expected: number, what: 'I' | 'MSI' = 'I'): TestCase {
@@ -52,13 +54,13 @@ function loudnessCase(id: string, label: string, segs: Seg[], expected: number, 
       const { lm } = measure(stereo(x), fs, { levels: false });
       const vals = what === 'I' ? [lm.integrated] : [lm.momentary, lm.shortTerm, lm.integrated];
       const pass = vals.every((v) => Math.abs(v - expected) <= 0.1);
-      return { id, label, expected: `${what === 'I' ? 'I' : 'M, S, I'} = ${f1(expected)} ±0,1 LUFS`, measured: vals.map(f1).join(' / ') + ' LUFS', pass };
+      return { id, label, expected: `${what === 'I' ? 'I' : 'M, S, I'} = ${f1(expected)} ±${dec('0.1')} LUFS`, measured: vals.map(f1).join(' / ') + ' LUFS', pass };
     },
   };
 }
 
 function tpSine(id: string, fsDiv: number, amp: number, phaseDeg: number, expected: number): TestCase {
-  const label = `Sinus fs/${fsDiv}, ${amp.toFixed(2)} FFS, ${phaseDeg}°`;
+  const label = t('audio.st.sine', { div: fsDiv, amp: dec(amp.toFixed(2)), deg: phaseDeg });
   return {
     id, label,
     run: (fs) => {
@@ -75,7 +77,7 @@ function tpSine(id: string, fsDiv: number, amp: number, phaseDeg: number, expect
 }
 
 function tpResult(id: string, label: string, expected: number, tp: number): CaseResult {
-  return { id, label, expected: `${f1(expected)} +0,2/−0,4 dBTP`, measured: `${f1(tp)} dBTP`, pass: tp <= expected + 0.2 && tp >= expected - 0.4 };
+  return { id, label, expected: `${f1(expected)} +${dec('0.2')}/−${dec('0.4')} dBTP`, measured: `${f1(tp)} dBTP`, pass: tp <= expected + 0.2 && tp >= expected - 0.4 };
 }
 
 /**
@@ -115,7 +117,7 @@ export const TECH3341: TestCase[] = [
   loudnessCase('3341-2', '1 kHz stereo −33 dBFS, 20 s', [[20, -33]], -33, 'MSI'),
   loudnessCase('3341-3', '−36/−23/−36 dBFS (10/60/10 s)', [[10, -36], [60, -23], [10, -36]], -23),
   loudnessCase('3341-4', '−72/−36/−23/−36/−72 dBFS', [[10, -72], [10, -36], [60, -23], [10, -36], [10, -72]], -23),
-  loudnessCase('3341-5', '−26/−20/−26 dBFS (20/20,1/20 s)', [[20, -26], [20.1, -20], [20, -26]], -23),
+  loudnessCase('3341-5', `−26/−20/−26 dBFS (20/${dec('20.1')}/20 s)`, [[20, -26], [20.1, -20], [20, -26]], -23),
   {
     id: '3341-6', label: '5.0: L/R −28, C −24, Ls/Rs −30 dBFS',
     run: (fs) => {
@@ -123,45 +125,45 @@ export const TECH3341: TestCase[] = [
       const lr = t(-28), c = t(-24), s = t(-30);
       const { lm } = measure([lr, lr, c, s, s], fs, { levels: false }, '5.0');
       const v = lm.integrated;
-      return { id: '3341-6', label: '5.0: L/R −28, C −24, Ls/Rs −30 dBFS', expected: 'I = −23,0 ±0,1 LUFS', measured: `${f1(v)} LUFS`, pass: Math.abs(v + 23) <= 0.1 };
+      return { id: '3341-6', label: '5.0: L/R −28, C −24, Ls/Rs −30 dBFS', expected: `I = ${f1(-23)} ±${dec('0.1')} LUFS`, measured: `${f1(v)} LUFS`, pass: Math.abs(v + 23) <= 0.1 };
     },
   },
   {
-    id: '3341-9', label: 'S: (1,34 s −20 / 1,66 s −30 dBFS) ×5',
+    id: '3341-9', label: `S: (${dec('1.34')} s −20 / ${dec('1.66')} s −30 dBFS) ×5`,
     run: (fs) => {
       const segs: Seg[] = [];
       for (let i = 0; i < 5; i++) segs.push([1.34, -20], [1.66, -30]);
       let lo = Infinity, hi = -Infinity;
       measure(stereo(toneSegments(segs, fs)), fs, { levels: false, every10ms: (m, t) => { if (t >= 3 - 1e-9) { lo = Math.min(lo, m.shortTerm); hi = Math.max(hi, m.shortTerm); } } });
-      return { id: '3341-9', label: 'S konstant ab 3 s', expected: 'S = −23,0 ±0,1 LUFS', measured: `${f1(lo)} … ${f1(hi)} LUFS`, pass: Math.abs(lo + 23) <= 0.1 && Math.abs(hi + 23) <= 0.1 };
+      return { id: '3341-9', label: t('audio.st.sConst'), expected: `S = ${f1(-23)} ±${dec('0.1')} LUFS`, measured: `${f1(lo)} … ${f1(hi)} LUFS`, pass: Math.abs(lo + 23) <= 0.1 && Math.abs(hi + 23) <= 0.1 };
     },
   },
   {
-    id: '3341-10', label: 'Max S dateibasiert, 20 Segmente',
+    id: '3341-10', label: t('audio.st.maxSFile'),
     run: (fs) => {
       const vals: number[] = [];
       for (let i = 0; i < 20; i++) vals.push(measure(stereo(toneSegments([[i * 0.15, null], [3, -23], [1, null]], fs)), fs, { levels: false }).lm.maxS);
       const lo = Math.min(...vals), hi = Math.max(...vals);
-      return { id: '3341-10', label: 'Max S dateibasiert, 20 Segmente', expected: 'Max S = −23,0 ±0,1 LUFS je Segment', measured: `${f1(lo)} … ${f1(hi)} LUFS`, pass: vals.every((v) => Math.abs(v + 23) <= 0.1) };
+      return { id: '3341-10', label: t('audio.st.maxSFile'), expected: t('audio.st.perSegment', { what: 'Max S', v: f1(-23), tol: dec('0.1') }), measured: `${f1(lo)} … ${f1(hi)} LUFS`, pass: vals.every((v) => Math.abs(v + 23) <= 0.1) };
     },
   },
   liveMax('3341-11', 'S', 3, 0.15),
   {
-    id: '3341-12', label: 'M: (0,18 s −20 / 0,22 s −30 dBFS) ×25',
+    id: '3341-12', label: `M: (${dec('0.18')} s −20 / ${dec('0.22')} s −30 dBFS) ×25`,
     run: (fs) => {
       const segs: Seg[] = [];
       for (let i = 0; i < 25; i++) segs.push([0.18, -20], [0.22, -30]);
       let lo = Infinity, hi = -Infinity;
       measure(stereo(toneSegments(segs, fs)), fs, { levels: false, every10ms: (m, t) => { if (t >= 1 - 1e-9) { lo = Math.min(lo, m.momentary); hi = Math.max(hi, m.momentary); } } });
-      return { id: '3341-12', label: 'M konstant ab 1 s', expected: 'M = −23,0 ±0,1 LUFS', measured: `${f1(lo)} … ${f1(hi)} LUFS`, pass: Math.abs(lo + 23) <= 0.1 && Math.abs(hi + 23) <= 0.1 };
+      return { id: '3341-12', label: t('audio.st.mConst'), expected: `M = ${f1(-23)} ±${dec('0.1')} LUFS`, measured: `${f1(lo)} … ${f1(hi)} LUFS`, pass: Math.abs(lo + 23) <= 0.1 && Math.abs(hi + 23) <= 0.1 };
     },
   },
   {
-    id: '3341-13', label: 'Max M dateibasiert, 20 Segmente',
+    id: '3341-13', label: t('audio.st.maxMFile'),
     run: (fs) => {
       const vals: number[] = [];
       for (let i = 0; i < 20; i++) vals.push(measure(stereo(toneSegments([[i * 0.02, null], [0.4, -23], [1, null]], fs)), fs, { levels: false }).lm.maxM);
-      return { id: '3341-13', label: 'Max M dateibasiert, 20 Segmente', expected: 'Max M = −23,0 ±0,1 LUFS je Segment', measured: `${f1(Math.min(...vals))} … ${f1(Math.max(...vals))} LUFS`, pass: vals.every((v) => Math.abs(v + 23) <= 0.1) };
+      return { id: '3341-13', label: t('audio.st.maxMFile'), expected: t('audio.st.perSegment', { what: 'Max M', v: f1(-23), tol: dec('0.1') }), measured: `${f1(Math.min(...vals))} … ${f1(Math.max(...vals))} LUFS`, pass: vals.every((v) => Math.abs(v + 23) <= 0.1) };
     },
   },
   liveMax('3341-14', 'M', 0.4, 0.02),
@@ -171,27 +173,27 @@ export const TECH3341: TestCase[] = [
   tpSine('3341-18', 8, 0.5, 67.5, -6),
   tpSine('3341-19', 4, 1.41, 45, 3),
   ...[0, 1, 2, 3].map((o): TestCase => ({
-    id: `3341-${20 + o}`, label: `Periode fs/4 in fs/6, Versatz ${o}`,
+    id: `3341-${20 + o}`, label: t('audio.st.burst', { o }),
     run: (fs) => {
       const x = tpBurst(fs, o);
       const { lv } = measure(stereo(x), fs);
-      return tpResult(`3341-${20 + o}`, `Periode fs/4 in fs/6, Versatz ${o}`, 0, toDb(Math.max(...lv.maxTP)));
+      return tpResult(`3341-${20 + o}`, t('audio.st.burst', { o }), 0, toDb(Math.max(...lv.maxTP)));
     },
   })),
 ];
 
 /** Tech 3341 #11 / #14: one long signal, Max S / Max M read after each of 20 segments. */
 function liveMax(id: string, which: 'S' | 'M', tone: number, stepS: number): TestCase {
-  const label = `Max ${which} live, 20 Stufen −38 … −19 dBFS`;
+  const label = t('audio.st.liveMax', { which });
   return {
     id, label,
     run: (fs) => {
       const segs: Seg[] = [];
       const ends: number[] = [];
-      let t = 0;
+      let at = 0;
       for (let i = 0; i < 20; i++) {
         segs.push([i * stepS, null], [tone, -38 + i], [tone - i * stepS, null]);
-        t += i * stepS + tone + tone - i * stepS; ends.push(t);
+        at += i * stepS + tone + tone - i * stepS; ends.push(at);
       }
       const got: number[] = [];
       let next = 0;
@@ -201,13 +203,13 @@ function liveMax(id: string, which: 'S' | 'M', tone: number, stepS: number): Tes
       });
       const pass = got.length === 20 && got.every((v, i) => Math.abs(v - (-38 + i)) <= 0.1);
       const worst = got.reduce((w, v, i) => Math.max(w, Math.abs(v - (-38 + i))), 0);
-      return { id, label, expected: `Max ${which} = −38 … −19 ±0,1 LUFS`, measured: `größte Abweichung ${worst.toFixed(2)} LU`, pass };
+      return { id, label, expected: `Max ${which} = −38 … −19 ±${dec('0.1')} LUFS`, measured: t('audio.st.worst', { v: dec(worst.toFixed(2)) }), pass };
     },
   };
 }
 
 function lraCase(id: string, levels: number[], expected: number): TestCase {
-  const label = `1 kHz, ${levels.map((l) => l.toFixed(0).replace('-', '−')).join('/')} dBFS je 20 s`;
+  const label = t('audio.st.lra', { levels: levels.map((l) => l.toFixed(0).replace('-', '−')).join('/') });
   return {
     id, label,
     run: (fs) => {

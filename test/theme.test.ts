@@ -5,8 +5,8 @@ import { DEFAULT_THEME, HUD_STYLE, THEMES, isTheme } from '../src/theme';
 // CRLF on a Windows checkout – the block search below expects \n
 const css = readFileSync(new URL('../src/ui/tokens.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const app = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8') + readFileSync(new URL('../src/ui/components.css', import.meta.url), 'utf8');
-// status signs (8 px dots, warning chip text) are the only chromatic chrome, deliberately desaturated
-const noStatus = (s: string) => s.split('\n').filter((l) => !/--(ok|warn-text|warn-bg):/.test(l)).join('\n');
+// status signs (8 px dots, warning chip text, error text) are the only chromatic chrome, deliberately desaturated
+const noStatus = (s: string) => s.split('\n').filter((l) => !/--(ok|warn-text|warn-bg|err-text):/.test(l)).join('\n');
 /** first `:root {` block = neutral skin (dark) and the shared tokens */
 const neutralBlock = css.slice(css.indexOf(':root {'), css.indexOf(":root[data-scheme='light'] {"));
 const neutralPart = noStatus(neutralBlock.slice(neutralBlock.indexOf('/* ---- skin "neutral"')));

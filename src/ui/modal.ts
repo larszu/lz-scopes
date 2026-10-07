@@ -4,7 +4,7 @@
 // a click on the backdrop closes. On narrow screens the dialog becomes a full-screen sheet
 // (CSS: dialog.modal at max-width 640px).
 
-import { h, type Kid } from './dom';
+import { h, restoreFocus, type Kid } from './dom';
 import { t } from '../i18n';
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
@@ -49,10 +49,12 @@ export function modal(o: ModalOpts): Modal {
   // keys typed in a dialog must not trigger the global shortcuts (S, F, 1–6 …); Esc closes it
   dlg.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });
   if (!o.sticky) dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
-  dlg.addEventListener('close', () => { o.onClose?.(); if (o.removeOnClose) dlg.remove(); });
+  // focus back to the opener (the browser does it when it can; a menu item or a popover row is gone by now)
+  let opener: Element | null = null;
+  dlg.addEventListener('close', () => { o.onClose?.(); if (o.removeOnClose) dlg.remove(); requestAnimationFrame(() => restoreFocus(opener)); });
   return {
     dlg, head, body, foot,
-    open: () => { if (!dlg.isConnected) document.body.append(dlg); if (!dlg.open) dlg.showModal(); },
+    open: () => { if (!dlg.isConnected) document.body.append(dlg); if (!dlg.open) { opener = document.activeElement; dlg.showModal(); } },
     close: () => dlg.close(),
     setBody: (...kids) => body.replaceChildren(...kids.flat(Infinity as 1).filter((k) => k !== null && k !== undefined && k !== false && k !== '') as (Node | string)[]),
   };

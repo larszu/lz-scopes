@@ -59,3 +59,19 @@ export function filePicker(accept: string, then: (files: File[]) => void, multip
   input.onchange = () => { const f = [...(input.files ?? [])]; input.value = ''; if (f.length) then(f); };
   return { input, pick: () => input.click() };
 }
+
+/**
+ * Give the focus back after an overlay closed (WAI-ARIA APG dialog pattern): to `opener` if it is
+ * still visible, else to the visible control that owns the closed popover or menu it sat in
+ * (⚙ trigger, menu title, ☰). Does nothing when the focus already sits on a visible element.
+ */
+export function restoreFocus(opener: Element | null) {
+  const a = document.activeElement as HTMLElement | null;
+  if (a && a !== document.body && a.getClientRects().length) return;
+  for (let e = opener as HTMLElement | null, i = 0; e && i < 6; i++) {
+    if (e.isConnected && e.getClientRects().length) { e.focus(); if (document.activeElement === e) return; }
+    const owner = e.parentElement?.closest<HTMLElement>('[popover], .mb-drop');
+    if (!owner) return;
+    e = (owner.id && document.querySelector<HTMLElement>(`[popovertarget="${CSS.escape(owner.id)}"]`)) || (owner.previousElementSibling as HTMLElement | null);
+  }
+}

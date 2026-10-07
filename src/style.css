@@ -87,7 +87,7 @@ body { background: var(--surface-0); overflow: hidden; }
 .swatch { width: 14px; height: 14px; border-radius: var(--radius); flex: none; border: 1px solid var(--line-2); }
 .swatch.big { width: 28px; height: 28px; }
 .field > span.swatch:first-child { width: 14px; }
-button.fav { min-width: 24px; }
+button.fav { min-width: var(--control-h); }
 button.fav.on { color: var(--text); border-color: var(--sel-line); }
 
 /* ---------------------------------------------------------------- dock and panels */
@@ -118,8 +118,10 @@ button.fav.on { color: var(--text); border-color: var(--sel-line); }
 }
 /* compact dock (narrow windows, src/dock.ts): one group, the panels as tabs */
 .compact > .lzs-dock, .compact .lzs-dock { --dv-tabs-and-actions-container-height: var(--control-h); }
+/* dock tabs are focusable (Tab): the same focus ring as every other control */
+.lzs-dock .dv-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 @media (pointer: coarse) {
-  .lzs-dock { --dv-tabs-and-actions-container-height: 36px; }
+  .lzs-dock { --dv-tabs-and-actions-container-height: var(--control-h); }
   .dv-sash::after { content: ''; position: absolute; inset: -12px; }
 }
 .dock-content { width: 100%; height: 100%; }
@@ -212,33 +214,29 @@ dialog.lutlib table td.hint { margin: 0; }
 .mb-top { position: relative; }
 .mb-title { background: transparent; border-color: transparent; color: var(--text-soft); padding: 3px 8px; }
 .mb-title:hover, .mb-title.on { background: var(--sel-bg); border-color: transparent; color: var(--text); }
-.mb-drop {
-  position: absolute; z-index: 60; top: calc(100% + 2px); left: 0; min-width: 240px; padding: 4px 0;
+/* menus, submenus and the ☰ panel: top-layer popovers placed by src/ui/popover.ts place() */
+.mb-drop, .mb-items:popover-open {
+  min-width: 240px; padding: 4px 0; color: var(--text); overflow-y: auto; overscroll-behavior: contain;
   background: var(--surface-3); border: 1px solid var(--line-3); border-radius: var(--radius-lg); box-shadow: var(--elev-float);
-  display: flex; flex-direction: column;
 }
+.mb-drop:popover-open { display: flex; flex-direction: column; }
 .mb-item {
   display: grid; grid-template-columns: 16px 1fr auto; gap: 6px; align-items: center; text-align: left;
-  background: transparent; border: 0; border-radius: 0; padding: 4px 12px 4px 8px; min-height: 26px; color: var(--text); width: 100%;
+  background: transparent; border: 0; border-radius: 0; padding: 4px 12px 4px 8px; min-height: var(--control-h); color: var(--text); width: 100%;
 }
-.mb-item:hover, .mb-item:focus-visible { background: var(--sel-bg); outline-offset: -2px; }
+.mb-item:hover, .mb-item:focus-visible, .mb-item.on { background: var(--sel-bg); outline-offset: -2px; }
 .mb-item:disabled { opacity: 0.4; cursor: not-allowed; }
 .mb-check { color: var(--text); text-align: center; }
 .mb-key { color: var(--text-muted); font-family: var(--mono); font-size: var(--fs-sm); padding-left: 16px; }
-.mb-sep { height: 1px; background: var(--line-1); margin: 4px 0; }
-.mb-subwrap { position: relative; }
-.mb-sub { display: none; position: absolute; left: 100%; top: -5px; }
-.mb-subwrap:hover > .mb-sub, .mb-subwrap.open > .mb-sub, .mb-subwrap:focus-within > .mb-sub { display: flex; }
-@media (pointer: coarse) { .mb-item { min-height: var(--control-h); } }
+.mb-sep { height: 1px; flex: none; background: var(--line-1); margin: 4px 0; }
 @media (max-width: 900px) {
   .menubar .mb-burger { display: inline-block; }
-  .mb-items { display: none; position: fixed; z-index: 60; top: 44px; left: 8px; flex-direction: column; align-items: stretch; width: min(320px, calc(100vw - 16px));
-    max-height: calc(100dvh - 60px); overflow-y: auto; overscroll-behavior: contain;
-    background: var(--surface-3); border: 1px solid var(--line-3); border-radius: var(--radius-lg); padding: 4px 0; box-shadow: var(--elev-float); }
-  .menubar.burger-open .mb-items { display: flex; }
-  .mb-title { width: 100%; text-align: left; }
-  .mb-drop { position: static; border: 0; box-shadow: none; padding-left: 8px; background: transparent; min-width: 0; }
-  .mb-sub { position: static; padding-left: 8px; }
+  .mb-items { display: none; }
+  .mb-items:popover-open { display: flex; flex-direction: column; align-items: stretch; width: min(320px, calc(100vw - 16px)); }
+  .mb-title { width: 100%; text-align: left; min-height: var(--control-h); }
+  /* accordion inside the ☰ panel */
+  .mb-drop { display: none; min-width: 0; padding: 0 0 0 12px; border: 0; border-radius: 0; box-shadow: none; background: transparent; overflow: visible; }
+  .mb-drop.open { display: flex; flex-direction: column; }
 }
 
 /* ---------------------------------------------------------------- feature areas */

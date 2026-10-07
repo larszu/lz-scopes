@@ -1963,7 +1963,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 's' || e.key === 'S') snapshot();
   else if (e.key === 'b' || e.key === 'B') toggleSidebar();
   else if (e.key === 'c' || e.key === 'C') setStage(STAGES[(STAGES.indexOf(state.stage ?? 'signal') + 1) % STAGES.length]);
-  else if (e.key === 'Escape') { if (dock.api.hasMaximizedGroup()) dock.exitMaximized(); else { sources.forEach((s) => { s.probe = null; s.roi = null; s.faceMode = 'off'; }); refreshHeads(); } }
+  else if (e.key === 'Escape') { if (narrowQuery.matches && drawerOpen) { toggleSidebar(false); $('#toggle-side').focus(); } else if (dock.api.hasMaximizedGroup()) dock.exitMaximized(); else { sources.forEach((s) => { s.probe = null; s.roi = null; s.faceMode = 'off'; }); refreshHeads(); } }
 });
 
 // LUTs referenced by saved chains come back from the browser's LUT store

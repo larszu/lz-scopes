@@ -16,7 +16,10 @@ button, select, input, textarea {
   transition: background-color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
 }
 select option, select optgroup { background: var(--surface-2); color: var(--text); }
-button { cursor: pointer; }
+button { cursor: pointer; min-width: var(--control-h-sm); }
+/* disclosure headings are targets too (WCAG 2.5.8: at least 24 px, 44 px on touch) */
+label:has(> input[type='checkbox'], > input[type='radio']) { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: var(--control-h-sm); min-width: var(--control-h-sm); cursor: pointer; }
+summary { cursor: pointer; min-height: var(--control-h-sm); padding-block: 3px; box-sizing: border-box; }
 button:hover, select:hover { border-color: var(--line-3); }
 button:disabled, select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
 input[type='checkbox'], input[type='radio'] { min-height: 0; padding: 0; background: none; border: 0; accent-color: var(--accent); }

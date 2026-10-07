@@ -18,6 +18,9 @@ if (!app.requestSingleInstanceLock()) app.quit();
 // UI language (#94): the page follows app.getLocale() unless the user chose one in the
 // settings. LZS_LANG (de, en, en-US …) pins the locale, e.g. for the E2E tests.
 if (process.env.LZS_LANG) app.commandLine.appendSwitch('lang', process.env.LZS_LANG);
+// LZS_HIDDEN=1: main window never shown, no Dock icon, no focus taken (automated checks
+// that need no pixels, e.g. the native menu in e2e/ui-audit.spec.ts).
+const HIDDEN = process.env.LZS_HIDDEN === '1';
 ipcMain.on('lzs:locale', (e) => { e.returnValue = app.getLocale(); });
 
 let mainWindow = null;
@@ -46,7 +49,7 @@ async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1512, height: 900, minWidth: 900, minHeight: 560,
     // menu bar visible on Windows/Linux (app menu, #53); macOS shows it in the system bar
-    title: 'LZ Scopes', backgroundColor: '#0b0c0e', autoHideMenuBar: false,
+    title: 'LZ Scopes', backgroundColor: '#0b0c0e', autoHideMenuBar: false, show: !HIDDEN,
     webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
   });
   // Application menu (#53): the page sends its menu model, clicks go back as command ids.
@@ -139,7 +142,7 @@ app.on('second-instance', () => { if (mainWindow) { if (mainWindow.isMinimized()
 // About box: the NDI SDK licence asks for the trademark notice here (docs/research/geraete-eingaenge.md)
 app.setAboutPanelOptions({ applicationName: 'LZ Scopes', copyright: `© ${new Date().getFullYear()} Lars Zumpe`, credits: 'NDI® is a registered trademark of Vizrt NDI AB. https://ndi.video/' });
 
-app.whenReady().then(createWindow).catch((e) => {
+app.whenReady().then(() => { if (HIDDEN && process.platform === 'darwin') app.setActivationPolicy('accessory'); return createWindow(); }).catch((e) => {
   const { dialog } = require('electron');
   dialog.showErrorBox('LZ Scopes', `${text('startFailed')}\n${e && e.stack ? e.stack : e}`);
   app.quit();

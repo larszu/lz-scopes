@@ -36,24 +36,48 @@ export interface PopoverEl extends HTMLElement {
 
 let seq = 0;
 
-/** Place `panel` next to `anchor`, inside the viewport (8 px margin). */
-export function placePopover(panel: HTMLElement, anchor: DOMRect, align: 'start' | 'end' = 'start') {
-  if (isSheet()) { panel.classList.add('sheet'); panel.style.cssText = ''; return; }
+export interface PlaceOpts {
+  /** below (or above) the anchor, or beside it (submenus: right, flips to the left) */
+  side?: 'below' | 'right';
+  align?: 'start' | 'end';
+  /** bottom sheet on narrow screens (option panels); menus stay anchored */
+  sheet?: boolean;
+}
+
+/**
+ * Place a top-layer `panel` at `anchor`: flip to the other side when the preferred one is too
+ * small, clamp into the viewport (8 px margin) and cap the height so long menus scroll inside.
+ * One routine for popovers, menu bar menus and submenus.
+ */
+export function place(panel: HTMLElement, anchor: DOMRect, o: PlaceOpts = {}) {
+  if (o.sheet !== false && isSheet()) { panel.classList.add('sheet'); panel.style.cssText = ''; return; }
   panel.classList.remove('sheet');
   const vw = innerWidth, vh = innerHeight, m = 8;
-  const below = vh - anchor.bottom - m, above = anchor.top - m;
-  const up = below < 220 && above > below;
   const s = panel.style;
-  s.position = 'fixed'; s.margin = '0';
-  s.maxHeight = `${Math.max(120, (up ? above : below) - 4)}px`;
+  s.position = 'fixed'; s.margin = '0'; s.right = 'auto'; s.bottom = 'auto';
   s.maxWidth = `${vw - 2 * m}px`;
-  if (up) { s.top = 'auto'; s.bottom = `${vh - anchor.top + 4}px`; } else { s.bottom = 'auto'; s.top = `${anchor.bottom + 4}px`; }
+  if (o.side === 'right') {
+    s.maxHeight = `${vh - 2 * m}px`;
+    const w = Math.min(panel.offsetWidth || 240, vw - 2 * m), hgt = Math.min(panel.offsetHeight || 200, vh - 2 * m);
+    const right = anchor.right - 2, left = anchor.left - w + 2;
+    const x = right + w <= vw - m ? right : left >= m ? left : vw - m - w;
+    s.left = `${Math.round(Math.max(m, x))}px`;
+    s.top = `${Math.round(Math.max(m, Math.min(vh - m - hgt, anchor.top - 5)))}px`;
+    return;
+  }
+  const below = vh - anchor.bottom - m, above = anchor.top - m;
+  const hgt = panel.offsetHeight || 220;
+  const up = hgt > below && above > below;
+  s.maxHeight = `${Math.max(120, (up ? above : below) - 4)}px`;
+  if (up) { s.top = 'auto'; s.bottom = `${vh - anchor.top + 4}px`; } else s.top = `${anchor.bottom + 4}px`;
   // horizontal: after layout we know the width; keep it inside the viewport
   const w = Math.min(panel.offsetWidth || 320, vw - 2 * m);
-  const left = align === 'end' ? anchor.right - w : anchor.left;
+  const left = o.align === 'end' ? anchor.right - w : anchor.left;
   s.left = `${Math.round(Math.max(m, Math.min(vw - m - w, left)))}px`;
-  s.right = 'auto';
 }
+
+/** Place `panel` next to `anchor`, inside the viewport (8 px margin); bottom sheet on phones. */
+export const placePopover = (panel: HTMLElement, anchor: DOMRect, align: 'start' | 'end' = 'start') => place(panel, anchor, { align });
 
 /** Trigger button + popover panel. */
 export function popover(o: PopoverOpts): PopoverEl {

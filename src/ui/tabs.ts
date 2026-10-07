@@ -16,10 +16,12 @@ export function tabs(o: { items: readonly TabItem[]; current: string; onSelect: 
     const next = vertical ? 'ArrowDown' : 'ArrowRight', prev = vertical ? 'ArrowUp' : 'ArrowLeft';
     if (![next, prev, 'Home', 'End'].includes(e.key)) return;
     e.preventDefault();
-    const i = o.items.findIndex((x) => x.id === o.current), n = o.items.length;
+    // from the focused tab (it can differ from the selected one), otherwise from the selected
+    const from = (e.target as HTMLElement).closest<HTMLElement>('[role=tab]')?.dataset.page ?? o.current;
+    const i = o.items.findIndex((x) => x.id === from), n = o.items.length;
     const j = e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : (i + (e.key === next ? 1 : -1) + n) % n;
     o.onSelect(o.items[j].id);
-    (list.isConnected ? list : document).querySelector<HTMLElement>(`[data-page="${o.items[j].id}"]`)?.focus();
+    (list.isConnected ? list : document).querySelector<HTMLElement>(`[role=tab][data-page="${o.items[j].id}"]`)?.focus();
   });
   return list;
 }

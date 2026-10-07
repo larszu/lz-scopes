@@ -2,6 +2,8 @@
 // One file per area under en/, its German counterpart under de/ with the same name.
 // A new area: add en/<area>.ts and de/<area>.ts and one line in en.ts and de.ts.
 import common from './en/common';
+import scene from './en/scene';
+import theme from './en/theme';
 import color from './en/color';
 import scope from './en/scope';
 import pattern from './en/pattern';
@@ -11,6 +13,8 @@ import match from './en/match';
 
 export const en = {
   ...common,
+  ...scene,
+  ...theme,
   ...color,
   ...scope,
   ...pattern,

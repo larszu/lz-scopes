@@ -16,6 +16,7 @@ import lut from './en/lut';
 import chain from './en/chain';
 import match from './en/match';
 import bridge from './en/bridge';
+import audio from './en/audio';
 
 export const en = {
   ...common,
@@ -33,6 +34,7 @@ export const en = {
   ...chain,
   ...match,
   ...bridge,
+  ...audio,
 };
 
 export type Key = keyof typeof en;

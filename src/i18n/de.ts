@@ -15,6 +15,8 @@ import lut from './de/lut';
 import chain from './de/chain';
 import match from './de/match';
 import bridge from './de/bridge';
+
+import audio from './de/audio';
 import type { Key } from './en';
 import type { Msg } from './types';
 
@@ -34,4 +36,5 @@ export const de: Record<Key, Msg> = {
   ...chain,
   ...match,
   ...bridge,
+  ...audio,
 };

@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_GEN, ToneGenerator, blitsValue, ebuMultiCycle, type GenConfig } from '../src/audio/dsp/signals';
 import { IdentDetector } from '../src/audio/dsp/ident';
 import { channelInfo, clockwiseOrder, positionWeight } from '../src/audio/dsp/layouts';
+import { setLang } from '../src/i18n';
+
+// the findings are checked against the German texts
+beforeAll(() => setLang('de'));
 
 const fs = 48000;
 

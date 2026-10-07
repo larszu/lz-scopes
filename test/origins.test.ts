@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { OriginStore, clockAccess, consentPage, newNonce, normalizeOrigin, takeNonce } from '../server/origins.mjs';
+import { OriginStore, clockAccess, consentLang, consentPage, newNonce, normalizeOrigin, takeNonce } from '../server/origins.mjs';
 
 describe('allowed web origins for /clock', () => {
   it('normalises strictly: https, no paths, no wildcards', () => {
@@ -45,6 +45,10 @@ describe('allowed web origins for /clock', () => {
     expect(takeNonce(newNonce(0), 10 * 60 * 1000)).toBe(false);
     const html = consentPage('https://a.example/"><script>', new OriginStore(null), 'x');
     expect(html).not.toContain('<script>');
-    expect(consentPage('https://larszu.github.io', new OriginStore(null), 'x')).toContain('Diese Web-Oberfläche zulassen');
+    expect(consentPage('https://larszu.github.io', new OriginStore(null), 'x')).toContain('Allow this web interface');
+    // German page for a German browser (Accept-Language first entry)
+    expect(consentPage('https://larszu.github.io', new OriginStore(null), 'x', consentLang('de-DE,de;q=0.9,en;q=0.8'))).toContain('Diese Web-Oberfläche zulassen');
+    expect(consentLang('en-US,de;q=0.5')).toBe('en');
+    expect(consentLang(undefined)).toBe('en');
   });
 });

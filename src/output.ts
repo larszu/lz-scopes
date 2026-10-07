@@ -9,13 +9,14 @@ import { deepContext, isCodec10, pipelineText, pixelsToFrame10, putRaster, raste
 import { drawPatch, listenPatches, type PatchFrame } from './patchSequencer';
 import { avCalibration } from './audio/avcal';
 import { HUD_STYLE, onThemeChange, storedTheme } from './theme';
+import { num, t } from './i18n';
 
 export function runOutputWindow() {
   const q = new URLSearchParams(location.search);
   let idx = Math.max(0, PATTERNS.findIndex((p) => p.id === q.get('out')));
   const w = Number(q.get('w')) || 1920, h = Number(q.get('h')) || 1080;
   let label = q.get('label') ?? '', showLabel = !!label;
-  document.title = 'LZ Scopes – Ausgabe';
+  document.title = t('output.title');
   document.body.style.cssText = 'margin:0;background:#000;overflow:hidden;cursor:none';
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
@@ -24,12 +25,12 @@ export function runOutputWindow() {
   document.body.replaceChildren(canvas);
   const dc = deepContext(canvas), ctx = dc.ctx;
   let mode: LevelMode = q.get('levels') === 'code' ? 'code' : 'full';
-  const pipeline = dc.colorType === 'float16' ? 'Canvas 2D float16' : 'Canvas 2D 8 bit (float16 nicht verfügbar)';
+  const pipeline = dc.colorType === 'float16' ? 'Canvas 2D float16' : t('output.canvas8');
   document.body.dataset.pipeline = dc.colorType;
   let streamMsg = '';
   const hud = document.createElement('div');
   // chrome follows the UI skin; the pattern and the black surround never do
-  const skinHud = () => { const t = HUD_STYLE[storedTheme()]; Object.assign(hud.style, { font: t.font, color: t.fg, background: t.bg, borderRadius: t.radius }); };
+  const skinHud = () => { const s = HUD_STYLE[storedTheme()]; Object.assign(hud.style, { font: s.font, color: s.fg, background: s.bg, borderRadius: s.radius }); };
   hud.style.cssText = 'position:fixed;left:12px;bottom:12px;padding:4px 8px;transition:opacity .4s';
   skinHud(); onThemeChange(skinHud);
   document.body.append(hud);
@@ -40,9 +41,9 @@ export function runOutputWindow() {
     if (patch) return;
     const p = PATTERNS[idx];
     const r = refreshMs();
-    const av = p.id === 'avsync' ? `   Bildwechsel ${r ? `${r.toFixed(1).replace('.', ',')} ms (${Math.round(1000 / r)} Hz)` : '–'} · Blitz-Raster ±${(r / 2).toFixed(1).replace('.', ',')} ms · Bild-Vorlauf ${Math.round(avCalibration().videoLeadMs)} ms${avCalibration().note ? '' : ' (unkalibriert)'}` : '';
+    const av = p.id === 'avsync' ? `   ${t('output.av', { refresh: r ? `${num(r, 1)} ms (${Math.round(1000 / r)} Hz)` : '–', jitter: num(r / 2, 1), lead: Math.round(avCalibration().videoLeadMs) })}${avCalibration().note ? '' : ` ${t('output.uncalibrated')}`}` : '';
     hud.replaceChildren(
-      `${p.group} · ${p.name} · ${w}×${h}${av}   ← → wechseln · F Vollbild · L Label · R Pegel/Codes`,
+      `${p.group} · ${p.name} · ${w}×${h}${av}   ${t('output.keys')}`,
       Object.assign(document.createElement('div'), { textContent: `${pipelineText(pipeline, mode)}${streamMsg ? ` · Stream ${streamMsg}` : ''}` }),
       ...(p.note ? [Object.assign(document.createElement('div'), { textContent: p.note })] : []),
     );
@@ -86,7 +87,7 @@ export function runOutputWindow() {
     if (e.key === 'ArrowRight' || e.key === ' ') idx = (idx + 1) % PATTERNS.length;
     else if (e.key === 'ArrowLeft') idx = (idx - 1 + PATTERNS.length) % PATTERNS.length;
     else if (e.key === 'f' || e.key === 'F') { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); return; }
-    else if (e.key === 'l' || e.key === 'L') { showLabel = !showLabel; if (showLabel && !label) label = prompt('Label / Kennung') ?? ''; }
+    else if (e.key === 'l' || e.key === 'L') { showLabel = !showLabel; if (showLabel && !label) label = prompt(t('output.labelPrompt')) ?? ''; }
     else if (e.key === 'r' || e.key === 'R') mode = mode === 'full' ? 'code' : 'full';
     else return;
     draw(); showHud();

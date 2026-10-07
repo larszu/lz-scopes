@@ -42,7 +42,7 @@ export async function announce({ port, host }) {
     const { Bonjour } = await import('bonjour-service');
     // a network without multicast route (some VMs, CI) fails on every send: warn once
     let warned = false;
-    const warn = (err) => { if (!warned) console.warn(`Bonjour: ${err?.message ?? err} (Ankündigung im Netz nicht möglich)`); warned = true; };
+    const warn = (err) => { if (!warned) console.warn(`Bonjour: ${err?.message ?? err} (cannot announce on the network)`); warned = true; };
     const bonjour = new Bonjour({}, warn);
     const service = bonjour.publish({ name: instanceName(), host: srvHost(), type: SERVICE_TYPE, protocol: 'tcp', port, txt: { v: '1', path: '/' } });
     service.on?.('error', warn);
@@ -51,7 +51,7 @@ export async function announce({ port, host }) {
       stop: () => new Promise((ok) => bonjour.unpublishAll(() => bonjour.destroy(() => ok()))),
     };
   } catch (err) {
-    console.warn(`Bonjour nicht verfügbar: ${err?.message ?? err}`);
+    console.warn(`Bonjour not available: ${err?.message ?? err}`);
     return null;
   }
 }

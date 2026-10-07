@@ -25,13 +25,34 @@ Welche Werte ein Ziel kann, steht als Auszug der Fähigkeitstabelle der Bridge (
 
 Die Bridge wurde dafür nicht geändert. Gegen eine echte Bridge mit Demo-Kamera geprüft: `CameraBridgeLink` liest Liste und Zustand, `setWhiteBalance` kommt an, der Zustand meldet den neuen Wert (als `commanded`), das Zurücksetzen stellt ihn wieder her.
 
-## Die Sony SRG-A40
+## Die Sony SRG-A40 (gemessen 07.10.2026)
 
-- **HTTP-CGI:** Die CGI-Befehlsliste des SRG-A40 (Technical Manual „VISCA/CGI Command List“) hat in den geöffneten Abschnitten keine Bildparameter: audio, codecconfig, datetime, project, property und PTZ-Auto-Framing. Ein `imaging.cgi` wie bei den älteren SRG/BRC kam dort nicht vor. Weißabgleich und Farbe laufen beim SRG-A40 über VISCA.
-- **VISCA:** Die Liste nennt WB-Modus (Manual = 5), R- und B-Gain direkt (00..FF, Mitte 80), WB-Speed, Offset, Detail und Chroma Suppress. Ob R oder B auf Kommando `43` bzw. `44` liegt, ließ sich aus der Textfassung nicht sicher lesen. Bei Sony-VISCA ist R = `43`, B = `44` üblich, am Gerät aber **ungeprüft**.
-- **In der Bridge:** `ViscaClient` kann heute Iris und Gain, `HttpCgiClient` keine Bildwerte. Deshalb meldet LZ Scopes für Bridge-Modus `visca` und `http-cgi`: „an diesem Ziel nicht steuerbar“.
-- **Nächster Schritt:** in lz-camera-bridge `setWhiteBalance` mit R/B-Gain in `ViscaClient`, plus die Inquiry zum Zurücklesen. Das ist ein eigener PR dort, erst wenn die Kamera erreichbar ist und die Kommandos am Gerät gemessen werden können.
-- **06.10.:** Die Testkamera war aus diesem Netz nicht erreichbar (keine Route ins Anlagennetz). Es wurde nichts an ihr geändert und nichts gemessen.
+- **HTTP-CGI hat Weißabgleich:**
+  - Die Kamera (Firmware 4.00) beantwortet `inquiry.cgi?inq=imaging` mit `WhiteBalanceMode`, `WhiteBalanceCrGain` und `WhiteBalanceCbGain` (0..255), dazu Detail, Belichtung, Rauschminderung und Defog.
+  - `imaging.cgi` setzt die Werte (Antwort 204).
+  - Die zuerst geöffneten Seiten der Befehlsliste hatten diesen Abschnitt nicht, die Kamera hat ihn.
+- **Hue, Sättigung, Schwarz, Gamma:** Die Inquiry meldet sie nicht. Über die CGI gibt es sie an dieser Kamera nicht.
+- **Zuordnung am Bild gemessen** (Mittelwert des RTSP-Bilds, manueller Weißabgleich ab Cr 203 / Cb 179):
+
+| Änderung | R′ | G′ | B′ |
+|---|---|---|---|
+| Ausgang | 0,52 | 0,51 | 0,51 |
+| CrGain +30 | 0,90 | 0,28 | 0,40 |
+| CbGain +30 | 0,46 | 0,47 | 0,75 |
+
+  Also **Cr = R, Cb = B**. Beide wirken wie Farbdifferenz-Verstärkungen: G′ läuft gegenläufig. Ein G-Gain fehlt.
+- **Steilheit:** Eine Bus-Einheit bewegt R′ etwa 6,2-mal und B′ etwa 4-mal so weit wie im Simulator-Modell. `MEASURED_SLOPE` in `model.ts` trägt diese Faktoren, damit die Spur dem Finger folgt.
+- **In der Bridge:** `HttpCgiClient` (Familie `sony`) kann seit lz-camera-bridge #78 `setWhiteBalance` (R/B) und liest beide Gains zurück. Die Werte kommen als `confirmed` an. LZ Scopes führt diesen Weg als `http-cgi:sony`: White R und White B, kein White G.
+- **Folgen für die Gesten an der Sony:**
+  - Parade: Rot oben = White R, Blau oben = White B.
+  - Grün, Black und alles an der Luma-Waveform werden mit Grund abgelehnt. Lichter bräuchten White G, Schatten Master Black.
+- **VISCA over IP** (UDP 52381) antwortete aus diesem Netz nicht. Die VISCA-Byte-Zuordnung bleibt deshalb ungeprüft.
+- **Live-Messung über Bridge und LZ Scopes** (Parade, Mittelwert des oberen Bilddrittels):
+  - Rot von 62 % auf 72 % gezogen → CrGain 203 → 211, R′ 0,617 → 0,715.
+  - Blau um 8 % runtergezogen → CbGain 179 → 170, B′ 0,603 → 0,575.
+  - „Ausgangswerte“ setzt 203/179 zurück, R′ 0,623.
+  - Die Parade in LZ Scopes zeigt die Änderung mit einigen Sekunden Verzug: RTSP über die Bridge, auf 10 fps begrenzt.
+- **Danach:** Kamera auf den gesicherten Ausgangszustand zurückgesetzt (WB auto, alle Imaging-Werte identisch) und in Standby versetzt.
 
 ## Andere Steuerwege
 
@@ -58,6 +79,7 @@ Bild ohne Kamera: oben ein 11-stufiger Graukeil, unten der ColorChecker (Näheru
 
 ## Quellen (geöffnet)
 
+- Sony SRG-A40 selbst: `inquiry.cgi?inq=imaging`, `imaging.cgi`, RTSP-Bild (Messung oben)
 - Sony SRG-A40 Technical Manual „VISCA/CGI Command List“, Seiten 14, 15, 33, 35–38 und 40 über manualslib.com, Link zum PDF auf der Sony-UK-Supportseite des SRG-A40
 - Blackmagic Design, „Blackmagic 3G-SDI Shield for Arduino – Installation and Operation Manual“, Abschnitt Studio Camera Control Protocol (documents.blackmagicdesign.com)
 - lz-camera-bridge (main, 06.10.2026): `BridgeServer.ts`, `protocol/paintNudge.ts`, `protocol/valueOrigin.ts`, `cameras/HttpCgiClient.ts`, `cameras/ViscaClient.ts`, `cameras/BMDeviceClient.ts`, `cameras/DemoCameraClient.ts`, `packages/web-rcp/src/capabilities.ts`

@@ -1,6 +1,7 @@
 // lz-decklink – Blackmagic DeckLink / UltraStudio capture helper for the lz-scopes bridge.
 //
 //   lz-decklink --list                       one JSON line: {"ok":true,"devices":[…]} or {"ok":false,"error":"…"}
+//   lz-decklink --reference <index>          one JSON line: genlock/reference status (#72), see reference()
 //   lz-decklink --capture <index> [--bits 8|10]
 //                                            helper protocol on stdout (docs/frame-protocol.md):
 //                                            INFO / FRAM / STAT / ERR records
@@ -121,7 +122,7 @@ static std::vector<IDeckLink*> allDevices() {
 static int listDevices() {
   IDeckLinkIterator* it = createIterator();
   if (!it) {
-    printf("{\"ok\":false,\"error\":\"Blackmagic Desktop Video ist nicht installiert (DeckLink-Treiber fehlt)\"}\n");
+    printf("{\"ok\":false,\"code\":\"decklink.noDriver\",\"error\":\"Blackmagic Desktop Video is not installed (DeckLink driver missing)\"}\n");
     return 0;
   }
   it->Release();
@@ -175,7 +176,7 @@ class Capture : public IDeckLinkInputCallback {
     if (!frame) return S_OK;
     if (frame->GetFlags() & bmdFrameHasNoInputSource) {
       auto now = std::chrono::steady_clock::now();
-      if (now - lastNoSignal_ > std::chrono::seconds(1)) { writeText("STAT", "{\"message\":\"kein Eingangssignal\"}"); lastNoSignal_ = now; }
+      if (now - lastNoSignal_ > std::chrono::seconds(1)) { writeText("STAT", "{\"code\":\"decklink.noSignal\",\"message\":\"no input signal\"}"); lastNoSignal_ = now; }
       return S_OK;
     }
     const long w = frame->GetWidth(), h = frame->GetHeight(), row = frame->GetRowBytes();
@@ -251,6 +252,8 @@ class Capture : public IDeckLinkInputCallback {
     if (frame->GetTimecode(bmdTimecodeRP188Any, &t) == S_OK && t) {
       uint8_t hh = 0, mm = 0, ss = 0, ff = 0;
       if (t->GetComponents(&hh, &mm, &ss, &ff) == S_OK) { char b[16]; snprintf(b, sizeof b, "%02u:%02u:%02u:%02u", hh, mm, ss, ff); tc = b; }
+      // every frame: TIME record with the RP 188 timecode (the bridge forwards it as {type:'tc'})
+      if (!tc.empty()) writeText("TIME", "{\"tc\":\"" + tc + "\",\"df\":" + ((t->GetFlags() & bmdTimecodeIsDropFrame) ? "true" : "false") + "}");
       t->Release();
     }
     const char* pixel = pixel_ == bmdFormat10BitRGB ? "rgb48le" : pixel_ == bmdFormat10BitYUV ? "v210" : "uyvy422";
@@ -277,15 +280,113 @@ class Capture : public IDeckLinkInputCallback {
   std::chrono::steady_clock::time_point lastNoSignal_{};
 };
 
-static int fatal(const std::string& msg) { writeText("ERR ", msg); return 2; }
+// ERR as JSON {code, message, params?}: the UI translates the code (server/messages.mjs); texts contain no quotes
+static int fatal(const char* code, const std::string& msg, const std::string& params = "") {
+  writeText("ERR ", std::string("{\"code\":\"") + code + "\",\"message\":\"" + msg + "\"" + (params.empty() ? "" : ",\"params\":" + params) + "}");
+  return 2;
+}
+
+// ---------------------------------------------------------------- --reference (#72)
+
+/** {"name","width","height","fpsNum","fpsDen","field"} of a display mode, "null" if unknown. */
+static std::string modeJson(IDeckLink* d, int64_t mode) {
+  if (!mode) return "null";
+  IDeckLinkInput* in = nullptr;
+  IDeckLinkOutput* out = nullptr;
+  IDeckLinkDisplayModeIterator* it = nullptr;
+  if (d->QueryInterface(IID_IDeckLinkInput, (void**)&in) == S_OK) in->GetDisplayModeIterator(&it);
+  else if (d->QueryInterface(IID_IDeckLinkOutput, (void**)&out) == S_OK) out->GetDisplayModeIterator(&it);
+  std::string json = "null";
+  if (it) {
+    IDeckLinkDisplayMode* m = nullptr;
+    while (it->Next(&m) == S_OK) {
+      if ((int64_t)m->GetDisplayMode() == mode && json == "null") {
+        BMDTimeValue duration = 0; BMDTimeScale scale = 0;
+        m->GetFrameRate(&duration, &scale);
+        DLString name = nullptr;
+        m->GetName(&name);
+        const BMDFieldDominance f = m->GetFieldDominance();
+        json = "{\"name\":\"" + jsonEscape(toStd(name)) + "\",\"width\":" + std::to_string(m->GetWidth()) + ",\"height\":" + std::to_string(m->GetHeight())
+          + ",\"fpsNum\":" + std::to_string((long long)scale) + ",\"fpsDen\":" + std::to_string((long long)duration)
+          + ",\"field\":\"" + (f == bmdProgressiveSegmentedFrame ? "psf" : f == bmdProgressiveFrame ? "progressive" : "interlaced") + "\"}";
+      }
+      m->Release();
+    }
+    it->Release();
+  }
+  if (in) in->Release();
+  if (out) out->Release();
+  return json;
+}
+
+/**
+ * Reference (genlock) input status. Everything comes from the SDK: attributes
+ * BMDDeckLinkHasReferenceInput / ...SupportsFullFrameReferenceInputTimingOffset, status
+ * bmdDeckLinkStatusReferenceSignalLocked / ...Mode / ...Flags (mode and flags only on devices
+ * with reference format detection), configuration bmdDeckLinkConfigReferenceInputTimingOffset
+ * (pixels; +/-511, or +/- half the frame's total pixels with the full-frame attribute) and
+ * IDeckLinkOutput::GetReferenceStatus. The SDK reports no phase between input and reference.
+ */
+static int reference(int index) {
+  IDeckLinkIterator* probe = createIterator();
+  if (!probe) { printf("{\"ok\":false,\"code\":\"decklink.noDriver\",\"error\":\"Blackmagic Desktop Video is not installed (DeckLink driver missing)\"}\n"); return 0; }
+  probe->Release();
+  std::vector<IDeckLink*> list = allDevices();
+  if (index < 0 || index >= (int)list.size()) { printf("{\"ok\":false,\"code\":\"decklink.noDevice\",\"error\":\"DeckLink device %d not present\",\"params\":{\"index\":%d}}\n", index, index); return 0; }
+  IDeckLink* d = list[index];
+  DLString dn = nullptr;
+  d->GetDisplayName(&dn);
+  std::string out = "{\"ok\":true,\"index\":" + std::to_string(index) + ",\"name\":\"" + jsonEscape(toStd(dn)) + "\"";
+  DLBool has = false, full = false;
+  IDeckLinkProfileAttributes* attr = nullptr;
+  if (d->QueryInterface(IID_IDeckLinkProfileAttributes, (void**)&attr) == S_OK) {
+    attr->GetFlag(BMDDeckLinkHasReferenceInput, &has);
+    attr->GetFlag(BMDDeckLinkSupportsFullFrameReferenceInputTimingOffset, &full);
+    attr->Release();
+  }
+  out += std::string(",\"hasReference\":") + (has ? "true" : "false") + ",\"fullFrameOffset\":" + (full ? "true" : "false");
+  IDeckLinkStatus* st = nullptr;
+  if (d->QueryInterface(IID_IDeckLinkStatus, (void**)&st) == S_OK) {
+    DLBool locked = false, inLocked = false;
+    int64_t mode = 0, flags = 0, inMode = 0;
+    const bool lockedOk = st->GetFlag(bmdDeckLinkStatusReferenceSignalLocked, &locked) == S_OK;
+    const bool modeOk = st->GetInt(bmdDeckLinkStatusReferenceSignalMode, &mode) == S_OK;
+    const bool flagsOk = st->GetInt(bmdDeckLinkStatusReferenceSignalFlags, &flags) == S_OK;
+    const bool inOk = st->GetFlag(bmdDeckLinkStatusVideoInputSignalLocked, &inLocked) == S_OK;
+    const bool inModeOk = st->GetInt(bmdDeckLinkStatusCurrentVideoInputMode, &inMode) == S_OK;
+    out += std::string(",\"referenceLocked\":") + (lockedOk ? (locked ? "true" : "false") : "null");
+    out += ",\"referenceMode\":" + (modeOk ? modeJson(d, mode) : std::string("null"));
+    out += std::string(",\"referencePsF\":") + (flagsOk ? ((flags & bmdDeckLinkVideoStatusPsF) ? "true" : "false") : "null");
+    out += std::string(",\"inputLocked\":") + (inOk ? (inLocked ? "true" : "false") : "null");
+    out += ",\"inputMode\":" + (inModeOk ? modeJson(d, inMode) : std::string("null"));
+    st->Release();
+  }
+  IDeckLinkConfiguration* cfg = nullptr;
+  if (d->QueryInterface(IID_IDeckLinkConfiguration, (void**)&cfg) == S_OK) {
+    int64_t off = 0;
+    if (cfg->GetInt(bmdDeckLinkConfigReferenceInputTimingOffset, &off) == S_OK) out += ",\"timingOffsetPixels\":" + std::to_string((long long)off);
+    cfg->Release();
+  }
+  IDeckLinkOutput* o = nullptr;
+  if (d->QueryInterface(IID_IDeckLinkOutput, (void**)&o) == S_OK) {
+    BMDReferenceStatus rs = 0;
+    if (o->GetReferenceStatus(&rs) == S_OK)
+      out += std::string(",\"outputReference\":{\"locked\":") + ((rs & bmdReferenceLocked) ? "true" : "false") + ",\"notSupported\":" + ((rs & bmdReferenceNotSupportedByHardware) ? "true" : "false") + "}";
+    o->Release();
+  }
+  out += "}";
+  printf("%s\n", out.c_str());
+  for (IDeckLink* x : list) x->Release();
+  return 0;
+}
 
 static int capture(int index, bool tenBit) {
   std::vector<IDeckLink*> list = allDevices();
-  if (list.empty()) return fatal("Keine DeckLink-Geräte gefunden (Desktop Video installiert? Gerät angeschlossen?)");
-  if (index < 0 || index >= (int)list.size()) return fatal("DeckLink-Gerät " + std::to_string(index) + " nicht vorhanden");
+  if (list.empty()) return fatal("decklink.noDevices", "No DeckLink devices found (Desktop Video installed? Device connected?)");
+  if (index < 0 || index >= (int)list.size()) return fatal("decklink.noDevice", "DeckLink device " + std::to_string(index) + " not present", "{\"index\":" + std::to_string(index) + "}");
   IDeckLink* d = list[index];
   IDeckLinkInput* in = nullptr;
-  if (d->QueryInterface(IID_IDeckLinkInput, (void**)&in) != S_OK) return fatal("Gerät kann nicht aufnehmen");
+  if (d->QueryInterface(IID_IDeckLinkInput, (void**)&in) != S_OK) return fatal("decklink.noInput", "Device cannot capture");
   DLBool detect = false;
   IDeckLinkProfileAttributes* attr = nullptr;
   if (d->QueryInterface(IID_IDeckLinkProfileAttributes, (void**)&attr) == S_OK) { attr->GetFlag(BMDDeckLinkSupportsInputFormatDetection, &detect); attr->Release(); }
@@ -301,16 +402,16 @@ static int capture(int index, bool tenBit) {
     }
     modes->Release();
   }
-  if (!start) return fatal("Gerät meldet keine Videomodi");
+  if (!start) return fatal("decklink.noModes", "Device reports no video modes");
   const BMDPixelFormat pf = tenBit ? bmdFormat10BitYUV : bmdFormat8BitYUV;
   Capture cb(in, tenBit);
   in->SetCallback(&cb);
   if (in->EnableVideoInput(start->GetDisplayMode(), pf, detect ? bmdVideoInputEnableFormatDetection : bmdVideoInputFlagDefault) != S_OK)
-    return fatal("Videoeingang lässt sich nicht öffnen (von anderer Software belegt?)");
+    return fatal("decklink.inputBusy", "Video input cannot be opened (in use by other software?)");
   cb.setMode(start, pf);
   start->Release();
-  if (!detect) writeText("STAT", "{\"message\":\"Gerät ohne Formaterkennung – Modus fest auf 1080i50\"}");
-  if (in->StartStreams() != S_OK) return fatal("Aufnahme lässt sich nicht starten");
+  if (!detect) writeText("STAT", "{\"code\":\"decklink.noDetect\",\"message\":\"Device without format detection – mode fixed to 1080i50\"}");
+  if (in->StartStreams() != S_OK) return fatal("decklink.startFailed", "Capture cannot be started");
   // runs until the bridge closes stdout (writeRecord exits) or kills the process
   for (;;) std::this_thread::sleep_for(std::chrono::seconds(1));
 }
@@ -320,11 +421,12 @@ int main(int argc, char** argv) {
   _setmode(_fileno(stdout), _O_BINARY);
 #endif
   if (argc >= 2 && std::strcmp(argv[1], "--list") == 0) return listDevices();
+  if (argc >= 3 && std::strcmp(argv[1], "--reference") == 0) return reference(std::atoi(argv[2]));
   if (argc >= 3 && std::strcmp(argv[1], "--capture") == 0) {
     bool tenBit = true;
     for (int i = 3; i + 1 < argc; i++) if (std::strcmp(argv[i], "--bits") == 0) tenBit = std::strcmp(argv[i + 1], "8") != 0;
     return capture(std::atoi(argv[2]), tenBit);
   }
-  fprintf(stderr, "usage: lz-decklink --list | --capture <index> [--bits 8|10]\n");
+  fprintf(stderr, "usage: lz-decklink --list | --reference <index> | --capture <index> [--bits 8|10]\n");
   return 1;
 }

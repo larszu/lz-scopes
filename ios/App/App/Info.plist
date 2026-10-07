@@ -6,6 +6,11 @@
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>de</string>
+	</array>
 	<key>CFBundleDisplayName</key>
 	<string>LZ Scopes</string>
 	<key>CFBundleExecutable</key>
@@ -32,17 +37,17 @@
 		<true/>
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>LZ Scopes verbindet sich per Bluetooth mit dem Opple Light Master, um Beleuchtungsstärke, Farbtemperatur und Spektrum zu messen.</string>
+	<string>LZ Scopes connects to the Opple Light Master over Bluetooth to measure illuminance, colour temperature and spectrum.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_lz-scopes._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>LZ Scopes zeigt das Bild der Kamera oder einer USB-Capture-Karte in Waveform, Vektorskop und den anderen Scopes. Das Bild verlässt das Gerät nicht.</string>
+	<string>LZ Scopes shows the picture of the camera or a USB capture card in the waveform, vectorscope and the other scopes. The picture does not leave the device.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>LZ Scopes sucht im lokalen Netzwerk nach der LZ-Scopes-Bridge (Desktop-App oder npm start), die RTSP-, SRT- und Capture-Quellen dekodiert.</string>
+	<string>LZ Scopes searches the local network for the LZ Scopes bridge (desktop app or npm start), which decodes RTSP, SRT and capture sources.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>LZ Scopes misst Ton (Pegel, Phasenkorrelation, Spektrum) vom Mikrofon oder einem USB-Audioeingang. Der Ton verlässt das Gerät nicht.</string>
+	<string>LZ Scopes measures sound (levels, phase correlation, spectrum) from the microphone or a USB audio input. The sound does not leave the device.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

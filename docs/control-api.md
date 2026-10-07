@@ -29,7 +29,7 @@ Every command is a JSON object with `cmd`. Panels, sources, presets and scenes c
 | `source.select` | `source`; `panel` optional (without = all panels) |
 | `layout.preset` | `preset`: 1–6, id (`lc`) or label (`2x2`, `Colorist`) |
 | `layout.load` | `name` of a saved layout configuration |
-| `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `qclog`, `hist`, `stats`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `clock`) |
+| `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `qclog`, `hist`, `stats`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `clock`, `genlock`) |
 | `panel.maximize` | `panel`, `mode` `toggle`\|`on`\|`off`; `off` without `panel` = restore |
 | `freeze` | `mode` `toggle`\|`on`\|`off` |
 | `qc.clear` | – (clear the QC log; state `qc`: `active`, `total`, `last`) |
@@ -46,7 +46,7 @@ Every command is a JSON object with `cmd`. Panels, sources, presets and scenes c
 | `audio.pause` | `mode` `toggle`\|`on`\|`off`, `source` optional: pause/resume I and LRA (Tech 3341) |
 | `generator` | `mode` `toggle`\|`on`\|`off`, `signal` optional (`sine`, `ebu-ident`, `glits`, `blits`, `ebu-multi`, `ident-lr`, `pink`, `pink-band`, `white`, `sweep`, `steps`, `polarity`, `avsync`, …), `freq` 10–20000 Hz, `level` −90–0 dBFS; above −6 dBFS only with `"force": true` |
 
-Answer: `{ ok, result?, error?, state }`. `error` is a short text naming the command and the problem (for invalid fields, the field and its allowed values). Status `400` = invalid command, `422` = cannot be executed (e.g. unknown scene), `503` = no main window, `401`/`403` = access denied. Scripts should rely on `ok` and the status code, not on the wording of `error`.
+Answer: `{ ok, result?, error?, state }`. `error` is an English text naming the command and the problem (e.g. `source.select: source missing`, `Token missing or wrong`). Status `400` = invalid command, `422` = cannot be executed (e.g. unknown scene), `503` = no main window, `401`/`403` = access denied. Scripts should rely on `ok` and the status code, not on the wording.
 
 ## State (feedbacks)
 

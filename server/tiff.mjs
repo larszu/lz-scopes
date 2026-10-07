@@ -6,7 +6,7 @@ export function readTiff(buf) {
   const le = buf[0] === 0x49; // 'II'
   const u16 = (o) => (le ? buf.readUInt16LE(o) : buf.readUInt16BE(o));
   const u32 = (o) => (le ? buf.readUInt32LE(o) : buf.readUInt32BE(o));
-  if (u16(2) !== 42) throw new Error('keine TIFF-Datei');
+  if (u16(2) !== 42) throw new Error('not a TIFF file');
   const ifd = u32(4), n = u16(ifd), tags = {};
   for (let k = 0; k < n; k++) {
     const e = ifd + 2 + k * 12, tag = u16(e), type = u16(e + 2), count = u32(e + 4);
@@ -17,8 +17,8 @@ export function readTiff(buf) {
     tags[tag] = vals;
   }
   const width = tags[256][0], height = tags[257][0], bits = tags[258]?.[0] ?? 8, spp = tags[277]?.[0] ?? 1;
-  if ((tags[259]?.[0] ?? 1) !== 1) throw new Error('komprimiertes TIFF wird nicht unterstützt');
-  if ((tags[284]?.[0] ?? 1) !== 1) throw new Error('planares TIFF wird nicht unterstützt');
+  if ((tags[259]?.[0] ?? 1) !== 1) throw new Error('compressed TIFF is not supported');
+  if ((tags[284]?.[0] ?? 1) !== 1) throw new Error('planar TIFF is not supported');
   const offsets = tags[273], counts = tags[279];
   const bytes = width * height * spp * (bits / 8);
   const raw = Buffer.alloc(bytes);

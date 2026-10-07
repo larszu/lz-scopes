@@ -22,6 +22,7 @@ import type { Command } from '../server/control.mjs';
 import type { GenConfig } from './audio/dsp/signals';
 import { audioPanelSettings, audioRow, audioSourceControls, mountGenerator } from './audio/ui';
 import { setClockHooks } from './clock/panel';
+import { genlockPanelSettings, setGenlockBridge } from './genlock';
 import { clockPanelSettings } from './clock/ui';
 import { generator } from './audio/io';
 import { PATTERNS, RESOLUTIONS, patternById } from './patterns';
@@ -47,6 +48,7 @@ import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, 
 import { SOURCE_ITEMS, mountMenu, refreshMenu, registerMenuCommand, type MenuActions, type MenuState } from './menu/appMenu';
 import { openSettings, refreshSettings, registerSettingsSection } from './menu/settings';
 import { aboutSection, keysSection } from './menu/pages';
+import { LANG_NAMES, LANGS, langPref, setLangPref, systemLang, t, type LangPref } from './i18n';
 import { ShadingControl, SIM_URL } from './shading/ui';
 import { T as SHADING_T } from './shading/text';
 
@@ -129,6 +131,7 @@ const bridgeUrl = () => {
   return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
 };
 setClockHooks(() => sources, bridgeUrl);
+setGenlockBridge(bridgeUrl);
 
 // ---------------------------------------------------------------- DOM
 
@@ -216,6 +219,9 @@ const srow = (label: string, ...kids: (Node | string)[]) => h('label', { class: 
 const shint = (text: string) => h('p', { class: 'hint' }, text);
 
 registerSettingsSection({ id: 'ui', label: 'Oberfläche', order: 10, render: () => [
+  srow(t('lang.label'), select(langPref(), [['auto', t('lang.auto', { lang: LANG_NAMES[systemLang()] })], ...LANGS.map((l) => [l, LANG_NAMES[l]] as [string, string])],
+    (v) => { try { sessionStorage.setItem(REOPEN_SETTINGS, 'ui'); } catch { /* ignore */ } setLangPref(v as LangPref); }, t('lang.title'))),
+  shint(t('lang.hint')),
   srow('Skin', select(state.theme, THEMES, (v) => { if (isTheme(v)) setTheme(v); }, 'Farben der Bedienoberfläche')),
   shint('Nur die Bedienoberfläche ändert sich. Messdarstellungen (Spuren, Graticule, Falschfarben) bleiben in allen Varianten gleich.'),
   srow('Seitenleiste', checkbox(state.sidebar, 'Quellen anzeigen (B)', (v) => { state.sidebar = v; applySidebar(); save(); })),
@@ -280,6 +286,12 @@ registerSettingsSection({ id: 'audio', label: 'Audio', order: 80, render: () => 
 
 registerSettingsSection(keysSection(90));
 registerSettingsSection(aboutSection(100));
+// after a language switch the window reloads; bring the settings back where the user was
+const REOPEN_SETTINGS = 'lz-scopes.reopen-settings';
+try {
+  const page = sessionStorage.getItem(REOPEN_SETTINGS);
+  if (page) { sessionStorage.removeItem(REOPEN_SETTINGS); setTimeout(() => openSettings(page), 0); }
+} catch { /* storage unavailable */ }
 
 function checkbox(on: boolean, label: string, set: (v: boolean) => void) {
   const c = h('input', { type: 'checkbox', checked: on }) as HTMLInputElement;
@@ -828,7 +840,7 @@ function fillHead(v: PanelView) {
 
 /** Measuring stage in the panel head, honest about stages that have nothing to apply. */
 function stageChip(p: PanelState): Node | string {
-  if (isAudio(p.scope) || p.scope === 'clock' || isLight(p.scope)) return '';
+  if (isAudio(p.scope) || p.scope === 'clock' || p.scope === 'genlock' || isLight(p.scope)) return '';
   const n = stageNote(panelSource(p), p.stage ?? state.stage ?? 'signal');
   return n.text ? h('span', { class: `stagechip${n.warn ? ' warn' : ''}`, title: 'Messpunkt in der CST/LUT-Kette (⚙ → Messpunkt, Taste C)' }, n.text) : '';
 }
@@ -850,6 +862,7 @@ function addScopePanel(scope: ScopeType = 'wf-luma') {
 function panelSettings(p: PanelState): Node[] {
   if (isAudio(p.scope)) return audioPanelSettings(p, save);
   if (isLight(p.scope)) return lightPanelSettings(p, save);
+  if (p.scope === 'genlock') return genlockPanelSettings(p, save);
   if (p.scope === 'clock') {
     return clockPanelSettings(p, save, sources, () => {
       const v = [...views.values()].find((x) => state.panels[x.idx] === p);

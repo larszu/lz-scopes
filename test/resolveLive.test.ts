@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error plain JS module
 import { resolveProcessCheck, resolveState } from '../server/resolve.mjs';
 import { resolveLines } from '../src/resolveLive';
+import { setLang } from '../src/i18n';
+
+setLang('de'); // the UI texts below are checked in German
 
 describe('running DaVinci Resolve', () => {
   it('process check per platform', () => {

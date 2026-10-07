@@ -4,6 +4,7 @@
 
 import type { ScopeType } from './graticule';
 import { OVERLAY_SCOPES } from '../server/control.mjs';
+import { t } from './i18n';
 
 export interface OverlayElement {
   id: string;
@@ -41,7 +42,7 @@ export function newElement(scope: ScopeType, taken = 0): OverlayElement {
 }
 
 /** The scene that replaces the fixed overlay of earlier versions. */
-export function defaultScene(name = 'Waveform unten'): OverlayScene {
+export function defaultScene(name = t('scene.defaultName')): OverlayScene {
   return { id: newId(), name, elements: [newElement('wf-luma')] };
 }
 

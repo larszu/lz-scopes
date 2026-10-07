@@ -27,6 +27,8 @@ import { CURSORS, MAX_ELEMENTS, dragElement, hitTest, newElement, type Handle, t
 import { OVERLAY_SCOPES } from '../server/control.mjs';
 import { HUD_STYLE, onThemeChange, storedTheme } from './theme';
 import { deepContext, isCodec10, pipelineText, pixelsToFrame10, readPixels, startStream10, type Codec10 } from './deep';
+import { t } from './i18n';
+import { bridgeMessage } from './i18n/bridgeMessage';
 
 export interface OutputHost {
   panels: PanelState[];
@@ -58,12 +60,12 @@ export function runOutputView() {
   document.body.style.cssText = 'margin:0;background:#000;overflow:hidden;color:#ddd;font:12px system-ui;cursor:none';
   if (!host) {
     document.body.style.cursor = '';
-    document.body.textContent = 'Dieses Ausgabefenster braucht das geöffnete LZ-Scopes-Hauptfenster.';
+    document.body.textContent = t('output.needsMain');
     return;
   }
   const view = q.get('view') ?? 'grid';
   const outName = q.get('name') ?? '';
-  document.title = `LZ Scopes – Ausgabe ${outName || view}`;
+  document.title = `${t('output.title')} ${outName || view}`;
   const root = document.createElement('div');
   root.style.cssText = 'position:fixed;inset:0;display:grid;gap:2px;background:#000';
   const glCanvas = document.createElement('canvas');
@@ -119,7 +121,7 @@ export function runOutputView() {
     if (renderer.resize(g.width, g.height, dpr)) { clear = true; document.body.dataset.pipeline = renderer.bufferFormat; showHud(); }
     renderer.beginFrame(clear);
     if (clear) { sigs.clear(); clear = false; }
-    const o = { ...host.drawOptions(), emptyText: 'Kein Signal' };
+    const o = { ...host.drawOptions(), emptyText: t('output.noSignal') };
     cells.forEach((c, i) => {
       const src = c.src();
       if (src) { const { kr, kb } = LUMA[src.colorspace]; src.updateStats(kr, kb); }
@@ -159,7 +161,7 @@ export function runOutputView() {
 
   const hud = document.createElement('div');
   // chrome follows the UI skin; scopes, picture and the black surround never do
-  const skinHud = () => { const t = HUD_STYLE[storedTheme()]; Object.assign(hud.style, { font: t.font, color: t.fg, background: t.bg, borderRadius: t.radius }); };
+  const skinHud = () => { const s = HUD_STYLE[storedTheme()]; Object.assign(hud.style, { font: s.font, color: s.fg, background: s.bg, borderRadius: s.radius }); };
   hud.style.cssText = 'position:fixed;left:10px;bottom:10px;padding:4px 8px;transition:opacity .5s;pointer-events:none';
   skinHud(); onThemeChange(skinHud);
   document.body.append(hud);
@@ -167,10 +169,10 @@ export function runOutputView() {
   const showHud = () => {
     if (editor?.editing()) { hud.style.opacity = '0'; return; }
     const sc = view === 'overlay' ? scene() : null;
-    const buf = renderer.bufferFormat === 'RGBA16F' ? 'WebGL RGBA16F' : 'WebGL RGBA8 (RGBA16F nicht verfügbar)';
+    const buf = renderer.bufferFormat === 'RGBA16F' ? 'WebGL RGBA16F' : t('output.webgl8');
     hud.replaceChildren(
-      `${outName ? `${outName} · ` : ''}${view}${sc ? ` · ${sc.name}` : ''}${streamMsg ? ` · Stream ${streamMsg}` : ''}  ·  ${editor ? 'E Bearbeiten · ' : ''}F Vollbild · Doppelklick Vollbild`,
-      Object.assign(document.createElement('div'), { textContent: `${pipelineText(`${buf}, Beschriftung 8 bit`)}` }),
+      `${outName ? `${outName} · ` : ''}${view}${sc ? ` · ${sc.name}` : ''}${streamMsg ? ` · Stream ${streamMsg}` : ''}  ·  ${editor ? `${t('output.keyEdit')} · ` : ''}${t('output.keysView')}`,
+      Object.assign(document.createElement('div'), { textContent: `${pipelineText(`${buf}, ${t('output.labels8')}`)}` }),
     );
     hud.style.opacity = '1'; clearTimeout(hudT); hudT = window.setTimeout(() => (hud.style.opacity = '0'), 2500);
   };
@@ -328,28 +330,28 @@ function createEditor(host: OutputHost, root: HTMLElement, scene: () => OverlayS
 
   function renderBar() {
     const sc = scene();
-    if (!sc) { bar.replaceChildren(el('span', {}, 'Keine Szene')); return; }
-    const name = el('input', { style: `${inputCss};width:150px`, title: 'Name der Szene', value: sc.name }) as HTMLInputElement;
+    if (!sc) { bar.replaceChildren(el('span', {}, t('output.noScene'))); return; }
+    const name = el('input', { style: `${inputCss};width:150px`, title: t('output.sceneName'), value: sc.name }) as HTMLInputElement;
     name.onchange = () => { const n = name.value.trim(); if (n) { sc.name = n; changed(); } };
-    const add = selectEl('', [['', '+ Scope …'], ...scopeOptions()], (v) => {
+    const add = selectEl('', [['', t('output.addScope')], ...scopeOptions()], (v) => {
       if (!v || sc.elements.length >= MAX_ELEMENTS) return;
       sc.elements.push(newElement(v as ScopeType, sc.elements.length));
       sel = sc.elements.length - 1; changed(); renderBar();
-    }, 'Scope hinzufügen');
-    const kids: Node[] = [el('span', { style: 'color:#7fd08f' }, '✎ Szene'), name, add];
+    }, t('output.addScopeTitle'));
+    const kids: Node[] = [el('span', { style: 'color:#7fd08f' }, t('output.sceneEdit')), name, add];
     const cur = sc.elements[sel];
     if (cur) {
-      const sources: [string, string][] = [['', 'Quelle des Fensters'], ...host.sources().map((s, i): [string, string] => [s.id, `${i + 1} ${s.name}`])];
+      const sources: [string, string][] = [['', t('output.windowSource')], ...host.sources().map((s, i): [string, string] => [s.id, `${i + 1} ${s.name}`])];
       kids.push(
         el('span', { style: `width:1px;height:18px;background:${sk.line}` }),
         selectEl(cur.scope, scopeOptions(), (v) => { cur.scope = v as ScopeType; changed(); }, 'Scope'),
-        selectEl(cur.src, sources, (v) => { cur.src = v; changed(); }, 'Quelle dieses Scopes'),
-        slider('Deckkraft', cur.opacity, (v) => { cur.opacity = v; }),
-        slider('Abdunklung', cur.dim, (v) => { cur.dim = v; }),
-        button('✕', 'Scope entfernen (Entf)', () => remove()),
+        selectEl(cur.src, sources, (v) => { cur.src = v; changed(); }, t('output.scopeSource')),
+        slider(t('output.opacity'), cur.opacity, (v) => { cur.opacity = v; }),
+        slider(t('output.dim'), cur.dim, (v) => { cur.dim = v; }),
+        button('✕', t('output.removeScope'), () => remove()),
       );
     }
-    kids.push(button('Fertig (E)', 'Bearbeiten beenden', () => toggle()));
+    kids.push(button(t('output.done'), t('output.endEdit'), () => toggle()));
     bar.replaceChildren(...kids);
   }
   const remove = () => {
@@ -419,9 +421,9 @@ function startStream(host: OutputHost, gl: HTMLCanvasElement, cells: Cell[], nam
   const ws = new WebSocket(`${host.bridgeUrl()}/out?${q}`);
   const comp = document.createElement('canvas');
   let stopped = false;
-  ws.onmessage = (e) => { try { const m = JSON.parse(e.data); status(m.message ?? m.type); } catch { /* ignore */ } };
-  ws.onclose = () => { if (!stopped) status('beendet'); };
-  ws.onerror = () => status('Bridge nicht erreichbar');
+  ws.onmessage = (e) => { try { const m = JSON.parse(e.data); status(bridgeMessage(m, m.type)); } catch { /* ignore */ } };
+  ws.onclose = () => { if (!stopped) status(t('output.streamEnded')); };
+  ws.onerror = () => status(t('output.bridgeUnreachable'));
   let busy = false;
   const timer = setInterval(() => {
     if (ws.readyState !== WebSocket.OPEN) { if (ws.readyState > 1) clearInterval(timer); return; }

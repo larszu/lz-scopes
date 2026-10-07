@@ -10,7 +10,7 @@ A WebSocket delivers uncompressed frames to the browser. This repo's bridge spea
 | Server → client | Binary | one frame: `width × height × 4` samples R, G, B, A, row by row from the top; `depth` 8 → Uint8, 16 → Uint16 LE |
 | Server → client | Text | `{"type":"stats","sent":n,"dropped":n}` (optional, 1 Hz) |
 | Server → client | Text | `{"type":"tc","tc":"10:00:07:05","tcPts":7.2,"pts":7.4,"first":0.96,"kind":"gop"\|"s12m"}` (optional, at most 25/s): last timecode from the frame side data and the PTS of the newest decoded frame; Resolve: `{"type":"tc","tc":…,"kind":"resolve","fps":25,"df":false}` before every frame |
-| Server → client | Text | `{"type":"error"\|"end","message":"…"}`, then the server closes |
+| Server → client | Text | `{"type":"error"\|"end","message":"…","code":"…","params":{…}}`, then the server closes. `message` is English; the interface translates `code`/`params` (optional, `server/messages.mjs`) as `bridge.<code>` and shows unknown codes with `message`. `stats` can carry `message`/`code`/`params` in the same way. |
 
 Values are full-range R′G′B′ (0 = 0 %, maximum = 100 %). The transfer function is left unchanged; PQ and HLG arrive as code values. `transfer`, `matrix` and `primaries` follow the ffprobe names; if they are missing, the client assumes SDR and BT.709 for HD or BT.601 for SD.
 
@@ -118,8 +118,11 @@ Devices without a free ffmpeg path (DeckLink, NDI) run through a separate helper
 
 - `INFO` (JSON, before the first frame and on every format change): `{"width":1920,"height":1080,"fpsNum":50,"fpsDen":1,"pixel":"v210","matrix":"bt709","range":"tv","transfer":"unknown","primaries":"unknown","name":"1080i50","timecode":"10:00:00:00"}`
 - `FRAM`: one frame in the format `pixel`, rows without further padding. `pixel` ∈ `v210` (48 pixels per 128 bytes), `uyvy422`, `p216le`, `rgb48le`, `bgra`, `bgr0`, `rgba`, `rgb0`, `nv12`, `yuv420p`.
-- `STAT` (JSON `{"message":"…"}`): status, e.g. “no input signal”.
-- `ERR `: error text; the helper exits afterwards.
+- `STAT` (JSON `{"message":"…","code":"…"}`): status, e.g. “no input signal” (`code` optional, see above).
+- `ERR `: error as JSON `{"message":"…","code":"…","params":{…}}` or as plain text; the helper exits afterwards.
+- `TIME` (JSON `{"tc":"10:00:00:00","df":false}`, optional, per frame before `FRAM`): timecode of the source (DeckLink: RP 188). The bridge forwards it as `{"type":"tc","tc":…,"kind":"decklink","fps":…,"df":…}`.
+
+For helper sources `stats` additionally contains `phase`: position of frame arrival in the SMPTE ST 2059-1 grid `{periodMs, meanMs, sdMs, driftPpm, n, spanS, ref:"system"|"ptp"}` (server/phase.mjs). `GET /api/decklink/reference?index=n` returns the card's reference/genlock status (`lz-decklink --reference n`, docs/research/genlock.md, German).
 
 `--list` instead prints one JSON line `{"ok":true,"devices":[…]}` or `{"ok":false,"error":"…"}`. The bridge pipes the frames through ffmpeg (`-f v210` or `-f rawvideo -pix_fmt …` from stdin) and the same scaling as for streams; towards the browser, protocol 1 applies. For testing without hardware: `test/fixtures/fake-helper.mjs`.
 

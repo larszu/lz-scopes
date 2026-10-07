@@ -28,15 +28,16 @@ import { randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { taiMinusUtc as leapTaiMinusUtc } from './leap.mjs';
+import { bmsg, field } from './messages.mjs';
 
 export const PTP_PRIMARY = '224.0.1.129';
 export const PTP_EVENT_PORT = 319;
 export const PTP_GENERAL_PORT = 320;
 export const MSG = { SYNC: 0x0, DELAY_REQ: 0x1, FOLLOW_UP: 0x8, DELAY_RESP: 0x9, ANNOUNCE: 0xb, SIGNALING: 0xc, MANAGEMENT: 0xd };
 const MSG_NAMES = { 0: 'Sync', 1: 'Delay_Req', 2: 'Pdelay_Req', 3: 'Pdelay_Resp', 8: 'Follow_Up', 9: 'Delay_Resp', 10: 'Pdelay_Resp_Follow_Up', 11: 'Announce', 12: 'Signaling', 13: 'Management' };
-export const TIME_SOURCES = { 0x10: 'ATOMIC_CLOCK', 0x20: 'GPS', 0x30: 'TERRESTRIAL_RADIO', 0x39: 'SERIAL_TIME_CODE', 0x40: 'PTP', 0x50: 'NTP', 0x60: 'HAND_SET', 0x90: 'OTHER', 0xa0: 'INTERNAL_OSCILLATOR', 0xf0: 'SMPTE: Sync-Signal, ARB', 0xf1: 'SMPTE: Sync-Signal, PTP-initialisiert' };
-/** ST 2059-2 Table 2 gmLockingStatus */
-export const LOCKING_STATUS = ['nicht verfügbar', 'intern (nicht extern gebunden)', 'Cold Locking', 'Warm Locking', 'extern gebunden'];
+export const TIME_SOURCES = { 0x10: 'ATOMIC_CLOCK', 0x20: 'GPS', 0x30: 'TERRESTRIAL_RADIO', 0x39: 'SERIAL_TIME_CODE', 0x40: 'PTP', 0x50: 'NTP', 0x60: 'HAND_SET', 0x90: 'OTHER', 0xa0: 'INTERNAL_OSCILLATOR', 0xf0: 'SMPTE: sync signal, ARB', 0xf1: 'SMPTE: sync signal, PTP-initialised' };
+/** ST 2059-2 Table 2 gmLockingStatus (the UI translates by number: bridge.ptp.lock<n>) */
+export const LOCKING_STATUS = ['not in use', 'free run (not locked to an external reference)', 'cold locking', 'warm locking', 'locked'];
 
 const hex = (b) => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
 export const clockIdText = (id) => (id.length === 16 ? id.match(/../g).join(':') : id);
@@ -295,7 +296,7 @@ export class PtpMonitor {
 
   status(prefer = 127) {
     const now = this.nowMs();
-    const base = { running: this.running, error: this.error, since: this.started, delayReq: this.delayReq, iface: this.iface, estimate: 'software' };
+    const base = { running: this.running, ...field('error', this.error), since: this.started, delayReq: this.delayReq, iface: this.iface, estimate: 'software' };
     const dn = this.activeDomain(prefer);
     const domains = [...this.domains.keys()].sort((a, b) => a - b);
     if (dn === null) return { ...base, state: this.error ? 'error' : 'none', domains };
@@ -335,11 +336,12 @@ export class PtpMonitor {
   }
 }
 
+/** Socket error → message object ({ code, message, params }, server/messages.mjs). */
 export function errorText(e, port) {
-  if (e?.code === 'EACCES' || e?.code === 'EPERM') return `Port ${port}: keine Berechtigung (Ports unter 1024 brauchen unter Linux root oder CAP_NET_BIND_SERVICE; unter macOS nur mit Bindung an 0.0.0.0)`;
-  if (e?.code === 'EADDRINUSE') return `Port ${port} ist belegt (läuft bereits ein PTP-Dienst wie ptp4l ohne SO_REUSEADDR?)`;
-  if (e?.code === 'EADDRNOTAVAIL' || e?.code === 'ENODEV') return `Multicast ${PTP_PRIMARY} auf dieser Schnittstelle nicht möglich (${e.code})`;
-  return `PTP: ${e?.message ?? e}`;
+  if (e?.code === 'EACCES' || e?.code === 'EPERM') return bmsg('ptp.permission', `Port ${port}: no permission (ports below 1024 need root or CAP_NET_BIND_SERVICE on Linux; on macOS only when bound to 0.0.0.0)`, { port });
+  if (e?.code === 'EADDRINUSE') return bmsg('ptp.inUse', `Port ${port} is in use (is a PTP service such as ptp4l already running without SO_REUSEADDR?)`, { port });
+  if (e?.code === 'EADDRNOTAVAIL' || e?.code === 'ENODEV') return bmsg('ptp.multicast', `Multicast ${PTP_PRIMARY} not possible on this interface (${e.code})`, { group: PTP_PRIMARY, err: e.code });
+  return { message: `PTP: ${e?.message ?? e}` };
 }
 
 /** IPv4 interfaces for the multicast join. */
@@ -410,7 +412,7 @@ export class RtpMonitor {
     const now = Date.now();
     const recent = this.samples.filter((s) => now - s.at < 2000);
     return {
-      group: this.group, port: this.port, error: this.error, packets: this.packets, payloadType: this.pt, frames: recent.length,
+      group: this.group, port: this.port, ...field('error', this.error), packets: this.packets, payloadType: this.pt, frames: recent.length,
       lagMs: recent.length ? median(recent.map((s) => s.lagSeconds)) * 1000 : null,
       lagFrames: recent.length ? median(recent.map((s) => s.lagFrames)) : null,
       gridTicks: recent.length ? median(recent.map((s) => s.gridTicks)) : null,

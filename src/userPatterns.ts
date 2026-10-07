@@ -3,8 +3,11 @@
 // origin read them from there too. Favourites are a list of pattern ids in localStorage.
 
 import { PATTERNS, logoCard, testCardLogo, userLogo, type PatternDef } from './patterns';
+import { t } from './i18n';
 
-export const USER_GROUP = 'Eigene Bilder';
+/** stable group key of the user's own pictures (the shown group name depends on the language) */
+export const USER_GROUP = 'user';
+const userGroup = () => t('pattern.group.user');
 const DB = 'lz-scopes-media', STORE = 'images';
 const LOGO_KEY = 'lz-scopes.logo', FAV_KEY = 'lz-scopes.pattern-favs';
 /** limit per image: larger files are refused rather than filling the quota silently */
@@ -22,16 +25,16 @@ function db(): Promise<IDBDatabase> {
     const r = indexedDB.open(DB, 1);
     r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains(STORE)) r.result.createObjectStore(STORE, { keyPath: 'id' }); };
     r.onsuccess = () => ok(r.result);
-    r.onerror = () => fail(r.error ?? new Error('IndexedDB nicht verfügbar'));
+    r.onerror = () => fail(r.error ?? new Error(t('pattern.err.noIdb')));
   });
 }
 async function tx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const d = await db();
   return new Promise((ok, fail) => {
-    const t = d.transaction(STORE, mode);
-    const r = run(t.objectStore(STORE));
-    t.oncomplete = () => { ok(r.result); d.close(); };
-    t.onerror = t.onabort = () => { fail(t.error ?? new Error('IndexedDB-Fehler')); d.close(); };
+    const x = d.transaction(STORE, mode);
+    const r = run(x.objectStore(STORE));
+    x.oncomplete = () => { ok(r.result); d.close(); };
+    x.onerror = x.onabort = () => { fail(x.error ?? new Error(t('pattern.err.idb'))); d.close(); };
   });
 }
 
@@ -45,7 +48,7 @@ function register(img: UserImage): PatternDef {
   if (old) return old;
   const src = URL.createObjectURL(img.blob);
   urls.set(img.id, src);
-  const def: PatternDef = { id, name: img.name, group: USER_GROUP, src };
+  const def: PatternDef = { id, name: img.name, group: userGroup(), groupId: USER_GROUP, src };
   PATTERNS.push(def);
   return def;
 }
@@ -58,8 +61,8 @@ function unregister(imgId: string) {
 }
 
 export const LOGO_PATTERNS: PatternDef[] = [
-  { id: 'logo', name: 'Eigenes Logo', group: USER_GROUP, draw: (c, w, h) => logoCard(c, w, h) },
-  { id: 'testcard-logo', name: 'Testbild mit Kreis und Uhr + Logo', group: 'Testbild', animated: true, draw: testCardLogo },
+  { id: 'logo', name: t('pattern.ownLogo'), group: userGroup(), groupId: USER_GROUP, draw: (c, w, h) => logoCard(c, w, h) },
+  { id: 'testcard-logo', name: t('pattern.testcardLogo'), group: t('pattern.group.testcard'), animated: true, draw: testCardLogo },
 ];
 
 /** Logo patterns exist only while a logo is chosen. */
@@ -111,11 +114,11 @@ export async function userImages(): Promise<UserImage[]> {
 export async function addUserImages(files: File[]): Promise<{ added: PatternDef[]; errors: string[] }> {
   const added: PatternDef[] = [], errors: string[] = [];
   for (const f of files) {
-    if (!f.type.startsWith('image/')) { errors.push(`${f.name}: kein Bild`); continue; }
-    if (f.size > MAX_IMAGE_BYTES) { errors.push(`${f.name}: größer als ${MAX_IMAGE_BYTES >> 20} MB`); continue; }
+    if (!f.type.startsWith('image/')) { errors.push(t('pattern.err.notImage', { name: f.name })); continue; }
+    if (f.size > MAX_IMAGE_BYTES) { errors.push(t('pattern.err.tooLarge', { name: f.name, mb: MAX_IMAGE_BYTES >> 20 })); continue; }
     const img: UserImage = { id: crypto.randomUUID(), name: f.name, type: f.type, blob: f, added: Date.now() };
     try { await tx('readwrite', (s) => s.put(img)); }
-    catch (e) { errors.push(`${f.name}: nicht gespeichert (${(e as Error).message}); nur für diese Sitzung`); }
+    catch (e) { errors.push(t('pattern.err.notStored', { name: f.name, msg: (e as Error).message })); }
     added.push(register(img));
   }
   changed();

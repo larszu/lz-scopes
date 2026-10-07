@@ -8,7 +8,7 @@ import type { PanelState } from '../panel';
 import type { Source } from '../sources';
 import { CameraBridgeLink } from './bridge';
 import {
-  FIELDS, LIMITS, NEUTRAL_PAINT, busCommands, clampValue, fieldAvailable, formatValue, slope, vectorGesture, vectorMode, waveTarget,
+  FIELDS, LIMITS, NEUTRAL_PAINT, busCommands, slopeScale, clampValue, fieldAvailable, formatValue, slope, vectorGesture, vectorMode, waveTarget,
   type Channel, type Paint, type PaintField,
 } from './model';
 import { ShadingSim, SIM_URL } from './sim';
@@ -64,6 +64,8 @@ export class ShadingControl {
   gesture: Gesture | null = null;
   message = '';
   bridgeUrl = 'ws://localhost:9700';
+  /** where the bar sits; it covers part of the scopes, so it can move out of the way */
+  atTop = false;
   open = false;
   readonly link: CameraBridgeLink;
   private sim: ShadingSim | null = null;
@@ -73,7 +75,7 @@ export class ShadingControl {
   private version = 0;
 
   constructor(private host: ShadingHost, mount: HTMLElement) {
-    try { const s = JSON.parse(localStorage.getItem(STORE) ?? '{}'); if (typeof s.bridgeUrl === 'string') this.bridgeUrl = s.bridgeUrl; } catch { /* defaults */ }
+    try { const s = JSON.parse(localStorage.getItem(STORE) ?? '{}'); if (typeof s.bridgeUrl === 'string') this.bridgeUrl = s.bridgeUrl; this.atTop = s.atTop === true; } catch { /* defaults */ }
     this.link = new CameraBridgeLink(() => this.bridgeUrl, () => { this.syncFromBridge(); this.render(); });
     this.bar = h('div', { class: 'shading-bar hidden', role: 'region', 'aria-label': 'Touch Shading' });
     mount.append(this.bar);
@@ -90,7 +92,7 @@ export class ShadingControl {
     this.render();
   }
 
-  private persist() { try { localStorage.setItem(STORE, JSON.stringify({ bridgeUrl: this.bridgeUrl })); } catch { /* private window */ } }
+  private persist() { try { localStorage.setItem(STORE, JSON.stringify({ bridgeUrl: this.bridgeUrl, atTop: this.atTop })); } catch { /* private window */ } }
 
   private mode(): string | 'sim' {
     if (this.target === 'sim') return 'sim';
@@ -204,7 +206,7 @@ export class ShadingControl {
     this.dirty.clear();
     if (this.target === 'sim') { this.sim?.set(this.cur); }
     else if (typeof this.target === 'number') {
-      const { commands, error } = busCommands(changed, this.cur);
+      const { commands, error } = busCommands(changed, this.cur, this.mode());
       if (error) { this.message = error === 'hue' ? T.hueNotOnBus : T.tripleUnknown(error === 'black' ? 'Black' : 'White'); this.render(); return; }
       for (const c of commands) if (!this.link.send(this.target, c.cmd, c.params)) { this.message = T.notConnected; break; }
     }
@@ -290,7 +292,7 @@ export class ShadingControl {
       const d = level - g.level!;
       g.level = level;
       const ch: Channel = g.channel === 'y' ? 'g' : g.channel;
-      const k = slope(g.fields[0], ch, g.grab!, this.cur);
+      const k = slope(g.fields[0], ch, g.grab!, this.cur) * slopeScale(this.mode(), g.fields[0]);
       if (Math.abs(k) < 1e-5) return;
       g.acc += d / k;
       const step = Math.max(-LIMITS.step, Math.min(LIMITS.step, Math.trunc(g.acc)));
@@ -338,7 +340,7 @@ export class ShadingControl {
     ctx.fillText(label, r.x + r.w - tw + 2, r.y + 17);
     const g = this.gesture;
     if (g && g.panel === idx) {
-      const lines = g.fields.filter((f) => this.cur[f] !== undefined).map((f) => `${FIELDS[f].label} ${formatValue(f, this.cur[f])}`);
+      const lines = g.fields.filter((f) => this.cur[f] !== undefined).map((f) => `${FIELDS[f].label} ${formatValue(f, this.cur[f], this.start[f])}`);
       if (g.scope !== 'vector') {
         const range = WAVE_ZOOMS[p.waveZoom ?? 'full'];
         const yOf = (l: number) => r.y + r.h - ((l - range[0]) / (range[1] - range[0])) * r.h;
@@ -355,7 +357,7 @@ export class ShadingControl {
         ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + lx, cy - ly); ctx.stroke();
         ctx.beginPath(); ctx.arc(cx, cy, Math.hypot(lx, ly), 0, Math.PI * 2); ctx.globalAlpha = 0.35; ctx.stroke(); ctx.globalAlpha = 1;
-        const shown = g.mode ? [`${FIELDS[g.mode].label} ${formatValue(g.mode, this.cur[g.mode])}`] : [T.vectorHint];
+        const shown = g.mode ? [`${FIELDS[g.mode].label} ${formatValue(g.mode, this.cur[g.mode], this.start[g.mode])}`] : [T.vectorHint];
         this.box(ctx, r.x + 6, r.y + 26, shown);
       }
     }
@@ -382,7 +384,7 @@ export class ShadingControl {
     this.valuesEl.replaceChildren(...fields.map((f) => {
       const v = this.active ? this.cur[f] : this.targetPaint()[f];
       const changed = this.active && this.cur[f] !== this.start[f];
-      return h('span', { class: `shv${changed ? ' changed' : ''}`, 'data-field': f }, `${FIELDS[f].label} ${formatValue(f, v)}`);
+      return h('span', { class: `shv${changed ? ' changed' : ''}`, 'data-field': f }, `${FIELDS[f].label} ${formatValue(f, v, this.active ? this.start[f] : undefined)}`);
     }));
   }
 
@@ -390,6 +392,7 @@ export class ShadingControl {
     const b = this.bar;
     b.classList.toggle('hidden', !this.open);
     b.classList.toggle('live', this.active);
+    b.classList.toggle('top', this.atTop);
     if (!this.open) return;
     const cams = this.link.cameras;
     const targetSel = h('select', {
@@ -414,6 +417,7 @@ export class ShadingControl {
         h('div', { class: 'row' }, url), h('div', { class: 'hint' }, linkTxt),
         h('p', { class: 'hint' }, T.help(LIMITS.step, LIMITS.span))),
       h('span', { class: 'shading-msg', 'data-shading-msg': '' }, this.message),
+      h('button', { class: 'icon', title: T.moveBar, onclick: () => { this.atTop = !this.atTop; this.persist(); this.render(); } }, '⇅'),
       h('button', { class: 'icon', title: T.close, onclick: () => { if (this.active) this.deactivate(); this.toggleBar(false); } }, '✕'),
     );
     this.renderValues();

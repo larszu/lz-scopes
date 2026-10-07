@@ -100,7 +100,8 @@ describe('PTP monitor with synthetic packets', () => {
     expect(st.twoStep).toBe(true);
     expect(st.pathDelayIncluded).toBe(true);
     expect(st.offsetNs).toBeCloseTo(350_000, -1);
-    expect(st.sm.lockingText).toBe('extern gebunden');
+    expect(st.sm.lockingText).toBe('locked');
+    expect(st.sm.gmLockingStatus).toBe(4);
   });
   it('delay request-response removes the path delay', () => {
     let nowNs = S - 37n * 1_000_000_000n;
@@ -122,8 +123,9 @@ describe('PTP monitor with synthetic packets', () => {
     expect(st.pathDelayIncluded).toBe(false);
   });
   it('port errors are explained', () => {
-    expect(errorText({ code: 'EACCES' }, 319)).toMatch(/Berechtigung/);
-    expect(errorText({ code: 'EADDRINUSE' }, 320)).toMatch(/belegt/);
+    expect(errorText({ code: 'EACCES' }, 319)).toMatchObject({ code: 'ptp.permission', params: { port: 319 }, message: expect.stringMatching(/permission/) });
+    expect(errorText({ code: 'EADDRINUSE' }, 320)).toMatchObject({ code: 'ptp.inUse', message: expect.stringMatching(/in use/) });
+    expect(errorText(new Error('boom'), 320)).toEqual({ message: 'PTP: boom' });
   });
 });
 

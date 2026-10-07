@@ -67,6 +67,8 @@ Installer im [neuesten Release](https://github.com/larszu/lz-scopes/releases/lat
 
 **Menü und Einstellungen.** Die Desktop-App hat eine native Menüleiste (macOS: in der Systemleiste, App-Menü zuerst; Windows: im Fenster): *Datei, Bearbeiten, Ansicht, Quellen, Scopes, Ausgabe, Fenster, Hilfe*. Im Browser stehen dieselben Menüs links oben in der Kopfleiste (unter 900 px hinter ☰). Alle globalen Einstellungen liegen in einem Fenster, *Einstellungen …* (`Cmd+,` / `Strg+,` oder ⚙ rechts oben): Oberfläche, Display, Scopes, Messpunkt/CST, Latenz, Uhr/Timecode, Bridge/ffmpeg, Audio, Tastatur, Über/Lizenzen. Das ⚙ im Panel-Kopf enthält nur die Optionen dieses Panels. *Hilfe* verlinkt die Anleitungen und zeigt die Tastenkürzel. Begründung: [docs/research/menue.md](docs/research/menue.md).
 
+**Sprache.** Deutsch und Englisch. Die App folgt der Systemsprache (alles außer Deutsch zeigt Englisch); *Einstellungen → Oberfläche → Sprache* legt sie fest.
+
 Tasten: `Cmd+,` / `Strg+,` Einstellungen, `1`–`6` Layout, `C` Messpunkt (Signal / nach CST / nach LUT), `Leertaste` Einfrieren bzw. Wiedergabe, `←` / `→` ein Bild, `Umschalt+←/→` eine Sekunde, `J` `K` `L` Shuttle, `Pos1` / `Ende`, `F` Vollbild, `S` PNG, `B` Seitenleiste, `Esc` Solo beenden bzw. Messpunkt löschen, `E` Overlay im Ausgabefenster bearbeiten. Vollständig: *Hilfe → Tastenkürzel*.
 
 ## Aus dem Quelltext
@@ -226,6 +228,8 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 
 Panel-Typ **Uhr / Timecode**, dazu wahlweise eine Einblendung im Bild-Panel (⚙ → Uhr). Quellen und Befunde: [docs/research/clock-ptp.md](docs/research/clock-ptp.md).
 
+Panel-Typ **Referenz / Genlock**: Haustakt am Referenzeingang einer DeckLink. Es zeigt, ob die Referenz gelockt ist, das erkannte Format (Black Burst bei SD, Tri-Level bei HD), den eingestellten Genlock-Offset und den Eingangsstatus, alles aus dem DeckLink-SDK. Den Zeitversatz zwischen Eingang und Referenz meldet das SDK nicht, deshalb zeigt das Panel keinen an. Dazu kommen die Lage des Bildtakts von DeckLink-/NDI-Quellen im SMPTE-ST-2059-1-Raster (Systemuhr oder PTP; Lage, Streuung, Drift in ppm) und der Timecode der Karte. Mit Hardware ungeprüft. Recherche: [docs/research/genlock.md](docs/research/genlock.md).
+
 - **Über 30 fps** zählt der Timecode 0…49/59 wie Schnittprogramme und FFmpeg; Frame-Paare nach ST 12-1 als Option. LTC läuft dort mit 25/30 Codewörtern (Paare).
 - **Tageszeit** nach SMPTE ST 2059-1: Systemzeit → TAI (IERS Bulletin C 72, TAI − UTC = 37 s) → Timecode mit Daily Jam, 23,98 … 60 fps, DF/NDF, Frame-Phase zur SMPTE-Epoche. Gekennzeichnet als „Systemuhr – keine Referenz“, solange kein PTP die Uhr korrigiert.
 - **Quell-Timecode**: Start-Timecode des Containers (ffprobe-Tag), GOP-/SEI-Timecode je Bild (ffmpeg `showinfo`), Timeline-Timecode aus DaVinci Resolve, Videodateien im Browser aus `currentTime`; Differenz zur Tageszeit in Frames.
@@ -245,7 +249,7 @@ Die Kommandos gehen über [lz-camera-bridge](https://github.com/larszu/lz-camera
 - Jede Änderung ist in der Schrittweite begrenzt.
 - **■ Ausgangswerte** (Esc) stellt die Werte vom Sitzungsbeginn wieder her.
 
-Ein Simulator läuft ohne Kamera. Bildwerte der Sony SRG-A40 über VISCA kann die Bridge noch nicht. Mehr in [docs/research/touch-shading.md](docs/research/touch-shading.md).
+Ein Simulator läuft ohne Kamera. An einer Sony SRG-A40 steuert die Bridge über HTTP-CGI R- und B-Gain des Weißabgleichs (gemessen). Hue, Schwarz und Gamma gibt es dort nicht. Mehr in [docs/research/touch-shading.md](docs/research/touch-shading.md).
 
 ## Einbetten
 
@@ -296,6 +300,7 @@ Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in
 npm test        # Farbmathematik (PQ, HLG, Matrizen, XYZ), Statistik, Bridge-Eingabeprüfung, Steuerbefehle, Overlay-Szenen
                 # Audio: K-Filter, Tech 3341/3342 bei 44,1 und 48 kHz, Generator, Bridge-Protokoll 2
 npm run typecheck
+npm run lang:check  # deutsch wirkende Texte außerhalb von src/i18n (UI-Texte nur über t(), src/i18n)
 npm run test:e2e  # Desktop-App per Playwright: Waveform-Pixel, RTSP über mediamtx, Ausgabefenster/MJPEG, Layouts, CST/LUT-Messpunkte
 npm --prefix companion ci && npm run companion:test && npm run companion:build   # Companion-Modul
 ```

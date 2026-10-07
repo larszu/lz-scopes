@@ -8,7 +8,6 @@ export default {
   'testmedia.meridianNote': 'PQ-kodiert mit P3-Primärfarben laut Netflix, in der Datei nicht signalisiert und nur 8 bit: Transfer PQ und Gamut P3 werden beim Öffnen gesetzt.',
   'testmedia.rerendered': '2013 neu gerendert, {fmt}',
   'testmedia.perFileName': '(laut Dateiname)',
-  'testmedia.close': 'Schließen',
   'testmedia.imagesTitle': 'Eigene Testbilder, Logo, Favoriten',
   'testmedia.name': 'Name',
   'testmedia.useAsLogo': 'Als Logo verwenden: eigenes Logo-Testbild und „Kreis und Uhr + Logo“',

@@ -18,21 +18,27 @@ export function resolveProcessCheck(platform = process.platform) {
   return { cmd: 'pgrep', args: ['-x', platform === 'darwin' ? 'Resolve' : 'resolve'], match: (out) => /^\d+/m.test(out) };
 }
 
-function run(cmd, args, timeoutMs) {
+/** stdout of a command; null = could not start; `timedOut` = killed after timeoutMs. */
+function run(cmd, args, timeoutMs, info = {}) {
   return new Promise((ok) => {
     let p;
     try { p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }); } catch { return ok(null); }
     let out = '';
-    const timer = setTimeout(() => p.kill('SIGKILL'), timeoutMs);
+    const timer = setTimeout(() => { info.timedOut = true; p.kill('SIGKILL'); }, timeoutMs);
     p.stdout.on('data', (d) => { out += d; });
     p.on('error', () => { clearTimeout(timer); ok(null); });
     p.on('close', () => { clearTimeout(timer); ok(out); });
   });
 }
 
-/** Turns the probe line into what the source list shows. */
-export function resolveState(running, probe) {
+/**
+ * Turns the probe line into what the source list shows. `busy`: the probe got no answer in
+ * time – the scripting API blocks while the timeline plays (#88, server/resolveWatch.mjs), so
+ * the last known project/timeline (`last`) is kept instead of claiming Python is missing.
+ */
+export function resolveState(running, probe, busy = false, last = null) {
   if (!running) return { running: false };
+  if (busy) return { ...(last?.scripting ? last : {}), running: true, scripting: true, busy: true };
   if (!probe) return { running: true, scripting: false, reason: 'python' };
   if (!probe.scripting) return { running: true, scripting: false, reason: probe.error ? 'module' : 'off', error: probe.error };
   const { scripting, ...rest } = probe;
@@ -40,8 +46,9 @@ export function resolveState(running, probe) {
 }
 
 let cache = null;
+let lastGood = null;
 /**
- * { running, scripting, product?, version?, page?, project?, timeline?, tc?, fps?, reason? }
+ * { running, scripting, busy?, product?, version?, page?, project?, timeline?, tc?, fps?, reason? }
  * Cached 3 s – the source list polls it.
  */
 export async function resolveStatus({ helper, python }) {
@@ -50,15 +57,17 @@ export async function resolveStatus({ helper, python }) {
   const out = await run(pc.cmd, pc.args, 3000);
   const running = out != null && pc.match(out);
   let probe = null;
+  const info = {};
   if (running) {
     for (const bin of python) {
-      const line = await run(bin, ['-u', helper, '--probe'], 6000);
+      const line = await run(bin, ['-u', helper, '--probe'], 4000, info);
       if (line == null) continue;
       try { probe = JSON.parse(line.trim().split('\n').pop() ?? ''); } catch { probe = null; }
       break;
     }
   }
-  const v = resolveState(running, probe);
+  const v = resolveState(running, probe, !!info.timedOut && !probe, lastGood);
+  if (v.scripting && !v.busy) lastGood = v;
   cache = { t: Date.now(), v };
   return v;
 }

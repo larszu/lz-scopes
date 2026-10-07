@@ -81,8 +81,9 @@ export default {
   'scope.r103.scaled': 'gemessen auf {w}×{h} (skaliert; normgerecht bei Analysebreite „nativ“)',
   'scope.cube.white': 'Weiß',
   'scope.cube.wireframe': 'Drahtgitter {gamut}',
-  'scope.cube.hint': 'ziehen = drehen, ⇧ = schieben, Rad = Zoom',
+  'scope.cube.hint': 'ziehen = drehen, ⇧ + ziehen = schieben, Rad oder Pinch = Zoom, Doppelklick = zurücksetzen',
   'scope.chplot.axes': '{y} (senkrecht) über {x}',
   'scope.chplot.diagonal': 'Diagonale = gleiche Kanäle',
+  'gesture.chipTitle': 'Vergrößerte Ansicht. Hier klicken oder im Scope doppelklicken zum Zurücksetzen. Rad oder Pinch = Zoom; ⇧ oder mittlere Taste + ziehen, Zwei-Finger-Scroll = schieben',
   'scope.satlum.axes': 'Sättigung % (|CbCr|)  über  Luma Y′ %',
 } satisfies Translation<typeof en>;

@@ -3,8 +3,8 @@
 // on, with a target chosen, do pointer drags on these scopes send anything. A stop button puts
 // back every value the session changed.
 
-import { WAVE_ZOOMS, channelLayout, isWaveform, plotRect, waveLevel, type ScopeType } from '../graticule';
-import type { PanelState } from '../panel';
+import { channelLayout, isWaveform, plotRect, waveLevel, type ScopeType } from '../graticule';
+import { contentRect, waveRangeOf, type PanelState } from '../panel';
 import type { Source } from '../sources';
 import { CameraBridgeLink } from './bridge';
 import {
@@ -85,6 +85,9 @@ export class ShadingControl {
 
   /** changes whenever the overlay must be redrawn */
   sig() { return this.active ? `sh${this.version}` : ''; }
+
+  /** While active, pointer gestures on these scopes go to the camera (zoom/pan only by wheel/trackpad, #89). */
+  owns(scope: ScopeType) { return this.active && SUPPORTED.includes(scope); }
 
   toggleBar(force?: boolean) {
     this.open = force ?? !this.open;
@@ -220,7 +223,7 @@ export class ShadingControl {
   /** Attach to a panel body. Capture phase: while shading is active, the gesture owns the drag. */
   attach(body: HTMLElement, idx: number, p: () => PanelState) {
     body.addEventListener('pointerdown', (e) => {
-      if (!this.active || e.button !== 0 || !SUPPORTED.includes(p().scope)) return;
+      if (!this.active || e.button !== 0 || !SUPPORTED.includes(p().scope) || (e.target as HTMLElement).closest?.('.zoomchip')) return;
       const g = this.begin(e, body, idx, p());
       if (!g) return;
       e.stopImmediatePropagation(); e.preventDefault();
@@ -253,7 +256,7 @@ export class ShadingControl {
     if (x < r.x || x > r.x + r.w || y < r.y || y > r.y + r.h) return null;
     let g: Gesture;
     if (isWaveform(p.scope)) {
-      const level = waveLevel(r, y, WAVE_ZOOMS[p.waveZoom ?? 'full']);
+      const level = waveLevel(r, y, waveRangeOf(p));
       let channel: Channel | 'y' = 'y', section = 0, sections = 1;
       if (p.scope === 'parade' || p.scope === 'yrgb') {
         const lay = channelLayout(p.scope, p.channels);
@@ -265,7 +268,7 @@ export class ShadingControl {
       if (t.kind === 'refused') return this.refuse(t.reason);
       g = { panel: idx, scope: p.scope, fields: t.fields, channel, section, sections, grab: level, level, acc: 0, before: {} };
     } else {
-      const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+      const c = contentRect(p, b.width, b.height), cx = c.x + c.w / 2, cy = c.y + c.h / 2;
       const from: [number, number] = [x - cx, cy - y];
       if (Math.hypot(...from) < r.w * 0.04) return this.refuse(T.vectorCentre);
       g = { panel: idx, scope: p.scope, fields: ['hue', 'saturation'], channel: 'y', from, last: from, mode: null, startSat: this.cur.saturation, acc: 0, before: {} };
@@ -288,7 +291,7 @@ export class ShadingControl {
     const x = e.clientX - b.left, y = e.clientY - b.top;
     const r = plotRect(p.scope, b.width, b.height);
     if (g.scope !== 'vector') {
-      const level = waveLevel(r, y, WAVE_ZOOMS[p.waveZoom ?? 'full']);
+      const level = waveLevel(r, y, waveRangeOf(p));
       const d = level - g.level!;
       g.level = level;
       const ch: Channel = g.channel === 'y' ? 'g' : g.channel;
@@ -300,7 +303,7 @@ export class ShadingControl {
       this.version++; this.host.redraw(); this.renderValues();
       return;
     }
-    const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+    const c = contentRect(p, b.width, b.height), cx = c.x + c.w / 2, cy = c.y + c.h / 2;
     const to: [number, number] = [x - cx, cy - y];
     g.mode ??= vectorMode(g.from!, to);
     if (!g.mode) return;
@@ -342,7 +345,7 @@ export class ShadingControl {
     if (g && g.panel === idx) {
       const lines = g.fields.filter((f) => this.cur[f] !== undefined).map((f) => `${FIELDS[f].label} ${formatValue(f, this.cur[f], this.start[f])}`);
       if (g.scope !== 'vector') {
-        const range = WAVE_ZOOMS[p.waveZoom ?? 'full'];
+        const range = waveRangeOf(p);
         const yOf = (l: number) => r.y + r.h - ((l - range[0]) / (range[1] - range[0])) * r.h;
         const sw = r.w / (g.sections ?? 1), sx = r.x + sw * (g.section ?? 0);
         ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.setLineDash([4, 4]);
@@ -352,7 +355,7 @@ export class ShadingControl {
         lines.unshift(T.target((g.level! * 100).toFixed(1), (g.grab! * 100).toFixed(1)));
         this.box(ctx, sx + 6, Math.max(r.y + 26, yOf(g.level!) - 8 - lines.length * 14), lines);
       } else {
-        const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+        const c = contentRect(p, w, h), cx = c.x + c.w / 2, cy = c.y + c.h / 2;
         const [lx, ly] = g.last!;
         ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + lx, cy - ly); ctx.stroke();

@@ -9,8 +9,10 @@ import {
 } from './chain';
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
-import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOMS, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
-import { DEFAULT_SKIN, ROI_CLOSE, defaultPanel as panel, drawPanel, panelSignature, roiCloseBox, type DrawOptions, type PanelState, type Tint } from './panel';
+import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
+import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, panelSignature, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
+import { attachGestures } from './gestures';
+import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
 import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } from './scene';
 import { connectRemote } from './remote';
@@ -797,7 +799,7 @@ function addAudioSource(mode: AudioInput['mode']) {
 
 // ---------------------------------------------------------------- panels
 
-interface PanelView { idx: number; el: HTMLElement; head: HTMLElement; body: HTMLElement; blit: HTMLCanvasElement; overlay: HTMLCanvasElement }
+interface PanelView { idx: number; el: HTMLElement; head: HTMLElement; body: HTMLElement; blit: HTMLCanvasElement; overlay: HTMLCanvasElement; zoom: HTMLButtonElement }
 const views = new Map<number, PanelView>();
 /** Views of the panels currently in the dock. */
 const openViews = () => dock.openIdx().map((i) => views.get(i)).filter((v): v is PanelView => !!v);
@@ -816,16 +818,19 @@ function panelElement(idx: number): HTMLElement {
     const p = () => state.panels[idx];
     const blit = h('canvas', { class: 'blit' }) as HTMLCanvasElement;
     const overlay = h('canvas', { class: 'overlay' }) as HTMLCanvasElement;
-    const body = h('div', { class: 'body' }, blit, overlay);
+    // zoom level (#89): shown while zoomed, click resets
+    const zoom = h('button', { class: 'zoomchip', hidden: true, 'data-zoom': '1', title: t('gesture.chipTitle'), onclick: () => resetView(idx), onpointerdown: (e: Event) => e.stopPropagation() }) as HTMLButtonElement;
+    const body = h('div', { class: 'body' }, blit, overlay, zoom);
     const head = h('div', { class: 'phead', ondblclick: () => toggleSolo(idx) });
     const el = h('div', { class: 'panel' }, head, body);
-    body.addEventListener('dblclick', () => toggleSolo(idx));
+    // double click: reset a zoomed view, otherwise solo
+    body.addEventListener('dblclick', (e) => { if ((e.target as HTMLElement).closest('.zoomchip')) return; if (!resetView(idx)) toggleSolo(idx); });
     shading.attach(body, idx, p);
+    attachPanelGestures(idx, p, body);
     attachPointer(p(), body);
     attachSkinDrag(p(), body);
-    attachCubeDrag(p(), body);
     body.addEventListener('contextmenu', (e) => { e.preventDefault(); const s = panelSource(p()); if (s) { s.probe = null; s.roi = null; s.faceMode = 'off'; refreshHeads(); } });
-    v = { idx, el, head, body, blit, overlay };
+    v = { idx, el, head, body, blit, overlay, zoom };
     views.set(idx, v);
     fillHead(v);
   }
@@ -836,7 +841,7 @@ function fillHead(v: PanelView) {
   const idx = v.idx, p = state.panels[idx];
   v.head.replaceChildren(
     select(p.scope, Object.entries(SCOPE_LABELS) as [string, string][], (val) => {
-      p.scope = val as ScopeType; if (val === 'vector' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
+      p.scope = val as ScopeType; p.view = undefined; if (val === 'vector' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
     }),
     sources.length > 1 && !isLight(p.scope) ? select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), t('panel.sourceTitle')) : '',
     stageChip(p),
@@ -908,7 +913,7 @@ function panelSettings(p: PanelState): Node[] {
     row(t('settings.scopes.scale'), select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', t('settings.scopes.nitsScene')]], (v) => { state.unit = v as Unit; save(); renderHeader(); }));
     row(t('panel.marks'), check('marks', t('panel.marksText'), true));
     row('EBU R 103', check('r103', t('panel.r103Text')));
-    row(t('panel.zoom'), select(p.waveZoom ?? 'full', Object.entries(WAVE_ZOOM_LABELS) as [string, string][], (v) => { p.waveZoom = v as WaveZoom; save(); }, t('panel.zoomTitle')));
+    row(t('panel.zoom'), select(p.waveZoom ?? 'full', Object.entries(WAVE_ZOOM_LABELS) as [string, string][], (v) => { p.waveZoom = v as WaveZoom; p.view = undefined; save(); }, t('panel.zoomTitle')));
     const chans = channelsOf(p.scope);
     if (chans.length) {
       row(t('panel.channels'), ...chans.map((c) => {
@@ -1011,7 +1016,7 @@ function panelSettings(p: PanelState): Node[] {
     } else row(t('panel.monoTint'), select(state.tint, [['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]], (v) => { state.tint = v as Tint; save(); }));
   }
   if (p.scope === 'vector') {
-    row(t('panel.vzoom'), select(String(p.zoom), [['1', '×1'], ['2', '×2'], ['5', '×5']], (v) => { p.zoom = Number(v); save(); }));
+    row(t('panel.vzoom'), select(String(p.zoom), [['1', '×1'], ['2', '×2'], ['5', '×5']], (v) => { p.zoom = Number(v); p.view = undefined; save(); }));
     const gbox = (g: '709' | 'p3' | '2020', label: string) => {
       const c = h('input', { type: 'checkbox', checked: (p.gamuts ?? []).includes(g) }) as HTMLInputElement;
       c.onchange = () => { const set = new Set(p.gamuts ?? []); if (c.checked) set.add(g); else set.delete(g); p.gamuts = [...set]; save(); };
@@ -1159,47 +1164,65 @@ async function offerFaceTracking(s: Source, body: HTMLElement) {
   setTimeout(() => ask.remove(), 8000);
 }
 
-function hitRoiClose(e: PointerEvent, s: Source, body: HTMLElement) {
+function hitRoiClose(e: PointerEvent, s: Source, body: HTMLElement, p: PanelState) {
   const b = body.getBoundingClientRect();
-  const r = plotRect('picture', b.width, b.height, s.width / s.height);
+  const r = contentRect(p, b.width, b.height, s.width / s.height);
   const [x0, y0, x1] = s.roi!;
   const [bx, by] = roiCloseBox(r.x + (x0 / s.width) * r.w, r.y + (y0 / s.height) * r.h, ((x1 - x0) / s.width) * r.w);
   const px = e.clientX - b.left, py = e.clientY - b.top;
   return px >= bx - 4 && px <= bx + ROI_CLOSE + 4 && py >= by - 4 && py <= by + ROI_CLOSE + 4;
 }
 
-/** Skin-tone waveform: drag the lo/hi lines, mouse wheel = hue tolerance. */
-/** 3D colour volume: drag = rotate (horizontal = yaw, vertical = pitch), double click = default view. */
-function attachCubeDrag(p: PanelState, body: HTMLElement) {
-  let last: { x: number; y: number } | null = null;
-  body.addEventListener('pointerdown', (e) => {
-    if (p.scope !== 'cube' || e.button !== 0) return;
-    last = { x: e.clientX, y: e.clientY };
-    try { body.setPointerCapture(e.pointerId); } catch { /* synthetic */ }
-  });
-  body.addEventListener('pointermove', (e) => {
-    if (!last || p.scope !== 'cube') return;
+/**
+ * Zoom and pan for every scope (#89, gestures.ts); the 3D volume also rotates (drag: horizontal =
+ * yaw, vertical = pitch).
+ */
+function attachPanelGestures(idx: number, p: () => PanelState, body: HTMLElement) {
+  const frame = () => {
+    const b = body.getBoundingClientRect(), s = panelSource(p());
+    return plotRect(p().scope, b.width, b.height, s?.width ? s.width / s.height : 16 / 9);
+  };
+  attachGestures(body, {
+    limits: () => viewLimits(p().scope),
+    view: () => panelView(p()),
+    frame,
+    set: (v) => { setPanelView(p(), v); syncZoomChip(idx); },
+    commit: () => save(),
+    blocked: () => shading.owns(p().scope),
+    primaryTaken: () => ['picture', 'wf-skin', 'wf-green'].includes(p().scope),
+    rotates: () => p().scope === 'cube',
+    rotate: (dx, dy) => {
+      const c = { ...DEFAULT_CUBE, ...p().cube };
+      p().cube = { ...c, yaw: ((c.yaw + dx * 0.5 + 540) % 360) - 180, pitch: Math.max(-90, Math.min(90, c.pitch + dy * 0.5)) };
+    },
+    wheelTaken: () => p().scope === 'wf-skin' || p().scope === 'wf-green',
+    wheelAtCentre: () => p().scope === 'vector',
+  }, () => { if (!resetView(idx)) toggleSolo(idx); });
+}
+
+/** Back to the unzoomed view (3D volume: also the default rotation). False if nothing to reset. */
+function resetView(idx: number): boolean {
+  const p = state.panels[idx];
+  if (!p) return false;
+  if (p.scope === 'cube') {
     const c = { ...DEFAULT_CUBE, ...p.cube };
-    if (e.shiftKey) {
-      // pan in clip units of the plot (square, side ≈ smaller body edge)
-      const b = body.getBoundingClientRect(), s = Math.max(10, Math.min(b.width, b.height) - 16);
-      p.cube = { ...c, panX: (c.panX ?? 0) + ((e.clientX - last.x) * 2) / s, panY: (c.panY ?? 0) - ((e.clientY - last.y) * 2) / s };
-    } else {
-      const yaw = ((c.yaw + (e.clientX - last.x) * 0.5 + 540) % 360) - 180;
-      const pitch = Math.max(-90, Math.min(90, c.pitch + (e.clientY - last.y) * 0.5));
-      p.cube = { ...c, yaw, pitch };
-    }
-    last = { x: e.clientX, y: e.clientY };
-  });
-  body.addEventListener('pointerup', () => { if (last) { last = null; save(); } });
-  body.addEventListener('wheel', (e) => {
-    if (p.scope !== 'cube') return;
-    e.preventDefault();
-    const c = { ...DEFAULT_CUBE, ...p.cube };
-    p.cube = { ...c, zoom: Math.max(0.3, Math.min(8, (c.zoom ?? 1) * (e.deltaY < 0 ? 1.12 : 1 / 1.12))) };
-    save();
-  }, { passive: false });
-  body.addEventListener('dblclick', () => { if (p.scope === 'cube') { const c = { ...DEFAULT_CUBE, ...p.cube }; p.cube = { ...c, yaw: DEFAULT_CUBE.yaw, pitch: DEFAULT_CUBE.pitch, zoom: 1, panX: 0, panY: 0 }; save(); } });
+    if (isIdentity(panelView(p)) && c.yaw === DEFAULT_CUBE.yaw && c.pitch === DEFAULT_CUBE.pitch) return false;
+    p.cube = { ...c, yaw: DEFAULT_CUBE.yaw, pitch: DEFAULT_CUBE.pitch };
+  } else if (isIdentity(panelView(p))) return false;
+  setPanelView(p, IDENTITY);
+  save(); syncZoomChip(idx);
+  return true;
+}
+
+/** Zoom chip of a panel: ×2.5 while zoomed. */
+function syncZoomChip(idx: number) {
+  const v = views.get(idx), p = state.panels[idx];
+  if (!v || !p) return;
+  const z = viewLimits(p.scope) ? panelView(p).z : 1;
+  const on = viewLimits(p.scope) !== null && !isIdentity(panelView(p));
+  v.zoom.hidden = !on;
+  v.zoom.textContent = on ? `${zoomLabel(z)} ⟲` : '';
+  v.zoom.dataset.zoom = String(Math.round(z * 1000) / 1000);
 }
 
 /** Skin and green waveforms: drag the lo/hi lines, mouse wheel = hue tolerance. */
@@ -1208,7 +1231,7 @@ function attachSkinDrag(p: PanelState, body: HTMLElement) {
   const levelAt = (e: PointerEvent | WheelEvent) => {
     const b = body.getBoundingClientRect();
     const r = plotRect(p.scope, b.width, b.height);
-    return waveLevel(r, e.clientY - b.top, WAVE_ZOOMS[p.waveZoom ?? 'full']);
+    return waveLevel(r, e.clientY - b.top, waveRangeOf(p));
   };
   let which: 'lo' | 'hi' | null = null;
   body.addEventListener('pointerdown', (e) => {
@@ -1227,9 +1250,11 @@ function attachSkinDrag(p: PanelState, body: HTMLElement) {
     if (q.lo > q.hi) { const t = q.lo; q.lo = q.hi; q.hi = t; which = which === 'lo' ? 'hi' : 'lo'; }
   });
   body.addEventListener('pointerup', () => { if (which) { which = null; save(); renderHeader(); } });
+  body.addEventListener('lzs-gesture-cancel', () => { if (which) { which = null; save(); } });
   body.addEventListener('wheel', (e) => {
     const q = range();
-    if (!q) return;
+    // trackpad pinch and scroll zoom/pan (gestures.ts); the mouse wheel sets the tolerance
+    if (!q || classifyWheel(e as WheelEvent & { wheelDeltaY?: number }) !== 'wheel') return;
     e.preventDefault();
     q.tol = Math.min(p.scope === 'wf-green' ? 60 : 45, Math.max(2, q.tol + (e.deltaY < 0 ? 1 : -1)));
     save();
@@ -1240,17 +1265,19 @@ function attachSkinDrag(p: PanelState, body: HTMLElement) {
 function attachPointer(p: PanelState, body: HTMLElement) {
   const toSrc = (e: PointerEvent, s: Source, clamp: boolean) => {
     const b = body.getBoundingClientRect();
-    const r = plotRect('picture', b.width, b.height, s.width / s.height);
+    const r = contentRect(p, b.width, b.height, s.width / s.height);
     let fx = (e.clientX - b.left - r.x) / r.w, fy = (e.clientY - b.top - r.y) / r.h;
     if (!clamp && (fx < 0 || fy < 0 || fx > 1 || fy > 1)) return null;
     fx = Math.min(1, Math.max(0, fx)); fy = Math.min(1, Math.max(0, fy));
     return { x: Math.min(s.width - 1, Math.floor(fx * s.width)), y: Math.min(s.height - 1, Math.floor(fy * s.height)) };
   };
-  let start: { x: number; y: number; cx: number; cy: number } | null = null;
+  let start: { x: number; y: number; cx: number; cy: number; roi: Source['roi'] } | null = null;
+  // a pinch began after the first finger: put the ROI back as it was, no probe
+  body.addEventListener('lzs-gesture-cancel', () => { const s = panelSource(p); if (start && s) s.roi = start.roi; start = null; });
   body.addEventListener('pointerdown', (e) => {
     const s = panelSource(p);
     if (p.scope !== 'picture' || !s?.width || e.button !== 0) return;
-    if (s.roi && !s.faceTrack && hitRoiClose(e, s, body)) { s.roi = null; refreshHeads(); return; }
+    if (s.roi && !s.faceTrack && hitRoiClose(e, s, body, p)) { s.roi = null; refreshHeads(); return; }
     const pt = toSrc(e, s, false);
     if (pt && s.faceTrack) {
       const hit = s.faces.find(({ box: f }) => pt.x >= f[0] && pt.x < f[2] && pt.y >= f[1] && pt.y < f[3]);
@@ -1261,7 +1288,7 @@ function attachPointer(p: PanelState, body: HTMLElement) {
       }
     }
     if (!pt) return;
-    start = { ...pt, cx: e.clientX, cy: e.clientY };
+    start = { ...pt, cx: e.clientX, cy: e.clientY, roi: s.roi };
     try { body.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
   });
   body.addEventListener('pointermove', (e) => {
@@ -1404,6 +1431,7 @@ function drawAll(now: number) {
     const sig = panelSignature(p, src, bodyRect, opts) + dpr + shading.sig();
     if (panelSigs.get(v.idx) === sig) continue;
     panelSigs.set(v.idx, sig);
+    syncZoomChip(v.idx);
     if (src?.latency.waiting && !drawnSources.has(src)) drawnSources.set(src, Date.now());
     const W = Math.round(b.width * dpr), H = Math.round(b.height * dpr);
     for (const c of [v.overlay, v.blit]) if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
@@ -1792,6 +1820,7 @@ function execute(c: Command): unknown {
     case 'panel.scope': {
       const i = panelIndex(c.panel), p = state.panels[i];
       p.scope = c.scope as ScopeType;
+      p.view = undefined;
       if (p.scope === 'vector' || p.scope === 'cie') p.colorize = true;
       save(); const v = views.get(i); if (v) fillHead(v); dock.setTitle(i); needClear = true;
       return { panel: i + 1, scope: p.scope };

@@ -2,6 +2,7 @@
 // bridge's /api/resolve (server/resolve.mjs) while the page is visible.
 
 import { t } from './i18n';
+import { button, h } from './ui';
 
 export interface ResolveStatus {
   running: boolean; scripting?: boolean; busy?: boolean; reason?: 'off' | 'python' | 'module'; error?: string;
@@ -43,15 +44,9 @@ export function mountResolveLive(host: HTMLElement, o: ResolveLiveOptions) {
     last = key;
     if (!l) { host.replaceChildren(); host.hidden = true; return; }
     host.hidden = false;
-    const btn = document.createElement('button');
-    btn.className = 'primary mini';
-    btn.textContent = o.connected() ? t('source.resolve.connected') : t('source.resolve.connect');
-    btn.disabled = !l.canConnect || o.connected();
-    btn.title = t('source.resolve.connectTitle');
-    btn.onclick = () => { o.connect(); last = ''; poll(); };
-    const title = document.createElement('div'); title.className = 'rl-title'; title.textContent = l.title;
-    const detail = document.createElement('div'); detail.className = 'rl-detail'; detail.textContent = l.detail;
-    const text = document.createElement('div'); text.className = 'rl-text'; text.append(title, detail);
+    const btn = button(o.connected() ? t('source.resolve.connected') : t('source.resolve.connect'), () => { o.connect(); last = ''; poll(); },
+      { variant: 'primary', small: true, title: t('source.resolve.connectTitle'), disabled: !l.canConnect || o.connected() });
+    const text = h('div', { class: 'rl-text' }, h('div', { class: 'rl-title' }, l.title), h('div', { class: 'rl-detail' }, l.detail));
     // nothing to click while scripting is off: the text says what to do
     host.replaceChildren(...(l.canConnect ? [text, btn] : [text]));
   };

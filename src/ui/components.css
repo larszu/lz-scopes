@@ -19,7 +19,7 @@ select option, select optgroup { background: var(--surface-2); color: var(--text
 button { cursor: pointer; }
 button:hover, select:hover { border-color: var(--line-3); }
 button:disabled, select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
-input[type='checkbox'], input[type='radio'] { min-height: 0; accent-color: var(--accent); }
+input[type='checkbox'], input[type='radio'] { min-height: 0; padding: 0; background: none; border: 0; accent-color: var(--accent); }
 input[type='range'] { width: 80px; padding: 0; accent-color: var(--accent); background: transparent; border: 0; }
 input[type='color'] { padding: 1px; width: 32px; }
 input[type='number'] { width: 56px; }
@@ -51,7 +51,7 @@ button.mini { padding: 1px 5px; min-height: var(--control-h-sm); font-size: var(
 .field > .field-label { width: var(--label-w); flex: none; }
 .field > .field-label:empty { display: none; }
 .field > select, .field > input:not([type='checkbox']):not([type='radio']):not([type='range']):not(.num) { flex: 1; min-width: 0; }
-@container (max-width: 300px) {
+@container (max-width: 260px) {
   .field > .field-label { width: 100%; }
 }
 
@@ -95,6 +95,9 @@ table.table { border-collapse: collapse; font-size: var(--fs-ui); }
 table.table td, table.table th { padding: 3px 8px; border-top: 1px solid var(--line-1); vertical-align: top; text-align: left; }
 table.table th { color: var(--text-muted); font-weight: 700; font-size: var(--fs-sm); }
 .table-wrap { max-width: 100%; overflow-x: auto; }
+/* tables of figures: right-aligned, tabular numbers; the first column is the label */
+table.num-table td, table.num-table th { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.num-table td:first-child, table.num-table th:first-child { text-align: left; }
 
 /* ---------------------------------------------------------------- popover (src/ui/popover.ts) */
 .pop { display: inline-flex; }

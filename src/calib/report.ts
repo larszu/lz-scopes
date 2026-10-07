@@ -93,12 +93,3 @@ ${u.warnings.map((w) => `<p class="note">⚠ ${esc(w)}</p>`).join('')}
 <p class="note">${esc(t('calib.html.uniNote'))}</p>
 </body></html>`;
 }
-
-/** Offer a text file for download (browser). */
-export function download(name: string, text: string, type = 'text/plain') {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], { type }));
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-}

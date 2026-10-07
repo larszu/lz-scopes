@@ -1690,10 +1690,7 @@ function snapshot() {
     ctx.drawImage(v.blit, (b.left - g.left) * dpr, (b.top - g.top) * dpr);
     ctx.drawImage(v.overlay, (b.left - g.left) * dpr, (b.top - g.top) * dpr);
   }
-  const a = document.createElement('a');
-  a.download = `lz-scopes-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.png`;
-  a.href = c.toDataURL('image/png');
-  a.click();
+  c.toBlob((b) => { if (b) download(`lz-scopes-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.png`, b); }, 'image/png');
 }
 
 // ---------------------------------------------------------------- remote control (Companion, docs/control-api.md)

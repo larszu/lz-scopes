@@ -11,6 +11,9 @@
 import type { Source } from './sources';
 import { lang, tIn, type Key as I18nKey } from './i18n';
 import { bridgeText } from './i18n/bridgeMessage';
+// controls without the shared stylesheet: output windows draw this panel too
+import { h } from './ui/dom';
+import { field, hint, select } from './ui/controls';
 
 export interface RefMode { name: string; width: number; height: number; fpsNum: number; fpsDen: number; field: 'progressive' | 'interlaced' | 'psf' }
 export interface RefStatus {
@@ -143,18 +146,11 @@ export function drawGenlockPanel(ctx: CanvasRenderingContext2D, o: Partial<Genlo
 /** ⚙ settings of the panel: which DeckLink device. */
 export function genlockPanelSettings(p: { genlock?: Partial<GenlockOptions> }, save: () => void): Node[] {
   const ui = lang();
-  const sel = document.createElement('select');
   const cur = p.genlock?.device ?? 0;
-  const fill = (devs: { index: number; name: string }[]) => {
-    sel.replaceChildren(...(devs.length ? devs : [{ index: cur, name: `#${cur}` }]).map((d) => { const o = document.createElement('option'); o.value = String(d.index); o.textContent = `${d.index} · ${d.name}`; o.selected = d.index === cur; return o; }));
-  };
+  const sel = select(String(cur), [], (v) => { p.genlock = { ...p.genlock, device: Number(v) }; save(); });
+  const fill = (devs: { index: number; name: string }[]) =>
+    sel.replaceChildren(...(devs.length ? devs : [{ index: cur, name: `#${cur}` }]).map((d) => h('option', { value: d.index, selected: d.index === cur }, `${d.index} · ${d.name}`)));
   fill([]);
   fetch(`${bridgeUrl().replace(/^ws/, 'http')}/api/decklink`).then((r) => r.json()).then((j: { devices?: { index: number; name: string }[] }) => fill(j.devices ?? [])).catch(() => {});
-  sel.onchange = () => { p.genlock = { ...p.genlock, device: Number(sel.value) }; save(); };
-  const label = document.createElement('label');
-  label.className = 'mrow';
-  const span = document.createElement('span'); span.textContent = tr('device', ui);
-  label.append(span, sel);
-  const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = tr('untested', ui);
-  return [label, hint];
+  return [field(tr('device', ui), sel), hint(tr('untested', ui))];
 }

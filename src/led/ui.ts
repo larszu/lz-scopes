@@ -16,6 +16,10 @@ import { bt709InverseOetf } from '../color';
 import { mountMeterCheck } from './oppleUi';
 import type { PointStat } from './oppleCheck';
 import { lang, num, t } from '../i18n';
+import { button, checkbox, disclosure, download, h, hint, inlineLabel as lab, modal, numberInput, row, select as sel, table, textInput, type Kid, type Modal } from '../ui';
+
+/** Table of figures (right-aligned, tabular), scrolled inside .table-wrap on phones. */
+const numTable = (head: Kid[] | undefined, rows: Kid[][]) => table(rows, { head, cls: 'num-table' });
 
 export interface LedHost {
   sources: () => Source[];
@@ -25,53 +29,12 @@ export interface LedHost {
   patternsChanged: () => void;
 }
 
-const h = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, unknown> = {}, ...kids: (Node | string)[]) => {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k.startsWith('on')) el.addEventListener(k.slice(2), v as EventListener);
-    else if (k === 'class') el.className = String(v);
-    else if (v === true) el.setAttribute(k, '');
-    else if (v !== false && v != null) el.setAttribute(k, String(v));
-  }
-  el.append(...kids);
-  return el;
-};
-const numIn = (value: number, title: string, onchange: (n: number) => void, step = '1', width = 64) => {
-  const i = h('input', { type: 'number', value: String(value), step, title, style: `width:${width}px` }) as HTMLInputElement;
-  i.onchange = () => { const n = Number(i.value); if (Number.isFinite(n)) onchange(n); };
-  return i;
-};
-const sel = (value: string, opts: [string, string][], onchange: (v: string) => void, title = '') =>
-  h('select', { title, onchange: (e: Event) => onchange((e.target as HTMLSelectElement).value) }, ...opts.map(([v, l]) => h('option', { value: v, selected: v === value }, l)));
-const lab = (text: string, ...kids: (Node | string)[]) => h('label', { class: 'inline' }, text, ...kids);
+/** Number field of the LED tool: (value, title, onchange, step, size) – the order all rows here use. */
+const numIn = (value: number, title: string, onchange: (n: number) => void, step = '1', size: 's' | 'm' | 'l' = 'l') =>
+  numberInput(value, onchange, { title, step, size });
 const fmt = (v: number, d = 1) => (Number.isFinite(v) ? num(v, d) : '–');
 const locale = () => (lang() === 'de' ? 'de-DE' : 'en-GB');
 const signed = (v: number, d = 1) => (Number.isFinite(v) ? `${v > 0 ? '+' : ''}${fmt(v, d)}` : '–');
-
-function download(name: string, blob: Blob) {
-  const a = h('a', { href: URL.createObjectURL(blob), download: name }) as HTMLAnchorElement;
-  document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-}
-
-const CSS = `
-dialog.ledtool { width: min(1180px, 96vw); max-height: 94vh; background: var(--surface-2, #111316); color: var(--text, #d9dce0); border: 1px solid var(--line-2, #2d3238); border-radius: var(--radius-lg, 8px); padding: 12px 14px; }
-dialog.ledtool::backdrop { background: var(--scrim, rgba(0,0,0,.55)); }
-.ledtool h3 { margin: 0 0 4px; font-size: 15px; }
-.ledtool details { border-top: 1px solid var(--line-1, #22262b); padding: 8px 0; }
-.ledtool summary { cursor: pointer; font-weight: 600; }
-.ledtool .row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 6px; }
-.ledtool .note { color: #ffb44a; }
-.ledtool canvas.cam { width: 100%; max-height: 60vh; object-fit: contain; background: #000; cursor: crosshair; border: 1px solid var(--line-2, #2d3238); }
-.ledtool canvas.heat { width: 100%; background: #000; border: 1px solid var(--line-2, #2d3238); }
-.ledtool table { border-collapse: collapse; font-size: 12px; margin-top: 6px; }
-.ledtool td, .ledtool th { border-bottom: 1px solid var(--line-1, #22262b); padding: 2px 8px; text-align: right; font-variant-numeric: tabular-nums; }
-.ledtool th { color: var(--text-muted, #8a9098); font-weight: 500; }
-.ledtool td:first-child, .ledtool th:first-child { text-align: left; }
-.ledtool textarea { width: 260px; height: 70px; font: 11px ui-monospace, Menlo, monospace; background: var(--field, #181b1f); color: var(--text, #d9dce0); border: 1px solid var(--line-2, #2d3238); }
-.ledtool .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-@media (max-width: 800px) { .ledtool .cols { grid-template-columns: 1fr; } }
-`;
 
 /** Copy the current frame of a source into an RGB float frame (at most 3840 px wide). */
 export function grabFrame(s: Source): Frame | null {
@@ -87,7 +50,7 @@ export function grabFrame(s: Source): Frame | null {
   }
   if (!s.element) return null;
   const w = Math.min(3840, s.width), hh = Math.round((s.height * w) / s.width);
-  const c = h('canvas', { width: w, height: hh }) as HTMLCanvasElement;
+  const c = h('canvas', { width: w, height: hh });
   const ctx = c.getContext('2d', { willReadFrequently: true })!;
   ctx.drawImage(s.element, 0, 0, w, hh);
   const d = ctx.getImageData(0, 0, w, hh).data, rgb = new Float32Array(w * hh * 3);
@@ -122,14 +85,13 @@ function heatColor(v: number, range: number) {
   return `rgb(${base.map((b, i) => Math.round(b + (hot[i] - b) * a)).join(',')})`;
 }
 
-let open: HTMLDialogElement | null = null;
+let open: Modal | null = null;
 
 export function openLedTool(host: LedHost) {
-  if (open) { open.showModal(); return; }
-  if (!document.getElementById('ledtool-css')) document.head.append(h('style', { id: 'ledtool-css' }, CSS));
-  const dlg = h('dialog', { class: 'ledtool' }) as HTMLDialogElement;
+  if (open) { open.open(); return; }
+  // long settings and a running check: no close by a stray click next to the dialog
+  const dlg = modal({ title: t('led.title'), cls: 'ledtool', size: 'xl', sticky: true });
   open = dlg;
-  document.body.append(dlg);
 
   let s = ledSettings();
   const set = (patch: Partial<LedSettings>) => { s = setLedSettings(patch); host.patternsChanged(); };
@@ -141,20 +103,20 @@ export function openLedTool(host: LedHost) {
     const w = s.wall, ws = wallSize(w), ps = pictureSize(w);
     const walls = savedWalls();
     wallBox.replaceChildren(
-      h('div', { class: 'row' },
-        lab('Name', (() => { const i = h('input', { value: w.name, style: 'width:140px' }) as HTMLInputElement; i.onchange = () => setWall({ name: i.value }); return i; })()),
+      row(
+        lab('Name', textInput(w.name, (v) => setWall({ name: v }))),
         walls.length ? sel('', [['', t('led.wall.saved')], ...walls.map((x) => [x.name, x.name] as [string, string])], (v) => { const x = walls.find((y) => y.name === v); if (x) setWall(x); }) : '',
-        h('button', { onclick: () => { saveWall(s.wall); renderWall(); } }, t('led.save')),
-        walls.some((x) => x.name === w.name) ? h('button', { onclick: () => { deleteWall(w.name); renderWall(); } }, t('led.delete')) : ''),
-      h('div', { class: 'row' },
+        button(t('led.save'), () => { saveWall(s.wall); renderWall(); }),
+        walls.some((x) => x.name === w.name) && button(t('led.delete'), () => { deleteWall(w.name); renderWall(); })),
+      row(
         lab(t('led.wall.cabinetPx'), numIn(w.cabW, t('led.wall.cabWTitle'), (n) => setWall({ cabW: n })), '×', numIn(w.cabH, t('led.wall.cabHTitle'), (n) => setWall({ cabH: n }))),
-        lab(t('led.wall.colsRows'), numIn(w.cols, t('led.wall.colsTitle'), (n) => setWall({ cols: n }), '1', 52), '×', numIn(w.rows, t('led.wall.rowsTitle'), (n) => setWall({ rows: n }), '1', 52)),
-        lab(t('led.wall.module'), numIn(w.modW, t('led.wall.modWTitle'), (n) => setWall({ modW: n }), '1', 52), '×', numIn(w.modH, t('led.wall.modHTitle'), (n) => setWall({ modH: n }), '1', 52))),
-      h('div', { class: 'row' },
+        lab(t('led.wall.colsRows'), numIn(w.cols, t('led.wall.colsTitle'), (n) => setWall({ cols: n }), '1', 's'), '×', numIn(w.rows, t('led.wall.rowsTitle'), (n) => setWall({ rows: n }), '1', 's')),
+        lab(t('led.wall.module'), numIn(w.modW, t('led.wall.modWTitle'), (n) => setWall({ modW: n }), '1', 's'), '×', numIn(w.modH, t('led.wall.modHTitle'), (n) => setWall({ modH: n }), '1', 's'))),
+      row(
         lab(t('led.wall.offset'), numIn(w.offX, t('led.wall.offXTitle'), (n) => setWall({ offX: n })), numIn(w.offY, t('led.wall.offYTitle'), (n) => setWall({ offY: n }))),
         lab(t('led.wall.processor'), sel(w.processor, Object.entries(PROCESSOR_LABELS) as [string, string][], (v) => setWall({ processor: v as WallConfig['processor'] }), t('led.wall.processorTitle'))),
         lab(t('led.wall.order'), sel(w.order, [['rows', t('led.wall.byRows')], ['cols', t('led.wall.byCols')], ['snake', t('led.wall.snake')]], (v) => setWall({ order: v as WallConfig['order'] })),
-          t('led.wall.from'), numIn(w.start, t('led.wall.startTitle'), (n) => setWall({ start: n }), '1', 52)),
+          t('led.wall.from'), numIn(w.start, t('led.wall.startTitle'), (n) => setWall({ start: n }), '1', 's')),
         h('span', { class: 'hint' }, t('led.wall.summary', { ww: ws.w, wh: ws.h, pw: ps.w, ph: ps.h, n: w.cols * w.rows }))),
     );
   }
@@ -164,43 +126,39 @@ export function openLedTool(host: LedHost) {
   let patId = 'led-cabinet-grid';
   function renderPatterns() {
     const p = s.patch, ps = pictureSize(s.wall);
-    const listText = h('textarea', { title: t('led.pat.listTitle') }, p.list.map((c) => c.map((v) => Number(v.toFixed(4))).join(' ')).join('\n')) as HTMLTextAreaElement;
+    const listText = h('textarea', { title: t('led.pat.listTitle') }, p.list.map((c) => c.map((v) => Number(v.toFixed(4))).join(' ')).join('\n'));
     listText.onchange = () => { const l = parsePatchList(listText.value); if (l.length) { set({ patch: { ...p, list: l, index: 0 } }); renderPatterns(); } };
     const code = Math.round((s.level / 100) * 255);
     patBox.replaceChildren(
-      h('div', { class: 'row' },
+      row(
         sel(patId, LED_PATTERNS.map((x) => [x.id, x.name] as [string, string]), (v) => { patId = v; }),
-        h('button', { class: 'primary', title: t('led.pat.showTitle', { w: ps.w, h: ps.h }), onclick: () => host.showPattern(patId, ps.w, ps.h) }, t('led.pat.show', { w: ps.w, h: ps.h }))),
-      h('div', { class: 'row' },
-        lab(t('led.pat.level'), numIn(s.level, t('led.pat.levelTitle'), (n) => { set({ level: n }); renderPatterns(); }, '0.5', 70), h('span', { class: 'hint' }, `= ${t('led.pat.code', { code })}`)),
-        ...(['R', 'G', 'B'] as const).map((c, i) => lab(c, (() => {
-          const cb = h('input', { type: 'checkbox', checked: s.channels[i] }) as HTMLInputElement;
-          cb.onchange = () => { const ch = [...s.channels] as LedSettings['channels']; ch[i] = cb.checked; set({ channels: ch }); };
-          return cb;
-        })())),
-        lab(t('led.pat.gridEvery'), numIn(s.gridStep, t('led.pat.gridTitle'), (n) => set({ gridStep: n }), '1', 52), 'px'),
-        lab(t('led.pat.lowMax'), numIn(s.lowMax, t('led.pat.lowMaxTitle'), (n) => set({ lowMax: n }), '1', 52)),
+        button(t('led.pat.show', { w: ps.w, h: ps.h }), () => host.showPattern(patId, ps.w, ps.h), { variant: 'primary', title: t('led.pat.showTitle', { w: ps.w, h: ps.h }) })),
+      row(
+        lab(t('led.pat.level'), numIn(s.level, t('led.pat.levelTitle'), (n) => { set({ level: n }); renderPatterns(); }, '0.5', 'l'), h('span', { class: 'hint' }, `= ${t('led.pat.code', { code })}`)),
+        ...(['R', 'G', 'B'] as const).map((c, i) => checkbox(s.channels[i], c, (on) => { const ch = [...s.channels] as LedSettings['channels']; ch[i] = on; set({ channels: ch }); })),
+        lab(t('led.pat.gridEvery'), numIn(s.gridStep, t('led.pat.gridTitle'), (n) => set({ gridStep: n }), '1', 's'), 'px'),
+        lab(t('led.pat.lowMax'), numIn(s.lowMax, t('led.pat.lowMaxTitle'), (n) => set({ lowMax: n }), '1', 's')),
         lab('Scroll', sel(s.scroll, [['h', t('led.pat.horizontal')], ['v', t('led.pat.vertical')]], (v) => set({ scroll: v as 'h' | 'v' })))),
-      h('p', { class: 'hint' }, t('led.pat.canvasHint')),
-      h('div', { class: 'row' },
+      hint(t('led.pat.canvasHint')),
+      row(
         h('b', {}, t('led.pat.sequencer')),
         lab(t('led.pat.window'), sel(String(p.window), ['1', '4', '10', '25', '100'].map((v) => [v, `${v} %`] as [string, string]), (v) => set({ patch: { ...p, window: Number(v) } }))),
-        lab(t('led.pat.surround'), numIn(p.surround, t('led.pat.surroundTitle'), (n) => set({ patch: { ...p, surround: n } }), '1', 52)),
+        lab(t('led.pat.surround'), numIn(p.surround, t('led.pat.surroundTitle'), (n) => set({ patch: { ...p, surround: n } }), '1', 's')),
         sel('', [['', t('led.pat.loadSet')], ...PATCH_PRESETS.map((x) => [x.id, x.name] as [string, string])], (v) => {
           const pr = PATCH_PRESETS.find((x) => x.id === v); if (pr) { set({ patch: { ...p, list: pr.list(), index: 0 } }); renderPatterns(); }
         })),
-      h('div', { class: 'row' },
+      row(
         listText,
         h('div', {},
-          h('div', { class: 'row' },
-            h('button', { class: 'mini', onclick: () => { set({ patch: { ...p, index: (p.index - 1 + p.list.length) % p.list.length } }); renderPatterns(); } }, '◀'),
+          row(
+            button('◀', () => { set({ patch: { ...p, index: (p.index - 1 + p.list.length) % p.list.length } }); renderPatterns(); }, { small: true }),
             h('span', {}, t('led.pat.patch', { i: Math.min(p.index, p.list.length - 1) + 1, n: p.list.length, rgb: p.list[Math.min(p.index, p.list.length - 1)].map((v) => Math.round(v * 255)).join(' ') })),
-            h('button', { class: 'mini', onclick: () => { set({ patch: { ...p, index: (p.index + 1) % p.list.length } }); renderPatterns(); } }, '▶')),
-          h('div', { class: 'row' },
-            lab(t('led.pat.auto'), (() => { const cb = h('input', { type: 'checkbox', checked: p.auto }) as HTMLInputElement; cb.onchange = () => set({ patch: { ...p, auto: cb.checked } }); return cb; })()),
-            lab(t('led.pat.each'), numIn(p.seconds, t('led.pat.secondsTitle'), (n) => set({ patch: { ...p, seconds: n } }), '0.5', 56), 's'),
-            lab(t('led.pat.label'), (() => { const cb = h('input', { type: 'checkbox', checked: p.label }) as HTMLInputElement; cb.onchange = () => set({ patch: { ...p, label: cb.checked } }); return cb; })())),
-          h('p', { class: 'hint' }, t('led.pat.seqHint')))),
+            button('▶', () => { set({ patch: { ...p, index: (p.index + 1) % p.list.length } }); renderPatterns(); }, { small: true })),
+          row(
+            checkbox(p.auto, t('led.pat.auto'), (on) => set({ patch: { ...p, auto: on } })),
+            lab(t('led.pat.each'), numIn(p.seconds, t('led.pat.secondsTitle'), (n) => set({ patch: { ...p, seconds: n } }), '0.5', 'm'), 's'),
+            checkbox(p.label, t('led.pat.label'), (on) => set({ patch: { ...p, label: on } }))),
+          hint(t('led.pat.seqHint')))),
     );
   }
 
@@ -210,12 +168,12 @@ export function openLedTool(host: LedHost) {
   const series: { angle: number; result: WallResult }[] = [];
   const scans: { note: string; index: number }[] = [];
   let transfer: CameraTransfer = 'code', margin = 15, captures = 4, srcId = '', camNote = '', heatMode: 'dev' | 'cb' | 'cr' | 'delta' | 'o-dy' | 'o-duv' = 'dev', range = 5, angle = 0;
-  const camCanvas = h('canvas', { class: 'cam', width: 960, height: 540 }) as HTMLCanvasElement;
-  const heat = h('canvas', { class: 'heat', width: 960, height: 400 }) as HTMLCanvasElement;
+  const camCanvas = h('canvas', { class: 'cam', width: 960, height: 540 });
+  const heat = h('canvas', { class: 'heat', width: 960, height: 400 });
   const camMsg = h('span', { class: 'hint' });
   const resBox = h('div');
   let meterStats: PointStat[] = [];
-  const camImg = h('canvas') as HTMLCanvasElement;
+  const camImg = h('canvas');
 
   const cams = () => host.sources().filter((x) => x.ready);
   function drawCam() {
@@ -325,31 +283,31 @@ export function openLedTool(host: LedHost) {
     const worst = [...r.cabinets].sort((a, b) => Math.abs(b.dev) - Math.abs(a.dev)).slice(0, 8);
     const pts = angleSeries(series);
     resBox.replaceChildren(
-      h('div', { class: 'row' },
+      row(
         h('b', {}, t('led.res.summary', { u: fmt(r.uniformity), s: fmt(r.spread, 2), n: r.cabinets.length })),
         lab(t('led.res.map'), sel(heatMode, [['dev', t('led.res.brightness')], ['cb', 'ΔCb'], ['cr', 'ΔCr'], ...(d ? [['delta', t('led.res.beforeAfter')] as [string, string]] : []), ...(meterStats.length ? [['o-dy', t('led.res.oppleBrightness')], ['o-duv', 'Opple: Δu′v′']] as [string, string][] : [])], (v) => { heatMode = v as typeof heatMode; drawHeat(); })),
         lab(t('led.res.scale'), sel(String(range), ['1', '2', '5', '10', '20'].map((v) => [v, v] as [string, string]), (v) => { range = Number(v); drawHeat(); }))),
       heat,
-      h('div', { class: 'row' },
-        h('button', { onclick: () => download(`${t('led.file.prefix')}-${r.wall.name}-${r.date.slice(0, 16).replace(/[:T]/g, '-')}.csv`, new Blob([reportCsv(r, { [t('led.csv.camera')]: camNote }, d)], { type: 'text/csv' })) }, '⤓ CSV'),
-        h('button', { onclick: () => heat.toBlob((b) => b && download(`${t('led.file.prefix')}-${r.wall.name}-heatmap.png`, b), 'image/png') }, '⤓ PNG'),
-        h('button', { title: t('led.res.rememberTitle'), onclick: () => { before = r; renderResult(); } }, t('led.res.remember')),
-        before ? h('span', { class: 'hint' }, t('led.res.before', { time: new Date(before.date).toLocaleTimeString(locale()), a: fmt(before.spread, 2), b: fmt(r.spread, 2) })) : '',
-        lab('Winkel °', numIn(angle, t('led.res.angleTitle'), (n) => { angle = n; }, '1', 52)),
-        h('button', { title: t('led.res.seriesTitle'), onclick: () => { series.push({ angle, result: r }); renderResult(); } }, t('led.res.series'))),
+      row(
+        button('⤓ CSV', () => download(`${t('led.file.prefix')}-${r.wall.name}-${r.date.slice(0, 16).replace(/[:T]/g, '-')}.csv`, new Blob([reportCsv(r, { [t('led.csv.camera')]: camNote }, d)], { type: 'text/csv' }))),
+        button('⤓ PNG', () => heat.toBlob((b) => b && download(`${t('led.file.prefix')}-${r.wall.name}-heatmap.png`, b), 'image/png')),
+        button(t('led.res.remember'), () => { before = r; renderResult(); }, { title: t('led.res.rememberTitle') }),
+        before && h('span', { class: 'hint' }, t('led.res.before', { time: new Date(before.date).toLocaleTimeString(locale()), a: fmt(before.spread, 2), b: fmt(r.spread, 2) })),
+        lab(`${t('led.res.angle')} °`, numIn(angle, t('led.res.angleTitle'), (n) => { angle = n; }, '1', 's')),
+        button(t('led.res.series'), () => { series.push({ angle, result: r }); renderResult(); }, { title: t('led.res.seriesTitle') })),
       h('div', { class: 'cols' },
-        h('table', {}, h('tr', {}, h('th', {}, 'Cabinet'), h('th', {}, t('led.res.devPct')), h('th', {}, 'ΔCb'), h('th', {}, 'ΔCr'), h('th', {}, 'Std')),
-          ...worst.map((c) => h('tr', {}, h('td', {}, `${c.label} #${c.id}`), h('td', {}, signed(c.dev, 2)), h('td', {}, signed(c.dCb, 2)), h('td', {}, signed(c.dCr, 2)), h('td', {}, fmt(c.std * 100, 2))))),
-        h('table', {}, h('tr', {}, h('th', {}, t('led.res.seam')), h('th', {}, t('led.res.contrastPct')), h('th', {}, t('led.res.profile'))),
-          ...seams.map((sm) => h('tr', {}, h('td', {}, `${sm.a} | ${sm.b}`), h('td', {}, signed(sm.contrast, 2)), h('td', {}, sparkline(sm.profile)))))),
-      pts.length ? h('table', {}, h('tr', {}, h('th', {}, t('led.res.angle')), h('th', {}, t('led.res.wallMedian')), h('th', {}, t('led.res.relative')), h('th', {}, 'Cb ×100'), h('th', {}, 'Cr ×100'), h('th', {}, t('led.res.spreadPct'))),
-        ...pts.map((p) => h('tr', {}, h('td', {}, fmt(p.angle, 0)), h('td', {}, fmt(p.median, 4)), h('td', {}, fmt(p.relative)), h('td', {}, signed(p.cb, 2)), h('td', {}, signed(p.cr, 2)), h('td', {}, fmt(p.spread, 2))))) : '',
+        h('div', { class: 'table-wrap' }, numTable(['Cabinet', t('led.res.devPct'), 'ΔCb', 'ΔCr', 'Std'],
+          worst.map((c) => [`${c.label} #${c.id}`, signed(c.dev, 2), signed(c.dCb, 2), signed(c.dCr, 2), fmt(c.std * 100, 2)]))),
+        h('div', { class: 'table-wrap' }, numTable([t('led.res.seam'), t('led.res.contrastPct'), t('led.res.profile')],
+          seams.map((sm) => [`${sm.a} | ${sm.b}`, signed(sm.contrast, 2), sparkline(sm.profile)])))),
+      pts.length ? h('div', { class: 'table-wrap' }, numTable([t('led.res.angle'), t('led.res.wallMedian'), t('led.res.relative'), 'Cb ×100', 'Cr ×100', t('led.res.spreadPct')],
+        pts.map((p) => [fmt(p.angle, 0), fmt(p.median, 4), fmt(p.relative), signed(p.cb, 2), signed(p.cr, 2), fmt(p.spread, 2)]))) : '',
     );
     drawHeat();
   }
 
   function sparkline(v: number[]) {
-    const c = h('canvas', { width: 84, height: 18 }) as HTMLCanvasElement, ctx = c.getContext('2d')!;
+    const c = h('canvas', { width: 84, height: 18 }), ctx = c.getContext('2d')!;
     const lo = Math.min(...v), hi = Math.max(...v), span = hi - lo || 1;
     ctx.strokeStyle = '#8cff9e'; ctx.beginPath();
     v.forEach((y, i) => { const px = (i / (v.length - 1)) * 83, py = 16 - ((y - lo) / span) * 14; if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); });
@@ -363,35 +321,35 @@ export function openLedTool(host: LedHost) {
   function renderCam() {
     const list = cams();
     camBox.replaceChildren(
-      h('div', { class: 'row' },
+      row(
         sel(srcId, list.length ? list.map((x) => [x.id, x.name] as [string, string]) : [['', t('led.cam.noSourceOpt')]], (v) => { srcId = v; }, t('led.cam.sourceTitle')),
-        h('button', { class: 'mini', title: t('led.cam.reloadTitle'), onclick: renderCam }, '↻'),
-        lab(t('led.cam.average'), numIn(captures, t('led.cam.averageTitle'), (n) => { captures = Math.max(1, Math.min(32, Math.round(n))); }, '1', 48)),
-        h('button', { class: 'primary', onclick: grab }, t('led.cam.grab')),
-        h('button', { onclick: () => { corners = []; hits = []; drawCam(); updateCamMsg(); } }, t('led.cam.resetCorners')),
+        button('↻', renderCam, { small: true, title: t('led.cam.reloadTitle') }),
+        lab(t('led.cam.average'), numIn(captures, t('led.cam.averageTitle'), (n) => { captures = Math.max(1, Math.min(32, Math.round(n))); }, '1', 's')),
+        button(t('led.cam.grab'), grab, { variant: 'primary' }),
+        button(t('led.cam.resetCorners'), () => { corners = []; hits = []; drawCam(); updateCamMsg(); }),
         camMsg),
-      camCanvas,
-      h('div', { class: 'row' },
-        lab(t('led.cam.margin'), numIn(margin, t('led.cam.marginTitle'), (n) => { margin = n; }, '1', 48)),
+      h('div', { class: 'cam-wrap' }, camCanvas),
+      row(
+        lab(t('led.cam.margin'), numIn(margin, t('led.cam.marginTitle'), (n) => { margin = n; }, '1', 's')),
         lab('Signal', sel(transfer, [['code', t('led.cam.codeValues')], ['bt709', t('led.cam.linearised')]], (v) => { transfer = v as CameraTransfer; })),
-        lab(t('led.cam.camNote'), (() => { const i = h('input', { value: camNote, placeholder: t('led.cam.camNotePh'), style: 'width:220px' }) as HTMLInputElement; i.onchange = () => { camNote = i.value; }; return i; })()),
-        h('button', { class: 'primary', onclick: evaluate }, t('led.cam.evaluate'))),
-      h('p', { class: 'hint' }, t('led.cam.howto')),
+        lab(t('led.cam.camNote'), textInput(camNote, (v) => { camNote = v; }, { placeholder: t('led.cam.camNotePh') })),
+        button(t('led.cam.evaluate'), evaluate, { variant: 'primary' })),
+      hint(t('led.cam.howto')),
       resBox,
-      h('div', { class: 'row' },
+      row(
         h('b', {}, t('led.scan.title')),
-        (() => { const i = h('input', { placeholder: t('led.scan.notePh'), style: 'width:200px' }) as HTMLInputElement; i.onchange = () => { scanNote = i.value; }; return i; })(),
-        h('button', { title: t('led.scan.measureTitle'), onclick: () => {
+        textInput('', (v) => { scanNote = v; }, { placeholder: t('led.scan.notePh') }),
+        button(t('led.scan.measure'), () => {
           if (!frame) { scanBox.textContent = t('led.grabFirst'); return; }
           const r = scanLineIndex(frame, corners.length === 4 ? corners : null);
           scans.push({ note: scanNote || t('led.scan.n', { n: scans.length + 1 }), index: r.index });
           scanBox.textContent = scans.map((x) => `${x.note}: ${fmt(x.index, 3)} %`).join(' · ');
-        } }, t('led.scan.measure')), scanBox),
-      h('p', { class: 'hint' }, t('led.scan.hint')),
-      h('div', { class: 'row' },
+        }, { title: t('led.scan.measureTitle') }), scanBox),
+      hint(t('led.scan.hint')),
+      row(
         h('b', {}, t('led.px.title')),
-        lab(t('led.px.threshold'), numIn(thr, t('led.px.thresholdTitle'), (n) => { thr = n; }, '1', 48)),
-        h('button', { onclick: () => {
+        lab(t('led.px.threshold'), numIn(thr, t('led.px.thresholdTitle'), (n) => { thr = n; }, '1', 's')),
+        button(t('led.px.search'), () => {
           if (!frame) { hitBox.textContent = t('led.grabFirst'); return; }
           hits = findOutlierPixels(frame, corners.length === 4 ? corners : null, thr / 100);
           drawCam();
@@ -400,9 +358,9 @@ export function openLedTool(host: LedHost) {
             return `${p.kind} ${p.x}/${p.y}${loc ? ` → ${t('led.px.loc', { label: loc.label, x: loc.px, y: loc.py })}` : ''}`;
           });
           hitBox.textContent = hits.length ? t('led.px.found', { n: `${hits.length}${hits.length >= 500 ? '+' : ''}`, list: where.join(' · ') }) : t('led.px.none');
-        } }, t('led.px.search'))),
+        })),
       hitBox,
-      h('p', { class: 'hint' }, t('led.px.hint')),
+      hint(t('led.px.hint')),
     );
     drawCam();
   }
@@ -435,20 +393,20 @@ export function openLedTool(host: LedHost) {
         const m = cameraMatrix(meas.r!, meas.g!, meas.b!, meas.w!);
         const txt = ocioMatrix(m);
         out = h('div', {},
-          h('table', {}, ...[0, 1, 2].map((i) => h('tr', {}, ...[0, 1, 2].map((j) => h('td', {}, m[i * 3 + j].toFixed(5)))))),
-          h('div', { class: 'row' }, h('code', {}, txt), h('button', { class: 'mini', onclick: () => navigator.clipboard?.writeText(txt) }, t('led.mat.copy'))));
+          h('div', { class: 'table-wrap' }, numTable(undefined, [0, 1, 2].map((i) => [0, 1, 2].map((j) => m[i * 3 + j].toFixed(5))))),
+          row(h('code', {}, txt), button(t('led.mat.copy'), () => navigator.clipboard?.writeText(txt), { small: true })));
       } catch (e) { out = (e as Error).message; }
     }
     const showPatch = (i: number) => { set({ patch: { ...s.patch, list: PATCH_PRESETS[0].list(), index: i, auto: false, window: 25 } }); const ps = pictureSize(s.wall); host.showPattern('led-patch', ps.w, ps.h); renderPatterns(); };
     matBox.replaceChildren(
-      h('p', { class: 'hint' }, t('led.mat.hint')),
-      h('div', { class: 'row' },
+      hint(t('led.mat.hint')),
+      row(
         lab(t('led.mat.linearisation'), sel(matTransfer, [['bt709', t('led.mat.inverse709')], ['code', t('led.mat.alreadyLinear')]], (v) => { matTransfer = v as CameraTransfer; })),
-        ...(['r', 'g', 'b', 'w'] as const).map((k, i) => h('span', { class: 'row', style: 'margin:0' },
-          h('button', { class: 'mini', title: t('led.mat.showTitle'), onclick: () => showPatch(i) }, t('led.mat.show', { c: 'RGBW'[i] })),
-          h('button', { onclick: () => measure(k) }, t('led.mat.measure', { c: 'RGBW'[i] })),
+        ...(['r', 'g', 'b', 'w'] as const).map((k, i) => h('span', { class: 'row' },
+          button(t('led.mat.show', { c: 'RGBW'[i] }), () => showPatch(i), { small: true, title: t('led.mat.showTitle') }),
+          button(t('led.mat.measure', { c: 'RGBW'[i] }), () => measure(k)),
           h('span', { class: 'hint' }, meas[k] ? meas[k]!.map((v) => v.toFixed(3)).join(' ') : '–')))),
-      msg ? h('p', { class: 'note' }, msg) : '', out);
+      msg && h('p', { class: 'note' }, msg), out);
   }
 
   // ------------------------------------------------ light meter (Opple)
@@ -460,21 +418,19 @@ export function openLedTool(host: LedHost) {
     cameraHeat: () => (result ? heat : null),
     onStats: (st) => { meterStats = st; if (result) renderResult(); },
   });
-  dlg.addEventListener('close', () => meterCheck.stop());
+  dlg.dlg.addEventListener('close', () => meterCheck.stop());
 
   // ------------------------------------------------ assemble
-  dlg.append(
-    h('div', { class: 'row', style: 'justify-content:space-between;margin:0' },
-      h('h3', {}, t('led.title')),
-      h('button', { onclick: () => dlg.close() }, t('led.close'))),
+  dlg.setBody(
     h('p', { class: 'note' }, t('led.intro')),
-    h('details', { open: true }, h('summary', {}, t('led.sec.wall')), wallBox),
-    h('details', { open: true }, h('summary', {}, t('led.sec.patterns')), patBox),
-    h('details', {}, h('summary', {}, t('led.sec.camera')), camBox),
-    h('details', {}, h('summary', {}, t('led.sec.opple')), meterBox),
-    h('details', {}, h('summary', {}, t('led.sec.matrix')), matBox),
+    disclosure(t('led.sec.wall'), [wallBox], { open: true }),
+    disclosure(t('led.sec.patterns'), [patBox], { open: true }),
+    disclosure(t('led.sec.camera'), [camBox]),
+    disclosure(t('led.sec.opple'), [meterBox]),
+    disclosure(t('led.sec.matrix'), [matBox]),
   );
+  dlg.foot.hidden = false;
+  dlg.foot.append(button(t('led.close'), () => dlg.close()));
   renderWall(); renderPatterns(); renderCam(); renderMatrix();
-  dlg.showModal();
+  dlg.open();
 }
-

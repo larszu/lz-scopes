@@ -7,29 +7,17 @@ import { PatchSequencer, sendPatch, type PatchFrame } from '../patchSequencer';
 import { TARGET_LABELS, xyYToXyz, type SdrTarget, type XYZ } from './colorimetry';
 import { buildCube } from './lut3d';
 import { Meter, meterInfo, type MeterInfo } from './meter';
-import { download, uniformityCsv, uniformityHtml, verifyCsv, verifyHtml } from './report';
+import { uniformityCsv, uniformityHtml, verifyCsv, verifyHtml } from './report';
 import { HDR_PEAKS, TEST_SETS, UNIFORMITY_GRIDS, UNIFORMITY_LEVELS, testSet, uniformityCells, type TestSet } from './testsets';
 import { evaluateUniformity, type UniformityReport } from './uniformity';
 import { UntetheredDetector } from './untethered';
 import { defaultTarget, verify, type VerifyReport } from './verify';
 import { gradeLabel } from './report';
 import { num, t } from '../i18n';
+import { button, checkbox, download, field, filePicker, h, hint, kicker, modal, numberInput, row, select as sel, table, textInput, type Kid } from '../ui';
 
-type Kid = Node | string | null | undefined | false;
-const h = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, unknown> = {}, ...kids: Kid[]) => {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v as EventListener);
-    else if (typeof v === 'boolean') { if (v) el.setAttribute(k, ''); } else if (v != null) el.setAttribute(k, String(v));
-  }
-  for (const c of kids) if (c) el.append(c);
-  return el;
-};
-const sel = (value: string, opts: [string, string][], on: (v: string) => void, title = '') =>
-  h('select', { title, onchange: (e: Event) => on((e.target as HTMLSelectElement).value) }, ...opts.map(([v, l]) => h('option', { value: v, selected: v === value }, l)));
 const numIn = (value: number, min: number, max: number, step: number, on: (v: number) => void, title = '') =>
-  h('input', { type: 'number', class: 'num', min, max, step, value, title, onchange: (e: Event) => on(Number((e.target as HTMLInputElement).value)) });
-const row = (label: string, ...kids: Kid[]) => h('div', { class: 'mrow' }, h('span', {}, label), ...kids);
+  numberInput(value, on, { min, max, step, title, size: 'l' });
 
 export interface CalibHost {
   /** http(s) base of the bridge, '' when there is none (static web build) */
@@ -53,8 +41,7 @@ let lastUniformity: UniformityReport | null = null;
 let running: { stop: () => void } | null = null;
 
 export function openCalibration(host: CalibHost) {
-  const dlg = h('dialog', { class: 'calib' }) as HTMLDialogElement;
-  const status = h('div', { class: 'hint' });
+  const status = h('div', { class: 'hint', role: 'status' });
   const log = h('pre', { class: 'calib-log' });
   const work = h('div', { class: 'calib-work' });
   const results = h('div', { class: 'calib-results' });
@@ -64,29 +51,29 @@ export function openCalibration(host: CalibHost) {
   const meterBox = h('div');
   const renderMeter = () => {
     const bridge = !!httpBase;
-    const kids: Kid[] = [h('div', { class: 'mtitle' }, t('calib.meter.title')),
-      h('p', { class: 'hint' }, t('calib.meter.argyllHint'))];
-    if (info === undefined) kids.push(h('p', { class: 'hint' }, t('calib.meter.searching')));
-    else if (!bridge || info === null) kids.push(h('p', { class: 'hint' }, t('calib.meter.noBridge')));
+    const kids: Kid[] = [kicker(t('calib.meter.title')),
+      hint(t('calib.meter.argyllHint'))];
+    if (info === undefined) kids.push(hint(t('calib.meter.searching')));
+    else if (!bridge || info === null) kids.push(hint(t('calib.meter.noBridge')));
     else if (!info.found) kids.push(h('p', { class: 'hint bad' }, t('calib.meter.notFound')));
     else {
       const ports: [string, string][] = info.instruments.length ? info.instruments.map((i) => [String(i.port), `${i.port}: ${i.name}`]) : [['1', t('calib.meter.portDefault')]];
-      const file = h('input', { type: 'file', accept: '.ccmx,.ccss', style: 'display:none' }) as HTMLInputElement;
-      file.onchange = async () => { const f = file.files?.[0]; S.correction = f ? { name: f.name, text: await f.text() } : null; renderMeter(); };
+      const file = filePicker('.ccmx,.ccss', async ([f]) => { S.correction = { name: f.name, text: await f.text() }; renderMeter(); });
       kids.push(
-        h('p', { class: 'hint' }, `spotread: ${info.path}${info.version ? ` (${t('calib.meter.version', { v: info.version })})` : ''} · ${t('calib.meter.untested')}`),
-        row(t('calib.meter.port'), sel(String(S.port), ports, (v) => (S.port = Number(v)))),
-        row(t('calib.meter.displayType'), h('input', { value: S.displayType, placeholder: t('calib.meter.displayTypePh'), size: 6, onchange: (e: Event) => (S.displayType = (e.target as HTMLInputElement).value.trim()) })),
-        row(t('calib.meter.correction'), h('button', { class: 'mini', onclick: () => file.click() }, S.correction ? S.correction.name : t('calib.meter.chooseCorrection')), S.correction && h('button', { class: 'mini', onclick: () => { S.correction = null; renderMeter(); } }, '✕'), file),
-        row('', h('label', { class: 'inline' }, h('input', { type: 'checkbox', checked: S.skipCal, onchange: (e: Event) => (S.skipCal = (e.target as HTMLInputElement).checked) }), t('calib.meter.skipCal'))),
-        row('',
-          h('button', { class: 'primary', onclick: connect }, meter?.connected ? t('calib.meter.reconnect') : t('calib.meter.connect')),
-          meter?.connected && h('button', { onclick: () => { meter?.close(); renderMeter(); } }, t('calib.meter.disconnect')),
-          meter?.connected && h('button', { onclick: testRead }, t('calib.meter.testRead')),
-          meter?.connected && h('button', { title: t('calib.meter.keyTitle'), onclick: () => meter?.key(' ') }, t('calib.meter.key'))),
+        hint(`spotread: ${info.path}${info.version ? ` (${t('calib.meter.version', { v: info.version })})` : ''} · ${t('calib.meter.untested')}`),
+        field(t('calib.meter.port'), sel(String(S.port), ports, (v) => (S.port = Number(v)))),
+        field(t('calib.meter.displayType'), textInput(S.displayType, (v) => (S.displayType = v.trim()), { placeholder: t('calib.meter.displayTypePh') })),
+        field(t('calib.meter.correction'), button(S.correction ? S.correction.name : t('calib.meter.chooseCorrection'), () => file.pick(), { small: true }),
+          S.correction && button('✕', () => { S.correction = null; renderMeter(); }, { small: true, title: t('common.close') }), file.input),
+        field('', checkbox(S.skipCal, t('calib.meter.skipCal'), (v) => (S.skipCal = v))),
+        field('',
+          button(meter?.connected ? t('calib.meter.reconnect') : t('calib.meter.connect'), connect, { variant: 'primary' }),
+          meter?.connected && button(t('calib.meter.disconnect'), () => { meter?.close(); renderMeter(); }),
+          meter?.connected && button(t('calib.meter.testRead'), testRead),
+          meter?.connected && button(t('calib.meter.key'), () => meter?.key(' '), { title: t('calib.meter.keyTitle') })),
       );
     }
-    meterBox.replaceChildren(...kids.filter(Boolean) as Node[]);
+    meterBox.replaceChildren(...(kids.filter(Boolean) as Node[]));
   };
   const connect = async () => {
     meter ??= new Meter(wsBase);
@@ -102,25 +89,25 @@ export function openCalibration(host: CalibHost) {
 
   // ---------------------------------------------------------------- manual input
   const askManual = (label: string, signal: AbortSignal): Promise<XYZ | null> => new Promise((ok, fail) => {
-    const ins = [0, 1, 2].map(() => h('input', { type: 'number', step: 'any', class: 'num' }) as HTMLInputElement);
+    const ins = [0, 1, 2].map(() => h('input', { type: 'number', step: 'any', class: 'num num-l', inputmode: 'decimal' }));
     const names = S.entry === 'XYZ' ? ['X', 'Y', 'Z'] : ['x', 'y', 'Y cd/m²'];
     const take = () => {
       const v = ins.map((i) => Number(i.value.replace(',', '.')));
       if (!v.every(Number.isFinite) || (S.entry === 'XYZ' ? v[1] < 0 : v[2] < 0)) { setStatus(t('calib.manual.three'), 'error'); return; }
-      work.replaceChildren(h('p', { class: 'hint' }, t('calib.manual.taken')));
+      work.replaceChildren(hint(t('calib.manual.taken')));
       ok(S.entry === 'XYZ' ? (v as XYZ) : xyYToXyz(v[0], v[1], v[2]));
     };
     signal.addEventListener('abort', () => fail(new DOMException('aborted', 'AbortError')), { once: true });
-    work.replaceChildren(h('div', { class: 'mtitle' }, t('calib.manual.readingFor', { label })),
-      row(t('calib.manual.entry'), sel(S.entry, [['XYZ', 'XYZ (cd/m²)'], ['xyY', 'x, y, Y']], (v) => { S.entry = v as 'XYZ' | 'xyY'; }, t('calib.manual.entryTitle'))),
-      h('div', { class: 'mrow' }, ...ins.flatMap((i, k) => [h('span', { class: 'lbl' }, names[k]), i])),
-      h('div', { class: 'mrow' }, h('button', { class: 'primary', onclick: take }, t('calib.manual.take')), h('button', { onclick: () => { work.replaceChildren(); ok(null); } }, t('calib.manual.skip'))));
+    work.replaceChildren(kicker(t('calib.manual.readingFor', { label })),
+      field(t('calib.manual.entry'), sel(S.entry, [['XYZ', 'XYZ (cd/m²)'], ['xyY', 'x, y, Y']], (v) => { S.entry = v as 'XYZ' | 'xyY'; }, t('calib.manual.entryTitle'))),
+      row(...ins.flatMap((i, k) => [h('span', { class: 'lbl' }, names[k]), i])),
+      row(button(t('calib.manual.take'), take, { variant: 'primary' }), button(t('calib.manual.skip'), () => { work.replaceChildren(); ok(null); })));
     ins.forEach((i) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') take(); }));
     ins[0].focus();
   });
   const confirm = (text: string, signal: AbortSignal) => new Promise<void>((ok, fail) => {
     signal.addEventListener('abort', () => fail(new DOMException('aborted', 'AbortError')), { once: true });
-    work.replaceChildren(h('p', {}, text), h('button', { class: 'primary', onclick: () => ok() }, t('calib.continue')));
+    work.replaceChildren(h('p', {}, text), button(t('calib.continue'), () => ok(), { variant: 'primary' }));
   });
   const measureOne = (label: string, signal: AbortSignal) => (S.mode === 'meter' && meter?.connected ? meter.read(signal) : askManual(label, signal));
 
@@ -129,26 +116,26 @@ export function openCalibration(host: CalibHost) {
   const renderSetup = () => {
     const set = testSet(S.setId === 'hdr' ? `hdr-pq-${S.peak}` : S.setId);
     setupBox.replaceChildren(
-      h('div', { class: 'mtitle' }, t('calib.setup.output')),
-      row('', h('button', { onclick: () => host.openPatchWindow() }, t('calib.setup.openWindow')), h('button', { onclick: () => sendPatch({ rgb: [1, 1, 1], window: S.window / 100, background: S.background / 100 }) }, t('calib.setup.showWhite')), h('button', { onclick: () => sendPatch(null) }, t('calib.setup.patternBack'))),
-      row(t('calib.setup.window'), numIn(S.window, 1, 100, 1, (v) => (S.window = v)), t('calib.setup.windowUnit')),
-      row(t('calib.setup.background'), numIn(S.background, 0, 50, 1, (v) => (S.background = v)), t('calib.setup.backgroundUnit')),
-      row(t('calib.setup.settle'), numIn(S.settleMs, 20, 60000, 100, (v) => (S.settleMs = v)), t('calib.setup.settleUnit')),
-      row(t('calib.setup.insertion'), h('label', { class: 'inline' }, h('input', { type: 'checkbox', checked: S.insertion, onchange: (e: Event) => (S.insertion = (e.target as HTMLInputElement).checked) }), t('calib.setup.insOn')),
+      kicker(t('calib.setup.output')),
+      field('', button(t('calib.setup.openWindow'), () => host.openPatchWindow()), button(t('calib.setup.showWhite'), () => sendPatch({ rgb: [1, 1, 1], window: S.window / 100, background: S.background / 100 })), button(t('calib.setup.patternBack'), () => sendPatch(null))),
+      field(t('calib.setup.window'), numIn(S.window, 1, 100, 1, (v) => (S.window = v)), t('calib.setup.windowUnit')),
+      field(t('calib.setup.background'), numIn(S.background, 0, 50, 1, (v) => (S.background = v)), t('calib.setup.backgroundUnit')),
+      field(t('calib.setup.settle'), numIn(S.settleMs, 20, 60000, 100, (v) => (S.settleMs = v)), t('calib.setup.settleUnit')),
+      field(t('calib.setup.insertion'), checkbox(S.insertion, t('calib.setup.insOn'), (v) => (S.insertion = v)),
         t('calib.setup.insEvery'), numIn(S.insEvery, 1, 600, 1, (v) => (S.insEvery = v)), t('calib.setup.insFor'), numIn(S.insDur, 1, 60, 1, (v) => (S.insDur = v)), t('calib.setup.insLevel'), numIn(S.insLevel, 0, 100, 1, (v) => (S.insLevel = v)), '%'),
-      h('p', { class: 'hint' }, t('calib.setup.canvasHint')),
-      h('div', { class: 'mtitle' }, t('calib.setup.measurement')),
-      row(t('calib.setup.mode'), sel(S.mode, [['meter', t('calib.mode.meter')], ['manual', t('calib.mode.manual')], ['untethered', t('calib.mode.untethered')]], (v) => { S.mode = v as Mode; }),
+      hint(t('calib.setup.canvasHint')),
+      kicker(t('calib.setup.measurement')),
+      field(t('calib.setup.mode'), sel(S.mode, [['meter', t('calib.mode.meter')], ['manual', t('calib.mode.manual')], ['untethered', t('calib.mode.untethered')]], (v) => { S.mode = v as Mode; }),
       ),
-      row(t('calib.setup.testSet'), sel(set.hdr ? 'hdr' : S.setId, [...TEST_SETS.filter((ts) => !ts.hdr).map((ts): [string, string] => [ts.id, `${ts.name} (${ts.patches.length})`]), ['hdr', 'HDR PQ']], (v) => { S.setId = v; renderSetup(); }),
+      field(t('calib.setup.testSet'), sel(set.hdr ? 'hdr' : S.setId, [...TEST_SETS.filter((ts) => !ts.hdr).map((ts): [string, string] => [ts.id, `${ts.name} (${ts.patches.length})`]), ['hdr', 'HDR PQ']], (v) => { S.setId = v; renderSetup(); }),
         set.hdr && sel(String(S.peak), HDR_PEAKS.map((p) => [String(p), t('calib.setup.peak', { p })]), (v) => { S.peak = Number(v); renderSetup(); })),
-      set.hdr ? h('p', { class: 'hint' }, t('calib.setup.hdrHint', { n: set.patches.length }))
-        : row(t('calib.setup.target'), sel(S.transfer, (['bt1886', 'g24', 'g22', 'srgb'] as SdrTarget[]).map((tr) => [tr, TARGET_LABELS[tr]]), (v) => (S.transfer = v as SdrTarget)),
+      set.hdr ? hint(t('calib.setup.hdrHint', { n: set.patches.length }))
+        : field(t('calib.setup.target'), sel(S.transfer, (['bt1886', 'g24', 'g22', 'srgb'] as SdrTarget[]).map((tr) => [tr, TARGET_LABELS[tr]]), (v) => (S.transfer = v as SdrTarget)),
           sel(S.gamut, (['709', 'p3', '2020'] as GamutId[]).map((g) => [g, GAMUTS[g].name]), (v) => (S.gamut = v as GamutId))),
-      row('', h('button', { class: 'primary', onclick: () => runVerify(set) }, t('calib.setup.startVerify', { n: set.patches.length })),
+      field('', button(t('calib.setup.startVerify', { n: set.patches.length }), () => runVerify(set), { variant: 'primary' }),
         h('span', {}, t('calib.uniformity')), sel(String(S.grid), UNIFORMITY_GRIDS.map((n) => [String(n), `${n}×${n}`]), (v) => (S.grid = Number(v))),
-        h('button', { onclick: runUniformity }, t('calib.setup.startUniformity')),
-        h('button', { onclick: () => running?.stop() }, t('calib.stop'))),
+        button(t('calib.setup.startUniformity'), runUniformity),
+        button(t('calib.stop'), () => running?.stop())),
     );
   };
 
@@ -182,7 +169,7 @@ export function openCalibration(host: CalibHost) {
     try {
       while (i < set.patches.length && !ctl.signal.aborted) {
         work.replaceChildren(h('p', {}, t('calib.untethered.set', { i: i + 1, n: set.patches.length, label: set.patches[i].label, codes: set.patches[i].rgb.map((v) => Math.round(v * 255)).join('/') })),
-          h('button', { title: t('calib.untethered.takeLastTitle'), onclick: () => { if (last) take(det.accept(last)); } }, t('calib.untethered.takeLast')));
+          button(t('calib.untethered.takeLast'), () => { if (last) take(det.accept(last)); }, { title: t('calib.untethered.takeLastTitle') }));
         last = await meter.read(ctl.signal);
         const acc = det.push(last);
         if (acc) take(acc);
@@ -234,50 +221,51 @@ export function openCalibration(host: CalibHost) {
         download(`lz-scopes-display-${size}.cube`, c.text);
         setStatus(t('calib.lutExported', { size, mean: num(c.error.mean, 2), n: c.clipped }), 'ok');
       };
-      kids.push(h('div', { class: 'mtitle' }, `${t('calib.verify.title', { set: r.set })}${partial ? ` ${t('calib.running')}` : ''}`),
-        h('table', { class: 'calib-table' },
-          h('tr', {}, h('th', {}, ''), h('th', {}, t('calib.stat.mean')), h('th', {}, 'Median'), h('th', {}, '95 %'), h('th', {}, 'Max')),
-          h('tr', {}, h('td', {}, `ΔE00 (${r.dE00.n})`), ...[r.dE00.mean, r.dE00.median, r.dE00.p95, r.dE00.max].map((v) => h('td', {}, f(v)))),
-          h('tr', {}, h('td', {}, 'ΔITP'), ...[r.dITP.mean, r.dITP.median, r.dITP.p95, r.dITP.max].map((v) => h('td', {}, f(v))))),
+      kids.push(kicker(`${t('calib.verify.title', { set: r.set })}${partial ? ` ${t('calib.running')}` : ''}`),
+        h('div', { class: 'table-wrap' }, table([
+          [`ΔE00 (${r.dE00.n})`, ...[r.dE00.mean, r.dE00.median, r.dE00.p95, r.dE00.max].map((v) => f(v))],
+          ['ΔITP', ...[r.dITP.mean, r.dITP.median, r.dITP.p95, r.dITP.max].map((v) => f(v))],
+        ], { head: ['', t('calib.stat.mean'), 'Median', '95 %', 'Max'], cls: 'calib-table' })),
         !r.whiteMeasured && !r.hdr && h('p', { class: 'hint bad' }, t('calib.verify.noWhite')),
-        h('p', { class: 'hint' }, `${t('calib.verify.grades', { mean: gradeLabel(r.grades.mean), max: gradeLabel(r.grades.max) })}${r.hdr ? '' : ` · ${t('calib.verify.levels', { lw: f(r.lw, 1), lb: f(r.lb, 4), c: Number.isFinite(r.contrast) ? Math.round(r.contrast) : '∞' })}`}${r.white ? ` · ${t('calib.verify.white', { cct: Math.round(r.white.cct), duv: f(r.white.duv, 4), de: f(r.white.dE00) })}` : ''}`),
-        h('div', { class: 'mrow' },
-          h('button', { onclick: () => download(`${t('calib.file.verify')}.csv`, verifyCsv(r), 'text/csv') }, 'CSV'),
-          h('button', { onclick: () => download(`${t('calib.file.verify')}.html`, verifyHtml(r), 'text/html') }, 'HTML'),
-          h('button', { title: t('calib.reportTitle'), onclick: () => openReport(verifyHtml(r)) }, t('calib.report')),
-          !r.hdr && h('button', { title: t('calib.lutTitle'), onclick: () => lut(33) }, '.cube 33'),
-          !r.hdr && h('button', { onclick: () => lut(65) }, '.cube 65')));
+        hint(`${t('calib.verify.grades', { mean: gradeLabel(r.grades.mean), max: gradeLabel(r.grades.max) })}${r.hdr ? '' : ` · ${t('calib.verify.levels', { lw: f(r.lw, 1), lb: f(r.lb, 4), c: Number.isFinite(r.contrast) ? Math.round(r.contrast) : '∞' })}`}${r.white ? ` · ${t('calib.verify.white', { cct: Math.round(r.white.cct), duv: f(r.white.duv, 4), de: f(r.white.dE00) })}` : ''}`),
+        row(
+          button('CSV', () => download(`${t('calib.file.verify')}.csv`, verifyCsv(r), 'text/csv')),
+          button('HTML', () => download(`${t('calib.file.verify')}.html`, verifyHtml(r), 'text/html')),
+          button(t('calib.report'), () => openReport(verifyHtml(r)), { title: t('calib.reportTitle') }),
+          !r.hdr && button('.cube 33', () => lut(33), { title: t('calib.lutTitle') }),
+          !r.hdr && button('.cube 65', () => lut(65))));
     }
     if (lastUniformity) {
       const u = lastUniformity;
-      kids.push(h('div', { class: 'mtitle' }, t('calib.uniformity.title', { n: u.n })),
-        h('table', { class: 'calib-grid' }, ...Array.from({ length: u.n }, (_, rr) => h('tr', {}, ...u.cells.filter((c) => c.row === rr).map((c) =>
-          h('td', { class: `g-${c.grade}`, title: t('calib.uniformity.lumTitle', { dev: c.lumDev.map((d) => num(d, 1)).join(' / ') }) }, f(Math.max(...c.dE00))))))),
-        h('p', { class: 'hint' }, `${t('calib.uniformity.summary', { de: f(u.maxDE00), grade: gradeLabel(u.grade), tmax: f(u.maxT, 3) })}${u.warnings.length ? ` · ${u.warnings.join(' ')}` : ''}`),
-        h('div', { class: 'mrow' },
-          h('button', { onclick: () => download(`${t('calib.file.uniformity')}.csv`, uniformityCsv(u), 'text/csv') }, 'CSV'),
-          h('button', { onclick: () => download(`${t('calib.file.uniformity')}.html`, uniformityHtml(u), 'text/html') }, 'HTML'),
-          h('button', { onclick: () => openReport(uniformityHtml(u)) }, t('calib.report'))));
+      kids.push(kicker(t('calib.uniformity.title', { n: u.n })),
+        h('div', { class: 'table-wrap' }, h('table', { class: 'calib-grid' }, ...Array.from({ length: u.n }, (_, rr) => h('tr', {}, ...u.cells.filter((c) => c.row === rr).map((c) =>
+          h('td', { class: `g-${c.grade}`, title: t('calib.uniformity.lumTitle', { dev: c.lumDev.map((d) => num(d, 1)).join(' / ') }) }, f(Math.max(...c.dE00)))))))),
+        hint(`${t('calib.uniformity.summary', { de: f(u.maxDE00), grade: gradeLabel(u.grade), tmax: f(u.maxT, 3) })}${u.warnings.length ? ` · ${u.warnings.join(' ')}` : ''}`),
+        row(
+          button('CSV', () => download(`${t('calib.file.uniformity')}.csv`, uniformityCsv(u), 'text/csv')),
+          button('HTML', () => download(`${t('calib.file.uniformity')}.html`, uniformityHtml(u), 'text/html')),
+          button(t('calib.report'), () => openReport(uniformityHtml(u)))));
     }
-    results.replaceChildren(...kids.filter(Boolean) as Node[]);
+    results.replaceChildren(...(kids.filter(Boolean) as Node[]));
   }
   // Print through a hidden frame: works in the browser and in the desktop app (no pop-up needed).
   const openReport = (html: string) => {
-    const fr = h('iframe', { style: 'position:fixed;width:0;height:0;border:0;right:0;bottom:0' }) as HTMLIFrameElement;
+    const fr = h('iframe', { style: 'position:fixed;width:0;height:0;border:0;right:0;bottom:0' });
     fr.srcdoc = html;
     fr.onload = () => { fr.contentWindow?.print(); setTimeout(() => fr.remove(), 60_000); };
     document.body.append(fr);
   };
 
   const minutes = Math.floor(performance.now() / 60000);
-  dlg.append(
-    h('div', { class: 'calib-head' }, h('h3', {}, t('calib.dialogTitle')), h('button', { onclick: () => dlg.close() }, t('calib.close'))),
-    h('p', { class: 'hint' }, t('calib.warmup', { minutes })),
-    meterBox, setupBox, status, work, results, h('details', {}, h('summary', {}, t('calib.log')), log));
-  document.body.append(dlg);
-  dlg.addEventListener('close', () => { running?.stop(); sendPatch(null); meter?.close(); dlg.remove(); });
+  // a running measurement must not end by a stray click next to the dialog: no backdrop close
+  const m = modal({
+    title: t('calib.dialogTitle'), cls: 'calib', size: 'lg', sticky: true, removeOnClose: true,
+    body: [hint(t('calib.warmup', { minutes })), meterBox, setupBox, status, work, results, h('details', { class: 'disclosure' }, h('summary', {}, t('calib.log')), log)],
+    actions: [button(t('calib.close'), () => m.close())],
+    onClose: () => { running?.stop(); sendPatch(null); meter?.close(); },
+  });
   renderMeter(); renderSetup(); renderResults(false);
-  dlg.showModal();
+  m.open();
   if (httpBase) meterInfo(httpBase).then((i) => { info = i; renderMeter(); });
   else { info = null; renderMeter(); }
 }

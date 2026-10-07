@@ -14,6 +14,7 @@ import { bridgeAddress, normaliseBridgeInput, uniqueBridges, type FoundBridge } 
 import { createBluetooth } from './webBluetooth';
 import { bridgeText } from '../i18n/bridgeMessage';
 import { t } from '../i18n';
+import { button, h } from '../ui';
 
 export interface NativeInfo { idiom: 'pad' | 'phone' | 'mac' | 'other'; system: string; version: string; model: string; iosAppOnMac: boolean; multitasking: boolean }
 export interface NativeCamera { id: string; name: string; manufacturer: string; external: boolean; position: string }
@@ -57,12 +58,6 @@ function logGpu() {
   } catch (e) { console.warn('[lzs-ios] WebGL2 query failed', e); }
 }
 
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
-  const e = Object.assign(document.createElement(tag), props);
-  e.append(...kids);
-  return e;
-};
-
 export function afterApp() {
   const input = document.querySelector<HTMLInputElement>('#bridge');
   const details = input?.closest('details');
@@ -73,32 +68,28 @@ export function afterApp() {
     if (e.target === input) input.value = normaliseBridgeInput(input.value);
   }, true);
 
-  const list = el('div', { className: 'lzs-native-list' });
-  const note = el('p', { className: 'lzs-native-note' },
-    t('native.note'));
-  const search = el('button', { type: 'button', textContent: t('native.search') });
+  const list = h('div', { class: 'lzs-native-list' });
+  const note = h('p', { class: 'lzs-native-note hint' }, t('native.note'));
+  const search = button(t('native.search'), () => browse(false));
   const set = (url: string) => { input.value = url; input.dispatchEvent(new Event('change', { bubbles: true })); };
   const browse = async (auto: boolean) => {
     search.disabled = true; search.textContent = t('native.searching');
-    list.replaceChildren(el('span', { className: 'muted', textContent: 'Bonjour: _lz-scopes._tcp …' }));
+    list.replaceChildren(h('span', { class: 'muted' }, 'Bonjour: _lz-scopes._tcp …'));
     const r = await LzNative.browseBridges({ timeout: 3000 }).catch((e: Error) => ({ bridges: [] as FoundBridge[], error: e.message }));
     const found = uniqueBridges(r.bridges);
     console.info(`[lzs-ios] Bonjour: ${found.length} Bridge(s)${r.error ? ` · ${r.error}` : ''}`);
     search.disabled = false; search.textContent = t('native.search');
     if (!found.length) {
-      list.replaceChildren(el('span', { className: 'muted', textContent: bridgeText(r, 'error') || t('native.noBridge') }));
+      list.replaceChildren(h('span', { class: 'muted' }, bridgeText(r, 'error') || t('native.noBridge')));
       return;
     }
     list.replaceChildren(...found.map((b) => {
       const url = bridgeAddress(b);
-      const btn = el('button', { type: 'button', textContent: `${b.name} · ${url.replace(/^ws:\/\//, '')}`, title: b.host });
-      btn.onclick = () => set(url);
-      return btn;
+      return button(`${b.name} · ${url.replace(/^ws:\/\//, '')}`, () => set(url), { title: b.host });
     }));
     // empty field and exactly one bridge: take it
     if (auto && !input.value.trim() && found.length === 1) set(bridgeAddress(found[0]));
   };
-  search.onclick = () => browse(false);
   details.append(search, list, note);
   if (!input.value.trim()) { details.open = true; void browse(true); }
 
@@ -119,8 +110,8 @@ function markUnavailable() {
 
 /** Cameras the system sees vs. what WebKit's enumerateDevices offers (USB/UVC: iPadOS 17). */
 function addInputsPanel(after: Element) {
-  const body = el('div', { className: 'lzs-native-list' });
-  const wrap = el('details', { className: 'gen' }, el('summary', { textContent: info?.idiom === 'phone' ? t('native.camsPhone') : t('native.camsPad') }), body);
+  const body = h('div', { class: 'lzs-native-list' });
+  const wrap = h('details', { class: 'gen' }, h('summary', {}, info?.idiom === 'phone' ? t('native.camsPhone') : t('native.camsPad')), body);
   after.before(wrap);
   const refresh = async () => {
     const sys = await LzNative.cameras().catch(() => ({ cameras: [] as NativeCamera[], authorization: 'unknown' }));
@@ -130,11 +121,11 @@ function addInputsPanel(after: Element) {
     const rows = sys.cameras.map((c) => {
       const inWeb = web.some((d) => d.label && d.label === c.name);
       const state = !labelled ? t('native.noPermission') : inWeb ? t('native.selectable') : t('native.notOffered');
-      return el('div', { className: 'cam' }, el('span', { textContent: `${c.external ? 'USB · ' : ''}${c.name}` }), el('span', { className: 'muted', textContent: state }));
+      return h('div', { class: 'cam' }, h('span', {}, `${c.external ? 'USB · ' : ''}${c.name}`), h('span', { class: 'muted' }, state));
     });
     body.replaceChildren(
-      ...(rows.length ? rows : [el('span', { className: 'muted', textContent: t('native.noCamera') })]),
-      el('p', { className: 'lzs-native-note', textContent: t('native.camHint') }),
+      ...(rows.length ? rows : [h('span', { class: 'muted' }, t('native.noCamera'))]),
+      h('p', { class: 'lzs-native-note hint' }, t('native.camHint')),
     );
   };
   wrap.addEventListener('toggle', () => { if (wrap.open) void refresh(); });

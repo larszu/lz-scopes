@@ -4,6 +4,7 @@
 
 import { formatAccel, forPage, isMac, type MenuItem, type TopMenu } from './model';
 import { t } from '../i18n';
+import { h } from '../ui';
 
 type Run = (id: string) => void;
 
@@ -16,21 +17,9 @@ export class MenuBar {
   private mac = isMac();
 
   constructor(private run: Run) {
-    this.burger = document.createElement('button');
-    this.burger.className = 'icon mb-burger';
-    this.burger.title = t('menu.burger');
-    this.burger.setAttribute('aria-label', t('menu.burger'));
-    this.burger.setAttribute('aria-expanded', 'false');
-    this.burger.textContent = '☰';
-    this.burger.onclick = () => this.toggleBurger();
-    this.bar = document.createElement('div');
-    this.bar.className = 'mb-items';
-    this.bar.setAttribute('role', 'menubar');
-    this.bar.setAttribute('aria-label', t('menu.main'));
-    this.el = document.createElement('nav');
-    this.el.className = 'menubar';
-    this.el.id = 'menubar';
-    this.el.append(this.burger, this.bar);
+    this.burger = h('button', { type: 'button', class: 'icon mb-burger', title: t('menu.burger'), 'aria-label': t('menu.burger'), 'aria-expanded': false, onclick: () => this.toggleBurger() }, '☰');
+    this.bar = h('div', { class: 'mb-items', role: 'menubar', 'aria-label': t('menu.main') });
+    this.el = h('nav', { class: 'menubar', id: 'menubar' }, this.burger, this.bar);
     document.addEventListener('pointerdown', (e) => { if (!this.el.contains(e.target as Node)) this.close(); });
     document.addEventListener('keydown', (e) => {
       if (e.altKey && e.key === 'F10') { e.preventDefault(); this.open(0, true); }
@@ -41,22 +30,12 @@ export class MenuBar {
   set(menus: TopMenu[]) {
     this.menus = forPage(menus);
     const wasOpen = this.openIdx;
-    this.bar.replaceChildren(...this.menus.map((m, i) => {
-      const wrap = document.createElement('div');
-      wrap.className = 'mb-top';
-      const b = document.createElement('button');
-      b.className = 'mb-title';
-      b.textContent = m.label;
-      b.dataset.menu = m.id;
-      b.setAttribute('role', 'menuitem');
-      b.setAttribute('aria-haspopup', 'menu');
-      b.setAttribute('aria-expanded', 'false');
-      b.tabIndex = i === 0 ? 0 : -1;
-      b.onclick = () => (this.openIdx === i ? this.close() : this.open(i));
-      b.onpointerenter = () => { if (this.openIdx >= 0 && this.openIdx !== i) this.open(i); };
-      wrap.append(b);
-      return wrap;
-    }));
+    this.bar.replaceChildren(...this.menus.map((m, i) => h('div', { class: 'mb-top' },
+      h('button', {
+        type: 'button', class: 'mb-title', 'data-menu': m.id, role: 'menuitem', 'aria-haspopup': 'menu', 'aria-expanded': false, tabindex: i === 0 ? 0 : -1,
+        onclick: () => (this.openIdx === i ? this.close() : this.open(i)),
+        onpointerenter: () => { if (this.openIdx >= 0 && this.openIdx !== i) this.open(i); },
+      }, m.label))));
     if (wasOpen >= 0 && wasOpen < this.menus.length) this.open(wasOpen);
   }
 
@@ -88,38 +67,22 @@ export class MenuBar {
   }
 
   private list(items: MenuItem[], label: string): HTMLElement {
-    const ul = document.createElement('div');
-    ul.className = 'mb-drop';
-    ul.setAttribute('role', 'menu');
-    ul.setAttribute('aria-label', label);
+    const ul = h('div', { class: 'mb-drop', role: 'menu', 'aria-label': label });
     for (const it of items) {
-      if (it.type === 'separator') { const s = document.createElement('div'); s.className = 'mb-sep'; s.setAttribute('role', 'separator'); ul.append(s); continue; }
-      const b = document.createElement('button');
-      b.className = 'mb-item';
-      b.tabIndex = -1;
+      if (it.type === 'separator') { ul.append(h('div', { class: 'mb-sep', role: 'separator' })); continue; }
       const role = it.type === 'checkbox' ? 'menuitemcheckbox' : it.type === 'radio' ? 'menuitemradio' : 'menuitem';
-      b.setAttribute('role', role);
-      if (it.type === 'checkbox' || it.type === 'radio') b.setAttribute('aria-checked', String(!!it.checked));
-      if (it.enabled === false) b.disabled = true;
-      if (it.title) b.title = it.title;
-      if (it.id) b.dataset.cmd = it.id;
-      const mark = document.createElement('span');
-      mark.className = 'mb-check';
-      mark.textContent = it.checked ? (it.type === 'radio' ? '•' : '✓') : '';
-      const text = document.createElement('span');
-      text.className = 'mb-label';
-      text.textContent = it.label ?? '';
-      const key = document.createElement('span');
-      key.className = 'mb-key';
-      key.textContent = it.submenu ? '›' : it.accel ? formatAccel(it.accel, this.mac) : '';
-      b.append(mark, text, key);
+      const b = h('button', {
+        type: 'button', class: 'mb-item', tabindex: -1, role,
+        'aria-checked': it.type === 'checkbox' || it.type === 'radio' ? !!it.checked : null,
+        disabled: it.enabled === false, title: it.title || null, 'data-cmd': it.id || null, 'aria-haspopup': it.submenu ? 'menu' : null,
+      },
+      h('span', { class: 'mb-check' }, it.checked ? (it.type === 'radio' ? '•' : '✓') : ''),
+      h('span', { class: 'mb-label' }, it.label ?? ''),
+      h('span', { class: 'mb-key' }, it.submenu ? '›' : it.accel ? formatAccel(it.accel, this.mac) : ''));
       if (it.submenu) {
-        b.setAttribute('aria-haspopup', 'menu');
         const sub = this.list(it.submenu, it.label ?? '');
         sub.classList.add('mb-sub');
-        const holder = document.createElement('div');
-        holder.className = 'mb-subwrap';
-        holder.append(b, sub);
+        const holder = h('div', { class: 'mb-subwrap' }, b, sub);
         b.onclick = () => holder.classList.toggle('open');
         ul.append(holder);
       } else {

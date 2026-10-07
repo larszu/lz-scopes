@@ -242,43 +242,65 @@ dialog.lutlib table td.hint { margin: 0; }
 }
 
 /* ---------------------------------------------------------------- feature areas */
-/* audio: generator section, audio sources */
-.side details.gen .row { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-top: 6px; color: var(--text-muted); }
-.side details.gen .row select { flex: 1; min-width: 0; }
-.side details label.inline { flex-direction: row; margin-top: 0; }
-.row .lbl { color: var(--text-muted); min-width: 52px; font-size: 11px; }
+/* audio: tone generator, audio sources, self-test (src/audio/ui.ts) */
+.side details.gen .row { margin-top: 6px; color: var(--text-muted); }
 .gen .route { display: inline-flex; gap: 2px; align-items: center; margin-right: 8px; }
-.gen .route input.num { width: 48px; }
-.gen .hint.ok, .gen .hint .ok { color: var(--meas-ok); }
-.gen .hint.bad { color: var(--meas-bad); }
 .selftest table.st { border-collapse: collapse; font: 10px var(--mono); margin-top: 4px; }
 .selftest table.st td { padding: 1px 4px; border-bottom: 1px solid var(--line-1); vertical-align: top; }
 .selftest tr.ok td:first-child { color: var(--meas-ok); }
 .selftest tr.bad td { color: var(--meas-bad); }
-.src .audio-el audio { width: 100%; height: 30px; }
-.src .audio-row .lbl { flex: 1; }
 
-/* display calibration dialog (src/calib/ui.ts); grade colours are measurement colours, not brand */
-dialog.calib { background: var(--surface-2); color: var(--text); border: 1px solid var(--line-3); width: min(820px, 96vw); max-height: 92vh; overflow-y: auto; }
-dialog.calib[open] { display: flex; flex-direction: column; gap: 6px; }
-dialog.calib .calib-head { display: flex; align-items: center; justify-content: space-between; }
-dialog.calib .calib-head h3 { margin: 0; }
-dialog.calib .mrow { flex-wrap: wrap; }
-dialog.calib .mrow .lbl { width: auto; }
-dialog.calib input.num { width: 72px; flex: none; }
-dialog.calib .hint.ok { color: var(--meas-ok); }
-dialog.calib .hint.bad { color: var(--meas-bad); }
-dialog.calib .calib-work:not(:empty) { border: 1px solid var(--line-3); padding: 8px; }
-dialog.calib .calib-log { max-height: 160px; overflow: auto; font: 11px var(--mono); white-space: pre-wrap; }
-.calib-table, .calib-grid { border-collapse: collapse; font-size: 12px; }
-.calib-table td, .calib-table th { padding: 2px 8px; border-top: 1px solid var(--line-1); text-align: right; }
-.calib-grid td { width: 44px; height: 30px; text-align: center; border: 1px solid var(--line-1); }
+/* light meter in the sidebar (src/opple/ui.ts) */
+.opple .big { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 6px; }
+.opple .big div { display: flex; flex-direction: column; }
+.opple .big b { font-size: var(--fs-xl); color: var(--text); font-variant-numeric: tabular-nums; }
+.opple .big span { font-size: var(--fs-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+.opple .warnbox { color: var(--warn-text); font-size: var(--fs-sm); margin-top: 4px; }
+.opple canvas { width: 100%; height: 40px; margin-top: 6px; }
+.opple .row { margin-top: 6px; }
+.opple .dev { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 0; border-top: 1px solid var(--line-1); }
+.opple .dev input.alias { flex: 1 1 90px; min-width: 60px; }
+.opple .dev .val { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; width: 100%; }
+.opple .dev.active .val { color: var(--text); }
+.opple .kicker { margin-top: 10px; }
+.opple table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.opple td { padding: 1px 3px; } .opple td.n { text-align: right; }
+.opple .cmp { font-size: var(--fs-sm); margin-top: 6px; line-height: 1.45; }
+/* Bluetooth device chooser of the desktop app (light meter and LED wall) */
+.picker { border: 1px solid var(--line-3); border-radius: var(--radius); padding: 6px; margin-top: 6px; }
+.picker button.pick { display: block; width: 100%; text-align: left; margin-top: 3px; }
+
+/* display calibration dialog (src/calib/ui.ts, a modal from src/ui); grade colours are measurement colours, not brand */
+dialog.calib .field .lbl, dialog.calib .row .lbl { width: auto; min-width: 0; }
+dialog.calib .kicker, dialog.ledtool .kicker { margin-top: 10px; }
+/* rows that mix buttons and a select: the select keeps its own width */
+dialog.calib .field:has(button) > select { flex: 0 1 auto; }
+dialog.calib .calib-work:not(:empty) { border: 1px solid var(--line-3); padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+dialog.calib .calib-log { max-height: 160px; overflow: auto; font: var(--fs-sm) var(--mono); white-space: pre-wrap; margin: 6px 0 0; }
+.calib-grid { border-collapse: collapse; font-size: var(--fs-ui); }
+.calib-grid td { min-width: 44px; height: 30px; text-align: center; border: 1px solid var(--line-1); color: var(--on-grade); font-variant-numeric: tabular-nums; }
 .calib-grid td.g-good { background: var(--grade-good); }
 .calib-grid td.g-ok { background: var(--grade-ok); }
 .calib-grid td.g-fail { background: var(--grade-fail); }
 
+/* LED wall tool (src/led/ui.ts, src/led/oppleUi.ts, a modal from src/ui) */
+dialog.ledtool .note { color: var(--warn-text); margin: 4px 0; }
+dialog.ledtool details.disclosure { border-top: 1px solid var(--line-1); padding: 8px 0; }
+dialog.ledtool details.disclosure > summary { font-weight: 600; color: var(--text); min-height: var(--control-h); }
+dialog.ledtool .row { gap: 6px 10px; margin-top: 6px; }
+dialog.ledtool .row > select { flex: 0 1 auto; }
+dialog.ledtool input.grow { flex: 0 1 200px; min-width: 120px; }
+dialog.ledtool input.xy { flex: 0 1 72px; min-width: 64px; }
+/* camera picture and maps: full width, never wider than the dialog; drawn content stays dark */
+dialog.ledtool .cam-wrap { max-width: 100%; overflow: auto; }
+dialog.ledtool canvas.cam { display: block; width: 100%; max-height: 60vh; object-fit: contain; background: var(--scope-bg); cursor: crosshair; border: 1px solid var(--line-2); touch-action: none; }
+dialog.ledtool canvas.heat { display: block; width: 100%; background: var(--scope-bg); border: 1px solid var(--line-2); }
+dialog.ledtool textarea { width: min(260px, 100%); height: 70px; font: var(--fs-sm) var(--mono); }
+dialog.ledtool .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 12px; }
+dialog.ledtool ul { margin: 4px 0; padding-left: 18px; }
+
 /* running DaVinci Resolve in the source sidebar (src/resolveLive.ts) */
-.resolve-live { display: flex; gap: 8px; align-items: center; margin: 6px 0; padding: 6px 8px; border: 1px solid var(--line-2); border-left: 3px solid var(--ok); border-radius: 4px; font-size: 11px; }
+.resolve-live { display: flex; gap: 8px; align-items: center; margin: 6px 0; padding: 6px 8px; border: 1px solid var(--line-2); border-left: 3px solid var(--ok); border-radius: var(--radius); font-size: var(--fs-sm); }
 .resolve-live[hidden] { display: none; }
 .resolve-live .rl-text { flex: 1; min-width: 0; }
 .resolve-live .rl-title { font-weight: 600; }
@@ -287,15 +309,21 @@ dialog.calib .calib-log { max-height: 160px; overflow: auto; font: 11px var(--mo
 .resolve-route { margin: 4px 0; padding-left: 8px; border-left: 3px solid var(--ok); }
 .resolve-route[data-route="window"] { border-left-color: var(--warn); }
 .resolve-route[data-route="none"] { border-left-color: var(--err); }
-.resolve-route .route-chip { font-size: 11px; font-weight: 600; }
+.resolve-route .route-chip { font-size: var(--fs-sm); font-weight: 600; }
 .resolve-route .hint { margin: 2px 0 0; }
 
 /* Touch Shading (#54): fixed bar at the bottom, large touch targets, red frame while live */
 .shading-bar {
-  position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 50;
+  position: fixed; left: 0; right: 0; margin-inline: auto; width: max-content; bottom: 12px; z-index: 50;
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: calc(100vw - 32px);
-  padding: 8px 10px; background: var(--surface-1); color: var(--text); border: 2px solid var(--line-1);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); font-size: 13px;
+  padding: 8px 10px; background: var(--surface-3); color: var(--text); border: 2px solid var(--line-2);
+  box-shadow: var(--elev-float); font-size: var(--fs-md); max-height: calc(100dvh - 80px); overflow-y: auto;
+}
+/* phones: full width along the bottom edge, above the home indicator */
+@media (max-width: 640px) {
+  .shading-bar { width: auto; bottom: 0; max-width: none; border-width: 2px 0 0; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+  .shading-bar.top { top: 0; bottom: auto; border-width: 0 0 2px; }
+  .shading-bar .shading-url { width: 100%; flex: 1 1 100%; }
 }
 .shading-bar.hidden { display: none; }
 .shading-bar.top { top: 64px; bottom: auto; }
@@ -304,41 +332,29 @@ dialog.calib .calib-log { max-height: 160px; overflow: auto; font: 11px var(--mo
 .shading-arm { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0 6px; cursor: pointer; }
 .shading-arm input { width: 22px; height: 22px; }
 .shading-stop { background: var(--signal); color: #fff; font-weight: 700; padding: 0 16px; border: 0; }
-.shading-values { display: flex; flex-wrap: wrap; gap: 4px 10px; font-family: var(--mono); font-size: 11px; max-width: 520px; }
+.shading-values { display: flex; flex-wrap: wrap; gap: 4px 10px; font-family: var(--mono); font-size: var(--fs-sm); max-width: 520px; }
 .shading-values .changed { color: var(--warn-text); }
 .shading-msg { color: var(--meas-bad); max-width: 360px; }
 .shading-more .hint { max-width: 420px; }
-.shading-url { width: 220px; font-family: var(--mono); }
+.shading-url { width: 220px; font-family: var(--mono); flex: none; }
 body.shading-on .panel .body { touch-action: none; }
 
 /* colour targets (#55): logo pipette */
 dialog.logodlg canvas.logopick { display: block; max-width: 100%; max-height: 50vh; margin: 8px 0; background: repeating-conic-gradient(#555 0% 25%, #777 0% 50%) 0 0 / 16px 16px; cursor: crosshair; }
-dialog.logodlg .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
-.swatch.big { width: 28px; height: 28px; }
-.menu-body p.hint.narrow { max-width: 380px; }
-.mrow > span.swatch:first-child { width: 14px; }
 
 /* own test pictures, logo, favourites, test videos (#52, src/testMedia.ts) */
-dialog.testimg { width: min(640px, 96vw); }
-dialog.testvid { width: min(1000px, 96vw); }
 .timg { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line-1); }
 .timg img { width: 96px; height: 54px; object-fit: contain; background: #000; flex: none; }
 .timg-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.timg-main .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .favlist { display: flex; flex-wrap: wrap; gap: 4px; }
-.favlist .chip { display: inline-flex; gap: 2px; }
-button.fav { min-width: 24px; }
-button.fav.on { color: var(--text); border-color: var(--sel-line); }
-table.tvtable { border-collapse: collapse; font-size: 12px; }
-table.tvtable td { padding: 5px 8px 5px 0; border-top: 1px solid var(--line-1); vertical-align: top; }
+.fav-chip { display: inline-flex; gap: 2px; }
+table.tvtable td { padding: 5px 8px 5px 0; }
 table.tvtable td.tv-act { white-space: nowrap; }
-table.tvtable .row { display: inline-flex; gap: 4px; align-items: center; }
+table.tvtable .row { display: inline-flex; flex-wrap: nowrap; }
 table.tvtable progress { width: 90px; }
-table.tvtable a, dialog.testvid .hint a { color: var(--text); }
-
-/* legacy class names of the feature modules that are not on src/ui yet (removed with their migration) */
-.mrow { display: flex; align-items: center; gap: 6px; color: var(--text-muted); flex-wrap: wrap; }
-.mrow > span:first-child { width: var(--label-w); flex: none; }
-.mrow select { flex: 1; min-width: 0; }
-.mtitle { font-weight: 600; color: var(--text); margin-bottom: 2px; }
-input.num:not([class*='num-']) { width: 48px; }
+/* narrow dialogs (phones): each video as a small card of two columns, the action across */
+@container (max-width: 560px) {
+  table.tvtable tr { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; border-top: 1px solid var(--line-1); padding: 4px 0; }
+  table.tvtable td { border: 0; padding: 2px 0; }
+  table.tvtable td.tv-act { grid-column: 1 / -1; white-space: normal; }
+}

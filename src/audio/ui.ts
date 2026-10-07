@@ -15,32 +15,11 @@ import { channelInfo } from './dsp/layouts';
 import { avCalibration, calibratedLead, onAvCalibration, setAvCalibration } from './avcal';
 import { monitorSink } from '../sources';
 import { lang, t } from '../i18n';
+import { button, checkbox, download, field, filePicker, h, hint, numberInput, row, select, type Kid } from '../ui';
 
-type Kid = Node | string;
-const h = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, unknown> = {}, ...kids: Kid[]) => {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k.startsWith('on')) el.addEventListener(k.slice(2), v as EventListener);
-    else if (k === 'class') el.className = String(v);
-    else if (v === true) el.setAttribute(k, '');
-    else if (v !== false && v != null) el.setAttribute(k, String(v));
-  }
-  el.append(...kids);
-  return el;
-};
-const select = (value: string, options: [string, string][], onchange: (v: string) => void, title = '') =>
-  h('select', { title, onchange: (e: Event) => onchange((e.target as HTMLSelectElement).value) },
-    ...options.map(([v, l]) => h('option', { value: v, selected: v === value }, l)));
-const num = (value: number, min: number, max: number, step: number, onchange: (v: number) => void, title = '') => {
-  const i = h('input', { type: 'number', class: 'num', min, max, step, value, title }) as HTMLInputElement;
-  i.onchange = () => { const v = Number(i.value); if (Number.isFinite(v)) onchange(Math.min(max, Math.max(min, v))); };
-  return i;
-};
-const check = (on: boolean, label: string, onchange: (v: boolean) => void, title = '') => {
-  const c = h('input', { type: 'checkbox', checked: on }) as HTMLInputElement;
-  c.onchange = () => onchange(c.checked);
-  return h('label', { class: 'inline', title }, c, label);
-};
+/** Audio number fields: clamped to their range, small. */
+const num = (value: number, min: number, max: number, step: number, onchange: (v: number) => void, title = '') =>
+  numberInput(value, onchange, { min, max, step, title, clamp: true, size: 'm' });
 
 // ---------------------------------------------------------------- generator
 
@@ -81,26 +60,27 @@ export function mountGenerator(el: HTMLElement, saved: Partial<GenConfig> | unde
   function render() {
     const c = generator.cfg;
     const rows: Node[] = [];
-    const row = (...kids: Kid[]) => rows.push(h('div', { class: 'row' }, ...kids));
-    row(
+    const line = (...kids: Kid[]) => rows.push(row(...kids));
+    const lbl = (text: string) => h('span', { class: 'lbl' }, text);
+    line(
       select(c.signal, (Object.entries(SIGNAL_LABELS) as [Signal, string][]).map(([k, l]) => [k, l]), (v) => set({ signal: v as Signal }), 'Signal'),
-      c.running ? h('button', { class: 'on', onclick: () => set({ running: false }) }, t('audio.stop')) : h('button', { class: 'primary', onclick: () => set({ running: true }) }, '▶ Start'),
+      c.running ? button(t('audio.stop'), () => set({ running: false }), { pressed: true }) : button('▶ Start', () => set({ running: true }), { variant: 'primary' }),
     );
-    if (TONAL.includes(c.signal)) row(h('span', { class: 'lbl' }, t('audio.gen.freq')), num(c.freq, 10, 20000, 1, (v) => set({ freq: v }), '10 Hz – 20 kHz'), 'Hz',
-      ...[[997, '997'], [1000, '1k'], [440, '440'], [100, '100'], [10000, '10k']].map(([f, l]) => h('button', { class: `mini ${c.freq === f ? 'on' : ''}`, onclick: () => set({ freq: Number(f) }) }, String(l))));
-    row(h('span', { class: 'lbl' }, t('audio.level')), num(c.level, -90, 0, 0.5, (v) => set({ level: v }), t('audio.gen.levelTitle')), 'dBFS',
-      ...LEVELS.map(([v, l]) => h('button', { class: `mini ${c.level === v ? 'on' : ''}`, title: v === -18 ? t('audio.gen.alignTitle') : '', onclick: () => set({ level: v }) }, l)));
+    if (TONAL.includes(c.signal)) line(lbl(t('audio.gen.freq')), num(c.freq, 10, 20000, 1, (v) => set({ freq: v }), '10 Hz – 20 kHz'), 'Hz',
+      ...[[997, '997'], [1000, '1k'], [440, '440'], [100, '100'], [10000, '10k']].map(([f, l]) => button(String(l), () => set({ freq: Number(f) }), { small: true, pressed: c.freq === f })));
+    line(lbl(t('audio.level')), num(c.level, -90, 0, 0.5, (v) => set({ level: v }), t('audio.gen.levelTitle')), 'dBFS',
+      ...LEVELS.map(([v, l]) => button(l, () => set({ level: v }), { small: true, pressed: c.level === v, title: v === -18 ? t('audio.gen.alignTitle') : '' })));
     if (c.signal === 'sweep') {
-      row(h('span', { class: 'lbl' }, 'Sweep'), num(c.sweepFrom, 10, 20000, 1, (v) => set({ sweepFrom: v })), '–', num(c.sweepTo, 10, 20000, 1, (v) => set({ sweepTo: v })), 'Hz');
-      row(h('span', { class: 'lbl' }, t('audio.gen.duration')), num(c.sweepSeconds, 0.5, 600, 0.5, (v) => set({ sweepSeconds: v })), 's', check(c.sweepRepeat, t('audio.gen.repeat'), (v) => set({ sweepRepeat: v })));
+      line(lbl('Sweep'), num(c.sweepFrom, 10, 20000, 1, (v) => set({ sweepFrom: v })), '–', num(c.sweepTo, 10, 20000, 1, (v) => set({ sweepTo: v })), 'Hz');
+      line(lbl(t('audio.gen.duration')), num(c.sweepSeconds, 0.5, 600, 0.5, (v) => set({ sweepSeconds: v })), 's', checkbox(c.sweepRepeat, t('audio.gen.repeat'), (v) => set({ sweepRepeat: v })));
     }
-    if (c.signal === 'steps') row(h('span', { class: 'lbl' }, t('audio.gen.perStep')), num(c.stepSeconds, 0.2, 60, 0.1, (v) => set({ stepSeconds: v })), t('audio.gen.stepsHint'));
+    if (c.signal === 'steps') line(lbl(t('audio.gen.perStep')), num(c.stepSeconds, 0.2, 60, 0.1, (v) => set({ stepSeconds: v })), t('audio.gen.stepsHint'));
     if (c.signal === 'white' || c.signal === 'pink' || c.signal === 'pink-band') {
-      row(check(c.correlated, t('audio.gen.correlated'), (v) => set({ correlated: v }), t('audio.gen.correlatedTitle')));
+      line(checkbox(c.correlated, t('audio.gen.correlated'), (v) => set({ correlated: v }), t('audio.gen.correlatedTitle')));
     }
     // channels (2 = stereo, 6 = 5.1, 8 = 7.1 in ffmpeg/WAV order)
     const nch = c.channels ?? 2, chInfo = channelInfo(nch);
-    row(h('span', { class: 'lbl' }, t('audio.channels')), select(String(nch), [['2', 'Stereo'], ['6', '5.1 (L R C LFE Ls Rs)'], ['8', '7.1 (L R C LFE Lb Rb Ls Rs)']], (v) => {
+    line(lbl(t('audio.channels')), select(String(nch), [['2', 'Stereo'], ['6', '5.1 (L R C LFE Ls Rs)'], ['8', '7.1 (L R C LFE Lb Rb Ls Rs)']], (v) => {
       const n = Number(v), inf = channelInfo(n);
       set({ channels: n, routes: inf.map((ci, i) => c.routes[i] ?? { on: !ci.lfe, invert: false, trim: 0 }) });
     }, t('audio.gen.channelsTitle')));
@@ -112,26 +92,24 @@ export function mountGenerator(el: HTMLElement, saved: Partial<GenConfig> | unde
       Object.assign(routes[i], patch); set({ routes });
     };
       return h('span', { class: 'route' },
-        h('button', { class: `mini ${r.on ? 'on' : ''}`, title: t('audio.gen.routeOnOff', { name }), onclick: () => upd({ on: !r.on }) }, name),
-        h('button', { class: `mini ${r.invert ? 'on' : ''}`, title: t('audio.gen.invert'), onclick: () => upd({ invert: !r.invert }) }, 'Ø'),
+        button(name, () => upd({ on: !r.on }), { small: true, pressed: r.on, title: t('audio.gen.routeOnOff', { name }) }),
+        button('Ø', () => upd({ invert: !r.invert }), { small: true, pressed: r.invert, title: t('audio.gen.invert') }),
         num(r.trim, -40, 0, 0.5, (v) => upd({ trim: v }), t('audio.gen.routeTrim', { name })));
     };
-    const preset = (label: string, l: boolean, r: boolean, inv: boolean) => h('button', {
-      class: 'mini', title: label === 'L−R' ? t('audio.gen.antiphase') : '',
-      onclick: () => set({ routes: [{ on: l, invert: false, trim: 0 }, { on: r, invert: inv, trim: 0 }] }),
-    }, label);
+    const preset = (label: string, l: boolean, r: boolean, inv: boolean) =>
+      button(label, () => set({ routes: [{ on: l, invert: false, trim: 0 }, { on: r, invert: inv, trim: 0 }] }), { small: true, title: label === 'L−R' ? t('audio.gen.antiphase') : '' });
     if (nch <= 2) {
-      row(route(0, 'L'), route(1, 'R'));
-      row(h('span', { class: 'lbl' }, t('audio.gen.quick')), preset('L', true, false, false), preset('R', false, true, false), preset('L+R', true, true, false), preset('L−R', true, true, true));
+      line(route(0, 'L'), route(1, 'R'));
+      line(lbl(t('audio.gen.quick')), preset('L', true, false, false), preset('R', false, true, false), preset('L+R', true, true, false), preset('L−R', true, true, true));
     } else {
-      for (let i = 0; i < nch; i += 2) row(...[i, i + 1].filter((k) => k < nch).map((k) => route(k, chInfo[k].name)));
-      row(h('span', { class: 'lbl' }, t('audio.gen.quick')),
-        h('button', { class: 'mini', onclick: () => set({ routes: chInfo.map(() => ({ on: true, invert: false, trim: 0 })) }) }, t('audio.gen.all')),
-        h('button', { class: 'mini', onclick: () => set({ routes: chInfo.map((ci) => ({ on: !ci.lfe, invert: false, trim: 0 })) }) }, t('audio.gen.noLfe')));
+      for (let i = 0; i < nch; i += 2) line(...[i, i + 1].filter((k) => k < nch).map((k) => route(k, chInfo[k].name)));
+      line(lbl(t('audio.gen.quick')),
+        button(t('audio.gen.all'), () => set({ routes: chInfo.map(() => ({ on: true, invert: false, trim: 0 })) }), { small: true }),
+        button(t('audio.gen.noLfe'), () => set({ routes: chInfo.map((ci) => ({ on: !ci.lfe, invert: false, trim: 0 })) }), { small: true }));
     }
     // output device
     const outs: [string, string][] = [['', t('audio.defaultOutput')], ...outputs.filter((d) => d.deviceId && d.deviceId !== 'default').map((d, i): [string, string] => [d.deviceId, d.label || t('audio.gen.outputN', { n: i + 1 })])];
-    row(h('span', { class: 'lbl' }, t('audio.output')), select(generator.sinkId, outs, (v) => { generator.setSink(v).then(render); store(); }, t('audio.gen.outputTitle')));
+    line(lbl(t('audio.output')), select(generator.sinkId, outs, (v) => { generator.setSink(v).then(render); store(); }, t('audio.gen.outputTitle')));
     // expected readings
     const fs = generator.sampleRate || 48000;
     const exp = expectedSine(c, (f) => kWeightingPowerGain(f, fs));
@@ -149,11 +127,11 @@ export function mountGenerator(el: HTMLElement, saved: Partial<GenConfig> | unde
     const lat = generator.latency;
     if (generator.ctx && lat) info.push(t('audio.gen.latency', { khz: fmt1(generator.sampleRate / 1000), base: fmt1(lat.base), output: fmt1(lat.output), n: lat.maxChannels }) + (generator.running ? t('audio.gen.running') : ''));
     if (generator.error) info.push(t('audio.error', { msg: generator.error }));
-    rows.push(h('p', { class: 'hint' }, info.join(' · ')));
+    rows.push(hint(info.join(' · ')));
     if (c.signal === 'avsync') rows.push(...avCalibrationRows(measuredAv));
-    rows.push(h('div', { class: 'row' },
-      h('button', { title: t('audio.gen.loopbackTitle'), onclick: addLoopbackSource }, t('audio.gen.loopback')),
-      h('button', { title: t('audio.selftest.title'), onclick: () => runSelfTest(result) }, t('audio.selftest'))));
+    rows.push(row(
+      button(t('audio.gen.loopback'), addLoopbackSource, { title: t('audio.gen.loopbackTitle') }),
+      button(t('audio.selftest'), () => runSelfTest(result), { title: t('audio.selftest.title') })));
     rows.push(result);
     el.replaceChildren(...rows);
   }
@@ -170,20 +148,18 @@ function avCalibrationRows(measuredAv: () => { ms: number; source: string } | nu
   const lead = num(cal.videoLeadMs, -500, 500, 1, (v) => setAvCalibration(v, cal.note || t('audio.cal.byHand')), t('audio.cal.leadTitle'));
   const m = measuredAv();
   return [
-    h('div', { class: 'row' }, h('span', { class: 'lbl' }, t('audio.cal.lead')), lead, 'ms',
-      h('button', {
-        class: 'mini', disabled: !m, title: m ? t('audio.cal.takeTitle', { ms: fmt1(m.ms), source: m.source }) : t('audio.cal.measureFirst'),
-        onclick: () => { if (m) setAvCalibration(calibratedLead(cal.videoLeadMs, m.ms), t('audio.cal.note', { date: new Date().toLocaleDateString(lang() === 'de' ? 'de-DE' : 'en-GB'), source: m.source })); },
-      }, m ? t('audio.cal.takeMs', { ms: `${m.ms > 0 ? '+' : ''}${fmt1(m.ms)}` }) : t('audio.cal.take')),
-      h('button', { class: 'mini', title: t('audio.cal.clear'), onclick: () => setAvCalibration(0, '') }, '0')),
-    h('p', { class: 'hint' }, cal.note ? t('audio.cal.current', { note: cal.note }) : t('audio.cal.uncalibrated'),
-      t('audio.cal.howTo')),
+    row(h('span', { class: 'lbl' }, t('audio.cal.lead')), lead, 'ms',
+      button(m ? t('audio.cal.takeMs', { ms: `${m.ms > 0 ? '+' : ''}${fmt1(m.ms)}` }) : t('audio.cal.take'),
+        () => { if (m) setAvCalibration(calibratedLead(cal.videoLeadMs, m.ms), t('audio.cal.note', { date: new Date().toLocaleDateString(lang() === 'de' ? 'de-DE' : 'en-GB'), source: m.source })); },
+        { small: true, disabled: !m, title: m ? t('audio.cal.takeTitle', { ms: fmt1(m.ms), source: m.source }) : t('audio.cal.measureFirst') }),
+      button('0', () => setAvCalibration(0, ''), { small: true, title: t('audio.cal.clear') })),
+    hint(cal.note ? t('audio.cal.current', { note: cal.note }) : t('audio.cal.uncalibrated'), t('audio.cal.howTo')),
   ];
 }
 
 /** Run all synthesisable Tech 3341/3342 cases through the DSP core (48 kHz). */
 async function runSelfTest(out: HTMLElement) {
-  out.replaceChildren(h('p', { class: 'hint' }, t('audio.selftest.running')));
+  out.replaceChildren(hint(t('audio.selftest.running')));
   const results: CaseResult[] = [];
   for (const c of ALL_CASES) {
     await new Promise((r) => setTimeout(r, 0));
@@ -224,17 +200,16 @@ export function audioSourceControls(s: Source, save: () => void, rerender: () =>
         ...list.filter((d) => d.kind === 'audio').map((d) => h('option', { value: d.url, selected: d.url === s.audioIn.bridgeUrl }, d.name)));
     }).catch(() => brSel.replaceChildren(h('option', { value: '' }, t('audio.src.bridgeDown'))));
   }
-  out.push(h('div', { class: 'row' },
+  out.push(row(
     select(s.audioIn.mode, [['device', t('audio.src.modeDevice')], ['bridge', t('audio.src.modeBridge')], ['file', t('audio.src.modeFile')], ['generator', t('audio.src.modeGenerator')]], (v) => { s.audioIn.mode = v as Source['audioIn']['mode']; s.stop(); save(); rerender(); }, t('audio.src.input')),
     s.audioIn.mode === 'device' ? devSel : s.audioIn.mode === 'bridge' ? brSel : ''));
-  out.push(h('p', { class: 'hint' }, INPUT_HINTS[s.audioIn.mode]));
-  const file = h('input', { type: 'file', accept: 'audio/*,video/*', hidden: true }) as HTMLInputElement;
-  file.onchange = () => { const f = file.files?.[0]; if (f) { lastFile.set(s, f); s.startAudio(f).then(rerender); } };
-  out.push(h('div', { class: 'row' },
-    running ? h('button', { onclick: () => s.stop() }, t('audio.stop'))
-      : h('button', { class: 'primary', onclick: () => (s.audioIn.mode === 'file' ? file.click() : s.startAudio(undefined, bridge())) }, s.audioIn.mode === 'file' ? t('audio.src.chooseFile') : '▶ Start'),
-    file,
-    s.audioIn.mode === 'file' && lastFile.get(s) ? h('button', { title: t('audio.src.measureFileTitle'), onclick: () => measureFile(s, lastFile.get(s)!, rerender) }, t('audio.src.measureFile')) : ''));
+  out.push(hint(INPUT_HINTS[s.audioIn.mode]));
+  const file = filePicker('audio/*,video/*', ([f]) => { lastFile.set(s, f); s.startAudio(f).then(rerender); });
+  out.push(row(
+    running ? button(t('audio.stop'), () => s.stop())
+      : button(s.audioIn.mode === 'file' ? t('audio.src.chooseFile') : '▶ Start', () => (s.audioIn.mode === 'file' ? file.pick() : s.startAudio(undefined, bridge())), { variant: 'primary' }),
+    file.input,
+    s.audioIn.mode === 'file' && lastFile.get(s) && button(t('audio.src.measureFile'), () => measureFile(s, lastFile.get(s)!, rerender), { title: t('audio.src.measureFileTitle') })));
   if (s.audioEl) out.push(h('div', { class: 'row audio-el' }, s.audioEl));
   const fr = fileResults.get(s);
   if (fr) out.push(h('div', { class: 'msg' }, fr));
@@ -270,36 +245,28 @@ export function audioRow(s: Source, rerender: () => void): Node | null {
   if (!a) return null;
   const rows: Node[] = [h('div', { class: 'row audio-row' },
     h('span', { class: 'lbl', title: a.label }, t('audio.row.rate', { khz: a.fs / 1000, ch: a.channels })),
-    h('button', { class: `mini ${a.paused ? 'on' : ''}`, title: t('audio.row.pauseTitle'), onclick: () => { a.paused = !a.paused; rerender(); } }, a.paused ? '▶ I' : '❚❚ I'),
-    h('button', { class: 'mini', title: t('audio.row.resetTitle'), onclick: () => { a.reset(); rerender(); } }, '⟲ Reset'),
-    h('button', { class: 'mini', title: t('audio.row.csvTitle'), onclick: () => download(`${fileName(s)}.csv`, new Blob([a.toCsv()], { type: 'text/csv;charset=utf-8' })) }, 'CSV'),
-    h('button', { class: 'mini', title: t('audio.row.pngTitle'), onclick: () => protocolPng(s).then((b) => b && download(`${fileName(s)}.png`, b)) }, 'PNG'),
-    s.canMonitor ? h('button', { class: `mini ${s.monitoring ? 'on' : ''}`, title: s.kind === 'stream' ? t('audio.row.monitorStream') : t('audio.row.monitorDefault'), onclick: () => { s.setMonitor(!s.monitoring); rerender(); } }, '🎧') : '',
+    button(a.paused ? '▶ I' : '❚❚ I', () => { a.paused = !a.paused; rerender(); }, { small: true, pressed: a.paused, title: t('audio.row.pauseTitle') }),
+    button('⟲ Reset', () => { a.reset(); rerender(); }, { small: true, title: t('audio.row.resetTitle') }),
+    button('CSV', () => download(`${fileName(s)}.csv`, a.toCsv(), 'text/csv;charset=utf-8'), { small: true, title: t('audio.row.csvTitle') }),
+    button('PNG', () => protocolPng(s).then((b) => b && download(`${fileName(s)}.png`, b)), { small: true, title: t('audio.row.pngTitle') }),
+    s.canMonitor && button('🎧', () => { s.setMonitor(!s.monitoring); rerender(); }, { small: true, pressed: s.monitoring, title: s.kind === 'stream' ? t('audio.row.monitorStream') : t('audio.row.monitorDefault') }),
   )];
   if (s.kind === 'stream' && s.monitoring) {
-    const outs = h('select', { title: t('audio.mon.outputTitle') }, h('option', { value: '' }, t('audio.defaultOutput'))) as HTMLSelectElement;
+    const outs = select('', [['', t('audio.defaultOutput')]], (v) => { monitorSink.id = v; s.monitor?.setSink(v).then(rerender); }, t('audio.mon.outputTitle'));
     listDevices('audiooutput').then((d) => {
       for (const x of d) if (x.deviceId && x.deviceId !== 'default') outs.append(h('option', { value: x.deviceId, selected: x.deviceId === monitorSink.id }, x.label || t('audio.output')));
     });
-    outs.onchange = () => { monitorSink.id = outs.value; s.monitor?.setSink(outs.value).then(rerender); };
     const pairs = Math.ceil(a.channels / 2);
     const pairSel = pairs > 1 ? select(String(monitorSink.pair), Array.from({ length: pairs }, (_, i): [string, string] => [String(i), `${a.names[i * 2]}/${a.names[i * 2 + 1] ?? a.names[i * 2]}`]), (v) => { monitorSink.pair = Number(v); s.monitor?.setPair(monitorSink.pair); }, t('audio.mon.pair')) : '';
     const st = s.monitor?.stats;
-    rows.push(h('div', { class: 'row' }, outs, pairSel));
-    rows.push(h('p', { class: 'hint' }, s.monitorError ? t('audio.mon.error', { msg: s.monitorError })
+    rows.push(row(outs, pairSel));
+    rows.push(hint(s.monitorError ? t('audio.mon.error', { msg: s.monitorError })
       : st ? t('audio.mon.stats', { fill: Math.round(st.fillMs), target: Math.round(st.targetMs), ppm: `${st.ppm >= 0 ? '+' : ''}${Math.round(st.ppm)}`, empty: st.underruns ? t('audio.mon.underruns', { n: st.underruns }) : '', out: s.monitor?.latencyMs ?? 0 }) : t('audio.mon.starting')));
   }
   return rows.length === 1 ? rows[0] : h('div', {}, ...rows);
 }
 
 const fileName = (s: Source) => `lz-scopes-audio-${s.name.replace(/[^\w-]+/g, '_')}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}`;
-
-function download(name: string, blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  const a = h('a', { href: url, download: name }) as HTMLAnchorElement;
-  document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-}
 
 /** PNG protocol: loudness history (whole measurement) and the meter's numbers side by side. */
 async function protocolPng(s: Source): Promise<Blob | null> {
@@ -328,7 +295,7 @@ export function audioPanelSettings(p: PanelState, save: () => void): Node[] {
   const o = (p.audio ??= {});
   const v = <K extends keyof AudioPanelOptions>(k: K) => (o[k] ?? AUDIO_DEFAULTS[k]) as NonNullable<AudioPanelOptions[K]>;
   const rows: Node[] = [];
-  const row = (label: string, ...kids: Kid[]) => rows.push(h('label', { class: 'mrow' }, h('span', {}, label), ...kids));
+  const row = (label: string, ...kids: Kid[]) => rows.push(field(label, ...kids));
   const pick = <K extends keyof AudioPanelOptions>(k: K, opts: [string, string][], parse: (s: string) => AudioPanelOptions[K]) =>
     select(String(v(k)), opts, (s) => { o[k] = parse(s); save(); });
   if (p.scope === 'audio-meter' || p.scope === 'audio-loudness') {
@@ -348,13 +315,13 @@ export function audioPanelSettings(p: PanelState, save: () => void): Node[] {
   if (p.scope === 'audio-phase') {
     row('Zoom', pick('zoom', [['0', 'auto'], ['1', '×1'], ['2', '×2'], ['4', '×4'], ['8', '×8']], Number));
     row(t('audio.set.correlation'), pick('corrMs', [['100', '100 ms'], ['300', '300 ms'], ['600', '600 ms'], ['1000', '1 s'], ['3000', '3 s']], Number));
-    rows.push(h('p', { class: 'hint' }, t('audio.set.phaseHint')));
+    rows.push(hint(t('audio.set.phaseHint')));
   }
-  if (p.scope === 'audio-meter') rows.push(h('p', { class: 'hint' }, t('audio.set.meterHint')));
-  if (p.scope === 'audio-loudness') rows.push(h('p', { class: 'hint' }, t('audio.set.loudnessHint')));
+  if (p.scope === 'audio-meter') rows.push(hint(t('audio.set.meterHint')));
+  if (p.scope === 'audio-loudness') rows.push(hint(t('audio.set.loudnessHint')));
   if (p.scope === 'audio-check') {
-    rows.push(h('p', { class: 'hint' }, t('audio.set.identHint')));
-    rows.push(h('p', { class: 'hint' }, t('audio.set.avHint')));
+    rows.push(hint(t('audio.set.identHint')));
+    rows.push(hint(t('audio.set.avHint')));
   }
   return rows;
 }

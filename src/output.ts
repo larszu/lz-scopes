@@ -10,6 +10,8 @@ import { drawPatch, listenPatches, type PatchFrame } from './patchSequencer';
 import { avCalibration } from './audio/avcal';
 import { HUD_STYLE, onThemeChange, storedTheme } from './theme';
 import { num, t } from './i18n';
+// DOM helper only: the pattern window loads none of the app styles
+import { h as make } from './ui/dom';
 
 export function runOutputWindow() {
   const q = new URLSearchParams(location.search);
@@ -18,8 +20,7 @@ export function runOutputWindow() {
   let label = q.get('label') ?? '', showLabel = !!label;
   document.title = t('output.title');
   document.body.style.cssText = 'margin:0;background:#000;overflow:hidden;cursor:none';
-  const canvas = document.createElement('canvas');
-  canvas.width = w; canvas.height = h;
+  const canvas = make('canvas', { width: w, height: h });
   // object-fit keeps the aspect; at native screen size this is 1:1
   canvas.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;image-rendering:pixelated';
   document.body.replaceChildren(canvas);
@@ -28,7 +29,7 @@ export function runOutputWindow() {
   const pipeline = dc.colorType === 'float16' ? 'Canvas 2D float16' : t('output.canvas8');
   document.body.dataset.pipeline = dc.colorType;
   let streamMsg = '';
-  const hud = document.createElement('div');
+  const hud = make('div');
   // chrome follows the UI skin; the pattern and the black surround never do
   const skinHud = () => { const s = HUD_STYLE[storedTheme()]; Object.assign(hud.style, { font: s.font, color: s.fg, background: s.bg, borderRadius: s.radius }); };
   hud.style.cssText = 'position:fixed;left:12px;bottom:12px;padding:4px 8px;transition:opacity .4s';
@@ -44,8 +45,8 @@ export function runOutputWindow() {
     const av = p.id === 'avsync' ? `   ${t('output.av', { refresh: r ? `${num(r, 1)} ms (${Math.round(1000 / r)} Hz)` : '–', jitter: num(r / 2, 1), lead: Math.round(avCalibration().videoLeadMs) })}${avCalibration().note ? '' : ` ${t('output.uncalibrated')}`}` : '';
     hud.replaceChildren(
       `${p.group} · ${p.name} · ${w}×${h}${av}   ${t('output.keys')}`,
-      Object.assign(document.createElement('div'), { textContent: `${pipelineText(pipeline, mode)}${streamMsg ? ` · Stream ${streamMsg}` : ''}` }),
-      ...(p.note ? [Object.assign(document.createElement('div'), { textContent: p.note })] : []),
+      make('div', null, `${pipelineText(pipeline, mode)}${streamMsg ? ` · Stream ${streamMsg}` : ''}`),
+      p.note ? make('div', null, p.note) : '',
     );
     hud.style.opacity = '1';
     clearTimeout(hudTimer); hudTimer = window.setTimeout(() => (hud.style.opacity = '0'), 2500);

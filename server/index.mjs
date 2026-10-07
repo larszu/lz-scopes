@@ -911,6 +911,22 @@ export async function deckLinkStatus() {
   return { available: !!r.ok, helper: true, devices: r.devices ?? [], error: r.ok ? undefined : r.error ?? 'Desktop Video nicht installiert' };
 }
 
+/** Reference (genlock) status of one DeckLink device: `lz-decklink --reference <n>` (#72), cached 1 s. */
+const refCache = new Map();
+export async function deckLinkReference(index) {
+  const hit = refCache.get(index);
+  if (hit && Date.now() - hit.t < 1000) return hit.v;
+  const bin = helperPath('lz-decklink');
+  let v;
+  if (!bin) v = { ok: false, helper: false, error: 'DeckLink-Helfer nicht gebaut (helpers/decklink, DeckLink SDK nötig)' };
+  else {
+    const r = await run(bin, ['--reference', String(index)], 4000);
+    try { v = { helper: true, ...JSON.parse((r?.out ?? '').trim().split('\n').pop() ?? '') }; } catch { v = { ok: false, helper: true, error: r?.err?.trim().split('\n').pop() || 'Helfer lieferte keinen Referenzstatus' }; }
+  }
+  refCache.set(index, { t: Date.now(), v });
+  return v;
+}
+
 function startDeckLink(ws, params, url) {
   const bin = helperPath('lz-decklink');
   if (!bin) return fail(ws, 'DeckLink nicht verfügbar – Helfer nicht gebaut; Desktop Video und DeckLink SDK nötig (helpers/decklink/README.md)');
@@ -920,7 +936,7 @@ function startDeckLink(ws, params, url) {
   const pixel = params.get('pixel') === '8' ? '8' : '10';
   startHelperStream(ws, {
     bin, args: ['--capture', index, '--bits', pixel], label: 'DeckLink', params,
-    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions },
+    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions, now: clockNow },
   });
 }
 
@@ -959,7 +975,7 @@ function startNdi(ws, params, url) {
   if (!ffmpeg) return fail(ws, 'ffmpeg nicht gefunden');
   startHelperStream(ws, {
     bin, args: ['--capture', url.slice('ndi:'.length)], label: 'NDI', params,
-    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions },
+    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions, now: clockNow },
   });
 }
 
@@ -1014,6 +1030,11 @@ const server = createServer((req, res) => {
   }
   if (path === '/api/ndi') {
     ndiStatus().then((st) => { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(st)); });
+    return;
+  }
+  if (path === '/api/decklink/reference') {
+    const index = Math.max(0, Math.min(63, Number(new URL(req.url ?? '/', 'http://x').searchParams.get('index')) || 0));
+    deckLinkReference(index).then((st) => { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(st)); });
     return;
   }
   if (path === '/api/decklink') {

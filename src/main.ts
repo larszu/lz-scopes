@@ -678,7 +678,7 @@ function openOutput(pt: PatternState) {
 // own pictures, logo, favourites and test videos (#52)
 const testMediaHost: TestMediaHost = {
   usePattern: (id) => {
-    const s = sources.find((x) => x.kind === 'pattern') ?? addSource('pattern', 'Testbild');
+    const s = sources.find((x) => x.kind === 'pattern') ?? addSource('pattern', t('main.pattern.title'));
     s.pattern.id = id; save(); s.startPattern(); renderSources();
   },
   openVideo: (url, v) => {
@@ -695,8 +695,8 @@ onUserPatternsChange(() => {
   sources.filter((x) => x.kind === 'pattern' && (x.pattern.id === 'logo' || x.pattern.id === 'testcard-logo' || x.pattern.id.startsWith('img:'))).forEach((x) => x.startPattern());
   renderSources();
 });
-registerMenuCommand('sources', { id: 'testimages', label: 'Eigene Testbilder und Logo …' }, () => openTestImages(testMediaHost));
-registerMenuCommand('sources', { id: 'testvideos', label: 'Testvideos …', title: 'Big Buck Bunny, HDR-Testfilme (frei lizenziert)' }, () => openTestVideos(testMediaHost));
+registerMenuCommand('sources', { id: 'testimages', label: t('menu.testImages') }, () => openTestImages(testMediaHost));
+registerMenuCommand('sources', { id: 'testvideos', label: t('menu.testVideos'), title: t('menu.testVideosTitle') }, () => openTestVideos(testMediaHost));
 
 async function startLocal(s: Source) {
   if (s.kind === 'pattern') return s.startPattern();

@@ -106,4 +106,7 @@ export default {
   'settings.about.ffmpeg': 'The desktop app ships ffmpeg (GPL-3.0-or-later) as a separate program; source and build details in THIRD_PARTY.md.',
   'settings.about.source': 'Source code and issues: ',
   'settings.about.own': 'Own code proprietary, see ',
+  'menu.testImages': 'Own Test Patterns and Logo …',
+  'menu.testVideos': 'Test Videos …',
+  'menu.testVideosTitle': 'Big Buck Bunny, HDR test films (freely licensed)',
 } as const satisfies Messages;

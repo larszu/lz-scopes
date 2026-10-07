@@ -4,7 +4,8 @@ import {
   paintFrame, slope, vectorGesture, vectorMode, waveTarget, zoneOf,
 } from '../src/shading/model';
 import { CameraBridgeLink } from '../src/shading/bridge';
-import { TEXTS } from '../src/shading/text';
+import { T } from '../src/shading/text';
+import { setLang } from '../src/i18n';
 
 describe('touch shading: gesture → value', () => {
   it('zones follow the shadows/mids/highlights borders of the neutral overlay (0.3 / 0.7)', () => {
@@ -91,9 +92,13 @@ describe('touch shading: simulator picture model', () => {
 });
 
 describe('touch shading: texts', () => {
-  it('every text exists in German and English', () => {
-    expect(Object.keys(TEXTS.en).sort()).toEqual(Object.keys(TEXTS.de).sort());
-    for (const k of Object.keys(TEXTS.de) as (keyof typeof TEXTS.de)[]) expect(typeof TEXTS.en[k]).toBe(typeof TEXTS.de[k]);
+  it('follow the UI language (src/i18n, keys shading.*)', () => {
+    setLang('de');
+    expect(T.restored(2)).toBe('Shading: 2 Werte auf Ausgangswerte zurückgesetzt');
+    expect(T.camOption(1, 'FX6', false, '')).toBe('Kamera 1 · FX6 (getrennt)');
+    setLang('en');
+    expect(T.restored(1)).toBe('Shading: 1 value restored to its starting value');
+    expect(T.linkOpen(2)).toBe('Bridge connected · 2 cameras');
   });
 });
 

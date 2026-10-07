@@ -3,6 +3,7 @@
 // reads its camera list and state – it does not talk to any camera itself.
 
 import type { Paint, PaintField } from './model';
+import { T } from './text';
 
 export interface BridgeCamera {
   cameraNumber: number;
@@ -40,7 +41,7 @@ export class CameraBridgeLink {
     this.ws = ws;
     ws.onopen = () => { this.delay = 2000; this.status = 'open'; this.lastError = ''; ws.send(JSON.stringify({ type: 'listCameras' })); this.onChange(); };
     ws.onclose = () => { if (this.ws !== ws) return; this.ws = null; this.status = 'closed'; this.onChange(); this.later(); };
-    ws.onerror = () => { this.lastError = 'lz-camera-bridge nicht erreichbar'; };
+    ws.onerror = () => { this.lastError = T.unreachable; };
     ws.onmessage = (e) => {
       let m: Record<string, unknown>;
       try { m = JSON.parse(String(e.data)); } catch { return; }
@@ -71,7 +72,7 @@ export class CameraBridgeLink {
         const cfg = (c.config ?? {}) as Record<string, unknown>;
         const n = Number(c.cameraNumber);
         // the label only, never host or credentials
-        return { cameraNumber: n, label: String(cfg.label ?? cfg.name ?? `Kamera ${n}`), mode: String(cfg.connectionMode ?? ''), connected: !!c.connected };
+        return { cameraNumber: n, label: String(cfg.label ?? cfg.name ?? T.camN(n)), mode: String(cfg.connectionMode ?? ''), connected: !!c.connected };
       });
     } else if (m.type === 'state') {
       const n = Number(m.cameraNumber), st = (m.state ?? {}) as Record<string, unknown>;
@@ -80,7 +81,7 @@ export class CameraBridgeLink {
       for (const f of FIELDS_OF_STATE) if (typeof st[f] === 'number') paint[f] = st[f] as number;
       this.states.set(n, { paint, origins: { ...prev.origins, ...((m.origins ?? {}) as CameraPaintState['origins']) } });
     } else if (m.type === 'error') {
-      this.lastError = String(m.message ?? 'Fehler');
+      this.lastError = String(m.message ?? T.error);
     } else return;
     this.onChange();
   }

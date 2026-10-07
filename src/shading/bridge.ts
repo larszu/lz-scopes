@@ -2,11 +2,12 @@
 // the WebSocket the web RCP and Companion use. LZ Scopes sends the bridge's own commands and
 // reads its camera list and state – it does not talk to any camera itself.
 
-import type { Paint, PaintField } from './model';
+import { capsKey, type Paint, type PaintField } from './model';
 
 export interface BridgeCamera {
   cameraNumber: number;
   label: string;
+  /** bridge mode, with the firmware family where the capabilities depend on it (model.ts capsKey) */
   mode: string;
   connected: boolean;
 }
@@ -71,7 +72,7 @@ export class CameraBridgeLink {
         const cfg = (c.config ?? {}) as Record<string, unknown>;
         const n = Number(c.cameraNumber);
         // the label only, never host or credentials
-        return { cameraNumber: n, label: String(cfg.label ?? cfg.name ?? `Kamera ${n}`), mode: String(cfg.connectionMode ?? ''), connected: !!c.connected };
+        return { cameraNumber: n, label: String(cfg.label ?? cfg.name ?? `Kamera ${n}`), mode: capsKey(String(cfg.connectionMode ?? ''), cfg.cgiFamily ? String(cfg.cgiFamily) : undefined), connected: !!c.connected };
       });
     } else if (m.type === 'state') {
       const n = Number(m.cameraNumber), st = (m.state ?? {}) as Record<string, unknown>;

@@ -35,6 +35,7 @@ const de = {
   stop: '■ Ausgangswerte',
   help: (step: number, span: number) => `Parade: unten greifen = Black R/G/B, oben = White R/G/B. Luma-Waveform: Schatten = Master Black, Mitten = Master Gamma, Lichter = White R=G=B. Vectorscope: drehen = Hue (nur Simulator), radial = Sättigung. Höchstens ±${step} je Bewegung, ±${span} je Sitzung.`,
   close: 'Leiste schließen',
+  moveBar: 'Leiste nach oben bzw. unten verschieben (sie verdeckt sonst die Schatten bzw. die Lichter)',
 };
 
 const en: typeof de = {
@@ -71,6 +72,7 @@ const en: typeof de = {
   stop: '■ Restore',
   help: (step: number, span: number) => `Parade: grab low = Black R/G/B, high = White R/G/B. Luma waveform: shadows = Master Black, mids = Master Gamma, highlights = White R=G=B. Vectorscope: turn = hue (simulator only), radial = saturation. At most ±${step} per movement, ±${span} per session.`,
   close: 'Close the bar',
+  moveBar: 'Move the bar to the top or bottom (otherwise it covers the shadows or the highlights)',
 };
 
 export const TEXTS = { de, en };

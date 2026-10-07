@@ -381,6 +381,7 @@ dialog.calib .calib-log { max-height: 160px; overflow: auto; font: 11px var(--mo
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); font-size: 13px;
 }
 .shading-bar.hidden { display: none; }
+.shading-bar.top { top: 64px; bottom: auto; }
 .shading-bar.live { border-color: var(--signal); }
 .shading-bar button, .shading-bar select, .shading-arm { min-height: 40px; }
 .shading-arm { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; padding: 0 6px; cursor: pointer; }

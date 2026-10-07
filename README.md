@@ -161,7 +161,7 @@ Panel type **Clock / time code** (and an optional corner read-out in the picture
 - **Luma waveform:** shadows move Master Black, mids Master Gamma, highlights White.
 - **Vectorscope:** drag radially for saturation, turn for hue (hue in the simulator only).
 
-Commands go through [lz-camera-bridge](https://github.com/larszu/lz-camera-bridge) in its own vocabulary. Nothing moves until *Shading aktiv* is ticked and a target is chosen. Every change is step-limited, and **■ Ausgangswerte** (Esc) restores the session's starting values. A simulator works without a camera. Sony SRG-A40 paint over VISCA is not in the bridge yet. Details: [docs/research/touch-shading.md](docs/research/touch-shading.md).
+Commands go through [lz-camera-bridge](https://github.com/larszu/lz-camera-bridge) in its own vocabulary. Nothing moves until *Shading aktiv* is ticked and a target is chosen. Every change is step-limited, and **■ Ausgangswerte** (Esc) restores the session's starting values. A simulator works without a camera. On a Sony SRG-A40 the bridge drives white R and B gain over HTTP-CGI (measured); hue, black and gamma are not available there. Details: [docs/research/touch-shading.md](docs/research/touch-shading.md).
 
 ## Architecture
 

@@ -82,7 +82,7 @@ Für Netzwerkquellen ohne Desktop-App: `npm run ffmpeg:fetch` lädt dasselbe ffm
 
 ## Quellen
 
-Anleitung zu Resolve, Fenster-Capture, Ordnern, Clean Feed und Capture-Karten: [docs/manual/eingaenge.md](docs/manual/eingaenge.md), in der App unter **Hilfe → Anleitung: Eingänge**.
+Anleitung zu Resolve, Fenster-Capture, Ordnern, Clean Feed und Capture-Karten: [docs/manual/inputs.de.md](docs/manual/inputs.de.md), in der App unter **Hilfe → Anleitung: Eingänge**.
 
 | Quelle | Weg |
 |---|---|

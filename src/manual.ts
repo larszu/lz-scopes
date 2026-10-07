@@ -2,13 +2,13 @@
 // Markdown the manual uses: headings, paragraphs, lists, tables, images, links, **bold**,
 // `code`. Text is escaped; images come from docs/manual/img through Vite.
 
-import eingaenge from '../docs/manual/eingaenge.md?raw';
+import inputsDe from '../docs/manual/inputs.de.md?raw';
 import inputs from '../docs/manual/inputs.md?raw';
 
 const IMAGES = import.meta.glob('../docs/manual/img/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 const img = (name: string) => IMAGES[`../docs/manual/${name}`] ?? '';
 
-export const MANUALS = { de: eingaenge, en: inputs };
+export const MANUALS = { de: inputsDe, en: inputs };
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 

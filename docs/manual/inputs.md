@@ -1,6 +1,6 @@
 # Inputs: Resolve, windows, folders, capture cards
 
-How a picture gets into LZ Scopes. All inputs are in the **Sources** sidebar on the left. Add new ones with **+ Source**. Each source card sets how the picture is measured: transfer, matrix, gamut, CST/LUT. (The app UI is German; button names are given in German.)
+How a picture gets into LZ Scopes. All inputs are in the **Sources** sidebar on the left. Add new ones with **+ Source**. Each source card sets how the picture is measured: transfer, matrix, gamut, CST/LUT. (Button names are quoted as in the German interface; with the English interface the corresponding English labels apply.)
 
 | Input | Bit depth | When |
 |---|---|---|

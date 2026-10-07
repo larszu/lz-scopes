@@ -4,6 +4,7 @@
 
 import inputsDe from '../docs/manual/inputs.de.md?raw';
 import inputs from '../docs/manual/inputs.md?raw';
+import { t } from './i18n';
 
 const IMAGES = import.meta.glob('../docs/manual/img/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 const img = (name: string) => IMAGES[`../docs/manual/${name}`] ?? '';
@@ -75,11 +76,11 @@ export function openManual(lang: 'de' | 'en' = 'de') {
   bar.className = 'manual-bar';
   const sw = document.createElement('button');
   sw.className = 'mini';
-  sw.textContent = lang === 'de' ? 'English' : 'Deutsch';
+  sw.textContent = lang === 'de' ? 'English' : 'Deutsch'; // lang-ok: name of the other language, in that language
   sw.onclick = () => openManual(lang === 'de' ? 'en' : 'de');
   const close = document.createElement('button');
   close.className = 'mini';
-  close.textContent = lang === 'de' ? 'Schließen' : 'Close';
+  close.textContent = t('common.close');
   close.onclick = () => dlg.remove();
   bar.append(sw, close);
   const article = document.createElement('article');

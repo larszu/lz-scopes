@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildMenu, dispatch, type MenuActions, type MenuState } from '../src/menu/appMenu';
 import { commandIds, formatAccel, forPage, registersNatively } from '../src/menu/model';
 import { SHORTCUTS } from '../src/menu/shortcuts';
+import { setLang } from '../src/i18n';
+
+// German expectations; the CI runs with an English locale (#94)
+setLang('de');
 
 const state: MenuState = {
   sidebar: true, frozen: false, layout: 'lc', layouts: [['1', '1'], ['lc', 'Colorist']], theme: 'neutral', themes: [['neutral', 'Neutral'], ['lzm', 'LZM']],

@@ -3,6 +3,7 @@
 // Below 900 px the bar collapses behind a ☰ button at the same position (top left).
 
 import { formatAccel, forPage, isMac, type MenuItem, type TopMenu } from './model';
+import { t } from '../i18n';
 
 type Run = (id: string) => void;
 
@@ -17,15 +18,15 @@ export class MenuBar {
   constructor(private run: Run) {
     this.burger = document.createElement('button');
     this.burger.className = 'icon mb-burger';
-    this.burger.title = 'Menü';
-    this.burger.setAttribute('aria-label', 'Menü');
+    this.burger.title = t('menu.burger');
+    this.burger.setAttribute('aria-label', t('menu.burger'));
     this.burger.setAttribute('aria-expanded', 'false');
     this.burger.textContent = '☰';
     this.burger.onclick = () => this.toggleBurger();
     this.bar = document.createElement('div');
     this.bar.className = 'mb-items';
     this.bar.setAttribute('role', 'menubar');
-    this.bar.setAttribute('aria-label', 'Hauptmenü');
+    this.bar.setAttribute('aria-label', t('menu.main'));
     this.el = document.createElement('nav');
     this.el.className = 'menubar';
     this.el.id = 'menubar';

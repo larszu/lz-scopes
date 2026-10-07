@@ -19,6 +19,8 @@ export const OUTPUT_VIEWS = ['grid', 'panel', 'clean', 'overlay'];
 export const TRANSPORT_OPS = ['play', 'pause', 'toggle', 'stop', 'next', 'prev', 'forward', 'rewind', 'start', 'end'];
 const MODES = ['toggle', 'on', 'off'];
 /** Generator signals (src/audio/dsp/signals.ts) */
+/** Global settings the control API can set (src/main.ts SET, described once in src/ui/schema.ts). */
+export const SETTING_KEYS = ['theme', 'scheme', 'sidebar', 'display', 'hdrPreview', 'unit', 'tint', 'precision', 'falseColour', 'skinLuma', 'skinHue', 'zebra', 'stage', 'deRef', 'lowLatency'];
 export const GEN_SIGNALS = ['sine', 'square', 'triangle', 'saw', 'white', 'pink', 'pink-band', 'sweep', 'steps', 'ebu-ident', 'glits', 'ident-lr', 'polarity', 'avsync', 'blits', 'ebu-multi'];
 
 /** Every command with a short description (GET /api/control/commands, docs). */
@@ -44,6 +46,7 @@ export const COMMANDS = {
   'audio.reset': 'Reset loudness (I, LRA, max M/S, max TP, counters, log; Tech 3341): source (optional; none = all sources with sound)',
   'audio.pause': 'Pause/resume I and LRA (Tech 3341): mode toggle|on|off, source (optional; none = all sources with sound)',
   'generator': 'Tone generator: mode toggle|on|off, signal (optional), freq (Hz, optional), level (dBFS, optional; above −6 only with force: true)',
+  'setting': `Set a global setting: key (${SETTING_KEYS.join(', ')}), value (choice, number, true/false, or [lo, hi] for skinLuma); state.settings lists keys, values and choices`,
 };
 
 const isStr = (v) => typeof v === 'string';
@@ -158,6 +161,14 @@ export function validateCommand(raw) {
       if (!TRANSPORT_OPS.includes(/** @type {string} */ (c.op))) errors.push(`op: ${TRANSPORT_OPS.join(', ')}`); else out.op = c.op;
       check(optRef('source'));
       break;
+    case 'setting': {
+      if (!SETTING_KEYS.includes(/** @type {string} */ (c.key))) errors.push(`key: ${SETTING_KEYS.join(', ')}`); else out.key = c.key;
+      const v = c.value;
+      const okValue = (isStr(v) && v.length <= 120) || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v))
+        || (Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === 'number' && Number.isFinite(x)));
+      if (!okValue) errors.push('value: string, number, true/false or [lo, hi]'); else out.value = v;
+      break;
+    }
   }
   return errors.length ? fail(`${cmd}: ${errors.join('; ')}`) : { ok: true, command: out };
 }

@@ -5,17 +5,12 @@ import { formatAccel, isMac } from './model';
 import type { SettingsSection } from './settings';
 import { SHORTCUTS } from './shortcuts';
 import { t } from '../i18n';
+import { h, hint, link } from '../ui';
 
 declare const __APP_VERSION__: string | undefined;
 const version = () => (typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '');
 
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text) e.textContent = text;
-  return e;
-};
-const link = (href: string, text: string) => { const a = el('a', '', text); a.href = href; a.target = '_blank'; a.rel = 'noopener'; return a; };
+const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => h(tag, cls ? { class: cls } : null, text);
 
 export function keysTable(): HTMLElement {
   const mac = isMac();
@@ -43,14 +38,14 @@ export const keysSection = (order: number): SettingsSection => ({
   id: 'keys', label: t('settings.keys'), order,
   render: () => [
     keysTable(),
-    el('p', 'hint', t('settings.keys.hint')),
+    hint(t('settings.keys.hint')),
   ],
 });
 
 export const aboutSection = (order: number): SettingsSection => ({
   id: 'about', label: t('settings.about'), order,
   render: () => {
-    const p = (...kids: (Node | string)[]) => { const x = el('p', 'hint'); x.append(...kids); return x; };
+    const p = hint;
     return [
       el('p', 'about-name', `LZ Scopes${version() ? ` ${version()}` : ''}`),
       p(`© ${new Date().getFullYear()} Lars Zumpe Medienproduktion. ${t('settings.about.own')}`, link(`${REPO}/blob/main/LICENSE`, 'LICENSE'), '.'),

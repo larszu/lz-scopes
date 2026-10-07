@@ -3,11 +3,12 @@
 // Video, Hotkeys, Advanced) and the macOS Settings convention. Panel-specific options stay in
 // the panel's ⚙ menu.
 //
-// Other modules add their own pages or rows without touching main.ts:
+// Built from the shared modal and tabs (src/ui/). Other modules add their own pages or rows without touching main.ts:
 //   registerSettingsSection({ id: 'led', label: t('led.title'), order: 55, render: () => [...] })
 //   extendSettingsSection('clock', () => [...])
 
 import { t } from '../i18n';
+import { h, kicker, modal, tabs, type Modal } from '../ui';
 
 export interface SettingsSection {
   id: string;
@@ -23,7 +24,7 @@ const LAST_KEY = 'lz-scopes.settings-page';
 
 export function registerSettingsSection(s: SettingsSection) {
   sections.set(s.id, s);
-  if (dlg?.open) renderNav();
+  if (win?.dlg.open) renderNav();
 }
 
 export function extendSettingsSection(id: string, render: () => Node[]) {
@@ -34,7 +35,7 @@ export function extendSettingsSection(id: string, render: () => Node[]) {
 
 export const settingsSections = () => [...sections.values()].sort((a, b) => a.order - b.order);
 
-let dlg: HTMLDialogElement | null = null;
+let win: Modal | null = null;
 let nav: HTMLElement, body: HTMLElement;
 let current = '';
 
@@ -43,58 +44,15 @@ function lastPage() {
 }
 
 function build() {
-  dlg = document.createElement('dialog');
-  dlg.className = 'settings';
-  dlg.id = 'settings';
-  dlg.setAttribute('aria-label', t('common.settings'));
-  const head = document.createElement('div');
-  head.className = 'set-head';
-  const title = document.createElement('h2');
-  title.textContent = t('common.settings');
-  const close = document.createElement('button');
-  close.className = 'icon';
-  close.title = t('common.closeEsc');
-  close.setAttribute('aria-label', t('common.close'));
-  close.textContent = '✕';
-  close.onclick = () => dlg!.close();
-  head.append(title, close);
-  nav = document.createElement('div');
-  nav.className = 'set-nav';
-  nav.setAttribute('role', 'tablist');
-  nav.setAttribute('aria-orientation', 'vertical');
-  nav.addEventListener('keydown', (e) => {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-    e.preventDefault();
-    const list = settingsSections(), i = list.findIndex((s) => s.id === current);
-    const next = list[(i + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length];
-    show(next.id);
-    nav.querySelector<HTMLElement>(`[data-page="${next.id}"]`)?.focus();
-  });
-  body = document.createElement('div');
-  body.className = 'set-body';
-  body.setAttribute('role', 'tabpanel');
-  const main = document.createElement('div');
-  main.className = 'set-main';
-  main.append(nav, body);
-  dlg.append(head, main);
-  // keys typed in the settings must not trigger the global shortcuts (S, F, 1–6 …)
-  dlg.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });
-  dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg!.close(); });
-  document.body.append(dlg);
+  win = modal({ id: 'settings', title: t('common.settings'), cls: 'settings', size: 'lg' });
+  nav = h('div', { class: 'set-nav' });
+  body = h('div', { class: 'set-body', role: 'tabpanel' });
+  win.setBody(h('div', { class: 'set-main' }, nav, body));
+  document.body.append(win.dlg);
 }
 
 function renderNav() {
-  nav.replaceChildren(...settingsSections().map((s) => {
-    const b = document.createElement('button');
-    b.className = `set-tab${s.id === current ? ' on' : ''}`;
-    b.textContent = s.label;
-    b.dataset.page = s.id;
-    b.setAttribute('role', 'tab');
-    b.setAttribute('aria-selected', String(s.id === current));
-    b.tabIndex = s.id === current ? 0 : -1;
-    b.onclick = () => show(s.id);
-    return b;
-  }));
+  nav.replaceWith(nav = tabs({ items: settingsSections(), current, onSelect: show, label: t('common.settings'), orientation: innerWidth <= 640 ? 'horizontal' : 'vertical' }));
 }
 
 function show(id: string) {
@@ -103,27 +61,24 @@ function show(id: string) {
   current = s.id;
   try { localStorage.setItem(LAST_KEY, s.id); } catch { /* ignore */ }
   renderNav();
-  const h = document.createElement('h3');
-  h.className = 'set-kicker';
-  h.textContent = s.label;
-  body.replaceChildren(h, ...s.render(), ...(extras.get(s.id) ?? []).flatMap((f) => f()));
+  body.replaceChildren(kicker(s.label), ...s.render(), ...(extras.get(s.id) ?? []).flatMap((f) => f()));
   body.dataset.page = s.id;
 }
 
 /** Open the settings window, optionally on a given page. */
 export function openSettings(page?: string) {
-  if (!dlg) build();
+  if (!win) build();
   show(page ?? (current || lastPage()));
-  if (!dlg!.open) dlg!.showModal();
+  win!.open();
 }
 
 /** Re-render the visible page (state changed elsewhere, e.g. by the control API). */
 export function refreshSettings() {
-  if (dlg?.open) {
+  if (win?.dlg.open) {
     const scroll = body.scrollTop;
     show(current);
     body.scrollTop = scroll;
   }
 }
 
-export const settingsOpen = () => !!dlg?.open;
+export const settingsOpen = () => !!win?.dlg.open;

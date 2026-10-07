@@ -30,13 +30,13 @@ const CSS = `
 .opple .big { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 6px; }
 .opple .big div { display: flex; flex-direction: column; }
 .opple .big b { font-size: 18px; color: var(--text, #ddd); font-variant-numeric: tabular-nums; }
-.opple .big span { font-size: 10px; color: var(--muted, #888); text-transform: uppercase; letter-spacing: .05em; }
+.opple .big span { font-size: 10px; color: var(--text-muted, #888); text-transform: uppercase; letter-spacing: .05em; }
 .opple .warnbox { color: var(--warn, #ffb44a); font-size: 11px; margin-top: 4px; }
 .opple canvas { width: 100%; height: 40px; margin-top: 6px; }
 .opple .row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; align-items: center; }
-.opple .dev { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 0; border-top: 1px solid var(--line, #2a2d33); }
+.opple .dev { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 0; border-top: 1px solid var(--line-1, #2a2d33); }
 .opple .dev input.alias { flex: 1 1 90px; min-width: 60px; }
-.opple .dev .val { font-size: 11px; color: var(--muted, #999); font-variant-numeric: tabular-nums; width: 100%; }
+.opple .dev .val { font-size: 11px; color: var(--text-muted, #999); font-variant-numeric: tabular-nums; width: 100%; }
 .opple .dev.active .val { color: var(--text, #ddd); }
 .opple .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; display: inline-block; }
 .opple .dot.on { background: #8cff9e; } .opple .dot.busy { background: #ffb44a; } .opple .dot.err { background: #ff5c5c; }
@@ -45,7 +45,7 @@ const CSS = `
 .opple table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .opple td { padding: 1px 3px; } .opple td.n { text-align: right; }
 .opple .cmp { font-size: 11px; margin-top: 6px; line-height: 1.45; }
-.opple h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted, #888); margin: 10px 0 2px; }
+.opple h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted, #888); margin: 10px 0 2px; }
 .opple input.num { width: 3.2em; }
 `;
 

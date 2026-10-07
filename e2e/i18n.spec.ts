@@ -24,8 +24,8 @@ test('English locale: header, menu and settings in English', async () => {
   // settings window
   await menuClick(a, 'settings');
   const dlg = page.locator('dialog#settings');
-  await expect(dlg.locator('.set-head h2')).toHaveText('Settings');
-  const tabs = await dlg.locator('.set-tab').allTextContents();
+  await expect(dlg.locator('.modal-head h2')).toHaveText('Settings');
+  const tabs = await dlg.locator('[role=tab]').allTextContents();
   for (const t of ['Interface', 'Display', 'Scopes', 'Latency', 'Keyboard']) expect(tabs).toContain(t);
 });
 
@@ -33,12 +33,12 @@ test('Language setting overrides the locale and reloads', async () => {
   const { page } = a;
   const dlg = page.locator('dialog#settings');
   if (!(await dlg.isVisible())) await menuClick(a, 'settings');
-  await dlg.locator('.set-tab', { hasText: 'Interface' }).click();
+  await dlg.locator('[role=tab]', { hasText: 'Interface' }).click();
   await dlg.locator('.set-body select').first().selectOption('de');
   // the window reloads in German and reopens the settings on the same page
   await expect(page.locator('html')).toHaveAttribute('lang', 'de', { timeout: 60_000 });
   await expect(page.locator('#side h2')).toHaveText('Quellen', { timeout: 60_000 });
-  await expect(page.locator('dialog#settings .set-head h2')).toHaveText('Einstellungen', { timeout: 30_000 });
+  await expect(page.locator('dialog#settings .modal-head h2')).toHaveText('Einstellungen', { timeout: 30_000 });
   await until(async () => (await menuLabels()).includes('Hilfe'), 30_000, 'Menü deutsch');
   // back to automatic (English locale)
   await page.locator('dialog#settings .set-body select').first().selectOption('auto');

@@ -39,5 +39,5 @@ html.lzs-ios[data-idiom='phone'] .fps { display: none; }
 /* native panel in the sidebar: bridges found in the network, cameras the system sees */
 .lzs-native-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .lzs-native-list button { text-align: left; }
-.lzs-native-list .muted, .lzs-native-note { color: var(--muted); font-size: 11px; }
+.lzs-native-list .muted, .lzs-native-note { color: var(--text-muted); font-size: 11px; }
 .lzs-native-list .cam { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; }

@@ -55,20 +55,20 @@ function download(name: string, blob: Blob) {
 }
 
 const CSS = `
-dialog.ledtool { width: min(1180px, 96vw); max-height: 94vh; background: var(--card-bg, #111316); color: var(--text, #d9dce0); border: 1px solid var(--line-2, #2d3238); border-radius: var(--radius-lg, 8px); padding: 12px 14px; }
-dialog.ledtool::backdrop { background: var(--modal-bg, rgba(0,0,0,.55)); }
+dialog.ledtool { width: min(1180px, 96vw); max-height: 94vh; background: var(--surface-2, #111316); color: var(--text, #d9dce0); border: 1px solid var(--line-2, #2d3238); border-radius: var(--radius-lg, 8px); padding: 12px 14px; }
+dialog.ledtool::backdrop { background: var(--scrim, rgba(0,0,0,.55)); }
 .ledtool h3 { margin: 0 0 4px; font-size: 15px; }
-.ledtool details { border-top: 1px solid var(--line, #22262b); padding: 8px 0; }
+.ledtool details { border-top: 1px solid var(--line-1, #22262b); padding: 8px 0; }
 .ledtool summary { cursor: pointer; font-weight: 600; }
 .ledtool .row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 6px; }
 .ledtool .note { color: #ffb44a; }
 .ledtool canvas.cam { width: 100%; max-height: 60vh; object-fit: contain; background: #000; cursor: crosshair; border: 1px solid var(--line-2, #2d3238); }
 .ledtool canvas.heat { width: 100%; background: #000; border: 1px solid var(--line-2, #2d3238); }
 .ledtool table { border-collapse: collapse; font-size: 12px; margin-top: 6px; }
-.ledtool td, .ledtool th { border-bottom: 1px solid var(--line, #22262b); padding: 2px 8px; text-align: right; font-variant-numeric: tabular-nums; }
-.ledtool th { color: var(--muted, #8a9098); font-weight: 500; }
+.ledtool td, .ledtool th { border-bottom: 1px solid var(--line-1, #22262b); padding: 2px 8px; text-align: right; font-variant-numeric: tabular-nums; }
+.ledtool th { color: var(--text-muted, #8a9098); font-weight: 500; }
 .ledtool td:first-child, .ledtool th:first-child { text-align: left; }
-.ledtool textarea { width: 260px; height: 70px; font: 11px ui-monospace, Menlo, monospace; background: var(--field-bg, #181b1f); color: var(--text, #d9dce0); border: 1px solid var(--line-2, #2d3238); }
+.ledtool textarea { width: 260px; height: 70px; font: 11px ui-monospace, Menlo, monospace; background: var(--field, #181b1f); color: var(--text, #d9dce0); border: 1px solid var(--line-2, #2d3238); }
 .ledtool .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 800px) { .ledtool .cols { grid-template-columns: 1fr; } }
 `;

@@ -1,6 +1,10 @@
 import './vendor/dockview.css';
+import {
+  $, button, checkbox, chip, field, filePicker, groupedSelect, h, hint, iconButton, download, modal, numberInput, openModal, popover, row,
+  link, segmented, select, settingControl, settingRow, settingsForm, slider, statusDot, table, textInput, applySetting, describeSettings, kicker, type Kid, type Option, type PopoverEl, type Setting,
+} from './ui';
 import './style.css';
-import { DEFAULT_THEME, SIGNET, THEMES, applyTheme, isTheme, type UiTheme } from './theme';
+import { DEFAULT_SCHEME, DEFAULT_THEME, SCHEMES, THEMES, applyScheme, applyTheme, currentSignet, isScheme, isTheme, type SchemePref, type UiTheme } from './theme';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, falseColorName, GAMUTS, HDR_PREVIEW_LABELS, HLG_PEAKS, LUMA, detectDisplay, transferLabel, type DisplaySpace, type GamutId, type HdrPreview } from './color';
 import { CAMERA_GAMUTS, LOG_CURVES } from './camera';
 import {
@@ -68,6 +72,8 @@ interface Persisted {
   hdrPreview?: HdrPreview;
   /** UI skin (Oberfläche); chrome only, never the measurement colours */
   theme: UiTheme;
+  /** light or dark chrome (src/theme.ts); the scopes stay dark */
+  scheme?: SchemePref;
   targets: VectorTarget[];
   /** default measuring stage in the CST/LUT chain (panels can override) */
   stage?: Stage;
@@ -113,7 +119,9 @@ Source.globalLowLatencyConfig = state.ll ?? {};
 // the render loop reports its draws to the latency meters (stamp → drawn, src/latency.ts)
 LatencyMeter.drawHook = true;
 if (!isTheme(state.theme)) state.theme = DEFAULT_THEME;
+if (!isScheme(state.scheme)) state.scheme = DEFAULT_SCHEME;
 applyTheme(state.theme);
+applyScheme(state.scheme);
 const detected = detectDisplay();
 const sources: Source[] = [];
 let frozen = false;
@@ -138,58 +146,39 @@ setGenlockBridge(bridgeUrl);
 
 // ---------------------------------------------------------------- DOM
 
-const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
-const h = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, unknown> = {}, ...kids: (Node | string)[]) => {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k.startsWith('on')) el.addEventListener(k.slice(2), v as EventListener);
-    else if (k === 'class') el.className = String(v);
-    else if (v === true) el.setAttribute(k, '');
-    else if (v !== false && v != null) el.setAttribute(k, String(v));
-  }
-  el.append(...kids);
-  return el;
-};
-const select = (value: string, options: [string, string][], onchange: (v: string) => void, title = '') =>
-  h('select', { title, onchange: (e: Event) => onchange((e.target as HTMLSelectElement).value) },
-    ...options.map(([v, l]) => h('option', { value: v, selected: v === value }, l)));
-/** select with <optgroup>s; a group named '' puts its options at the top level */
-const groupedSelect = (value: string, groups: [string, [string, string][]][], onchange: (v: string) => void, title = '') =>
-  h('select', { title, onchange: (e: Event) => onchange((e.target as HTMLSelectElement).value) },
-    ...groups.flatMap(([g, opts]) => {
-      const o = opts.map(([v, l]) => h('option', { value: v, selected: v === value }, l));
-      return g ? [h('optgroup', { label: g }, ...o)] : o;
-    }));
-
 const app = $('#app');
-app.innerHTML = `
-  <header class="bar">
-    <div class="brand" title="LZ Scopes · Lars Zumpe Medienproduktion"><img class="signet" src="${SIGNET[state.theme]}" alt="Lars Zumpe Medienproduktion" width="33" height="20" /><span class="product">Scopes</span></div>
-    <div id="menubar"></div>
-    <div class="tools">
-      <button class="icon" id="toggle-side" title="${t('main.side.toggle')}" aria-label="${t('main.side.aria')}">◧</button>
-      <div class="group" id="layouts"></div>
-      <div class="group" id="globals"></div>
-    </div>
-    <div class="spacer"></div>
-    <span class="fps" id="fps"></span>
-    <button id="freeze" title="${t('main.freezeTitle')}">${t('main.freeze')}</button>
-    <button id="settings-btn" class="icon" title="${t('main.settingsTitle')}" aria-label="${t('common.settings')}">⚙</button>
-    <button class="icon" id="full" title="${t('main.fullTitle')}" aria-label="${t('main.full')}">⛶</button>
-  </header>
-  <dialog class="tooldlg" id="laymenu" aria-label="Layouts"><div class="dlg-head"><h2>Layouts</h2><button class="icon" data-close aria-label="${t('common.close')}">✕</button></div><div class="dlg-body" id="laybody"></div></dialog>
-  <dialog class="tooldlg" id="outmenu" aria-label="${t('main.output')}"><div class="dlg-head"><h2>${t('main.output')}</h2><button class="icon" data-close aria-label="${t('common.close')}">✕</button></div><div class="dlg-body" id="outbody"></div></dialog>
-  <div class="main">
-    <aside class="side" id="side">
-      <h2>${t('main.sources')}</h2>
-      <div id="source-list"></div>
-      <div class="resolve-live" id="resolve-live" hidden></div>
-      <div class="add" id="add"></div>
-      <details class="gen" id="gen-wrap"><summary>${t('main.toneGen')}</summary><div id="gen"></div></details>
-      <details class="gen" id="opple-wrap"><summary>${t('main.lightMeter')}</summary><div id="opple"></div></details>
-    </aside>
-    <section class="dockwrap" id="grid"><canvas id="gl"></canvas><div id="dock"></div></section>
-  </div>`;
+const freezeBtn = button(t('main.freeze'), () => toggleFreeze(), { title: t('main.freezeTitle'), pressed: false, attrs: { id: 'freeze' } });
+const sideToggle = iconButton('◧', t('main.side.aria'), () => toggleSidebar(), { title: t('main.side.toggle'), attrs: { id: 'toggle-side' } });
+/** Header overflow (narrow windows): the same layout presets and scale as the header groups. */
+const moreMenu = popover({ label: '⋯', title: t('ui.more'), heading: t('ui.moreTitle'), cls: 'more-body', content: () => [field(t('ui.layouts'), layoutControl()), settingRow(SET.unit)] });
+moreMenu.id = 'bar-more';
+const side = h('aside', { class: 'side', id: 'side' },
+  h('h2', {}, t('main.sources')),
+  h('div', { id: 'source-list' }),
+  h('div', { class: 'resolve-live', id: 'resolve-live', hidden: true }),
+  h('div', { class: 'add', id: 'add' }),
+  h('details', { class: 'gen', id: 'gen-wrap' }, h('summary', {}, t('main.toneGen')), h('div', { id: 'gen' })),
+  h('details', { class: 'gen', id: 'opple-wrap' }, h('summary', {}, t('main.lightMeter')), h('div', { id: 'opple' })));
+app.replaceChildren(
+  h('header', { class: 'bar' },
+    h('div', { class: 'brand', title: 'LZ Scopes · Lars Zumpe Medienproduktion' },
+      h('img', { class: 'signet', src: currentSignet(), alt: 'Lars Zumpe Medienproduktion', width: 33, height: 20 }), h('span', { class: 'product' }, 'Scopes')),
+    h('div', { id: 'menubar' }),
+    h('div', { class: 'tools' },
+      sideToggle,
+      h('div', { class: 'group', id: 'layouts' }),
+      h('div', { class: 'group', id: 'globals' }),
+      moreMenu),
+    h('div', { class: 'spacer' }),
+    h('span', { class: 'fps', id: 'fps' }),
+    freezeBtn,
+    iconButton('⚙', t('common.settings'), () => openSettings(), { title: t('main.settingsTitle'), attrs: { id: 'settings-btn' } }),
+    iconButton('⛶', t('main.full'), () => toggleFullscreen(), { title: t('main.fullTitle'), attrs: { id: 'full' } })),
+  h('div', { class: 'main' },
+    side,
+    // narrow windows: tapping next to the sources drawer closes it
+    h('div', { class: 'side-scrim', title: t('ui.closeSidebar'), onclick: () => toggleSidebar(false) }),
+    h('section', { class: 'dockwrap', id: 'grid' }, h('canvas', { id: 'gl' }), h('div', { id: 'dock' }))));
 
 const grid = $('#grid');
 const glCanvas = $<HTMLCanvasElement>('#gl');
@@ -197,20 +186,70 @@ let renderer: Renderer;
 try {
   renderer = new Renderer(glCanvas);
 } catch (e) {
-  grid.innerHTML = `<div class="fatal">${(e as Error).message}</div>`;
+  grid.replaceChildren(h('div', { class: 'fatal' }, (e as Error).message));
   throw e;
 }
 
+// ---------------------------------------------------------------- global settings (one description, three views)
+// Each global setting is described once (src/ui/schema.ts) and rendered from that description
+// in the settings window, in the panel ⚙ popovers that show it, and offered to the control API
+// (command "setting", docs/control-api.md).
+
+const UNIT_OPTIONS = (): Option[] => [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', t('settings.scopes.nitsScene')]];
+const TINT_OPTIONS = (): Option[] => [['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]];
+const SET = {
+  lang: { key: 'lang', kind: 'select', label: () => t('lang.label'), title: () => t('lang.title'), hint: () => t('lang.hint'),
+    options: () => [['auto', t('lang.auto', { lang: LANG_NAMES[systemLang()] })], ...LANGS.map((l) => [l, LANG_NAMES[l]] as Option)],
+    get: () => langPref(), set: (v) => { try { sessionStorage.setItem(REOPEN_SETTINGS, 'ui'); } catch { /* ignore */ } setLangPref(v as LangPref); } },
+  theme: { key: 'theme', kind: 'select', label: () => t('settings.ui.skin'), title: () => t('settings.ui.skinTitle'), hint: () => t('settings.ui.skinHint'),
+    options: () => THEMES, get: () => state.theme, set: (v) => { if (isTheme(v)) setTheme(v); } },
+  scheme: { key: 'scheme', kind: 'select', label: () => t('ui.scheme'), title: () => t('ui.scheme.title'), hint: () => t('ui.scheme.hint'),
+    options: SCHEMES, get: () => state.scheme ?? DEFAULT_SCHEME, set: (v) => { if (isScheme(v)) { state.scheme = v; applyScheme(v); save(); } } },
+  sidebar: { key: 'sidebar', kind: 'toggle', label: () => t('settings.ui.sidebar'), text: () => t('settings.ui.sidebarShow'),
+    get: () => state.sidebar, set: (v) => { state.sidebar = v; applySidebar(); save(); } },
+  display: { key: 'display', kind: 'select', label: () => t('settings.display'), title: () => t('settings.display.spaceTitle'), hint: () => t('settings.display.spaceHint'),
+    options: () => [['auto', `auto: ${DISPLAY_LABELS[detected.space]}${detected.hdr ? t('settings.display.hdrCapable') : ''}`], ...(Object.entries(DISPLAY_LABELS) as Option[])],
+    get: () => state.display, set: (v) => setDisplaySpace(v as Persisted['display']) },
+  hdrPreview: { key: 'hdrPreview', kind: 'select', label: () => t('settings.display.hdrPreview'), title: () => t('settings.display.hdrTitle'), hint: () => t('settings.display.hdrHint'),
+    options: () => Object.entries(HDR_PREVIEW_LABELS) as Option[], get: () => state.hdrPreview ?? 'bt2408', set: (v) => { state.hdrPreview = v as HdrPreview; save(); renderHeader(); } },
+  unit: { key: 'unit', kind: 'select', label: () => t('settings.scopes.scale'), title: () => t('main.unitTitle'),
+    options: UNIT_OPTIONS, get: () => state.unit, set: (v) => { state.unit = v as Unit; save(); renderHeader(); } },
+  tint: { key: 'tint', kind: 'select', label: () => t('settings.scopes.tint'), options: TINT_OPTIONS, get: () => state.tint, set: (v) => { state.tint = v as Tint; save(); } },
+  precision: { key: 'precision', kind: 'select', label: () => t('settings.scopes.precision'), title: () => t('settings.scopes.samplesTitle'),
+    options: () => [['250000', t('settings.scopes.fast')], ['1000000', t('settings.scopes.standard')], ['4000000', t('settings.scopes.full')]],
+    get: () => String(state.maxSamples), set: (v) => { state.maxSamples = Number(v); save(); } },
+  falseColour: { key: 'falseColour', kind: 'select', label: () => t('settings.scopes.falseColour'),
+    options: () => Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, falseColorName(k)] as Option), get: () => state.falsePreset, set: (v) => { state.falsePreset = v; save(); } },
+  skinLuma: { key: 'skinLuma', kind: 'range', label: () => t('settings.scopes.skinLuma'), min: 0, max: 100, unit: '%',
+    get: () => [Math.round(state.skin.lo * 100), Math.round(state.skin.hi * 100)], set: ([lo, hi]) => { state.skin.lo = lo / 100; state.skin.hi = hi / 100; save(); } },
+  skinHue: { key: 'skinHue', kind: 'number', label: () => t('settings.scopes.skinHue'), min: 2, max: 45, unit: '°',
+    get: () => state.skin.tol, set: (v) => { state.skin.tol = v; save(); } },
+  zebra: { key: 'zebra', kind: 'number', label: () => t('settings.scopes.zebra'), min: 50, max: 109, unit: '%',
+    get: () => Math.round(state.zebra * 100), set: (v) => { state.zebra = v / 100; save(); } },
+  stage: { key: 'stage', kind: 'select', label: () => t('settings.stage.point'), title: () => t('settings.stage.defaultTitle'), hint: () => t('settings.stage.hint'),
+    options: () => STAGES.map((st) => [st, STAGE_LABELS[st]] as Option), get: () => state.stage ?? 'signal', set: (v) => setStage(v as Stage) },
+  deRef: { key: 'deRef', kind: 'select', label: () => t('settings.stage.deAt'), title: () => t('settings.stage.deTitle'), hint: () => t('settings.stage.deHint'),
+    options: () => [['off', t('common.off')], ['bars', t('settings.stage.deBars')], ['targets', t('settings.stage.deTargets')], ...state.targets.map((tg) => [`target:${tg.name}`, t('settings.stage.deTarget', { name: tg.name })] as Option)],
+    get: () => state.deRef ?? 'off', set: (v) => { state.deRef = v; save(); } },
+  lowLatency: { key: 'lowLatency', kind: 'select', label: () => 'Low Latency', title: () => LOW_LATENCY_HINT,
+    options: () => [['0', t('common.off')], ['1', t('settings.latency.onAll')]], get: () => (state.lowLatency ? '1' : '0'), set: (v) => setGlobalLowLatency(v === '1') },
+} satisfies Record<string, Setting>;
+/** Settings the control API may read and set (all of them except the language, which reloads the window). */
+const REMOTE_SETTINGS: Setting[] = Object.values(SET).filter((s) => s.key !== 'lang');
+
 // ---------------------------------------------------------------- header
 
+/** Layout presets as one segmented control, plus "add panel". */
+function layoutControl() {
+  return h('span', { class: 'toolbar' },
+    segmented(state.layout, Object.entries(PRESETS).map(([k, l], i) => [k, l.label, t('main.layoutTitle', { name: l.label, n: i + 1 })] as const), (k) => setLayout(k), t('ui.layouts')),
+    button(t('main.addPanelBtn'), () => addScopePanel(), { title: t('main.addPanel') }));
+}
+
 function renderHeader() {
-  const lay = $('#layouts');
-  lay.replaceChildren(...Object.entries(PRESETS).map(([k, l], i) =>
-    h('button', { class: k === state.layout ? 'on' : '', title: t('main.layoutTitle', { name: l.label, n: i + 1 }), onclick: () => setLayout(k) }, l.label)),
-    h('button', { title: t('main.addPanel'), onclick: () => addScopePanel() }, t('main.addPanelBtn')));
-  $('#globals').replaceChildren(
-    select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', 'cd/m²']], (v) => { state.unit = v as Unit; save(); refreshSettings(); }, t('main.unitTitle')),
-  );
+  $('#layouts').replaceChildren(layoutControl());
+  $('#globals').replaceChildren(...settingControl(SET.unit));
+  moreMenu.refresh();
   refreshMenu();
   refreshSettings();
 }
@@ -218,73 +257,46 @@ function renderHeader() {
 // ---------------------------------------------------------------- settings window (#53)
 // Global settings live in one window (Einstellungen …, Cmd/Ctrl+,); panel options stay in ⚙.
 
-const srow = (label: string, ...kids: (Node | string)[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
-const shint = (text: string) => h('p', { class: 'hint' }, text);
-
-registerSettingsSection({ id: 'ui', label: t('settings.ui'), order: 10, render: () => [
-  srow(t('lang.label'), select(langPref(), [['auto', t('lang.auto', { lang: LANG_NAMES[systemLang()] })], ...LANGS.map((l) => [l, LANG_NAMES[l]] as [string, string])],
-    (v) => { try { sessionStorage.setItem(REOPEN_SETTINGS, 'ui'); } catch { /* ignore */ } setLangPref(v as LangPref); }, t('lang.title'))),
-  shint(t('lang.hint')),
-  srow(t('settings.ui.skin'), select(state.theme, THEMES, (v) => { if (isTheme(v)) setTheme(v); }, t('settings.ui.skinTitle'))),
-  shint(t('settings.ui.skinHint')),
-  srow(t('settings.ui.sidebar'), checkbox(state.sidebar, t('settings.ui.sidebarShow'), (v) => { state.sidebar = v; applySidebar(); save(); })),
-] });
+registerSettingsSection({ id: 'ui', label: t('settings.ui'), order: 10, render: () => settingsForm([SET.lang, SET.theme, SET.scheme, SET.sidebar]) });
 
 registerSettingsSection({ id: 'display', label: t('settings.display'), order: 20, render: () => [
-  srow(t('settings.display'), select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}${detected.hdr ? t('settings.display.hdrCapable') : ''}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])],
-    (v) => setDisplaySpace(v as Persisted['display']), t('settings.display.spaceTitle'))),
-  shint(t('settings.display.spaceHint')),
-  srow(t('settings.display.hdrPreview'), select(state.hdrPreview ?? 'bt2408', Object.entries(HDR_PREVIEW_LABELS) as [string, string][], (v) => { state.hdrPreview = v as HdrPreview; save(); renderHeader(); },
-    t('settings.display.hdrTitle'))),
-  shint(t('settings.display.hdrHint')),
-  srow('', h('button', { title: t('settings.display.calibTitle'), onclick: openCalibrationDialog }, t('settings.display.calib'))),
-  ...(sysProfileAvailable() ? [sysProfileSection(h, () => (state.display === 'auto' ? null : state.display))] : []),
+  ...settingsForm([SET.display, SET.hdrPreview]),
+  field('', button(t('settings.display.calib'), openCalibrationDialog, { title: t('settings.display.calibTitle') })),
+  ...(sysProfileAvailable() ? [sysProfileSection(() => (state.display === 'auto' ? null : state.display))] : []),
 ] });
 
 registerSettingsSection({ id: 'scopes', label: t('settings.scopes'), order: 30, render: () => [
-  srow(t('settings.scopes.scale'), select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', t('settings.scopes.nitsScene')]], (v) => { state.unit = v as Unit; save(); renderHeader(); })),
-  srow(t('settings.scopes.tint'), select(state.tint, [['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]], (v) => { state.tint = v as Tint; save(); })),
-  srow(t('settings.scopes.precision'), select(String(state.maxSamples), [['250000', t('settings.scopes.fast')], ['1000000', t('settings.scopes.standard')], ['4000000', t('settings.scopes.full')]], (v) => { state.maxSamples = Number(v); save(); }, t('settings.scopes.samplesTitle'))),
-  srow(t('settings.scopes.falseColour'), select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, falseColorName(k)] as [string, string]), (v) => { state.falsePreset = v; save(); })),
-  srow(t('settings.scopes.skinLuma'),
-    numIn(Math.round(state.skin.lo * 100), 0, 100, (v) => { state.skin.lo = v / 100; }), '–',
-    numIn(Math.round(state.skin.hi * 100), 0, 100, (v) => { state.skin.hi = v / 100; }), '%'),
-  srow(t('settings.scopes.skinHue'), numIn(state.skin.tol, 2, 45, (v) => { state.skin.tol = v; }), t('settings.scopes.skinHueUnit')),
-  srow(t('settings.scopes.zebra'), numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%'),
-  shint(t('settings.scopes.panelHint')),
+  ...settingsForm([SET.unit, SET.tint, SET.precision, SET.falseColour, SET.skinLuma, SET.skinHue, SET.zebra]),
+  hint(t('settings.scopes.panelHint')),
 ] });
 
 registerSettingsSection({ id: 'stage', label: t('settings.stage'), order: 40, render: () => [
-  srow(t('settings.stage.point'), select(state.stage ?? 'signal', STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string]), (v) => setStage(v as Stage), t('settings.stage.defaultTitle'))),
-  shint(t('settings.stage.hint')),
-  srow(t('settings.stage.deAt'), select(state.deRef ?? 'off', [['off', t('common.off')], ['bars', t('settings.stage.deBars')], ['targets', t('settings.stage.deTargets')], ...state.targets.map((tg) => [`target:${tg.name}`, t('settings.stage.deTarget', { name: tg.name })] as [string, string])],
-    (v) => { state.deRef = v; save(); }, t('settings.stage.deTitle'))),
-  shint(t('settings.stage.deHint')),
-  srow('', h('button', { onclick: () => showLutLibrary() }, t('main.lut.vendor'))),
+  ...settingsForm([SET.stage, SET.deRef]),
+  field('', button(t('main.lut.vendor'), () => showLutLibrary())),
 ] });
 
 registerSettingsSection({ id: 'latency', label: t('settings.latency'), order: 50, render: () => [
-  srow('Low Latency', select(state.lowLatency ? '1' : '0', [['0', t('common.off')], ['1', t('settings.latency.onAll')]], (v) => setGlobalLowLatency(v === '1'), LOW_LATENCY_HINT)),
-  ...lowLatencyFields(Source.globalLowLatencyConfig, false, (patch) => setGlobalLowLatencyConfig(patch)).map(([label, el]) => srow(label, el)),
-  shint(LOW_LATENCY_HINT),
-  shint(t('settings.latency.hint')),
+  ...settingsForm([SET.lowLatency], false),
+  ...lowLatencyFields(Source.globalLowLatencyConfig, false, (patch) => setGlobalLowLatencyConfig(patch)).map(([label, el]) => field(label, el)),
+  hint(LOW_LATENCY_HINT),
+  hint(t('settings.latency.hint')),
 ] });
 
 registerSettingsSection({ id: 'clock', label: t('settings.clock'), order: 60, render: () => [
-  shint(t('settings.clock.hint')),
-  srow('', h('button', { onclick: () => { addScopePanel('clock'); } }, t('settings.clock.add'))),
+  hint(t('settings.clock.hint')),
+  field('', button(t('settings.clock.add'), () => { addScopePanel('clock'); })),
 ] });
 
 registerSettingsSection({ id: 'bridge', label: t('settings.bridge'), order: 70, render: () => [
-  srow(t('settings.bridge.address'), bridgeInput),
-  shint(t('settings.bridge.hint')),
+  field(t('settings.bridge.address'), bridgeInput),
+  hint(t('settings.bridge.hint')),
   ffmpegInfoEl,
-  srow('', h('button', { onclick: () => refreshFfmpegInfo() }, t('settings.bridge.requery'))),
+  field('', button(t('settings.bridge.requery'), () => refreshFfmpegInfo())),
 ] });
 
 registerSettingsSection({ id: 'audio', label: t('settings.audio'), order: 80, render: () => [
-  shint(t('settings.audio.hint')),
-  srow('', h('button', { onclick: () => { state.sidebar = true; applySidebar(); save(); const g = $<HTMLDetailsElement>('#gen-wrap'); g.open = true; g.scrollIntoView({ block: 'nearest' }); } }, t('settings.audio.showGen'))),
+  hint(t('settings.audio.hint')),
+  field('', button(t('settings.audio.showGen'), () => { toggleSidebar(true); const g = $<HTMLDetailsElement>('#gen-wrap'); g.open = true; g.scrollIntoView({ block: 'nearest' }); })),
 ] });
 
 registerSettingsSection(keysSection(90));
@@ -295,12 +307,6 @@ try {
   const page = sessionStorage.getItem(REOPEN_SETTINGS);
   if (page) { sessionStorage.removeItem(REOPEN_SETTINGS); setTimeout(() => openSettings(page), 0); }
 } catch { /* storage unavailable */ }
-
-function checkbox(on: boolean, label: string, set: (v: boolean) => void) {
-  const c = h('input', { type: 'checkbox', checked: on }) as HTMLInputElement;
-  c.onchange = () => set(c.checked);
-  return h('label', { class: 'inline' }, c, label);
-}
 
 /** Display colour space changed: re-render and, if switched on, switch the system profile (#17). */
 function setDisplaySpace(v: Persisted['display']) {
@@ -319,53 +325,40 @@ function openCalibrationDialog() {
   }));
 }
 
-function numIn(value: number, min: number, max: number, set: (v: number) => void) {
-  return h('input', { type: 'number', class: 'num', min, max, step: 1, value, onchange: (e: Event) => { set(Number((e.target as HTMLInputElement).value)); save(); } });
-}
-
 function setTheme(t: UiTheme) {
-  state.theme = t; applyTheme(t); save(); refreshMenu();
+  state.theme = t; applyTheme(t); applyScheme(state.scheme ?? DEFAULT_SCHEME); save(); refreshMenu();
 }
 
 function setLayout(k: string) {
   state.layout = k; state.layoutName = ''; save(); renderHeader(); dock.applyPreset(k);
 }
 
-// Panel ⚙ menus live inside clipped dock containers: pin them to the viewport when opened.
-document.addEventListener('toggle', (e) => {
-  const d = e.target as HTMLDetailsElement;
-  if (!d.classList?.contains('psettings')) return;
-  const body = d.querySelector<HTMLElement>('.menu-body');
-  if (!body) return;
-  if (!d.open) { body.style.cssText = ''; return; }
-  document.querySelectorAll<HTMLDetailsElement>('details.psettings[open]').forEach((o) => { if (o !== d) o.open = false; });
-  const r = d.getBoundingClientRect();
-  body.style.position = 'fixed';
-  body.style.top = `${Math.min(r.bottom + 4, window.innerHeight - 40)}px`;
-  body.style.right = `${Math.max(8, window.innerWidth - r.right)}px`;
-  body.style.left = 'auto';
-  body.style.maxHeight = `${window.innerHeight - r.bottom - 16}px`;
-  body.style.overflowY = 'auto';
-}, true);
-document.addEventListener('pointerdown', (e) => {
-  if ((e.target as HTMLElement).closest('details.psettings')) return;
-  document.querySelectorAll<HTMLDetailsElement>('details.psettings[open]').forEach((o) => (o.open = false));
-});
 // Layouts and Ausgabe: tool dialogs opened from the menu (Datei → Layouts …, Ausgabe → Ausgabe öffnen …)
-for (const d of document.querySelectorAll<HTMLDialogElement>('dialog.tooldlg')) {
-  d.querySelector<HTMLElement>('[data-close]')!.onclick = () => d.close();
-  d.addEventListener('click', (e) => { if (e.target === d) d.close(); });
-  d.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });
-}
+const layoutDialog = modal({ id: 'laymenu', title: 'Layouts', size: 'md' });
+layoutDialog.body.id = 'laybody';
+const outputDialog = modal({ id: 'outmenu', title: t('main.output'), size: 'md' });
+outputDialog.body.id = 'outbody';
+document.body.append(layoutDialog.dlg, outputDialog.dlg);
 function openToolDialog(id: 'laymenu' | 'outmenu') {
-  const d = $<HTMLDialogElement>(`#${id}`);
-  if (id === 'laymenu') renderLayoutMenu(); else renderOutputMenu();
-  if (!d.open) d.showModal();
+  if (id === 'laymenu') { renderLayoutMenu(); layoutDialog.open(); } else { renderOutputMenu(); outputDialog.open(); }
 }
-$('#toggle-side').onclick = () => { state.sidebar = !state.sidebar; applySidebar(); save(); };
-function applySidebar() { $('#side').classList.toggle('hidden', !state.sidebar); refreshMenu(); }
-$('#freeze').onclick = () => toggleFreeze();
-$('#settings-btn').onclick = () => openSettings();
+
+/** Narrow windows (drawer): the sidebar starts closed and is not saved as closed. */
+const narrowQuery = matchMedia('(max-width: 800px)');
+let drawerOpen = false;
+function toggleSidebar(on?: boolean) {
+  if (narrowQuery.matches) drawerOpen = on ?? !drawerOpen;
+  else { state.sidebar = on ?? !state.sidebar; save(); }
+  applySidebar();
+}
+function applySidebar() {
+  side.classList.toggle('hidden', narrowQuery.matches ? !drawerOpen : !state.sidebar);
+  refreshMenu();
+}
+narrowQuery.addEventListener('change', () => { drawerOpen = false; applySidebar(); });
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen();
+}
 const openLed = () => openLedTool({
   sources: () => sources,
   showPattern: (id, w, hh) => {
@@ -375,9 +368,7 @@ const openLed = () => openLedTool({
   },
   patternsChanged: () => sources.filter((s) => s.kind === 'pattern' && s.pattern.id.startsWith('led-')).forEach((s) => s.startPattern()),
 });
-$('#full').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen());
-const bridgeInput = h('input', { id: 'bridge', placeholder: t('settings.bridge.placeholder'), spellcheck: 'false' }) as HTMLInputElement;
-bridgeInput.value = state.bridge;
+const bridgeInput = textInput(state.bridge, (v) => { state.bridge = v; save(); refreshFfmpegInfo(); }, { placeholder: t('settings.bridge.placeholder'), attrs: { id: 'bridge' } });
 const ffmpegInfoEl = h('p', { class: 'hint', id: 'ffmpeg-info' }, t('settings.bridge.querying'));
 // which ffmpeg the bridge runs (origin, version, licence, SRT) – read by the bridge from the binary
 let bridgeHealth: BridgeHealth | null = null;
@@ -392,14 +383,14 @@ async function refreshFfmpegInfo() {
   if (!bridgeHealth) ffmpegRetry = setTimeout(refreshFfmpegInfo, 10_000);
 }
 let ffmpegRetry: ReturnType<typeof setTimeout> | undefined;
-bridgeInput.onchange = () => { state.bridge = bridgeInput.value; save(); refreshFfmpegInfo(); };
 refreshFfmpegInfo();
 
 function toggleFreeze() {
   frozen = !frozen;
   sources.forEach((s) => (s.frozen = frozen));
-  $('#freeze').classList.toggle('on', frozen);
-  $('#freeze').textContent = frozen ? t('main.resume') : t('main.freeze');
+  freezeBtn.classList.toggle('on', frozen);
+  freezeBtn.setAttribute('aria-pressed', String(frozen));
+  freezeBtn.textContent = frozen ? t('main.resume') : t('main.freeze');
   refreshMenu();
 }
 
@@ -432,29 +423,28 @@ function renderSources() {
     const running = s.status === 'live' || s.status === 'connecting';
     const card = h('div', { class: `src ${s.status}` },
       h('div', { class: 'src-head' },
-        h('span', { class: 'dot', title: s.status }),
+        statusDot(s.status),
         h('span', { class: 'idx' }, String(i + 1)),
-        h('input', { class: 'name', value: s.name, onchange: (e: Event) => { s.name = (e.target as HTMLInputElement).value; save(); renderPanels(); } }),
-        h('button', { class: 'icon', title: t('main.src.remove'), onclick: () => removeSource(s) }, '✕')),
+        h('input', { class: 'name', value: s.name, 'aria-label': t('main.sources'), onchange: (e: Event) => { s.name = (e.target as HTMLInputElement).value; save(); renderPanels(); } }),
+        iconButton('✕', t('main.src.remove'), () => removeSource(s))),
     );
     if (s.kind === 'stream') {
-      const urlIn = h('input', { class: 'url', value: s.url, placeholder: 'rtsp://user:pass@host:554/stream', spellcheck: 'false' }) as HTMLInputElement;
-      urlIn.onkeydown = (e) => { if (e.key === 'Enter') connect(); };
+      const urlIn = textInput(s.url, () => {}, { placeholder: 'rtsp://user:pass@host:554/stream', mono: true, onEnter: () => connect(), attrs: { class: 'url' } });
       const connect = () => { s.url = urlIn.value.trim(); save(); s.connectStream(s.url, bridgeUrl()); };
       const bridgeUi: BridgeUi = {
         http: () => bridgeUrl().replace(/^ws/, 'http'), hud: alertHud, upd,
         connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (/^(decklink|ndi|folder):/.test(url)) s.settings.depth = 16; } connect(); renderSources(); },
       };
       card.append(
-        h('div', { class: 'row' }, urlIn),
-        h('div', { class: 'row' },
+        row(urlIn),
+        row(
           select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', t('main.native')]], (v) => upd({ width: Number(v) }, true), s.lowLatency && effectiveWidth(set.width, true, s.llConfig.width) !== set.width ? t('main.src.widthLimited', { px: s.llConfig.width }) : t('main.src.widthTitle')),
           select(String(set.fps), [['0', t('main.src.fpsAll')], ['10', '10 fps'], ['25', '25 fps'], ['30', '30 fps']], (v) => upd({ fps: Number(v) }, true), t('main.src.fpsTitle')),
           select(set.yuv ? 'yuv' : String(set.depth), [['8', '8 bit'], ['16', '16 bit'], ['yuv', '16 bit Y′CbCr']], (v) => upd(v === 'yuv' ? { depth: 16, yuv: true } : { depth: Number(v) as 8 | 16, yuv: false }, true), t('main.src.depthTitle')),
           select(set.transport, [['tcp', 'TCP'], ['udp', 'UDP']], (v) => upd({ transport: v as 'tcp' | 'udp' }, true), t('main.src.transportTitle')),
           select(set.audio === false ? '0' : '1', [['1', t('main.src.audio')], ['0', t('main.src.noAudio')]], (v) => upd({ audio: v === '1' }, true), t('main.src.audioTitle')),
           select(set.codec ?? 'raw', [['raw', t('main.src.raw')], ['h264', 'H.264 · 8 bit']], (v) => upd({ codec: v as 'raw' | 'h264' }, true), t('main.src.codecTitle'))),
-        h('div', { class: 'row' },
+        row(
           select(set.lowLatency === undefined ? '' : set.lowLatency ? '1' : '0', [['', t('main.src.llGlobal', { mode: state.lowLatency ? 'Low Latency' : t('main.normal') })], ['1', 'Low Latency'], ['0', t('main.src.llNormal')]],
             (v) => { upd({ lowLatency: v === '' ? undefined : v === '1' }, true); refreshHeads(); }, LOW_LATENCY_HINT),
           h('span', { class: 'llmeasure', 'data-llsrc': s.id, title: t('main.src.llMeasureTitle') }, latencyMeasureText(s))),
@@ -464,17 +454,17 @@ function renderSources() {
             const ll: Partial<LowLatencyConfig> = { ...set.ll, ...patch };
             for (const k of Object.keys(ll) as (keyof LowLatencyConfig)[]) if (ll[k] === undefined) delete ll[k];
             upd({ ll }, true); refreshHeads();
-          }).map(([label, el]) => h('label', { class: 'mrow' }, h('span', {}, label), el)))] : []),
-        h('div', { class: 'row' },
-          running ? h('button', { onclick: () => s.stop() }, t('main.src.disconnect')) : h('button', { class: 'primary', onclick: connect }, t('main.src.connect')),
+          }).map(([label, el]) => field(label, el)))] : []),
+        row(
+          running ? button(t('main.src.disconnect'), () => s.stop()) : button(t('main.src.connect'), connect, { variant: 'primary' }),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
-            h('button', { class: 'mini', title: t('main.src.testN', { name: p }), onclick: () => { urlIn.value = `test:${p}`; connect(); } }, p)),
+            button(p, () => { urlIn.value = `test:${p}`; connect(); }, { small: true, title: t('main.src.testN', { name: p }) })),
             deviceButton(bridgeUi), deckLinkButton(bridgeUi), ndiButton(bridgeUi), folderButton(bridgeUi, (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop?.watchFolder))),
         ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
         ...(sourceFfmpegText(s.url, bridgeHealth) ? [h('p', { class: 'hint', 'data-ffmpeg-source': '' }, sourceFfmpegText(s.url, bridgeHealth))] : []),
       );
     } else if (s.url === SIM_URL) {
-      card.append(h('p', { class: 'hint' }, SHADING_T.simCard));
+      card.append(hint(SHADING_T.simCard));
     } else if (s.kind === 'pattern') {
       card.append(...patternControls(s));
     } else if (s.kind === 'audio') {
@@ -483,22 +473,22 @@ function renderSources() {
       if (s.isVideoFile) card.append(...transportControls(s));
       if (s.kind === 'webcam') card.append(deviceRow(s));
       if ((s.kind === 'screen' || s.kind === 'webcam' || s.isVideoFile) && running) {
-        card.append(h('div', { class: 'row' },
-          h('button', { class: 'mini', title: t('main.src.cropTitle'), onclick: () => { if (!s.cropToRoi()) alertHud(t('main.src.dragFirst')); renderSources(); } }, t('main.src.crop')),
-          s.crop ? h('button', { class: 'mini', onclick: () => { s.clearCrop(); renderSources(); } }, t('main.src.cropOff')) : ''));
+        card.append(row(
+          button(t('main.src.crop'), () => { if (!s.cropToRoi()) alertHud(t('main.src.dragFirst')); renderSources(); }, { small: true, title: t('main.src.cropTitle') }),
+          s.crop && button(t('main.src.cropOff'), () => { s.clearCrop(); renderSources(); }, { small: true })));
       }
-      card.append(h('div', { class: 'row' },
-        running ? h('button', { onclick: () => s.stop() }, t('main.src.stop'))
-          : h('button', { class: 'primary', onclick: () => startLocal(s) }, s.kind === 'file' ? t('main.src.chooseFile') : s.kind === 'folder' ? t('main.src.chooseFolder') : t('main.src.start'))));
+      card.append(row(
+        running ? button(t('main.src.stop'), () => s.stop())
+          : button(s.kind === 'file' ? t('main.src.chooseFile') : s.kind === 'folder' ? t('main.src.chooseFolder') : t('main.src.start'), () => startLocal(s), { variant: 'primary' })));
       if (s.kind === 'folder') card.append(h('details', { class: 'hint' }, h('summary', {}, 'Lightroom, Capture One, Resolve'), STILL_WORKFLOW()));
     }
     const ar = audioRow(s, renderSources);
     if (ar) card.append(ar);
-    if (s.kind !== 'audio') card.append(h('div', { class: 'row' },
+    if (s.kind !== 'audio') card.append(row(
       groupedSelect(set.transfer, transferGroups(`auto: ${transferLabel(s.transfer)} (${s.transferOrigin})`),
         (v) => upd({ transfer: v as SourceSettings['transfer'] }), t('main.src.transferTitle')),
       select(set.colorspace, [['auto', `Matrix auto: ${s.colorspace} (${s.colorspaceOrigin})`], ['709', 'Rec.709'], ['2020', 'Rec.2020'], ['601', 'Rec.601 525 (SMPTE-C)'], ['601-625', 'Rec.601 625 (EBU)']], (v) => upd({ colorspace: v as SourceSettings['colorspace'] }), t('main.src.matrixTitle'))),
-      h('div', { class: 'row' },
+      row(
         groupedSelect(set.gamut ?? 'auto', [
           ['', [['auto', `Gamut auto (${GAMUTS[s.gamut].name})`]]],
           ['Video', (['709', 'p3', '2020', '601', '601-625'] as GamutId[]).map((k) => [k, GAMUTS[k].name])],
@@ -507,7 +497,7 @@ function renderSources() {
         s.transfer === 'hlg' ? select(String(s.hlgLw), HLG_PEAKS.map((n) => [String(n), t('main.src.hlgDisplay', { n })]), (v) => upd({ hlgLw: Number(v) }), t('main.src.hlgTitle')) : ''));
     if (s.kind !== 'audio') card.append(chainControls(s, upd));
     if (s.url === 'resolve:' && s.status === 'live') card.append(resolveRouteRow(s));
-    if (s.message) card.append(h('div', { class: 'msg' }, s.message));
+    if (s.message) card.append(h('div', { class: 'msg', role: s.status === 'error' ? 'alert' : null }, s.message));
     // LUT files dropped on a source card: LUT 1, with Shift LUT 2
     card.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); card.classList.add('drop'); } });
     card.addEventListener('dragleave', () => card.classList.remove('drop'));
@@ -549,34 +539,28 @@ function chainControls(s: Source, upd: (p: Partial<SourceSettings>) => void): No
   const cst: CstSettings = { ...DEFAULT_CST, ...ch.cst };
   const setChain = (patch: Partial<ChainSettings>) => { upd({ chain: { ...ch, ...patch } }); refreshHeads(); needClear = true; };
   const setCst = (patch: Partial<CstSettings>) => setChain({ cst: { ...cst, ...patch } });
-  const on = h('input', { type: 'checkbox', checked: cst.on }) as HTMLInputElement;
-  on.onchange = () => setCst({ on: on.checked });
   const peaks = autoPeaks({ transfer: s.transfer, gamut: s.gamut, lw: s.hlgLw }, { transfer: cst.transfer, gamut: cst.gamut, lw: cst.lw ?? 1000 });
-  const num = (v: number | undefined, auto: number, title: string, set: (n: number) => void) => {
-    const i = h('input', { type: 'number', class: 'num', min: 0, step: 1, value: v || '', placeholder: `auto ${Math.round(auto)}`, title }) as HTMLInputElement;
-    i.onchange = () => set(Number(i.value) || 0);
-    return i;
-  };
+  const num = (v: number | undefined, auto: number, title: string, set: (n: number) => void) =>
+    numberInput(v || '', (n) => set(n || 0), { min: 0, title, placeholder: `auto ${Math.round(auto)}`, size: 'l' });
   const lutSel = (slot: 'lut1' | 'lut2') => {
     const cur = ch[slot] ?? '';
-    const file = h('input', { type: 'file', accept: LUT_EXTENSIONS.join(','), hidden: true }) as HTMLInputElement;
-    file.onchange = () => { const f = file.files?.[0]; if (f) loadLutInto(s, f, slot); };
+    const file = filePicker(LUT_EXTENSIONS.join(','), ([f]) => loadLutInto(s, f, slot));
     const names = [...new Set([...recentLutNames, ...LUTS.keys()])];
     const opts: [string, string][] = [['', slot === 'lut1' ? t('main.lut.none1') : t('main.lut.none2')],
       ...names.map((n) => [n, `${slot === 'lut1' ? 'LUT 1' : 'LUT 2'}: ${n}`] as [string, string]), ['__load', t('main.lut.load')]];
     if (cur && !names.includes(cur)) opts.splice(1, 0, [cur, t('main.lut.notLoaded', { name: cur })]);
     const sel = select(cur, opts, async (v) => {
-      if (v === '__load') { file.click(); return; }
+      if (v === '__load') { file.pick(); return; }
       if (v && !(await ensureLut(v))) { alertHud(t('main.lut.notStored', { name: v })); return; }
       setChain({ [slot]: v || undefined });
     }, t('main.lut.fileTitle'));
-    return h('span', { class: 'lutslot' }, sel, file);
+    return h('span', { class: 'lutslot' }, sel, file.input);
   };
   const out = ch.lutOut ?? {};
   const summary = [cst.on ? `CST → ${GAMUTS[cst.gamut].name} ${transferLabel(cst.transfer)}` : '', ch.lut1 ? `LUT ${ch.lut1}` : '', ch.lut2 ? `LUT ${ch.lut2}` : ''].filter(Boolean).join(' · ');
   return h('details', { class: 'chain', open: !!summary },
     h('summary', { title: t('main.chain.summaryTitle') }, `CST / LUT${summary ? `: ${summary}` : ''}`),
-    h('div', { class: 'row' },
+    row(
       select('', [['', t('main.chain.camPreset')], ...CAMERA_PRESETS.map((p) => [p.id, `${p.name} → Rec.709`] as [string, string])], (v) => {
         const p = CAMERA_PRESETS.find((x) => x.id === v);
         if (!p) return;
@@ -588,33 +572,28 @@ function chainControls(s: Source, upd: (p: Partial<SourceSettings>) => void): No
         const t = CST_TARGETS.find((x) => x.id === v);
         if (t) setCst({ on: true, gamut: t.gamut, transfer: t.transfer, tonemap: t.tonemap, lw: 1000 });
       })),
-    h('div', { class: 'row' },
-      h('label', { class: 'inline', title: t('main.chain.cstTitle') }, on, 'CST'),
+    row(
+      checkbox(cst.on, 'CST', (v) => setCst({ on: v }), t('main.chain.cstTitle')),
       groupedSelect(cst.gamut, gamutGroups(), (v) => setCst({ gamut: v as GamutId }), t('main.chain.tgtGamut')),
       groupedSelect(cst.transfer, transferGroups('', false), (v) => setCst({ transfer: v as CstSettings['transfer'] }), t('main.chain.tgtTransfer'))),
-    h('div', { class: 'row' },
+    row(
       select(cst.tonemap ?? 'bt2390', Object.entries(TONEMAP_LABELS) as [string, string][], (v) => setCst({ tonemap: v as ToneMap }), t('main.chain.tonemapTitle')),
       num(cst.srcPeak, peaks.src, t('main.chain.srcPeak'), (n) => setCst({ srcPeak: n })),
       num(cst.tgtPeak, peaks.tgt, t('main.chain.tgtPeak'), (n) => setCst({ tgtPeak: n })),
       cst.transfer === 'hlg' ? select(String(cst.lw ?? 1000), HLG_PEAKS.map((n) => [String(n), t('main.chain.tgtHlg', { n })]), (v) => setCst({ lw: Number(v) })) : ''),
-    h('div', { class: 'row' }, lutSel('lut1'), lutSel('lut2')),
-    ch.lut1 || ch.lut2 ? h('div', { class: 'row' },
+    row(lutSel('lut1'), lutSel('lut2')),
+    (ch.lut1 || ch.lut2) && row(
       groupedSelect(out.transfer ?? 'auto', transferGroups(t('main.chain.lutOutTransfer')), (v) => setChain({ lutOut: { ...out, transfer: v === 'auto' ? undefined : v as CstSettings['transfer'] } }), t('main.chain.lutOutTitle')),
-      groupedSelect(out.gamut ?? 'auto', [['', [['auto', t('main.chain.lutOutGamut')]]], ...gamutGroups()], (v) => setChain({ lutOut: { ...out, gamut: v === 'auto' ? undefined : v as GamutId } }))) : '',
-    h('div', { class: 'row' }, h('button', { class: 'mini', title: t('main.lut.vendorTitle'), onclick: () => showLutLibrary() }, t('main.lut.vendor'))),
-    h('p', { class: 'hint' }, t('main.chain.dropHint')));
+      groupedSelect(out.gamut ?? 'auto', [['', [['auto', t('main.chain.lutOutGamut')]]], ...gamutGroups()], (v) => setChain({ lutOut: { ...out, gamut: v === 'auto' ? undefined : v as GamutId } }))),
+    row(button(t('main.lut.vendor'), () => showLutLibrary(), { small: true, title: t('main.lut.vendorTitle') })),
+    hint(t('main.chain.dropHint')));
 }
 
 function showLutLibrary() {
-  const dlg = h('dialog', { class: 'lutlib' },
-    h('h3', {}, t('main.lut.vendorHead')),
-    h('p', { class: 'hint' }, t('main.lut.vendorHint')),
-    h('table', {}, ...LUT_SOURCES.map((l) => h('tr', {},
-      h('td', {}, l.vendor), h('td', {}, l.looks), h('td', {}, l.url ? h('a', { href: l.url, target: '_blank', rel: 'noopener' }, t('main.lut.download')) : '–'), h('td', { class: 'hint' }, l.note)))),
-    h('div', { class: 'row' }, h('button', { onclick: () => dlg.close() }, t('common.close'))));
-  document.body.append(dlg);
-  dlg.addEventListener('close', () => dlg.remove());
-  dlg.showModal();
+  openModal({ title: t('main.lut.vendorHead'), cls: 'lutlib', size: 'lg', body: [
+    hint(t('main.lut.vendorHint')),
+    h('div', { class: 'table-wrap' }, table(LUT_SOURCES.map((l) => [l.vendor, l.looks, l.url ? link(l.url, t('main.lut.download')) : '–', h('span', { class: 'hint' }, l.note)]))),
+  ] });
 }
 
 function patternSelect(value: string, onchange: (id: string) => void) {
@@ -634,30 +613,28 @@ function patternControls(s: Source): Node[] {
     const i = PATTERNS.findIndex((p) => p.id === pt.id);
     apply({ id: PATTERNS[(i + d + PATTERNS.length) % PATTERNS.length].id });
   };
-  const label = h('input', { class: 'url', value: pt.label, placeholder: t('main.pattern.label') }) as HTMLInputElement;
-  label.onchange = () => apply({ label: label.value });
-  const imgs = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true }) as HTMLInputElement;
-  imgs.onchange = async () => {
-    const r = await addUserImages([...(imgs.files ?? [])]);
+  const label = textInput(pt.label, (v) => apply({ label: v }), { placeholder: t('main.pattern.label'), attrs: { class: 'url' } });
+  const imgs = filePicker('image/*', async (files) => {
+    const r = await addUserImages(files);
     r.errors.forEach(alertHud);
     if (r.added.length) { apply({ id: r.added[0].id }); renderSources(); }
-  };
+  }, true);
   const fav = isFavourite(pt.id);
   return [
-    h('div', { class: 'row' },
-      h('button', { class: 'mini', title: t('main.pattern.prev'), onclick: () => step(-1) }, '◀'),
+    row(
+      iconButton('◀', t('main.pattern.prev'), () => step(-1), { small: true }),
       patternSelect(pt.id, (id) => { apply({ id }); renderSources(); }),
-      h('button', { class: 'mini', title: t('main.pattern.next'), onclick: () => step(1) }, '▶'),
-      h('button', { class: `mini fav${fav ? ' on' : ''}`, title: fav ? t('main.pattern.unfav') : t('main.pattern.fav'), 'aria-pressed': String(fav), onclick: () => setFavourite(pt.id, !fav) }, fav ? '★' : '☆')),
-    h('div', { class: 'row' },
+      iconButton('▶', t('main.pattern.next'), () => step(1), { small: true }),
+      button(fav ? '★' : '☆', () => setFavourite(pt.id, !fav), { small: true, pressed: fav, title: fav ? t('main.pattern.unfav') : t('main.pattern.fav'), attrs: { class: `btn mini fav${fav ? ' on' : ''}` } })),
+    row(
       resolutionControls(pt, apply),
       label),
-    ...(patternById(pt.id).note ? [h('p', { class: 'hint' }, patternById(pt.id).note!)] : []),
-    h('div', { class: 'row' },
-      h('button', { class: 'primary', title: t('main.pattern.outTitle'), onclick: () => openOutput(pt) }, t('main.pattern.out')),
-      h('button', { title: t('main.pattern.imagesTitle'), onclick: () => imgs.click() }, t('main.pattern.images')), imgs,
-      h('button', { title: t('main.pattern.manageTitle'), onclick: () => openTestImages(testMediaHost) }, t('main.pattern.manage')),
-      h('button', { title: t('main.pattern.videosTitle'), onclick: () => openTestVideos(testMediaHost) }, t('main.pattern.videos'))),
+    ...(patternById(pt.id).note ? [hint(patternById(pt.id).note!)] : []),
+    row(
+      button(t('main.pattern.out'), () => openOutput(pt), { variant: 'primary', title: t('main.pattern.outTitle') }),
+      button(t('main.pattern.images'), () => imgs.pick(), { title: t('main.pattern.imagesTitle') }), imgs.input,
+      button(t('main.pattern.manage'), () => openTestImages(testMediaHost), { title: t('main.pattern.manageTitle') }),
+      button(t('main.pattern.videos'), () => openTestVideos(testMediaHost), { title: t('main.pattern.videosTitle') })),
   ];
 }
 
@@ -669,10 +646,10 @@ function resolutionControls(pt: PatternState, applyPt: (p: Partial<PatternState>
   if (!opts.some(([k]) => k === wallKey)) opts.push([wallKey, t('main.res.ledWall', { w: wall.w, h: wall.h })]);
   if (!opts.some(([k]) => k === cur)) opts.push([cur, `${pt.width}×${pt.height}`]);
   const size = (v: number) => Math.max(16, Math.min(16384, Math.round(v) || 16));
-  const w = h('input', { type: 'number', value: String(pt.width), min: 16, max: 16384, title: t('main.res.wTitle'), style: 'width:64px' }) as HTMLInputElement;
-  const hh = h('input', { type: 'number', value: String(pt.height), min: 16, max: 16384, title: t('main.res.hTitle'), style: 'width:64px' }) as HTMLInputElement;
-  w.onchange = hh.onchange = () => apply({ width: size(Number(w.value)), height: size(Number(hh.value)) });
-  return h('span', { class: 'row', style: 'margin:0' },
+  const both = () => apply({ width: size(Number(w.value)), height: size(Number(hh.value)) });
+  const w = numberInput(pt.width, both, { min: 16, max: 16384, title: t('main.res.wTitle'), size: 'l' });
+  const hh = numberInput(pt.height, both, { min: 16, max: 16384, title: t('main.res.hTitle'), size: 'l' });
+  return h('span', { class: 'row' },
     select(cur, opts, (v) => { const [a, b] = v.split('x').map(Number); apply({ width: a, height: b }); }, t('main.res.title')), w, '×', hh);
 }
 
@@ -709,9 +686,7 @@ async function startLocal(s: Source) {
   if (s.kind === 'folder') return s.startFolder();
   if (s.kind === 'screen' && desktop?.captureSources) return pickWindow(s);
   if (s.kind === 'webcam' || s.kind === 'screen') return s.startCapture(s.kind).then(() => refreshDevices().then(renderSources));
-  const input = h('input', { type: 'file', accept: 'video/*,image/*' }) as HTMLInputElement;
-  input.onchange = () => { const f = input.files?.[0]; if (f) s.openFile(f).then(renderPanels); };
-  input.click();
+  filePicker('video/*,image/*', ([f]) => { s.openFile(f).then(renderPanels); }).pick();
 }
 
 /** Camera / USB capture device selection (labels are only known after the first permission). */
@@ -723,7 +698,7 @@ navigator.mediaDevices?.addEventListener?.('devicechange', () => refreshDevices(
 function deviceRow(s: Source): Node {
   if (!videoDevices.length) refreshDevices().then(() => { if (videoDevices.length) renderSources(); });
   const opts: [string, string][] = videoDevices.map((d, i) => [d.deviceId, d.label || t('main.dev.n', { n: i + 1 })]);
-  return h('div', { class: 'row' }, select(s.deviceId, opts.length ? opts : [['', t('main.dev.default')]], (id) => {
+  return row(select(s.deviceId, opts.length ? opts : [['', t('main.dev.default')]], (id) => {
     s.name = videoDevices.find((d) => d.deviceId === id)?.label.replace(/\s*\([0-9a-f:]+\)$/i, '').slice(0, 40) || s.name;
     s.startCapture('webcam', id).then(() => { refreshDevices().then(renderSources); });
   }, t('main.dev.title')));
@@ -732,15 +707,11 @@ function deviceRow(s: Source): Node {
 /** Desktop app: choose a window or screen (thumbnails), e.g. DaVinci Resolve's viewer. */
 async function pickWindow(s: Source) {
   const list = await desktop!.captureSources!();
-  const close = () => dlg.remove();
-  const dlg = h('div', { class: 'modal', onclick: (e: Event) => { if (e.target === dlg) close(); } },
-    h('div', { class: 'modal-body' },
-      h('div', { class: 'mtitle' }, t('main.pick.title')),
-      h('p', { class: 'hint' }, t('main.pick.hint')),
-      h('div', { class: 'thumbs' }, ...list.map((c) => h('button', { class: 'thumb', title: c.name, onclick: () => { close(); s.name = c.name.slice(0, 40); s.startCapture('screen', undefined, c.id); } },
-        h('img', { src: c.thumb, alt: '' }), h('span', {}, c.name)))),
-      h('button', { onclick: close }, t('common.cancel'))));
-  document.body.append(dlg);
+  const m = openModal({ title: t('main.pick.title'), size: 'xl', body: [
+    hint(t('main.pick.hint')),
+    h('div', { class: 'thumbs' }, ...list.map((c) => h('button', { class: 'thumb', title: c.name, onclick: () => { m.close(); s.name = c.name.slice(0, 40); s.startCapture('screen', undefined, c.id); } },
+      h('img', { src: c.thumb, alt: '' }), h('span', {}, c.name)))),
+  ], actions: [button(t('common.cancel'), () => m.close())] });
 }
 
 /** Resolve source card (#88): which route the picture takes now, why, and how colour-accurate it is. */
@@ -748,10 +719,10 @@ function resolveRouteRow(s: Source) {
   const r = s.resolveRoute ?? { route: 'still' as const, playing: false };
   const { label, detail } = routeText(r);
   const pick = !desktop?.captureSources && r.playing && r.why === 'browser'
-    ? h('button', { class: 'mini', title: t('source.resolve.pickWindowTitle'), onclick: () => { void resolvePlayback.pickWindow(s); } }, t('source.resolve.pickWindow')) : '';
+    ? button(t('source.resolve.pickWindow'), () => { void resolvePlayback.pickWindow(s); }, { small: true, title: t('source.resolve.pickWindowTitle') }) : '';
   return h('div', { class: 'resolve-route', 'data-route': r.route },
-    h('div', { class: 'row' }, h('span', { class: `chip route-${r.route}` }, label), pick),
-    h('p', { class: 'hint' }, detail));
+    row(h('span', { class: `route-chip route-${r.route}` }, label), pick),
+    hint(detail));
 }
 
 function addResolve() {
@@ -772,14 +743,11 @@ function addSourceOfKind(kind: string) {
 }
 $('#add').replaceChildren(
   h('span', {}, t('main.add.source')),
-  h('button', { onclick: () => addSourceOfKind('pattern') }, t('main.pattern.title')),
-  h('button', { onclick: () => addSourceOfKind('stream') }, t('main.add.stream')),
-  h('button', { title: t('main.add.resolveTitle'), onclick: () => addSourceOfKind('resolve') }, 'DaVinci Resolve'),
-  h('button', { title: t('main.add.webcamTitle'), onclick: () => addSourceOfKind('webcam') }, t('main.add.webcam')),
-  h('button', { title: t('main.add.screenTitle'), onclick: () => addSourceOfKind('screen') }, t('main.add.screen')),
-  h('button', { onclick: () => addSourceOfKind('file') }, t('main.add.file')),
-  h('button', { title: t('main.add.folderTitle'), onclick: () => addSourceOfKind('folder') }, t('main.add.folder')),
-  h('button', { title: t('main.add.audioTitle'), onclick: () => addSourceOfKind('audio') }, 'Audio'),
+  ...([
+    ['pattern', t('main.pattern.title'), ''], ['stream', t('main.add.stream'), ''], ['resolve', 'DaVinci Resolve', t('main.add.resolveTitle')],
+    ['webcam', t('main.add.webcam'), t('main.add.webcamTitle')], ['screen', t('main.add.screen'), t('main.add.screenTitle')], ['file', t('main.add.file'), ''],
+    ['folder', t('main.add.folder'), t('main.add.folderTitle')], ['audio', 'Audio', t('main.add.audioTitle')],
+  ] as const).map(([kind, label, title]) => button(label, () => addSourceOfKind(kind), { title })),
 );
 
 /** Add an audio source and, if no audio panel is open, a pinned level/loudness panel for it. */
@@ -799,7 +767,11 @@ function addAudioSource(mode: AudioInput['mode']) {
 
 // ---------------------------------------------------------------- panels
 
-interface PanelView { idx: number; el: HTMLElement; head: HTMLElement; body: HTMLElement; blit: HTMLCanvasElement; overlay: HTMLCanvasElement; zoom: HTMLButtonElement }
+interface PanelView {
+  idx: number; el: HTMLElement; head: HTMLElement; body: HTMLElement; blit: HTMLCanvasElement; overlay: HTMLCanvasElement; zoom: HTMLButtonElement;
+  /** the ⚙ popover; kept across head refreshes so an open popover stays open */
+  pop?: PopoverEl; popScope?: ScopeType;
+}
 const views = new Map<number, PanelView>();
 /** Views of the panels currently in the dock. */
 const openViews = () => dock.openIdx().map((i) => views.get(i)).filter((v): v is PanelView => !!v);
@@ -816,10 +788,10 @@ function panelElement(idx: number): HTMLElement {
   if (!v) {
     state.panels[idx] ??= panel('wf-luma');
     const p = () => state.panels[idx];
-    const blit = h('canvas', { class: 'blit' }) as HTMLCanvasElement;
-    const overlay = h('canvas', { class: 'overlay' }) as HTMLCanvasElement;
+    const blit = h('canvas', { class: 'blit' });
+    const overlay = h('canvas', { class: 'overlay' });
     // zoom level (#89): shown while zoomed, click resets
-    const zoom = h('button', { class: 'zoomchip', hidden: true, 'data-zoom': '1', title: t('gesture.chipTitle'), onclick: () => resetView(idx), onpointerdown: (e: Event) => e.stopPropagation() }) as HTMLButtonElement;
+    const zoom = h('button', { class: 'zoomchip', hidden: true, 'data-zoom': '1', title: t('gesture.chipTitle'), onclick: () => resetView(idx), onpointerdown: (e: Event) => e.stopPropagation() });
     const body = h('div', { class: 'body' }, blit, overlay, zoom);
     const head = h('div', { class: 'phead', ondblclick: () => toggleSolo(idx) });
     const el = h('div', { class: 'panel' }, head, body);
@@ -837,30 +809,40 @@ function panelElement(idx: number): HTMLElement {
   return v.el;
 }
 
+/**
+ * Panel head: scope, source, stage chip, pin | chips, ⚙ popover | solo. The parts are refilled
+ * on changes; the ⚙ popover is kept (an open one stays open) unless the scope changes.
+ */
 function fillHead(v: PanelView) {
   const idx = v.idx, p = state.panels[idx];
-  v.head.replaceChildren(
-    select(p.scope, Object.entries(SCOPE_LABELS) as [string, string][], (val) => {
+  if (!v.head.firstChild) {
+    v.head.append(h('span', { class: 'plead' }), h('div', { class: 'opts' }, h('span', { class: 'pchips' })),
+      iconButton('⤢', t('panel.solo'), () => toggleSolo(idx)));
+  }
+  const [lead, opts] = [v.head.children[0] as HTMLElement, v.head.children[1] as HTMLElement];
+  const multi = sources.length > 1 && !isLight(p.scope);
+  lead.replaceChildren(...[
+    select(p.scope, Object.entries(SCOPE_LABELS) as Option[], (val) => {
       p.scope = val as ScopeType; p.view = undefined; if (val === 'vector' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
-    }),
-    sources.length > 1 && !isLight(p.scope) ? select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), t('panel.sourceTitle')) : '',
+    }, '', { 'aria-label': t('ui.scope') }),
+    multi && select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), t('panel.sourceTitle')),
     stageChip(p),
-    sources.length > 1 && !isLight(p.scope) ? h('button', { class: `icon pin ${p.pin ? 'on' : ''}`, title: p.pin ? t('panel.pinned') : t('panel.pin'), onclick: () => { p.pin = !p.pin; save(); fillHead(v); } }, '📌') : '',
-    h('div', { class: 'opts' },
-      latencyChip(p),
-      roiChip(p),
-      h('details', { class: 'menu psettings' },
-        h('summary', { title: t('panel.settingsOf', { scope: SCOPE_LABELS[p.scope] }) }, '⚙'),
-        h('div', { class: 'menu-body right' }, h('div', { class: 'mtitle' }, SCOPE_LABELS[p.scope]), ...panelSettings(p)))),
-    h('button', { class: 'icon', title: t('panel.solo'), onclick: () => toggleSolo(idx) }, '⤢'),
-  );
+    multi && iconButton('📌', p.pin ? t('panel.pinned') : t('panel.pin'), () => { p.pin = !p.pin; save(); fillHead(v); }, { pressed: !!p.pin, attrs: { class: `icon pin${p.pin ? ' on' : ''}` } }),
+  ].filter((x): x is HTMLElement => !!x));
+  (opts.firstChild as HTMLElement).replaceChildren(...[latencyChip(p), roiChip(p)].filter((x): x is HTMLElement => !!x));
+  if (!v.pop || v.popScope !== p.scope) {
+    v.pop?.remove();
+    v.pop = popover({ label: '⚙', title: t('panel.settingsOf', { scope: SCOPE_LABELS[p.scope] }), heading: SCOPE_LABELS[p.scope], align: 'end', cls: 'psettings', content: () => panelSettings(state.panels[idx]) });
+    v.popScope = p.scope;
+    opts.append(v.pop);
+  }
 }
 
 /** Measuring stage in the panel head, honest about stages that have nothing to apply. */
-function stageChip(p: PanelState): Node | string {
-  if (isAudio(p.scope) || p.scope === 'clock' || p.scope === 'genlock' || isLight(p.scope)) return '';
+function stageChip(p: PanelState): HTMLElement | null {
+  if (isAudio(p.scope) || p.scope === 'clock' || p.scope === 'genlock' || isLight(p.scope)) return null;
   const n = stageNote(panelSource(p), p.stage ?? state.stage ?? 'signal');
-  return n.text ? h('span', { class: `stagechip${n.warn ? ' warn' : ''}`, title: t('panel.stageChipTitle') }, n.text) : '';
+  return n.text ? chip(n.text, { tone: n.warn ? 'warn' : undefined, cls: 'stagechip', title: t('panel.stageChipTitle') }) : null;
 }
 
 /** Re-fill all panel headers (sources or settings changed). */
@@ -877,31 +859,28 @@ function addScopePanel(scope: ScopeType = 'wf-luma') {
 }
 
 /** Settings of one measuring tool, shown in its ⚙ menu. */
+/** Rebuild the rows of a panel's open ⚙ popover (rows appear or disappear). */
+function refreshPanelSettings(p: PanelState) {
+  const v = [...views.values()].find((x) => state.panels[x.idx] === p);
+  if (v) { fillHead(v); v.pop?.refresh(); }
+}
+
 function panelSettings(p: PanelState): Node[] {
   if (isAudio(p.scope)) return audioPanelSettings(p, save);
   if (isLight(p.scope)) return lightPanelSettings(p, save);
   if (p.scope === 'genlock') return genlockPanelSettings(p, save);
-  if (p.scope === 'clock') {
-    return clockPanelSettings(p, save, sources, () => {
-      const v = [...views.values()].find((x) => state.panels[x.idx] === p);
-      if (v) { fillHead(v); v.head.querySelector('details.psettings')?.setAttribute('open', ''); }
-    });
-  }
+  if (p.scope === 'clock') return clockPanelSettings(p, save, sources, () => refreshPanelSettings(p));
   const rows: Node[] = [];
-  const row = (label: string, ...kids: (Node | string)[]) => rows.push(h('label', { class: 'mrow' }, h('span', {}, label), ...kids));
+  const row = (label: string, ...kids: Kid[]) => rows.push(field(label, ...kids));
+  /** a global setting, rendered from its one description (label can differ in the panel) */
+  const global = (s: Setting, label?: string) => rows.push(field(label ?? s.label(), ...settingControl(s)));
   row(t('settings.stage.point'), select(p.stage ?? 'auto', [['auto', t('panel.stageDefault', { stage: STAGE_LABELS[state.stage ?? 'signal'] })], ...STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string])],
     (v) => { p.stage = v === 'auto' ? undefined : v as Stage; save(); refreshHeads(); }, t('panel.stageTitle')));
-  const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv' | 'skinBand' | 'greenBand' | 'greenWedge', label: string, dflt = false) => {
-    const c = h('input', { type: 'checkbox', checked: p[key] ?? dflt }) as HTMLInputElement;
-    c.onchange = () => { p[key] = c.checked; save(); refreshHeads(); };
-    return h('label', { class: 'inline' }, c, label);
-  };
+  const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv' | 'skinBand' | 'greenBand' | 'greenWedge', label: string, dflt = false) =>
+    checkbox(p[key] ?? dflt, label, (v) => { p[key] = v; save(); refreshHeads(); });
   const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot';
   if (scatter) {
-    const gain = h('input', { type: 'range', min: -3, max: 3, step: 0.1, value: Math.log2(p.gain), title: t('panel.gainTitle') }) as HTMLInputElement;
-    gain.oninput = () => { p.gain = 2 ** Number(gain.value); save(); };
-    gain.ondblclick = () => { p.gain = 1; gain.value = '0'; save(); };
-    row(t('panel.brightness'), gain);
+    row(t('panel.brightness'), slider(Math.log2(p.gain), (v) => { p.gain = 2 ** v; save(); }, { min: -3, max: 3, step: 0.1, reset: 0, title: t('panel.gainTitle') }));
   }
   if (p.scope === 'parade' || p.scope === 'yrgb' || p.scope === 'wf-rgb') {
     row(t('panel.colour'), select(p.paradeColor ?? (p.scope === 'wf-rgb' || p.colorize ? 'channel' : 'mono'),
@@ -910,21 +889,15 @@ function panelSettings(p: PanelState): Node[] {
     row(t('panel.colour'), check('colorize', t('panel.traceInColour')));
   }
   if (isWaveform(p.scope)) {
-    row(t('settings.scopes.scale'), select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', t('settings.scopes.nitsScene')]], (v) => { state.unit = v as Unit; save(); renderHeader(); }));
+    global(SET.unit);
     row(t('panel.marks'), check('marks', t('panel.marksText'), true));
     row('EBU R 103', check('r103', t('panel.r103Text')));
     row(t('panel.zoom'), select(p.waveZoom ?? 'full', Object.entries(WAVE_ZOOM_LABELS) as [string, string][], (v) => { p.waveZoom = v as WaveZoom; p.view = undefined; save(); }, t('panel.zoomTitle')));
     const chans = channelsOf(p.scope);
     if (chans.length) {
-      row(t('panel.channels'), ...chans.map((c) => {
-        const box = h('input', { type: 'checkbox', checked: p.channels?.[c.key] !== false }) as HTMLInputElement;
-        box.onchange = () => { p.channels = { ...p.channels, [c.key]: box.checked }; save(); };
-        return h('label', { class: 'inline' }, box, c.name);
-      }));
+      row(t('panel.channels'), ...chans.map((c) => checkbox(p.channels?.[c.key] !== false, c.name, (v) => { p.channels = { ...p.channels, [c.key]: v }; save(); })));
     }
-    const names = h('input', { type: 'checkbox', checked: p.names !== false }) as HTMLInputElement;
-    names.onchange = () => { p.names = names.checked; save(); };
-    row(t('panel.labels'), h('label', { class: 'inline' }, names, t('panel.labelsText')));
+    row(t('panel.labels'), checkbox(p.names !== false, t('panel.labelsText'), (v) => { p.names = v; save(); }));
   }
   if (p.scope === 'wf-skin') row(t('panel.skinRange'), check('skinBand', t('panel.skinBand'), true));
   if (p.scope === 'wf-green') row(t('panel.greenRange'), check('greenBand', t('panel.greenBand'), true));
@@ -940,13 +913,9 @@ function panelSettings(p: PanelState): Node[] {
       t('panel.cube.lutTitle')));
     if (c.lut) {
       row(t('panel.cube.grid'), select(String(c.lutGrid ?? 17), [['9', '9³'], ['17', '17³'], ['33', '33³']], (v) => setCube({ lutGrid: Number(v) })));
-      const inp = h('input', { type: 'checkbox', checked: !!c.lutInput }) as HTMLInputElement;
-      inp.onchange = () => setCube({ lutInput: inp.checked });
-      const only = h('input', { type: 'checkbox', checked: !!c.lutOnly }) as HTMLInputElement;
-      only.onchange = () => setCube({ lutOnly: only.checked });
-      row('', h('label', { class: 'inline' }, inp, t('panel.cube.inputGrid')), h('label', { class: 'inline' }, only, t('panel.cube.lutOnly')));
+      row('', checkbox(!!c.lutInput, t('panel.cube.inputGrid'), (v) => setCube({ lutInput: v })), checkbox(!!c.lutOnly, t('panel.cube.lutOnly'), (v) => setCube({ lutOnly: v })));
     }
-    rows.push(h('p', { class: 'hint' }, t('panel.cube.hint')));
+    rows.push(hint(t('panel.cube.hint')));
   }
   if (p.scope === 'chplot') {
     row(t('panel.channels'), select(String(p.pair ?? 0), CHANNEL_PAIRS.map((n, i) => [String(i), n] as [string, string]), (v) => { p.pair = Number(v); save(); }));
@@ -954,41 +923,29 @@ function panelSettings(p: PanelState): Node[] {
   }
   if (p.scope === 'minmax') {
     row(t('panel.minmax.limits'), select(p.minmax?.limits ?? 'r103', [['r103', 'EBU R 103 −5/105 %'], ['legal', t('panel.legal')]], (v) => { p.minmax = { ...p.minmax, limits: v as 'r103' }; save(); }));
-    const tl = h('input', { class: 'url', value: (p.minmax?.targets ?? []).join(', '), placeholder: t('panel.minmax.targets') }) as HTMLInputElement;
-    tl.onchange = () => { p.minmax = { ...p.minmax, targets: tl.value.split(/[,; ]+/).map(Number).filter((v) => Number.isFinite(v)).slice(0, 4) }; save(); };
-    row(t('panel.minmax.targetLines'), tl);
+    row(t('panel.minmax.targetLines'), textInput((p.minmax?.targets ?? []).join(', '), (val) => { p.minmax = { ...p.minmax, targets: val.split(/[,; ]+/).map(Number).filter((v) => Number.isFinite(v)).slice(0, 4) }; save(); }, { placeholder: t('panel.minmax.targets') }));
   }
   if (p.scope === 'satlum') row(t('panel.colour'), check('colorize', t('panel.dotsInColour')));
   if (p.scope === 'qclog') {
     const q = { ...DEFAULT_QC, ...state.qc };
     const setQc = (patch: Partial<QcSettings>) => { state.qc = { ...q, ...patch }; Object.assign(q, patch); save(); };
-    const on = h('input', { type: 'checkbox', checked: q.on }) as HTMLInputElement;
-    on.onchange = () => setQc({ on: on.checked });
-    row(t('panel.qc.check'), h('label', { class: 'inline' }, on, t('panel.qc.all')));
+    row(t('panel.qc.check'), checkbox(q.on, t('panel.qc.all'), (v) => setQc({ on: v })));
     const shown = new Set(p.qcTypes ?? QC_TYPES);
-    rows.push(h('div', { class: 'mrow' }, ...QC_TYPES.map((qt) => {
-      const c = h('input', { type: 'checkbox', checked: shown.has(qt) }) as HTMLInputElement;
-      c.onchange = () => { if (c.checked) shown.add(qt); else shown.delete(qt); p.qcTypes = QC_TYPES.filter((x) => shown.has(x)); save(); };
-      return h('label', { class: 'inline' }, c, QC_LABELS[qt]);
-    })));
-    row(t('panel.qc.clip'), numIn(q.clip * 100, 0.1, 10, (v) => setQc({ clip: v / 100 })), t('panel.qc.ofPixels'));
-    row(t('panel.qc.black'), numIn(q.black * 100, 0.5, 10, (v) => setQc({ black: v / 100 })), '% Y′');
-    row(t('panel.qc.silence'), numIn(-q.silenceDb, 30, 90, (v) => setQc({ silenceDb: -v })), '−dBFS');
-    row(t('panel.qc.freeze'), numIn(q.freezeMs / 1000, 0.5, 30, (v) => setQc({ freezeMs: v * 1000 })), 's');
-    row('', h('button', { class: 'mini', onclick: () => {
-      const blob = new Blob([toCsv(qcLog.events, p.qcTypes ?? QC_TYPES)], { type: 'text/csv;charset=utf-8' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `lz-scopes-qc-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`; a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    } }, t('panel.qc.csv')), h('button', { class: 'mini', onclick: () => qcLog.clear() }, t('panel.qc.clear')));
+    rows.push(field('', ...QC_TYPES.map((qt) => checkbox(shown.has(qt), QC_LABELS[qt], (v) => { if (v) shown.add(qt); else shown.delete(qt); p.qcTypes = QC_TYPES.filter((x) => shown.has(x)); save(); }))));
+    const qcNum = (value: number, min: number, max: number, set: (v: number) => void) => numberInput(value, set, { min, max, size: 's' });
+    row(t('panel.qc.clip'), qcNum(q.clip * 100, 0.1, 10, (v) => setQc({ clip: v / 100 })), t('panel.qc.ofPixels'));
+    row(t('panel.qc.black'), qcNum(q.black * 100, 0.5, 10, (v) => setQc({ black: v / 100 })), '% Y′');
+    row(t('panel.qc.silence'), qcNum(-q.silenceDb, 30, 90, (v) => setQc({ silenceDb: -v })), '−dBFS');
+    row(t('panel.qc.freeze'), qcNum(q.freezeMs / 1000, 0.5, 30, (v) => setQc({ freezeMs: v * 1000 })), 's');
+    row('', button(t('panel.qc.csv'), () => download(`lz-scopes-qc-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`, toCsv(qcLog.events, p.qcTypes ?? QC_TYPES), 'text/csv;charset=utf-8'), { small: true }),
+      button(t('panel.qc.clear'), () => qcLog.clear(), { small: true }));
   }
   if (p.scope === 'timeline') {
     row(t('panel.tl.span'), select(String(p.span ?? 10), [['10', '10 s'], ['60', '1 min'], ['300', '5 min']], (v) => { p.span = Number(v) as PanelState['span']; save(); }));
-    const ef = h('input', { type: 'checkbox', checked: !!p.everyFrame }) as HTMLInputElement;
-    ef.onchange = () => { p.everyFrame = ef.checked; save(); };
-    row(t('panel.tl.sampling'), h('label', { class: 'inline', title: t('panel.tl.samplingTitle') }, ef, t('panel.tl.everyFrame')));
+    row(t('panel.tl.sampling'), checkbox(!!p.everyFrame, t('panel.tl.everyFrame'), (v) => { p.everyFrame = v; save(); }, t('panel.tl.samplingTitle')));
     row(t('panel.tl.grid'), select(String(p.grid ?? 96), GRIDS.map((g) => [String(g), `${g}×${Math.round((g * 9) / 16)}`] as [string, string]), (v) => { p.grid = Number(v); save(); }, t('panel.tl.gridTitle')));
-    row('', h('button', { class: 'mini', onclick: () => panelSource(p)?.history.clear() }, t('panel.tl.clear')));
-    rows.push(h('p', { class: 'hint' }, t('panel.tl.hint')));
+    row('', button(t('panel.tl.clear'), () => panelSource(p)?.history.clear(), { small: true }));
+    rows.push(hint(t('panel.tl.hint')));
   }
   if ((p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot') && !p.crt?.on) {
     row(t('panel.persist'), select(String(p.persist ?? 0), [['0', t('common.off')], ['300', `${num(0.3, 1)} s`], ['1000', '1 s'], ['3000', '3 s'], ['10000', '10 s'], ['-1', t('panel.infinite')]], (v) => { p.persist = Number(v); save(); },
@@ -997,11 +954,7 @@ function panelSettings(p: PanelState): Node[] {
   if (p.scope === 'cie') row(t('panel.cie.diagram'), check('cieUv', t('panel.cie.uv')));
   if (scatter) {
     const c = { ...DEFAULT_CRT, ...p.crt };
-    const reopen = () => {
-      const v = [...views.values()].find((x) => state.panels[x.idx] === p);
-      if (v) { fillHead(v); v.head.querySelector('details.psettings')?.setAttribute('open', ''); }
-    };
-    const setCrt = (patch: Partial<CrtSettings>, rebuild = false) => { p.crt = { ...c, ...patch }; Object.assign(c, patch); save(); if (rebuild) reopen(); };
+    const setCrt = (patch: Partial<CrtSettings>, rebuild = false) => { p.crt = { ...c, ...patch }; Object.assign(c, patch); save(); if (rebuild) refreshPanelSettings(p); };
     row(t('panel.display'), select(c.on ? 'crt' : 'digital', [['digital', 'digital'], ['crt', t('panel.crt')]], (v) => setCrt({ on: v === 'crt' }, true),
       t('panel.crtTitle')));
     if (c.on) {
@@ -1009,32 +962,25 @@ function panelSettings(p: PanelState): Node[] {
         (v) => setCrt({ phosphor: v as Phosphor, persist: PHOSPHORS[v as Phosphor].tau }, true), t('panel.phosphorTitle', { note: PHOSPHORS[c.phosphor].note })));
       const persist = PERSIST_CHOICES.some(([ms]) => ms === c.persist) ? PERSIST_CHOICES : [...PERSIST_CHOICES, [c.persist, `${c.persist} ms`] as [number, string]];
       row(t('panel.persist'), select(String(c.persist), persist.map(([ms, l]) => [String(ms), l] as [string, string]), (v) => setCrt({ persist: Number(v) }), t('panel.crtPersistTitle')));
-      const glow = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: c.glow, title: t('panel.glowTitle') }) as HTMLInputElement;
-      glow.oninput = () => setCrt({ glow: Number(glow.value) });
-      row('Glow', glow);
+      row('Glow', slider(c.glow, (v) => setCrt({ glow: v }), { min: 0, max: 1, step: 0.05, title: t('panel.glowTitle') }));
       row(t('panel.beam'), select(String(c.beam), [['1', '1 px'], ['1.5', `${num(1.5, 1)} px`], ['2', '2 px'], ['3', '3 px'], ['4', '4 px']], (v) => setCrt({ beam: Number(v) }), t('panel.beamTitle')));
-    } else row(t('panel.monoTint'), select(state.tint, [['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]], (v) => { state.tint = v as Tint; save(); }));
+    } else global(SET.tint, t('panel.monoTint'));
   }
   if (p.scope === 'vector') {
     row(t('panel.vzoom'), select(String(p.zoom), [['1', '×1'], ['2', '×2'], ['5', '×5']], (v) => { p.zoom = Number(v); p.view = undefined; save(); }));
-    const gbox = (g: '709' | 'p3' | '2020', label: string) => {
-      const c = h('input', { type: 'checkbox', checked: (p.gamuts ?? []).includes(g) }) as HTMLInputElement;
-      c.onchange = () => { const set = new Set(p.gamuts ?? []); if (c.checked) set.add(g); else set.delete(g); p.gamuts = [...set]; save(); };
-      return h('label', { class: 'inline' }, c, label);
-    };
+    const gbox = (g: '709' | 'p3' | '2020', label: string) =>
+      checkbox((p.gamuts ?? []).includes(g), label, (on) => { const set = new Set(p.gamuts ?? []); if (on) set.add(g); else set.delete(g); p.gamuts = [...set]; save(); });
     row(t('panel.gamutLimits'), gbox('709', '709'), gbox('p3', 'P3'), gbox('2020', '2020'));
     row(t('panel.greenWedge'), check('greenWedge', t('panel.greenWedgeText')));
     rows.push(...targetEditor(panelSource(p), matchUi(p)));
   }
   if (p.scope === 'wf-green' || (p.scope === 'vector' && p.greenWedge) || (p.scope === 'picture' && p.picture === 'green')) rows.push(...greenSettings(greenState(), panelSource(p), matchUi(p), p.scope === 'wf-green'));
   if (p.scope === 'wf-skin' || p.scope === 'vector' || (p.scope === 'picture' && p.picture === 'skin')) {
-    row(t('settings.scopes.skinLuma'),
-      numIn(Math.round(state.skin.lo * 100), 0, 100, (v) => { state.skin.lo = v / 100; }), '–',
-      numIn(Math.round(state.skin.hi * 100), 0, 100, (v) => { state.skin.hi = v / 100; }), '%');
-    row(t('settings.scopes.skinHue'), numIn(state.skin.tol, 2, 45, (v) => { state.skin.tol = v; }), '°');
+    global(SET.skinLuma);
+    global(SET.skinHue);
     if (p.scope === 'wf-skin') {
-      row('', h('button', { title: t('panel.skin.fromRoiTitle'), onclick: () => skinFromRoi(p) }, t('panel.skin.fromRoi')));
-      rows.push(h('p', { class: 'hint' }, t('panel.skin.hint')));
+      row('', button(t('panel.skin.fromRoi'), () => skinFromRoi(p), { title: t('panel.skin.fromRoiTitle') }));
+      rows.push(hint(t('panel.skin.hint')));
     }
   }
   if (p.scope === 'picture' || p.scope === 'wf-skin' || isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'hist') {
@@ -1047,14 +993,14 @@ function panelSettings(p: PanelState): Node[] {
     }
   }
   if (p.scope === 'stats') {
-    row(t('panel.hdr10'), h('button', { class: 'mini', title: t('panel.hdr10Title'), onclick: () => { panelSource(p)?.resetLightLevel(); } }, t('panel.hdr10Reset')));
+    row(t('panel.hdr10'), button(t('panel.hdr10Reset'), () => { panelSource(p)?.resetLightLevel(); }, { small: true, title: t('panel.hdr10Title') }));
   }
   if (p.scope === 'picture') {
     row('Overlay', select(p.picture, [['normal', t('panel.ov.normal')], ['false', t('settings.scopes.falseColour')], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', t('panel.ov.skin')], ['green', t('panel.ov.green')], ['luma', 'Luma'], ['gamut', t('panel.ov.gamut')], ['r103', 'EBU R 103'], ['neutral', t('panel.ov.neutral')]], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
     const ab = p.ab ?? { mode: 'off' as const, b: 'stage:cst', pos: 0.5, gain: 4 };
     const setAb = (patch: Partial<NonNullable<PanelState['ab']>>, rebuild = false) => {
       p.ab = { ...ab, ...patch }; Object.assign(ab, patch); save(); refreshHeads();
-      if (rebuild) { const v = [...views.values()].find((x) => state.panels[x.idx] === p); if (v) { fillHead(v); v.head.querySelector('details.psettings')?.setAttribute('open', ''); } }
+      if (rebuild) refreshPanelSettings(p);
     };
     row(t('panel.ab'), select(ab.mode, [['off', t('common.off')], ['split', 'Split 50 %'], ['wipe', 'Wipe'], ['diff', t('panel.abDiff')]], (v) => setAb({ mode: v as 'off' }, true),
       t('panel.abTitle')));
@@ -1066,38 +1012,29 @@ function panelSettings(p: PanelState): Node[] {
         ...sources.filter((s) => s !== own && s.kind !== 'audio').map((s) => [`src:${s.id}`, s.name] as [string, string]),
       ], (v) => setAb({ b: v })));
       if (ab.mode === 'wipe') {
-        const pos = h('input', { type: 'range', min: 0, max: 1, step: 0.01, value: ab.pos ?? 0.5 }) as HTMLInputElement;
-        pos.oninput = () => setAb({ pos: Number(pos.value) });
-        row(t('panel.wipePos'), pos);
+        row(t('panel.wipePos'), slider(ab.pos ?? 0.5, (v) => setAb({ pos: v }), { min: 0, max: 1, step: 0.01, reset: 0.5 }));
       }
       if (ab.mode === 'diff') row(t('panel.gainAb'), select(String(ab.gain ?? 4), [['1', '×1'], ['4', '×4'], ['16', '×16'], ['64', '×64']], (v) => setAb({ gain: Number(v) }), t('panel.gainAbTitle')));
     }
-    const rgcBox = h('input', { type: 'checkbox', checked: !!p.rgc }) as HTMLInputElement;
-    rgcBox.onchange = () => { p.rgc = rgcBox.checked; save(); refreshHeads(); };
-    row(t('panel.rgc'), h('label', { class: 'inline', title: t('panel.rgcTitle') }, rgcBox, t('panel.rgcPreview')));
+    row(t('panel.rgc'), checkbox(!!p.rgc, t('panel.rgcPreview'), (v) => { p.rgc = v; save(); refreshHeads(); }, t('panel.rgcTitle')));
     if (p.picture === 'neutral') {
       row(t('panel.threshold'), select(String(p.neutral?.threshold ?? 5), [['2', '2 %'], ['5', '5 %'], ['10', '10 %']], (v) => { p.neutral = { ...p.neutral, threshold: Number(v) }; save(); }, t('panel.neutralTitle')));
       row(t('panel.range'), select(p.neutral?.range ?? 'all', [['all', t('panel.rangeAll')], ['shadows', t('panel.shadows')], ['mids', t('panel.mids')], ['highlights', t('panel.highlights')]], (v) => { p.neutral = { ...p.neutral, range: v as 'all' }; save(); }));
     }
     if (p.picture === 'gamut') row(t('panel.tgtGamut'), select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, t('panel.tgtGamutTitle')));
-    if (p.picture === 'false') row(t('settings.scopes.falseColour'), select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, falseColorName(k)] as [string, string]), (v) => { state.falsePreset = v; save(); }));
-    if (p.picture === 'zebra') row(t('panel.zebraFrom'), numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%');
-    const clk = h('input', { type: 'checkbox', checked: !!p.clockOverlay }) as HTMLInputElement;
-    clk.onchange = () => { p.clockOverlay = clk.checked; save(); };
-    row(t('panel.clock'), h('label', { class: 'inline', title: t('panel.clockTitle') }, clk, t('panel.clockText')));
-    row(t('settings.display'), select(state.display, [['auto', `auto: ${DISPLAY_LABELS[detected.space]}`], ...(Object.entries(DISPLAY_LABELS) as [string, string][])], (v) => setDisplaySpace(v as Persisted['display'])));
-    row(t('settings.display.hdrPreview'), select(state.hdrPreview ?? 'bt2408', Object.entries(HDR_PREVIEW_LABELS) as [string, string][], (v) => { state.hdrPreview = v as HdrPreview; save(); renderHeader(); },
-      t('panel.hdrTitle')));
-    const bar = h('input', { type: 'checkbox', checked: p.audioBar !== false }) as HTMLInputElement;
-    bar.onchange = () => { p.audioBar = bar.checked; save(); refreshHeads(); };
-    row(t('main.src.audio'), h('label', { class: 'inline', title: t('panel.audioBarTitle') }, bar, t('panel.audioBar')));
-    rows.push(h('p', { class: 'hint' }, t('panel.pictureHint')));
+    if (p.picture === 'false') global(SET.falseColour);
+    if (p.picture === 'zebra') global(SET.zebra, t('panel.zebraFrom'));
+    row(t('panel.clock'), checkbox(!!p.clockOverlay, t('panel.clockText'), (v) => { p.clockOverlay = v; save(); }, t('panel.clockTitle')));
+    global(SET.display);
+    global(SET.hdrPreview);
+    row(t('main.src.audio'), checkbox(p.audioBar !== false, t('panel.audioBar'), (v) => { p.audioBar = v; save(); refreshHeads(); }, t('panel.audioBarTitle')));
+    rows.push(hint(t('panel.pictureHint')));
   }
   if (p.scope === 'hist') {
     row(t('panel.display'), select(p.hist, [['rgb', 'RGB'], ['luma', 'Luma'], ['split', t('panel.histSplit')]], (v) => { p.hist = v as PanelState['hist']; save(); }));
     row(t('settings.scopes.scale'), check('log', t('panel.log')));
   }
-  if (scatter) row(t('settings.scopes.precision'), select(String(state.maxSamples), [['250000', t('settings.scopes.fast')], ['1000000', t('settings.scopes.standard')], ['4000000', t('settings.scopes.full')]], (v) => { state.maxSamples = Number(v); save(); }));
+  if (scatter) global(SET.precision);
   return rows;
 }
 
@@ -1110,7 +1047,7 @@ function roiChip(p: PanelState): Node | string {
   const n = s.activeRois().length;
   const label = s.faceTrack ? `☺ ${s.faceMode === 'all' ? t('panel.facesAllChip') : n ? t('panel.facesN', { n }) : t('panel.faceClick')} ✕` : t('panel.frameChip');
   if (!s.faceTrack && !s.roi) return '';
-  return h('button', { class: 'mini roichip', title: t('panel.roiOffTitle'), onclick: () => { s.roi = null; s.faceMode = 'off'; s.faces = []; s.faceSel.clear(); refreshHeads(); } }, label);
+  return button(label, () => { s.roi = null; s.faceMode = 'off'; s.faces = []; s.faceSel.clear(); refreshHeads(); }, { small: true, title: t('panel.roiOffTitle'), attrs: { class: 'btn mini roichip' } });
 }
 
 // face tracking (MediaPipe is only loaded once someone switches it on)
@@ -1154,12 +1091,12 @@ async function offerFaceTracking(s: Source, body: HTMLElement) {
   try { face = await (await import('./face')).faceInRect(s, rect); } catch { return; }
   if (!face || s.roi !== rect) return;
   body.querySelector('.ask')?.remove();
-  const ask = h('div', { class: 'ask' }, h('span', {}, t('panel.face.ask')),
-    h('button', { class: 'primary', onclick: () => {
+  const ask = h('div', { class: 'ask', role: 'status' }, h('span', {}, t('panel.face.ask')),
+    button(t('panel.face.track'), () => {
       ask.remove();
       s.faces = [{ id: -1, box: face! }]; s.faceSel = new Set([-1]); s.faceMode = 'detect'; s.roi = null; refreshHeads();
-    } }, t('panel.face.track')),
-    h('button', { onclick: () => ask.remove() }, t('panel.face.frameOnly')));
+    }, { variant: 'primary' }),
+    button(t('panel.face.frameOnly'), () => ask.remove()));
   body.append(ask);
   setTimeout(() => ask.remove(), 8000);
 }
@@ -1316,12 +1253,11 @@ function activeVideo(): Source | null {
 }
 
 function transportControls(s: Source): Node[] {
-  const range = h('input', { type: 'range', class: 'playhead', 'data-src': s.id, min: 0, max: 1000, step: 1, value: 0, title: 'Playhead' }) as HTMLInputElement;
-  range.oninput = () => { const v = s.video; if (v && v.duration) { v.pause(); s.seek((Number(range.value) / 1000) * v.duration); } };
-  const btn = (label: string, title: string, fn: () => void) => h('button', { class: 'mini', title, onclick: fn }, label);
+  const range = slider(0, (val) => { const v = s.video; if (v && v.duration) { v.pause(); s.seek((val / 1000) * v.duration); } }, { min: 0, max: 1000, step: 1, title: 'Playhead', attrs: { class: 'playhead', 'data-src': s.id } });
+  const btn = (label: string, title: string, fn: () => void) => iconButton(label, title, fn, { small: true });
   return [
-    h('div', { class: 'row' }, range),
-    h('div', { class: 'row transport' },
+    row(range),
+    h('div', { class: 'row transport', role: 'toolbar', 'aria-label': 'Transport' },
       btn('⏮', t('main.tp.start'), () => s.seek(0)),
       btn('◀◀', t('main.tp.rev'), () => s.shuttle(-1)),
       btn('◀|', t('main.tp.back'), () => s.step(-1)),
@@ -1458,7 +1394,7 @@ const statsAt = new WeakMap<Source, number>();
 function latencyChip(p: PanelState): Node | string {
   const s = panelSource(p);
   if (!s || s.kind !== 'stream' || !s.lowLatency) return '';
-  return h('span', { class: 'llchip', 'data-src': s.id, title: LOW_LATENCY_HINT }, latencyChipText(s));
+  return chip(latencyChipText(s), { cls: 'llchip', title: LOW_LATENCY_HINT, attrs: { 'data-src': s.id } });
 }
 function latencyChipText(s: Source) {
   const l = s.latency.summary();
@@ -1524,7 +1460,7 @@ function greenState(): SkinRange { return (state.green ??= { ...GREEN_DEFAULT })
 function matchUi(p: PanelState): MatchUi {
   return {
     targets: state.targets, sources, save: () => { save(); refreshHeads(); }, alert: alertHud,
-    refresh: () => { const v = [...views.values()].find((x) => state.panels[x.idx] === p); if (v) { fillHead(v); v.head.querySelector('details.psettings')?.setAttribute('open', ''); } },
+    refresh: () => refreshPanelSettings(p),
   };
 }
 
@@ -1565,7 +1501,7 @@ function storeLayouts(l: Record<string, LayoutConfig>) {
 function currentLayout(): LayoutConfig {
   const { unit, tint, skin, green, falsePreset, zebra, zebraLow, display, hdrPreview, maxSamples, targets, stage, theme } = state;
   const chains = Object.fromEntries(sources.filter((s) => s.settings.chain).map((s) => [s.name, structuredClone(s.settings.chain!)]));
-  return { dock: dock.api.toJSON(), panels: structuredClone(state.panels), scenes: structuredClone(state.scenes), activeScene: state.activeScene, settings: structuredClone({ unit, tint, skin, green, falsePreset, zebra, zebraLow, display, hdrPreview, maxSamples, targets, stage, theme }), chains, saved: new Date().toISOString() };
+  return { dock: dock.layoutJSON(), panels: structuredClone(state.panels), scenes: structuredClone(state.scenes), activeScene: state.activeScene, settings: structuredClone({ unit, tint, skin, green, falsePreset, zebra, zebraLow, display, hdrPreview, maxSamples, targets, stage, theme }), chains, saved: new Date().toISOString() };
 }
 function applyLayout(c: LayoutConfig) {
   // mutate in place: panel views hold references to their state objects
@@ -1590,53 +1526,45 @@ function applyLayout(c: LayoutConfig) {
     if (c.activeScene && state.scenes.some((x) => x.id === c.activeScene)) state.activeScene = c.activeScene;
   }
   if (!dock.restore(c.dock)) dock.applyPreset(state.layout);
-  state.dock = dock.api.toJSON();
+  state.dock = dock.layoutJSON();
   save(); renderHeader(); refreshHeads(); needClear = true;
 }
 
-function downloadJson(obj: unknown, fname: string) {
-  const a = h('a', { download: fname, href: URL.createObjectURL(new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' })) }) as HTMLAnchorElement;
-  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
+const downloadJson = (obj: unknown, fname: string) => download(fname, JSON.stringify(obj, null, 2), 'application/json');
 /** Choose a layout file and add its configurations; then `done`. */
 function importLayouts(done: () => void = () => {}) {
-  const file = h('input', { type: 'file', accept: 'application/json,.json' }) as HTMLInputElement;
-  file.onchange = async () => {
-    const f = file.files?.[0];
-    if (!f) return;
+  filePicker('application/json,.json', async ([f]) => {
     try {
       const data = JSON.parse(await f.text());
       const entries: Record<string, LayoutConfig> = data.panels ? { [f.name.replace(/\.json$/i, '')]: data } : data;
       storeLayouts({ ...loadLayouts(), ...entries }); done();
       alertHud(t('main.lay.imported', { n: Object.keys(entries).length }));
     } catch (e) { alertHud(t('main.lay.importFailed', { error: (e as Error).message })); }
-  };
-  file.click();
+  }).pick();
 }
 
 function renderLayoutMenu() {
   const all = loadLayouts();
-  const name = h('input', { placeholder: t('main.lay.namePh') }) as HTMLInputElement;
   const saveAs = () => {
     const n = name.value.trim();
     if (!n) return;
     all[n] = currentLayout(); storeLayouts(all); state.layoutName = n; save(); renderLayoutMenu();
   };
-  name.onkeydown = (e) => { if (e.key === 'Enter') saveAs(); };
-  const download = downloadJson;
+  const name = textInput('', () => {}, { placeholder: t('main.lay.namePh'), onEnter: saveAs });
   const names = Object.keys(all).sort((a, b) => a.localeCompare(b));
-  $('#laybody').replaceChildren(
-    h('p', { class: 'hint' }, t('main.lay.hint')),
-    ...(names.length ? names.map((n) => h('div', { class: 'mrow lay' },
-      h('button', { class: `lname${n === state.layoutName ? ' on' : ''}`, title: t('main.lay.load', { date: new Date(all[n].saved).toLocaleString(lang() === 'de' ? 'de-DE' : 'en-GB') }), onclick: () => { applyLayout(all[n]); state.layoutName = n; save(); $<HTMLDialogElement>('#laymenu').close(); } }, n),
-      h('button', { class: 'mini', title: t('main.lay.overwrite'), onclick: () => { all[n] = currentLayout(); storeLayouts(all); renderLayoutMenu(); } }, '↻'),
-      h('button', { class: 'mini', title: t('main.lay.export'), onclick: () => download(all[n], `lz-scopes-layout-${n}.json`) }, '⤓'),
-      h('button', { class: 'mini', title: t('main.lay.delete'), onclick: () => { delete all[n]; storeLayouts(all); renderLayoutMenu(); } }, '✕')))
-      : [h('p', { class: 'hint' }, t('main.lay.none'))]),
-    h('div', { class: 'mrow' }, name, h('button', { class: 'primary', onclick: saveAs }, t('main.lay.save'))),
-    h('div', { class: 'mrow' },
-      h('button', { onclick: () => download(all, 'lz-scopes-layouts.json') }, t('main.lay.exportAll')),
-      h('button', { onclick: () => importLayouts(renderLayoutMenu) }, t('main.lay.import'))),
+  layoutDialog.setBody(
+    hint(t('main.lay.hint')),
+    ...(names.length ? names.map((n) => h('div', { class: 'field lay' },
+      button(n, () => { applyLayout(all[n]); state.layoutName = n; save(); layoutDialog.close(); },
+        { title: t('main.lay.load', { date: new Date(all[n].saved).toLocaleString(lang() === 'de' ? 'de-DE' : 'en-GB') }), pressed: n === state.layoutName, attrs: { class: `lname${n === state.layoutName ? ' on' : ''}` } }),
+      iconButton('↻', t('main.lay.overwrite'), () => { all[n] = currentLayout(); storeLayouts(all); renderLayoutMenu(); }, { small: true }),
+      iconButton('⤓', t('main.lay.export'), () => downloadJson(all[n], `lz-scopes-layout-${n}.json`), { small: true }),
+      iconButton('✕', t('main.lay.delete'), () => { delete all[n]; storeLayouts(all); renderLayoutMenu(); }, { small: true })))
+      : [hint(t('main.lay.none'))]),
+    row(name, button(t('main.lay.save'), saveAs, { variant: 'primary' })),
+    row(
+      button(t('main.lay.exportAll'), () => downloadJson(all, 'lz-scopes-layouts.json')),
+      button(t('main.lay.import'), () => importLayouts(renderLayoutMenu))),
   );
 }
 
@@ -1691,11 +1619,8 @@ async function renderOutputMenu() {
   if (desktop) {
     for (const d of await desktop.displays()) screens.push([String(d.id), `${d.label || t('main.out.screen')} ${d.bounds.width}×${d.bounds.height}${d.primary ? t('main.out.main') : ''}`]);
   }
-  const row = (label: string, ...kids: (Node | string)[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
-  const txt = (key: 'stream' | 'target' | 'name', ph: string) => { const i = h('input', { placeholder: ph, spellcheck: 'false' }) as HTMLInputElement; i.oninput = () => (out[key] = i.value.trim()); return i; };
-  const fsBox = h('input', { type: 'checkbox', checked: true }) as HTMLInputElement;
-  fsBox.onchange = () => (out.fs = fsBox.checked);
-  const sceneName = h('input', { placeholder: t('main.out.sceneName') }) as HTMLInputElement;
+  const txt = (key: 'stream' | 'target' | 'name', ph: string) => textInput('', (v) => (out[key] = v.trim()), { placeholder: ph, live: true });
+  const sceneName = textInput('', () => {}, { placeholder: t('main.out.sceneName') });
   const newScene = (copy: boolean) => {
     const base = copy ? state.scenes.find((s) => s.id === out.scene) : null;
     const sc: OverlayScene = base ? { ...structuredClone(base), id: newId(), name: sceneName.value.trim() || t('main.out.copyOf', { name: base.name }) } : defaultScene(sceneName.value.trim() || t('main.out.sceneN', { n: state.scenes.length + 1 }));
@@ -1714,24 +1639,25 @@ async function renderOutputMenu() {
   targetIn.addEventListener('input', showPush);
   refreshFfmpegInfo().then(showPush);
   const open = [...liveOutputs().entries()];
-  $('#outbody').replaceChildren(
+  const row = field;
+  outputDialog.setBody(
     row(t('main.out.content'), select(out.view, [['grid', t('main.out.grid')], ['panel', t('main.out.panel')], ['clean', t('main.out.clean')], ['overlay', t('main.out.overlay')]], (v) => (out.view = v))),
     row(t('main.out.panelRow'), select(out.idx, dock.openIdx().map((i) => [String(i), panelTitle(i)]), (v) => (out.idx = v))),
     row(t('panel.source'), select(out.src, sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (v) => (out.src = v))),
     row(t('main.out.scene'), select(out.scene, state.scenes.map((s) => [s.id, `${s.name} (${s.elements.length})`]), (v) => { out.scene = v; state.activeScene = v; save(); }, t('main.out.sceneTitle')),
-      h('button', { class: 'mini', title: t('main.out.sceneDel'), onclick: delScene }, '✕')),
-    row('', sceneName, h('button', { class: 'mini', title: t('main.out.sceneNewTitle'), onclick: () => newScene(false) }, t('main.out.sceneNew')), h('button', { class: 'mini', title: t('main.out.sceneCopyTitle'), onclick: () => newScene(true) }, t('main.out.sceneCopy'))),
+      iconButton('✕', t('main.out.sceneDel'), delScene, { small: true })),
+    row('', sceneName, button(t('main.out.sceneNew'), () => newScene(false), { small: true, title: t('main.out.sceneNewTitle') }), button(t('main.out.sceneCopy'), () => newScene(true), { small: true, title: t('main.out.sceneCopyTitle') })),
     row(t('main.out.bg'), select(out.bg, [['picture', t('main.out.bgPicture')], ['black', t('main.out.bgBlack')]], (v) => (out.bg = v))),
-    row(t('main.out.target'), select('', screens, (v) => (out.display = v)), h('label', { class: 'inline' }, fsBox, t('main.full'))),
+    row(t('main.out.target'), select('', screens, (v) => (out.display = v)), checkbox(true, t('main.full'), (v) => (out.fs = v))),
     row(t('main.out.nameRow'), txt('name', t('main.out.name'))),
     row(t('main.out.streamName'), txt('stream', t('main.out.streamPh'))),
     row(t('main.out.push'), targetIn),
     row('', pushHint),
-    h('div', { class: 'mrow' }, h('span', {}, ''), h('button', { class: 'primary', onclick: () => openOutputView(out) }, t('main.out.open'))),
-    ...(open.length ? [h('div', { class: 'mtitle' }, t('main.out.openList')), ...open.map(([n, o]) => h('div', { class: 'mrow' },
-      h('span', {}, n), h('span', { class: 'hint' }, `${o.view}${o.view === 'overlay' ? ` · ${state.scenes.find((s) => s.id === o.scene)?.name ?? ''}` : ''}${outApi(o.win)?.stream() ? ` · Stream ${outApi(o.win)!.stream()}` : ''}`),
-      h('button', { class: 'mini', title: t('common.close'), onclick: () => { o.win.close(); outWins.delete(n); renderOutputMenu(); } }, '✕')))] : []),
-    h('p', { class: 'hint' }, `${desktop ? t('main.out.hintDesktop') : t('main.out.hintBrowser')} ${t('main.out.hintOverlay')}`),
+    row('', button(t('main.out.open'), () => openOutputView(out), { variant: 'primary' })),
+    ...(open.length ? [kicker(t('main.out.openList')), ...open.map(([n, o]) => row(n,
+      h('span', { class: 'hint' }, `${o.view}${o.view === 'overlay' ? ` · ${state.scenes.find((s) => s.id === o.scene)?.name ?? ''}` : ''}${outApi(o.win)?.stream() ? ` · Stream ${outApi(o.win)!.stream()}` : ''}`),
+      iconButton('✕', t('common.close'), () => { o.win.close(); outWins.delete(n); renderOutputMenu(); }, { small: true })))] : []),
+    hint(`${desktop ? t('main.out.hintDesktop') : t('main.out.hintBrowser')} ${t('main.out.hintOverlay')}`),
   );
 }
 
@@ -1928,6 +1854,12 @@ function execute(c: Command): unknown {
       renderSources();
       return { sources: withAudio.map((x) => ({ name: x.name, paused: x.audio!.paused })) };
     }
+    case 'setting': {
+      const s = need(REMOTE_SETTINGS.find((x) => x.key === c.key), `Setting ${c.key} does not exist`);
+      applySetting(s, c.value);
+      refreshSettings(); refreshHeads(); needClear = true;
+      return { key: s.key, value: s.get() };
+    }
     case 'generator': {
       const patch: Partial<GenConfig> = {};
       if (c.signal !== undefined) patch.signal = c.signal as GenConfig['signal'];
@@ -2001,6 +1933,8 @@ function controlState() {
     statsPerf: act ? { ...act.statsPerf } : null,
     audio: audioState(),
     generator: { running: generator.running, signal: generator.cfg.signal, level: generator.cfg.level, freq: generator.cfg.freq, channels: generator.cfg.channels ?? 2 },
+    /** global settings (command "setting"): key, kind, value, choices or range */
+    settings: describeSettings(REMOTE_SETTINGS),
   };
 }
 
@@ -2022,9 +1956,9 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'l' || e.key === 'L') activeVideo()?.shuttle(1);
   else if (e.key === 'Home') activeVideo()?.seek(0);
   else if (e.key === 'End') { const v = activeVideo(); v?.seek(v.video?.duration ?? 0); }
-  else if (e.key === 'f' || e.key === 'F') $('#full').click();
+  else if (e.key === 'f' || e.key === 'F') toggleFullscreen();
   else if (e.key === 's' || e.key === 'S') snapshot();
-  else if (e.key === 'b' || e.key === 'B') $('#toggle-side').click();
+  else if (e.key === 'b' || e.key === 'B') toggleSidebar();
   else if (e.key === 'c' || e.key === 'C') setStage(STAGES[(STAGES.indexOf(state.stage ?? 'signal') + 1) % STAGES.length]);
   else if (e.key === 'Escape') { if (dock.api.hasMaximizedGroup()) dock.exitMaximized(); else { sources.forEach((s) => { s.probe = null; s.roi = null; s.faceMode = 'off'; }); refreshHeads(); } }
 });
@@ -2086,11 +2020,16 @@ const dock = createDock($('#dock'), {
   onLayout: () => {
     needClear = true;
     clearTimeout(layoutSave);
-    layoutSave = window.setTimeout(() => { state.dock = dock.api.toJSON(); save(); }, 300);
+    layoutSave = window.setTimeout(() => { state.dock = dock.layoutJSON(); save(); }, 300);
   },
 });
 let layoutSave = 0;
 if (!(state.dock && dock.restore(state.dock))) dock.applyPreset(state.layout);
+// narrow windows and phones: the panels as tabs of one group (dragging stays on wide screens)
+const compactQuery = matchMedia('(max-width: 640px), (max-width: 900px) and (max-height: 500px)');
+const applyCompact = () => { dock.setCompact(compactQuery.matches); needClear = true; };
+compactQuery.addEventListener('change', applyCompact);
+applyCompact();
 if (!state.scenes.some((sc) => sc.id === state.activeScene)) state.activeScene = state.scenes[0].id;
 // application menu (#53): native in the desktop app, menu bar in the header in the browser
 const menuState = (): MenuState => ({
@@ -2108,7 +2047,7 @@ const menuActions: MenuActions = {
   layoutsExport: () => downloadJson(loadLayouts(), 'lz-scopes-layouts.json'),
   layoutsImport: () => importLayouts(() => { if ($<HTMLDialogElement>('#laymenu').open) renderLayoutMenu(); }),
   snapshot: () => snapshot(),
-  sidebar: () => $('#toggle-side').click(),
+  sidebar: () => toggleSidebar(),
   layout: (k) => { if (k in PRESETS) setLayout(k); },
   addPanel: (scope) => addScopePanel(scope && scope in SCOPE_LABELS ? scope as ScopeType : undefined),
   exitSolo: () => { if (dock.api.hasMaximizedGroup()) dock.exitMaximized(); },
@@ -2116,7 +2055,7 @@ const menuActions: MenuActions = {
   stageNext: () => setStage(STAGES[(STAGES.indexOf(state.stage ?? 'signal') + 1) % STAGES.length]),
   stage: (id) => { if ((STAGES as string[]).includes(id)) setStage(id as Stage); },
   theme: (id) => { if (isTheme(id)) { setTheme(id); refreshSettings(); } },
-  fullscreen: () => $('#full').click(),
+  fullscreen: () => toggleFullscreen(),
   addSource: (kind) => { if (SOURCE_ITEMS.some(([k]) => k === kind)) addSourceOfKind(kind); },
   output: () => openToolDialog('outmenu'),
   outputPattern: () => { const p = sources.find((x) => x.kind === 'pattern'); if (p) openOutput(p.pattern); },

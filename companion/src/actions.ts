@@ -25,6 +25,14 @@ const SIGNALS = [
   { id: 'pink', label: 'Pink Noise' }, { id: 'pink-band', label: 'Pink Noise 500–2000 Hz' }, { id: 'white', label: 'White Noise' },
   { id: 'sweep', label: 'Log Sweep' }, { id: 'steps', label: 'Stepped Sweep' }, { id: 'polarity', label: 'Polarity Test' }, { id: 'avsync', label: 'A/V Sync Beep' },
 ]
+/** Global settings of the control command "setting" (server/control.mjs SETTING_KEYS). */
+const SETTINGS = [
+  { id: 'theme', label: 'Skin' }, { id: 'scheme', label: 'Appearance (dark/light/system)' }, { id: 'sidebar', label: 'Sidebar' },
+  { id: 'display', label: 'Display colour space' }, { id: 'hdrPreview', label: 'HDR preview' }, { id: 'unit', label: 'Scale' },
+  { id: 'tint', label: 'Trace colour' }, { id: 'precision', label: 'Precision' }, { id: 'falseColour', label: 'False colour' },
+  { id: 'skinLuma', label: 'Skin tone luma (lo, hi %)' }, { id: 'skinHue', label: 'Skin tone hue ±' }, { id: 'zebra', label: 'Zebra %' },
+  { id: 'stage', label: 'Measuring point' }, { id: 'deRef', label: 'ΔE at the probe' }, { id: 'lowLatency', label: 'Low Latency (0/1)' },
+]
 const MODES = [{ id: 'toggle', label: 'Toggle' }, { id: 'on', label: 'On' }, { id: 'off', label: 'Off' }]
 const VIEWS = [
   { id: 'overlay', label: 'Picture + Scope Overlay (Scene)' }, { id: 'grid', label: 'Full View (Layout)' },
@@ -144,6 +152,14 @@ export function updateActions(self: ModuleInstance): void {
         { type: 'checkbox', id: 'force', label: 'Allow levels above −6 dBFS (loud!)', default: false },
       ],
       callback: run('generator'),
+    },
+    setting: {
+      name: 'Set a setting',
+      options: [
+        { type: 'dropdown', id: 'key', label: 'Setting', default: 'unit', allowCustom: true, choices: SETTINGS },
+        text('value', 'Value', '', 'a choice (e.g. bit10, lzm, light), a number, true/false, or "lo, hi" for skin tone luma'),
+      ],
+      callback: run('setting'),
     },
     transport: { name: 'Transport (video file)', options: [{ type: 'dropdown', id: 'op', label: 'Action', default: 'toggle', choices: OPS }, sourceOption(self, true)], callback: run('transport') },
   }

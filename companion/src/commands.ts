@@ -14,6 +14,15 @@ const text = (v: unknown) => {
   const s = String(v ?? '').trim()
   return s ? s : undefined
 }
+/** Setting value from a text field: true/false, a number, "lo, hi" for a range, else the text. */
+export function settingValue(v: unknown): unknown {
+  const s = String(v ?? '').trim()
+  if (s === 'true' || s === 'false') return s === 'true'
+  if (/^-?\d+(\.\d+)?$/.test(s)) return Number(s)
+  const pair = /^(-?\d+(?:\.\d+)?)\s*[,;]\s*(-?\d+(?:\.\d+)?)$/.exec(s)
+  if (pair) return [Number(pair[1]), Number(pair[2])]
+  return s
+}
 /** Drop undefined fields so the bridge sees only what the user set. */
 function clean(c: Command): Command {
   return Object.fromEntries(Object.entries(c).filter(([, v]) => v !== undefined)) as Command
@@ -49,6 +58,7 @@ export function buildCommand(actionId: string, o: Options): Command {
       const freq = o.freq === undefined || o.freq === '' || Number(o.freq) === 0 ? undefined : Number(o.freq)
       return clean({ cmd: 'generator', mode: o.mode ?? 'toggle', signal: text(o.signal), freq, level, force: level !== undefined && level > -6 ? o.force === true || undefined : undefined })
     }
+    case 'setting': return clean({ cmd: 'setting', key: text(o.key), value: settingValue(o.value) })
   }
   throw new Error(`Unbekannte Aktion ${actionId}`)
 }

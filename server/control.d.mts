@@ -5,6 +5,7 @@ export const OUTPUT_VIEWS: string[];
 export const CODECS10: string[];
 export const TRANSPORT_OPS: string[];
 export const COMMANDS: Record<string, string>;
+export const SETTING_KEYS: string[];
 export function validateCommand(raw: unknown): { ok: true; command: Command } | { ok: false; error: string };
 export function isLoopback(address: string | undefined): boolean;
 export function controlAccess(r: { remote?: string; token?: string; presented?: string | null; origin?: string; host?: string }): null | { status: number; error: string };

@@ -22,6 +22,7 @@ import type { Command } from '../server/control.mjs';
 import type { GenConfig } from './audio/dsp/signals';
 import { audioPanelSettings, audioRow, audioSourceControls, mountGenerator } from './audio/ui';
 import { setClockHooks } from './clock/panel';
+import { genlockPanelSettings, setGenlockBridge } from './genlock';
 import { clockPanelSettings } from './clock/ui';
 import { generator } from './audio/io';
 import { PATTERNS, RESOLUTIONS, patternById } from './patterns';
@@ -130,6 +131,7 @@ const bridgeUrl = () => {
   return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
 };
 setClockHooks(() => sources, bridgeUrl);
+setGenlockBridge(bridgeUrl);
 
 // ---------------------------------------------------------------- DOM
 
@@ -838,7 +840,7 @@ function fillHead(v: PanelView) {
 
 /** Measuring stage in the panel head, honest about stages that have nothing to apply. */
 function stageChip(p: PanelState): Node | string {
-  if (isAudio(p.scope) || p.scope === 'clock' || isLight(p.scope)) return '';
+  if (isAudio(p.scope) || p.scope === 'clock' || p.scope === 'genlock' || isLight(p.scope)) return '';
   const n = stageNote(panelSource(p), p.stage ?? state.stage ?? 'signal');
   return n.text ? h('span', { class: `stagechip${n.warn ? ' warn' : ''}`, title: t('panel.stageChipTitle') }, n.text) : '';
 }
@@ -860,6 +862,7 @@ function addScopePanel(scope: ScopeType = 'wf-luma') {
 function panelSettings(p: PanelState): Node[] {
   if (isAudio(p.scope)) return audioPanelSettings(p, save);
   if (isLight(p.scope)) return lightPanelSettings(p, save);
+  if (p.scope === 'genlock') return genlockPanelSettings(p, save);
   if (p.scope === 'clock') {
     return clockPanelSettings(p, save, sources, () => {
       const v = [...views.values()].find((x) => state.panels[x.idx] === p);

@@ -36,6 +36,7 @@ export default {
   'shading.stop': '■ Restore',
   'shading.help': 'Parade: grab low = Black R/G/B, high = White R/G/B. Luma waveform: shadows = Master Black, mids = Master Gamma, highlights = White R=G=B. Vectorscope: turn = hue (simulator only), radial = saturation. At most ±{step} per movement, ±{span} per session.',
   'shading.close': 'Close the bar',
+  'shading.moveBar': 'Move the bar to the top or bottom (otherwise it covers the shadows or the highlights)',
   'shading.camN': 'Camera {n}',
   'shading.unreachable': 'lz-camera-bridge not reachable',
   'shading.error': 'Error',

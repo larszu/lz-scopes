@@ -346,6 +346,8 @@ export class Source {
   get rtpInfo() { return this.info?.rtp ?? null; }
   /** own RTP reception counters from the bridge's stats (1 s) */
   rtpStats: RtpStats | null = null;
+  /** frame phase against the ST 2059-1 grid, from the bridge stats of capture-helper sources (server/phase.mjs, #72) */
+  phase: import('./genlock').PhaseReport | null = null;
   private patternTimer: ReturnType<typeof setInterval> | null = null;
   private media: MediaStream | null = null;
   private objectUrl: string | null = null;
@@ -420,6 +422,7 @@ export class Source {
     else if (this.settings.yuv) { q.set('format', 'yuv'); q.set('depth', '16'); }
     if (this.lowLatency && ll.ownRtp) q.set('rtp', 'own');
     this.rtpStats = null;
+    this.phase = null;
     this.connectFrames(`${bridge}/stream?${q}`, false);
   }
 
@@ -452,6 +455,7 @@ export class Source {
           this.dropped = msg.dropped;
           this.latency.onBridgeStats(msg.stampAge);
           this.rtpStats = msg.rtp ?? null;
+          this.phase = msg.phase ?? null;
           if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', msg.message);
         } else if (msg.type === 'error' || msg.type === 'end') {
           this.set(msg.type === 'end' ? 'ended' : 'error', msg.message);

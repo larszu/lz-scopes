@@ -37,6 +37,7 @@ export default {
   'shading.stop': '■ Ausgangswerte',
   'shading.help': 'Parade: unten greifen = Black R/G/B, oben = White R/G/B. Luma-Waveform: Schatten = Master Black, Mitten = Master Gamma, Lichter = White R=G=B. Vectorscope: drehen = Hue (nur Simulator), radial = Sättigung. Höchstens ±{step} je Bewegung, ±{span} je Sitzung.',
   'shading.close': 'Leiste schließen',
+  'shading.moveBar': 'Leiste nach oben bzw. unten verschieben (sie verdeckt sonst die Schatten bzw. die Lichter)',
   'shading.camN': 'Kamera {n}',
   'shading.unreachable': 'lz-camera-bridge nicht erreichbar',
   'shading.error': 'Fehler',

@@ -151,6 +151,8 @@ Tone generator and loudness/level analyser, measured with an own DSP core (`src/
 
 Panel type **Clock / time code** (and an optional corner read-out in the picture panel). Sources and findings: [docs/research/clock-ptp.md](docs/research/clock-ptp.md).
 
+Panel type **Reference / Genlock** (*Referenz / Genlock*): house reference at a DeckLink reference input. It shows whether the reference is locked, the detected format (black burst for SD, tri-level for HD), the configured genlock offset and the input status, all from the DeckLink SDK. The SDK does not report the timing between input and reference, so the panel shows none. It also shows the frame timing of DeckLink/NDI sources against the SMPTE ST 2059-1 grid (system clock or PTP; position, scatter, drift in ppm) and the card's timecode. Untested with hardware. Research: [docs/research/genlock.md](docs/research/genlock.md).
+
 - **Above 30 fps** the time code counts 0…49/59 like editing software and FFmpeg; ST 12-1 frame pairs as an option. LTC runs at 25/30 code words (pairs) there.
 - **Time of day** after SMPTE ST 2059-1: system time → TAI (IERS Bulletin C 72, TAI − UTC = 37 s) → time address with Daily Jam, 23.98 … 60 fps, DF/NDF, frame phase to the SMPTE epoch. Labelled “system clock – no reference” unless PTP corrects it.
 - **Source time code**: container start time code (ffprobe tag), GOP/SEI time code per frame (ffmpeg `showinfo`), DaVinci Resolve timeline time code, browser video files from `currentTime`; difference to the time of day in frames.
@@ -165,7 +167,7 @@ Panel type **Clock / time code** (and an optional corner read-out in the picture
 - **Luma waveform:** shadows move Master Black, mids Master Gamma, highlights White.
 - **Vectorscope:** drag radially for saturation, turn for hue (hue in the simulator only).
 
-Commands go through [lz-camera-bridge](https://github.com/larszu/lz-camera-bridge) in its own vocabulary. Nothing moves until *Shading aktiv* is ticked and a target is chosen. Every change is step-limited, and **■ Ausgangswerte** (Esc) restores the session's starting values. A simulator works without a camera. Sony SRG-A40 paint over VISCA is not in the bridge yet. Details: [docs/research/touch-shading.md](docs/research/touch-shading.md).
+Commands go through [lz-camera-bridge](https://github.com/larszu/lz-camera-bridge) in its own vocabulary. Nothing moves until *Shading aktiv* is ticked and a target is chosen. Every change is step-limited, and **■ Ausgangswerte** (Esc) restores the session's starting values. A simulator works without a camera. On a Sony SRG-A40 the bridge drives white R and B gain over HTTP-CGI (measured); hue, black and gamma are not available there. Details: [docs/research/touch-shading.md](docs/research/touch-shading.md).
 
 ## Architecture
 

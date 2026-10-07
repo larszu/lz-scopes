@@ -228,6 +228,8 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 
 Panel-Typ **Uhr / Timecode**, dazu wahlweise eine Einblendung im Bild-Panel (⚙ → Uhr). Quellen und Befunde: [docs/research/clock-ptp.md](docs/research/clock-ptp.md).
 
+Panel-Typ **Referenz / Genlock**: Haustakt am Referenzeingang einer DeckLink. Es zeigt, ob die Referenz gelockt ist, das erkannte Format (Black Burst bei SD, Tri-Level bei HD), den eingestellten Genlock-Offset und den Eingangsstatus, alles aus dem DeckLink-SDK. Den Zeitversatz zwischen Eingang und Referenz meldet das SDK nicht, deshalb zeigt das Panel keinen an. Dazu kommen die Lage des Bildtakts von DeckLink-/NDI-Quellen im SMPTE-ST-2059-1-Raster (Systemuhr oder PTP; Lage, Streuung, Drift in ppm) und der Timecode der Karte. Mit Hardware ungeprüft. Recherche: [docs/research/genlock.md](docs/research/genlock.md).
+
 - **Über 30 fps** zählt der Timecode 0…49/59 wie Schnittprogramme und FFmpeg; Frame-Paare nach ST 12-1 als Option. LTC läuft dort mit 25/30 Codewörtern (Paare).
 - **Tageszeit** nach SMPTE ST 2059-1: Systemzeit → TAI (IERS Bulletin C 72, TAI − UTC = 37 s) → Timecode mit Daily Jam, 23,98 … 60 fps, DF/NDF, Frame-Phase zur SMPTE-Epoche. Gekennzeichnet als „Systemuhr – keine Referenz“, solange kein PTP die Uhr korrigiert.
 - **Quell-Timecode**: Start-Timecode des Containers (ffprobe-Tag), GOP-/SEI-Timecode je Bild (ffmpeg `showinfo`), Timeline-Timecode aus DaVinci Resolve, Videodateien im Browser aus `currentTime`; Differenz zur Tageszeit in Frames.
@@ -247,7 +249,7 @@ Die Kommandos gehen über [lz-camera-bridge](https://github.com/larszu/lz-camera
 - Jede Änderung ist in der Schrittweite begrenzt.
 - **■ Ausgangswerte** (Esc) stellt die Werte vom Sitzungsbeginn wieder her.
 
-Ein Simulator läuft ohne Kamera. Bildwerte der Sony SRG-A40 über VISCA kann die Bridge noch nicht. Mehr in [docs/research/touch-shading.md](docs/research/touch-shading.md).
+Ein Simulator läuft ohne Kamera. An einer Sony SRG-A40 steuert die Bridge über HTTP-CGI R- und B-Gain des Weißabgleichs (gemessen). Hue, Schwarz und Gamma gibt es dort nicht. Mehr in [docs/research/touch-shading.md](docs/research/touch-shading.md).
 
 ## Einbetten
 

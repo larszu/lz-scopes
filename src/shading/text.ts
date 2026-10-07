@@ -38,6 +38,7 @@ export const T = {
   get stop() { return t('shading.stop'); },
   help: (step: number, span: number) => t('shading.help', { step, span }),
   get close() { return t('shading.close'); },
+  get moveBar() { return t('shading.moveBar'); },
   camN: (n: number) => t('shading.camN', { n }),
   get unreachable() { return t('shading.unreachable'); },
   get error() { return t('shading.error'); },

@@ -12,7 +12,7 @@ import type { Source } from './sources';
 import { CUBE_SPACE_LABELS, SIGNAL_SPACES, cubeProject, cubeRotation, cubeWireframe, qFromChl, qFromHsv, qFromIctcp, qFromLab, qFromRgb, qFromXyz, qFromYcc, type CubeSettings } from './cube';
 
 export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats'
-  | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock'
+  | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock' | 'genlock'
   | 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map' | 'light-spectrum' | 'light-swatch';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits';
 
@@ -21,6 +21,7 @@ export const SCOPE_LABELS: Record<ScopeType, string> = {
   ycbcr: 'YCbCr-Parade', vector: 'Vectorscope', cie: 'CIE-Diagramm', diamond: 'Diamond (Gamut)', cube: '3D-Farbvolumen', satlum: 'Sättigung über Luma', chplot: 'Kanal-Plot', minmax: 'Min/Max je Zeile', qclog: 'QC-Protokoll', timeline: 'Zeitverlauf', hist: 'Histogramm', stats: 'Messwerte', match: 'Farbabgleich',
   'audio-meter': 'Audio Pegel & Lautheit', 'audio-loudness': 'Audio Lautheitsverlauf', 'audio-spectrum': 'Audio Spektrum', 'audio-phase': 'Audio Goniometer', 'audio-check': 'Audio Ident & A/V-Versatz',
   clock: 'Uhr / Timecode',
+  genlock: 'Referenz / Genlock',
   // Opple Light Master (src/opple/scopes.ts, LIGHT_LABELS)
   'light-cie': 'Licht: Farbort (CIE)', 'light-vector': 'Licht: Vectorscope', 'light-bands': 'Licht: Filterkanäle',
   'light-trend': 'Licht: Zeitverlauf', 'light-map': 'Licht: Messfeld', 'light-spectrum': 'Licht: Wellenlängen', 'light-swatch': 'Licht: Farbfläche',

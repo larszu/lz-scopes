@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   LIMITS, NEUTRAL_PAINT, applyPaint, busCommands, busDeltaFor, clampValue, fieldAvailable, invertChannel, channelPaint,
-  paintFrame, slope, vectorGesture, vectorMode, waveTarget, zoneOf,
+  paintFrame, slope, vectorGesture, vectorMode, waveTarget, zoneOf, capsKey, slopeScale, formatValue,
 } from '../src/shading/model';
 import { CameraBridgeLink } from '../src/shading/bridge';
 import { T } from '../src/shading/text';
@@ -25,6 +25,11 @@ describe('touch shading: gesture → value', () => {
     expect(waveTarget('y', 0.1)).toMatchObject({ fields: ['masterBlack'] });
     expect(waveTarget('y', 0.5)).toMatchObject({ fields: ['masterGamma'] });
     expect(waveTarget('y', 0.9)).toMatchObject({ fields: ['whiteR', 'whiteG', 'whiteB'] });
+  });
+
+  it('shows the distance to the session start', () => {
+    expect(formatValue('whiteR', 211, 203)).toBe('211 (+8)');
+    expect(formatValue('whiteR', 120)).toBe('120 (-8)');
   });
 
   it('values stay inside the step and the session span', () => {
@@ -123,6 +128,22 @@ describe('touch shading: lz-camera-bridge vocabulary', () => {
     expect(fieldAvailable('blackR', 'lumix-http')).toBe(false);
     expect(fieldAvailable('hue', 'blackmagic')).toBe(false);
     expect(fieldAvailable('hue', 'sim')).toBe(true);
+  });
+
+  it('Sony over HTTP-CGI: White R and B only, sent without G (measured on an SRG-A40)', () => {
+    expect(capsKey('http-cgi', 'sony')).toBe('http-cgi:sony');
+    expect(capsKey('visca', 'sony')).toBe('visca');
+    expect(fieldAvailable('whiteR', 'http-cgi:sony')).toBe(true);
+    expect(fieldAvailable('whiteB', 'http-cgi:sony')).toBe(true);
+    expect(fieldAvailable('whiteG', 'http-cgi:sony')).toBe(false);
+    expect(fieldAvailable('blackR', 'http-cgi:sony')).toBe(false);
+    expect(fieldAvailable('whiteR', 'http-cgi:vissonic')).toBe(false);
+    expect(busCommands(['whiteR'], { whiteR: 211, whiteB: 179 }, 'http-cgi:sony')).toEqual({ commands: [{ cmd: 'setWhiteBalance', params: { r: 211, b: 179 } }] });
+    // CrGain +30 → R′ +0.38 at 0.52: 6.2 × the model's slope
+    expect(slopeScale('http-cgi:sony', 'whiteR')).toBeCloseTo(0.38 / 30 / 0.52 / (0.5 / 128), 0);
+    const link = new CameraBridgeLink(() => 'ws://x', () => {});
+    link.receive({ type: 'cameras', cameras: [{ cameraNumber: 1, connected: true, config: { connectionMode: 'http-cgi', cgiFamily: 'sony', label: 'PTZ' } }] });
+    expect(link.cameras[0].mode).toBe('http-cgi:sony');
   });
 
   it('reads camera list (label only) and merges state', () => {

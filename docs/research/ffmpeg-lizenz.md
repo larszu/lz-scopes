@@ -39,10 +39,16 @@ Die Builds stehen mit URL, Version und SHA-256 in `scripts/ffmpeg-builds.json`; 
 - **MPL-2.0 (libsrt):** Quelltext der MPL-Dateien zugänglich machen und auf die Lizenz hinweisen (§3.2) – über die Skripte/Versionen oben und `MPL-2.0-srt.txt`.
 - **Nur über die Kommandozeile:** LZ Scopes startet ffmpeg als eigenen Prozess (Pipe/argv) und linkt es nicht; die Pflichten oben gelten für die mitgelieferten ffmpeg-Dateien. (Ob das als bloße Zusammenstellung gilt, wurde hier nicht rechtlich geprüft.)
 
-## Offen / Entscheidung für Lars
+## Eigener Build (ab 07.10.2026)
 
-1. **Volle Quell-Spiegelung der Bibliotheken.** Hinterlegt sind FFmpeg selbst und die Build-Skripte (mit Versionen/Commits und Upstream-URLs). Die einzelnen Bibliotheks-Tarballs werden nicht mitgespiegelt; Martin Riedls Skript lädt x264 als `master`-Tarball, die exakte x264-Revision ist nur als „0.165.x“ bekannt. Strikt genommen verlangt §6 d), dass der Weitergebende die Verfügbarkeit sicherstellt. Abhilfe: **eigener minimaler Build in CI** (macOS universal + Windows, nur ffmpeg/x264/x265/srt/TLS), Quell-Tarballs als Release-Assets – kleiner (geschätzt ¼ der Größe) und lückenlos.
-2. **ffprobe auf macOS** kostet ~62 MB im DMG. Ohne ffprobe liest die Bridge Größe/Farbe aus dem ffmpeg-Banner (wie mit ffmpeg-static); Container-Timecode fiele weg.
+Mit den Fremd-Builds blieb eine Lücke: Die Bibliotheks-Tarballs wurden nicht mitgespiegelt, und bei Martin Riedl war die x264-Revision nur als „0.165.x“ bekannt. Diese Lücke aus §6 d) ist geschlossen. Die App liefert jetzt einen eigenen, minimalen Build aus.
+- **Inhalt:** FFmpeg 9.0.2, x264 (stable, b35605a), x265 4.2, libsrt 1.5.7, mbedTLS 3.6.7 und zlib 1.3.2. Alles ist statisch gelinkt, mit `--disable-autodetect`. x265 ist nur mit 10 bit gebaut; mehr braucht der 10-bit-Stream nicht. Auf macOS kommen nur Systemframeworks sowie `libc++` und `libbz2` aus `/usr/lib` hinzu.
+- **Herkunft:** `scripts/ffmpeg-build/` mit `sources.txt`. Jedes Archiv ist per SHA-256 festgelegt. x264 kommt über seinen Commit-Hash, weil die GitLab-Archive nicht bytegleich sind; die CI hat beim selben Commit eine andere Prüfsumme gemessen.
+- **Gebaut und geprüft** in `.github/workflows/ffmpeg-build.yml`: jedes Ziel auf seinem eigenen OS, mit test/ffmpeg.test.ts und test/out10.test.ts. Geprüft werden Lizenz, SRT, v210 bit-exakt sowie HEVC Main 10 über TCP und SRT.
+- **Veröffentlicht** als Pre-Release `ffmpeg-9.0.2-lzs1`, zusammen mit allen Quellarchiven, `build.sh` und `sources.txt`. Jedes App-Release hängt dieselben Archive an.
+- **Größe** (lokal gemessen, darwin-arm64): ffmpeg und ffprobe je 28 MB; der Build von Martin Riedl hatte je 66 MB.
+- **ffprobe** wird weiter mitgeliefert, weil der Container-Timecode davon abhängt.
+- **Windows:** mingw-w64 winpthreads (MIT, Lizenztext in licenses/ffmpeg/) und die GCC-Laufzeit (Runtime Library Exception) sind statisch gelinkt.
 
 ## Quellen (geöffnet)
 

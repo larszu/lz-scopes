@@ -22,6 +22,10 @@ test('actions map to control commands', () => {
     { cmd: 'output.open', name: 'key', view: 'overlay', panel: 1, bg: 'black', fullscreen: false })
   assert.deepEqual(buildCommand('stream_start', {}), { cmd: 'stream.start', stream: 'scopes' })
   assert.deepEqual(buildCommand('transport', { op: 'next', source: '' }), { cmd: 'transport', op: 'next' })
+  assert.deepEqual(buildCommand('setting', { key: 'unit', value: 'bit10' }), { cmd: 'setting', key: 'unit', value: 'bit10' })
+  assert.deepEqual(buildCommand('setting', { key: 'zebra', value: '100' }), { cmd: 'setting', key: 'zebra', value: 100 })
+  assert.deepEqual(buildCommand('setting', { key: 'skinLuma', value: '20, 80' }), { cmd: 'setting', key: 'skinLuma', value: [20, 80] })
+  assert.deepEqual(buildCommand('setting', { key: 'sidebar', value: 'false' }), { cmd: 'setting', key: 'sidebar', value: false })
   assert.throws(() => buildCommand('nope', {}))
 })
 

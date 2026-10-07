@@ -45,6 +45,7 @@ Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen
 | `audio.reset` | `source` optional (sonst alle Quellen mit Ton): I, LRA, Max M/S, Max TP, Zähler und Protokoll zurücksetzen (EBU Tech 3341) |
 | `audio.pause` | `mode` `toggle`\|`on`\|`off`, `source` optional: I und LRA anhalten/fortsetzen (Tech 3341) |
 | `generator` | `mode` `toggle`\|`on`\|`off`, `signal` optional (`sine`, `ebu-ident`, `glits`, `blits`, `ebu-multi`, `ident-lr`, `pink`, `pink-band`, `white`, `sweep`, `steps`, `polarity`, `avsync`, …), `freq` 10–20000 Hz, `level` −90–0 dBFS; über −6 dBFS nur mit `"force": true` |
+| `setting` | `key` (`theme`, `scheme`, `sidebar`, `display`, `hdrPreview`, `unit`, `tint`, `precision`, `falseColour`, `skinLuma`, `skinHue`, `zebra`, `stage`, `deRef`, `lowLatency`), `value`: eine der Auswahlen, eine Zahl im Bereich, `true`/`false` oder `[lo, hi]` für `skinLuma`. Dieselbe Beschreibung baut das Einstellungen-Fenster und die ⚙-Zeilen der Panels (src/ui/schema.ts); `state.settings` listet Schlüssel, Werte, Auswahlen und Bereiche |
 
 Antwort: `{ ok, result?, error?, state }`. `error` ist ein englischer Text, der Befehl und Problem nennt (z. B. `source.select: source missing`, `Token missing or wrong`). Status `400` = ungültiger Befehl, `422` = nicht ausführbar (z. B. Szene unbekannt), `503` = kein Hauptfenster, `401`/`403` = Zugriff. Skripte sollten sich auf `ok` und den Statuscode stützen, nicht auf den Wortlaut.
 
@@ -65,6 +66,7 @@ Antwort: `{ ok, result?, error?, state }`. `error` ist ein englischer Text, der 
   "audio": { "source": "Kamera 1", "momentary": -22.8, "shortTerm": -23.1, "integrated": -23.0, "lra": 4.2, "maxTP": -2.1,
              "paused": false, "seconds": 312, "avOffsetMs": 12.5, "ident": "EBU-Stereo-Ident (R 49)", "identProblems": [] },
   "generator": { "running": false, "signal": "sine", "level": -18, "freq": 1000, "channels": 2 },
+  "settings": [{ "key": "unit", "kind": "select", "label": "Skala", "value": "percent", "options": ["percent", "bit8", "bit10", "nits"] }, …],
   "sources": [], "layouts": [], "presets": [], "panels": [], "scenes": [], "patterns": []
 }
 ```

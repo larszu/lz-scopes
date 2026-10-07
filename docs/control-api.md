@@ -45,6 +45,7 @@ Every command is a JSON object with `cmd`. Panels, sources, presets and scenes c
 | `audio.reset` | `source` optional (otherwise all sources with audio): reset I, LRA, max M/S, max TP, counter and log (EBU Tech 3341) |
 | `audio.pause` | `mode` `toggle`\|`on`\|`off`, `source` optional: pause/resume I and LRA (Tech 3341) |
 | `generator` | `mode` `toggle`\|`on`\|`off`, `signal` optional (`sine`, `ebu-ident`, `glits`, `blits`, `ebu-multi`, `ident-lr`, `pink`, `pink-band`, `white`, `sweep`, `steps`, `polarity`, `avsync`, …), `freq` 10–20000 Hz, `level` −90–0 dBFS; above −6 dBFS only with `"force": true` |
+| `setting` | `key` (`theme`, `scheme`, `sidebar`, `display`, `hdrPreview`, `unit`, `tint`, `precision`, `falseColour`, `skinLuma`, `skinHue`, `zebra`, `stage`, `deRef`, `lowLatency`), `value`: one of the choices, a number in range, `true`/`false`, or `[lo, hi]` for `skinLuma`. The same description renders the settings window and the panel ⚙ rows (src/ui/schema.ts); `state.settings` lists keys, values, choices and ranges |
 
 Answer: `{ ok, result?, error?, state }`. `error` is an English text naming the command and the problem (e.g. `source.select: source missing`, `Token missing or wrong`). Status `400` = invalid command, `422` = cannot be executed (e.g. unknown scene), `503` = no main window, `401`/`403` = access denied. Scripts should rely on `ok` and the status code, not on the wording.
 
@@ -65,6 +66,7 @@ Answer: `{ ok, result?, error?, state }`. `error` is an English text naming the 
   "audio": { "source": "Camera 1", "momentary": -22.8, "shortTerm": -23.1, "integrated": -23.0, "lra": 4.2, "maxTP": -2.1,
              "paused": false, "seconds": 312, "avOffsetMs": 12.5, "ident": "EBU stereo ident (R 49)", "identProblems": [] },
   "generator": { "running": false, "signal": "sine", "level": -18, "freq": 1000, "channels": 2 },
+  "settings": [{ "key": "unit", "kind": "select", "label": "Scale", "value": "percent", "options": ["percent", "bit8", "bit10", "nits"] }, …],
   "sources": [], "layouts": [], "presets": [], "panels": [], "scenes": [], "patterns": []
 }
 ```

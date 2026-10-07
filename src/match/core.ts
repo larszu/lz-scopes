@@ -14,6 +14,7 @@ import {
   signalToLinear, xyzToLab, ycbcr, type Colorspace, type DisplaySpace,
 } from '../color';
 import { deltaE, type Space } from '../deltae';
+import { num, t, type Key } from '../i18n';
 
 export type Interp = 'video' | 'srgb';
 export type Rgb = [number, number, number];
@@ -21,8 +22,8 @@ export type Rgb = [number, number, number];
 /** Input formats of a CI colour. */
 export type InputFormat = 'hex' | 'rgb8' | 'rgb10' | 'legal8' | 'legal10';
 export const INPUT_FORMATS: [InputFormat, string][] = [
-  ['hex', 'Hex #RRGGBB'], ['rgb8', 'RGB 8 bit 0–255'], ['rgb10', 'RGB 10 bit 0–1023'],
-  ['legal8', 'Video 8 bit 16–235'], ['legal10', 'Video 10 bit 64–940'],
+  ['hex', t('match.input.hex')], ['rgb8', t('match.input.rgb8')], ['rgb10', t('match.input.rgb10')],
+  ['legal8', t('match.input.legal8')], ['legal10', t('match.input.legal10')],
 ];
 
 /**
@@ -116,10 +117,10 @@ export function hueSatLuma(rgb: number[], cs: Colorspace) {
 /** Signed shortest angle from a to b in degrees (−180…180]. */
 export const angleDiff = (a: number, b: number) => { const d = (((b - a) % 360) + 540) % 360 - 180; return d === -180 ? 180 : d; };
 
-const BAR_NAMES: Record<string, string> = { R: 'Rot', Mg: 'Magenta', B: 'Blau', Cy: 'Cyan', G: 'Grün', Yl: 'Gelb' };
+const BAR_NAMES: Record<string, Key> = { R: 'match.bar.R', Mg: 'match.bar.Mg', B: 'match.bar.B', Cy: 'match.bar.Cy', G: 'match.bar.G', Yl: 'match.bar.Yl' };
 /** Vectorscope angles of the 75 % bars in a colour space. */
 export function barAngles(cs: Colorspace) {
-  return BAR_COLORS.map(({ label, rgb }) => ({ name: BAR_NAMES[label], deg: hueSatLuma(rgb.map((v) => v * 0.75), cs).deg }));
+  return BAR_COLORS.map(({ label, rgb }) => ({ name: t(BAR_NAMES[label]), deg: hueSatLuma(rgb.map((v) => v * 0.75), cs).deg }));
 }
 /** Name of the bar colour nearest to a hue angle. */
 export function hueName(deg: number, cs: Colorspace) {
@@ -144,9 +145,9 @@ export function labOf(rgb: number[], s: Space) {
  * (docs/research/colour-repos.md). ΔITP has no researched limit: same steps, marked as such.
  */
 export function deVerdict(value: number, tol = 3): { level: 0 | 1 | 2; text: string } {
-  if (value <= 1) return { level: 0, text: 'kaum unterscheidbar' };
-  if (value <= tol) return { level: 1, text: 'sichtbar im direkten Vergleich' };
-  return { level: 2, text: 'deutlich verschieden' };
+  if (value <= 1) return { level: 0, text: t('match.verdict.0') };
+  if (value <= tol) return { level: 1, text: t('match.verdict.1') };
+  return { level: 2, text: t('match.verdict.2') };
 }
 
 export interface Comparison {
@@ -175,18 +176,18 @@ export function compare(src: number[], ref: number[], s: Space, cs: Colorspace):
   };
 }
 
-const sg = (v: number, d = 1) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(d).replace('.', ',')}`;
+const sg = (v: number, d = 1) => `${v >= 0 ? '+' : '−'}${num(Math.abs(v), d)}`;
 
 /** Correction in words and values. Below the noise limits a quantity is reported as fitting. */
 export function correctionText(c: Comparison, cs: Colorspace): string[] {
   const out: string[] = [];
   // neutral reference (grey card, white): there is no hue to turn to, only a cast to remove
   const neutral = c.ref.sat < 0.02;
-  if (neutral) out.push(c.src.sat < 0.01 ? 'Farbe passt: beide neutral' : `Ziel neutral: Farbstich ${(c.src.sat * 100).toFixed(1).replace('.', ',')} % Richtung ${hueName(c.src.deg, cs)} entfernen`);
-  else if (Math.abs(c.hueDeg) < 0.5) out.push('Farbton passt (< 0,5°)');
-  else out.push(`Farbton ${sg(c.hueDeg)}° drehen (${c.hueDeg > 0 ? 'gegen den' : 'im'} Uhrzeigersinn, Richtung ${towards(c.src.deg, c.hueDeg, cs)})`);
-  if (!neutral) out.push(Math.abs(c.satPct) < 1 ? 'Sättigung passt (< 1 %)' : `Sättigung ${sg(c.satPct)} % (${c.satPct > 0 ? 'mehr' : 'weniger'} Farbe)`);
-  out.push(Math.abs(c.lumaPts) < 0.5 ? 'Helligkeit passt (< 0,5 %-Punkte)' : `Helligkeit ${sg(c.lumaPct)} % (Y′ ${(c.src.y * 100).toFixed(1).replace('.', ',')} → ${(c.ref.y * 100).toFixed(1).replace('.', ',')} %)`);
+  if (neutral) out.push(c.src.sat < 0.01 ? t('match.fix.bothNeutral') : t('match.fix.castRemove', { pct: num(c.src.sat * 100, 1), hue: hueName(c.src.deg, cs) }));
+  else if (Math.abs(c.hueDeg) < 0.5) out.push(t('match.fix.hueOk'));
+  else out.push(t(c.hueDeg > 0 ? 'match.fix.hueCcw' : 'match.fix.hueCw', { deg: sg(c.hueDeg), hue: towards(c.src.deg, c.hueDeg, cs) }));
+  if (!neutral) out.push(Math.abs(c.satPct) < 1 ? t('match.fix.satOk') : t(c.satPct > 0 ? 'match.fix.satMore' : 'match.fix.satLess', { pct: sg(c.satPct) }));
+  out.push(Math.abs(c.lumaPts) < 0.5 ? t('match.fix.lumaOk') : t('match.fix.luma', { pct: sg(c.lumaPct), from: num(c.src.y * 100, 1), to: num(c.ref.y * 100, 1) }));
   return out;
 }
 
@@ -201,13 +202,13 @@ export function cameraText(c: Comparison, src: number[], ref: number[], s: Space
     const ls = signalToLinear(src, s.transfer, s.hlgLw), lr = signalToLinear(ref, s.transfer, s.hlgLw);
     const k = (lr[1] || 1e-6) / (ls[1] || 1e-6); // keep green, match R and B to it
     const gain = (i: number) => (ls[i] > 1e-5 ? ((lr[i] / ls[i]) / k - 1) * 100 : 0);
-    out.push(`Weißabgleich: R-Gain ${sg(gain(0))} %, B-Gain ${sg(gain(2))} % (relativ zu G, linear)`);
+    out.push(t('match.cam.wb', { r: sg(gain(0)), b: sg(gain(2)) }));
   } else {
     const axis = hueName(c.src.deg, cs);
-    out.push(`Kamera: Multi-Matrix (Sony) bzw. Farbkorrektur der Achse ${axis}: Phase ${sg(c.hueDeg)}°, Sättigung ${sg(c.satPct)} %`);
-    out.push(`Resolve: Qualifier auf die Farbe, dann Hue ${sg(c.hueDeg)}°, Sat ×${(1 + c.satPct / 100).toFixed(2).replace('.', ',')}; oder Kurve Hue vs Hue/Hue vs Sat`);
+    out.push(t('match.cam.matrix', { axis, deg: sg(c.hueDeg), sat: sg(c.satPct) }));
+    out.push(t('match.cam.resolve', { deg: sg(c.hueDeg), sat: num(1 + c.satPct / 100, 2) }));
   }
-  if (Math.abs(c.lumaPts) >= 0.5) out.push(`Helligkeit: Blende/Master-Gain bzw. Lum ${sg(c.lumaPct)} % – wirkt aufs ganze Bild`);
+  if (Math.abs(c.lumaPts) >= 0.5) out.push(t('match.cam.luma', { pct: sg(c.lumaPct) }));
   return out;
 }
 
@@ -237,7 +238,7 @@ export function swatchCss(rgb: number[], s: Space, display: DisplaySpace): { css
 export function hexLine(rgb: number[], s: Space): string {
   const sdr709 = s.transfer === 'sdr' && s.gamut === '709';
   const { v, outside: out } = sdr709 ? { v: rgb as Rgb, outside: outside(rgb) } : signalToCi(rgb, 'video', s);
-  return `${toHex(v)}  RGB ${codes(v.map((x) => Math.min(1, Math.max(0, x))), 8, false).join(',')}${sdr709 ? '' : ' (als 709)'}${out ? ' außerhalb' : ''}`;
+  return `${toHex(v)}  RGB ${codes(v.map((x) => Math.min(1, Math.max(0, x))), 8, false).join(',')}${sdr709 ? '' : ` ${t('match.as709')}`}${out ? ` ${t('match.outside')}` : ''}`;
 }
 
 // ---------------------------------------------------------------- hue qualifiers (skin, green)

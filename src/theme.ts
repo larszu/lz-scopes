@@ -6,13 +6,14 @@
 // Signet "lz." of Lars Zumpe Medienproduktion, unchanged files from the brand kit (own trademark).
 import signetOffwhite from './brand/lzm_signet_offwhite_1c.svg';
 import signetWhite from './brand/lzm_signet_weiss_1c.svg';
+import { t } from './i18n';
 
 export type UiTheme = 'neutral' | 'lzm' | 'original';
 export const DEFAULT_THEME: UiTheme = 'neutral';
 export const THEMES: [UiTheme, string][] = [
-  ['neutral', 'Neutral (farbkritisch)'],
-  ['lzm', 'LZM (Lars Zumpe Medienproduktion)'],
-  ['original', 'Original (Schwarz)'],
+  ['neutral', t('theme.neutral')],
+  ['lzm', t('theme.lzm')],
+  ['original', t('theme.original')],
 ];
 
 export const isTheme = (v: unknown): v is UiTheme => v === 'neutral' || v === 'lzm' || v === 'original';

@@ -9,6 +9,7 @@ import type { Lut } from './lut';
 import type { Source } from './sources';
 import { RGC, RGC_GLSL, rgcScale } from './rgc';
 import { CUBE_GLSL, CUBE_SCALE } from './cube';
+import { t } from './i18n';
 import { R103, R103_GLSL, YUV_FETCH_GLSL, yuvScale } from './ycbcr';
 import { BLUR_FS, CRT_DISPLAY_FS, CRT_FS, CRT_VS_MAIN, PERSIST_FS, PHOSPHORS, beamSigma, persistDecay, type CrtSettings } from './crt';
 
@@ -396,11 +397,11 @@ export class Renderer {
    */
   constructor(readonly canvas: HTMLCanvasElement, private readonly opts: { deep?: boolean } = {}) {
     const gl = canvas.getContext('webgl2', { antialias: false, alpha: !!opts.deep, preserveDrawingBuffer: true, premultipliedAlpha: false });
-    if (!gl) throw new Error('WebGL2 wird von diesem Browser nicht unterstützt.');
+    if (!gl) throw new Error(t('render.noWebgl2'));
     // The scopes accumulate into RGBA16F (texture below). EXT_color_buffer_float covers that; iOS
     // GPUs may offer only EXT_color_buffer_half_float, which the WebGL registry allows in WebGL 2
     // for RGBA16F/RG16F/R16F (KhronosGroup/WebGL#3093, docs/research/ios-app.md).
-    if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) throw new Error('EXT_color_buffer_float/EXT_color_buffer_half_float fehlt – Scopes brauchen Float-Rendertargets (RGBA16F).');
+    if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) throw new Error(t('render.noFloatTargets'));
     gl.getExtension('EXT_float_blend');
     this.gl = gl;
     this.vao = gl.createVertexArray()!;

@@ -145,6 +145,10 @@ For remote bridges with little bandwidth: `/stream?url=…&codec=h264` (forces p
 - If the browser cannot keep up, the bridge drops up to the next keyframe.
 - The browser decodes with WebCodecs in a worker (`src/frameWorker.ts`) and converts Y′CbCr to R′G′B′ itself with `decodeMatrix` (`src/yuv.ts`), not through a colour-managed canvas. Result: 8 bit, lossy – for exact measurements use the raw transport.
 
+## iOS app: RTSP direct (loopback)
+
+The iPhone/iPad app serves the same protocol itself for `rtsp://` sources (#90, `ios/LzRtsp/Sources/LzRtsp/FrameServer.swift`): `ws://127.0.0.1:<port>/rtsp?token=…&url=rtsp://…&transport=tcp|udp&width=…&wc=h264,hevc`, loopback only, with a random token per app run, no credentials in the URL (Keychain). Protocol 2 without sound. If the stream's codec is in `wc` (what the WebView's WebCodecs decodes) and 8 bit: `info` with `"transport":"h264"|"hevc"`, then `video` and `LZHK`/`LZHD` as above (HEVC: `hvc1.…` codec string, ISO/IEC 14496-15 Annex E). Otherwise VideoToolbox decodes in the app and `LZV1` R′G′B′A 8-bit frames arrive at `width`. `info.direct` is `"webcodecs"` or `"videotoolbox"`; `stats` carries `rtp` like the bridge's own RTP reception.
+
 ## Latency stamp
 
 `scripts/latency-source.mjs` writes the time of day (ms, mod 2³²) and a frame counter as black-and-white blocks into the top two rows of the picture (layout in `server/stamp.mjs`). The app reads them in every frame and shows readings in the panel: stamp → display, and for H.264 additionally source → bridge and bridge → app (bridge clock in the `LZHK`/`LZHD` header; on the raw path the `LZV1` header carries the PTS and there is no split). All values assume the same clock (one computer or NTP); the delay of the monitor is not included.

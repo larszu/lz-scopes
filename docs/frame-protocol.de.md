@@ -144,6 +144,10 @@ Für entfernte Bridges mit wenig Bandbreite: `/stream?url=…&codec=h264` (erzwi
 - Kommt der Browser nicht hinterher, verwirft die Bridge bis zum nächsten Keyframe.
 - Der Browser dekodiert mit WebCodecs im Worker (`src/frameWorker.ts`) und wandelt Y′CbCr selbst mit `decodeMatrix` in R′G′B′ (`src/yuv.ts`), nicht über ein Canvas mit Farbmanagement. Ergebnis: 8 bit, verlustbehaftet – für exakte Messungen `roh` verwenden.
 
+## iOS-App: RTSP direkt (Loopback)
+
+Die iPhone/iPad-App bedient dasselbe Protokoll für `rtsp://`-Quellen selbst (#90, `ios/LzRtsp/Sources/LzRtsp/FrameServer.swift`): `ws://127.0.0.1:<port>/rtsp?token=…&url=rtsp://…&transport=tcp|udp&width=…&wc=h264,hevc`, nur Loopback, mit Zufalls-Token je App-Start, ohne Zugangsdaten in der URL (Schlüsselbund). Protokoll 2 ohne Ton. Steht der Codec des Streams in `wc` (was WebCodecs der WebView dekodiert) und ist er 8 bit: `info` mit `"transport":"h264"|"hevc"`, dann `video` und `LZHK`/`LZHD` wie oben (HEVC: Codec-String `hvc1.…`, ISO/IEC 14496-15 Anhang E). Sonst dekodiert VideoToolbox in der App, und es kommen `LZV1`-Bilder R′G′B′A 8 bit in `width`. `info.direct` ist `"webcodecs"` oder `"videotoolbox"`; `stats` trägt `rtp` wie beim eigenen RTP-Empfang der Bridge.
+
 ## Latenz-Stempel
 
 `scripts/latency-source.mjs` schreibt Uhrzeit (ms, mod 2³²) und Bildzähler als Schwarz-Weiß-Blöcke in die obersten zwei Zeilen des Bildes (Aufbau in `server/stamp.mjs`). Die App liest sie in jedem Bild und zeigt im Panel Messwerte: Stempel → Anzeige, bei H.264 zusätzlich Quelle → Bridge und Bridge → App (Bridge-Uhr im Kopf von `LZHK`/`LZHD`; im rohen Weg trägt der `LZV1`-Kopf die PTS, dort gibt es keine Aufteilung). Alle Werte setzen dieselbe Uhr voraus (ein Rechner oder NTP); die Verzögerung des Monitors ist nicht enthalten.

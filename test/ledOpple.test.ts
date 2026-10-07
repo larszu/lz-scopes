@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { setLang } from '../src/i18n';
 import { D65, GAMUTS, mul3, rgbToXyzMatrix, xyToUv, type XY } from '../src/color';
 import { cctDuv } from '../src/calib/colorimetry';
 import { buildPlan, evaluatePoints, meterCsv, planckXy, summarize, whiteCorrection, xyOf, type MeterResults, type XYZ } from '../src/led/oppleCheck';
@@ -6,6 +7,9 @@ import { sanitizeWall } from '../src/led/wall';
 import {
   FlickerAssembler, MessageAssembler, buildFlickerChunk, encapsulate, flickerMetrics, flickerRequestBody, flickerSampleRate, opcodeOf, parseFlickerChunk,
 } from '../src/opple/protocol';
+
+// runtime texts (warnings) in German, as the expectations below
+beforeAll(() => setLang('de'));
 
 const wall = sanitizeWall({ name: 'T', cabW: 100, cabH: 100, cols: 3, rows: 2, offX: 50 });
 const xyY = ([x, y]: XY, Y: number): XYZ => [(x * Y) / y, Y, ((1 - x - y) * Y) / y];
@@ -73,7 +77,7 @@ describe('white point correction', () => {
     const c = whiteCorrection(W, D65, { xy: [g.r, g.g, g.b] });
     const expected = [1 / 1, 1 / 0.9, 1 / 1.05].map((v) => (v / (1 / 0.9)) * 100);
     c.gains!.forEach((x, i) => expect(x).toBeCloseTo(expected[i], 6));
-    expect(c.primariesSource).toBe('eingegeben');
+    expect(c.primariesSource).toBe('entered');
   });
   it('warns when R+G+B ≠ W and without primaries only shows Δ', () => {
     const c = whiteCorrection(W, D65, { measured: [col(0), col(1), col(2).map((v) => v * 1.3) as XYZ] });
@@ -93,7 +97,7 @@ describe('white point correction', () => {
     const s = evaluatePoints(res, 'C1-R1');
     const csv = meterCsv(wall, res, 'C1-R1', s, whiteCorrection(W, D65, { measured: [col(0), col(1), col(2)] }), '', '5 cm');
     expect(csv).toMatch(/^C2-R1,.*,-10\.00,/m);
-    expect(csv).toMatch(/^gains_prozent_rgb,90\.0,100\.0,85\.7/m);
+    expect(csv).toMatch(/^gains_percent_rgb,90\.0,100\.0,85\.7/m);
   });
 });
 

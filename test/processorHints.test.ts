@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { setLang } from '../src/i18n';
 import { D65, GAMUTS, mul3, rgbToXyzMatrix } from '../src/color';
 import { whiteCorrection, xyOf, type MeterResults, type XYZ } from '../src/led/oppleCheck';
 import { cabinetMatch, cabinetMatchHint, kelvinSuggestion, whitePointHints } from '../src/led/processorHints';
 import { DEFAULT_WALL, sanitizeWall } from '../src/led/wall';
+
+// hints are built at call time: German, as the expectations below
+beforeAll(() => setLang('de'));
 
 const M = rgbToXyzMatrix(GAMUTS['709']);
 const g = GAMUTS['709'];

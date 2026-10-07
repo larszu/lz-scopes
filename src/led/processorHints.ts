@@ -10,6 +10,7 @@
 import type { XY } from '../color';
 import { whiteCorrection, xyOf, type MeterResults, type WhiteCorrection, type XYZ } from './oppleCheck';
 import type { ProcessorKind } from './wall';
+import { num, t } from '../i18n';
 
 /**
  * Next colour-temperature setting for a slider processor (Brompton): shift the setting by the
@@ -46,17 +47,17 @@ export function cabinetMatch(res: MeterResults, ref: string, primXy?: [XY, XY, X
     if (!m.W) continue;
     const prim = m.R && m.G && m.B ? { measured: [m.R, m.G, m.B] as [XYZ, XYZ, XYZ] } : primXy ? { xy: primXy } : {};
     const c = whiteCorrection(m.W, refXy, prim);
-    if (!c.gains || c.luminanceAfter == null) { raw.push({ point, gains: null, warnings: c.warnings.length ? c.warnings : ['keine Primärvalenzen'] }); continue; }
+    if (!c.gains || c.luminanceAfter == null) { raw.push({ point, gains: null, warnings: c.warnings.length ? c.warnings : [t('led.hint.noPrimaries')] }); continue; }
     const yAfter = m.W[1] * (c.luminanceAfter / 100);
     const f = r[1] / yAfter;
-    raw.push({ point, gains: c.gains.map((g) => g * f) as [number, number, number], warnings: c.warnings.filter((w) => !w.startsWith('Primärfarben mit dem Opple')) });
+    raw.push({ point, gains: c.gains.map((g) => g * f) as [number, number, number], warnings: c.warnings.filter((w) => w !== t('led.chk.oppleApprox')) });
   }
   const top = Math.max(...raw.flatMap((x) => x.gains ?? []));
   const scale = top > 100 ? 100 / top : 1;
   return { rows: raw.map((x) => ({ ...x, gains: x.gains ? x.gains.map((g) => g * scale) as [number, number, number] : null })), scale };
 }
 
-const pct = (v: number) => `${v.toFixed(1).replace('.', ',')} %`;
+const pct = (v: number) => `${num(v, 1)} %`;
 const k0 = (v: number) => `${Math.round(v)} K`;
 
 export interface Hint { title: string; lines: string[] }
@@ -65,44 +66,44 @@ export interface Hint { title: string; lines: string[] }
 export function whitePointHints(kind: ProcessorKind, c: WhiteCorrection, currentK = 6504): Hint[] {
   const out: Hint[] = [];
   const g = c.gains;
-  const gainsText = g ? `R ${pct(g[0])} · G ${pct(g[1])} · B ${pct(g[2])} des jetzigen Werts` : '';
+  const gainsText = g ? t('led.hint.gains', { r: pct(g[0]), g: pct(g[1]), b: pct(g[2]) }) : '';
   if (kind === 'novastar-lct') {
     out.push({
-      title: 'NovaLCT: Farbtemperatur, präzise Einstellung',
+      title: t('led.hint.lctTitle'),
       lines: g ? [
-        'Angemeldet (User › Advanced Synchronous System User Login): Settings › Brightness › Manual Adjustment, Farbtemperatur „Precise Adjustment“, eigene Farbtemperatur anlegen (Add, Add Brightness).',
-        `„Brightness Component“ (Parameter der Empfangskarte) je Kanal auf ${gainsText} setzen, „Synchronize“ aus; dann Save to HW und neu messen.`,
-      ] : ['Für Kanalwerte Primärfarben mitmessen oder Primärvalenzen eingeben; sonst nur Δ.'],
+        t('led.hint.lct1'),
+        t('led.hint.lct2', { gains: gainsText }),
+      ] : [t('led.hint.lctNoGains')],
     });
   } else if (kind === 'novastar-vx') {
     out.push({
-      title: 'VX-Gerätemenü: LED Screen Color',
+      title: t('led.hint.vxTitle'),
       lines: g ? [
         'Screen Configuration › More Settings › LED Screen Color › Temperature › Custom.',
-        `R, G und B im Verhältnis ${gainsText} einstellen (Wertebereich laut Handbuch nicht angegeben), danach neu messen.`,
-      ] : ['Für R/G/B-Werte Primärfarben mitmessen oder Primärvalenzen eingeben; sonst nur Δ.'],
+        t('led.hint.vx2', { gains: gainsText }),
+      ] : [t('led.hint.vxNoGains')],
     });
   } else if (kind === 'brompton') {
     const next = kelvinSuggestion(currentK, c.ist.cct, c.soll.cct);
     out.push({
       title: 'Tessera: Colour Temperature',
       lines: [
-        `Regler steht auf ${k0(currentK)}, gemessen ${k0(c.ist.cct)}, Ziel ${k0(c.soll.cct)} → nächster Versuch ${Number.isFinite(next) ? k0(Math.min(11000, Math.max(2000, next))) : '–'} (Bereich 2000–11 000 K; Näherung über Mired, danach neu messen).`,
-        `Grün/Magenta (Duv ${(c.ist.duv - c.soll.duv >= 0 ? '+' : '') + (c.ist.duv - c.soll.duv).toFixed(4).replace('.', ',')} zum Ziel) lässt sich mit dem Temperaturregler nicht korrigieren.`,
-        'Bei Panels mit Dynamic Calibration (Hydra-vermessen, R2/R2+): im DynaCal-Interface den White-Point der Video Input Colour Space auf „Custom“ setzen und xy eingeben – das korrigiert auch Duv.',
-        ...(g ? [`Ohne DynaCal: OSCA Red/Green/Blue Gain der gewählten Panels im Verhältnis ${gainsText} (Einheit der OSCA-Gains im Handbuch nicht angegeben).`] : []),
+        t('led.hint.br1', { now: k0(currentK), measured: k0(c.ist.cct), target: k0(c.soll.cct), next: Number.isFinite(next) ? k0(Math.min(11000, Math.max(2000, next))) : '–' }),
+        t('led.hint.br2', { duv: (c.ist.duv - c.soll.duv >= 0 ? '+' : '') + num(c.ist.duv - c.soll.duv, 4) }),
+        t('led.hint.br3'),
+        ...(g ? [t('led.hint.br4', { gains: gainsText })] : []),
       ],
     });
   } else {
-    out.push({ title: 'Allgemein', lines: g ? [`Kanal-Helligkeit/Gain im Verhältnis ${gainsText} ändern, danach neu messen.`] : ['Nur Δ – für Gains Primärfarben mitmessen oder Primärvalenzen eingeben.'] });
+    out.push({ title: t('led.hint.generalTitle'), lines: g ? [t('led.hint.general', { gains: gainsText })] : [t('led.hint.generalNoGains')] });
   }
   return out;
 }
 
 /** Where per-cabinet gains (cabinetMatch) go in the processor. */
 export function cabinetMatchHint(kind: ProcessorKind): string {
-  if (kind === 'novastar-lct') return 'NovaLCT: User › Advanced Synchronous System User Login, dann Tools › Calibration › Single-Screen Mode › Manage Coefficients › Adjust coefficients; Bereich „Select by Topology or List“ (das Cabinet), Simple Adjustment Rot/Grün/Blau im angegebenen Verhältnis. Vorher die Kalibrierdatenbank sichern.';
-  if (kind === 'novastar-vx') return 'Am VX-Gerät gibt es keine Einstellung je Cabinet; dafür NovaLCT (Tools › Calibration › Manage Coefficients) verwenden.';
-  if (kind === 'brompton') return 'Tessera OSCA: Panels (F8) bzw. Module (F7) wählen, Red/Green/Blue Gain im angegebenen Verhältnis; OSCA überschreibt die Werkskalibrierung nicht und wird im Panel gespeichert.';
-  return 'Im Prozessor die Kanal-Gains des einzelnen Cabinets im angegebenen Verhältnis ändern.';
+  if (kind === 'novastar-lct') return t('led.hint.matchLct');
+  if (kind === 'novastar-vx') return t('led.hint.matchVx');
+  if (kind === 'brompton') return t('led.hint.matchBr');
+  return t('led.hint.matchOther');
 }

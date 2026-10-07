@@ -12,6 +12,7 @@ import { GpuStats } from './gpuStats';
 import { LatencyMeter, type RtpStats } from './latency';
 import { effectiveWidth, mergeLowLatency, type LowLatencyConfig } from './lowLatency';
 import { meanLuma } from './luma';
+import { t } from './i18n';
 
 export { meanLuma };
 
@@ -358,7 +359,7 @@ export class Source {
   constructor(kind: SourceKind, name?: string, settings?: Partial<SourceSettings>) {
     this.id = `s${nextId++}`;
     this.kind = kind;
-    this.name = name ?? { stream: 'Stream', webcam: 'Kamera', screen: 'Bildschirm/Fenster', file: 'Datei', pattern: 'Testbild', folder: 'Ordner', audio: 'Audio' }[kind];
+    this.name = name ?? t(`source.kind.${kind}`);
     this.settings = { ...DEFAULT_SETTINGS, ...settings };
   }
 
@@ -369,16 +370,16 @@ export class Source {
   }
   /** Where the transfer comes from – shown next to "auto" so the UI never pretends to know. */
   get transferOrigin(): string {
-    if (this.settings.transfer !== 'auto') return 'manuell';
-    if (this.kind === 'pattern') return 'Testbild';
-    if (!this.info) return 'keine Metadaten, Annahme';
-    return transferSignalled(this.info.transfer) ? 'Metadaten' : 'nicht signalisiert, Annahme';
+    if (this.settings.transfer !== 'auto') return t('source.origin.manual');
+    if (this.kind === 'pattern') return t('source.origin.pattern');
+    if (!this.info) return t('source.origin.noMeta');
+    return transferSignalled(this.info.transfer) ? t('source.origin.meta') : t('source.origin.notSignalled');
   }
   get colorspaceOrigin(): string {
-    if (this.settings.colorspace !== 'auto') return 'manuell';
-    if (!this.info) return this.kind === 'pattern' ? 'Testbild' : 'keine Metadaten, Annahme nach Bildhöhe';
+    if (this.settings.colorspace !== 'auto') return t('source.origin.manual');
+    if (!this.info) return this.kind === 'pattern' ? t('source.origin.pattern') : t('source.origin.noMetaHeight');
     const m = this.info.matrix, p = this.info.primaries;
-    return (m && m !== 'unknown') || (p && p !== 'unknown') ? 'Metadaten' : 'nicht signalisiert, Annahme nach Bildhöhe';
+    return (m && m !== 'unknown') || (p && p !== 'unknown') ? t('source.origin.meta') : t('source.origin.notSignalledHeight');
   }
   get colorspace(): Colorspace {
     if (this.settings.colorspace !== 'auto') return this.settings.colorspace;
@@ -410,7 +411,7 @@ export class Source {
   connectStream(url: string, bridge: string) {
     this.stop();
     this.url = url;
-    this.set('connecting', 'Verbinde …');
+    this.set('connecting', t('source.status.connecting'));
     const { fps, depth, transport } = this.settings;
     const ll = this.llConfig;
     const width = effectiveWidth(this.settings.width, this.lowLatency, ll.width);
@@ -431,7 +432,7 @@ export class Source {
    * e.g. a host bridge that keeps the camera address to itself: `ws://host/scope/3`.
    */
   connectFrames(wsUrl: string, reset = true) {
-    if (reset) { this.stop(); this.url = wsUrl; this.set('connecting', 'Verbinde …'); }
+    if (reset) { this.stop(); this.url = wsUrl; this.set('connecting', t('source.status.connecting')); }
     const ws = openFrameSocket(wsUrl);
     this.ws = ws;
     ws.onmessage = (ev) => {
@@ -444,8 +445,8 @@ export class Source {
           this.monitor?.close(); this.monitor = null; this.audioAnchor = null;
           this.audio = a ? new AudioAnalysis(a.sampleRate, a.channels, a.layout) : null;
           if (this.audio && a) this.audio.label = `Bridge · ${a.codec ?? ''} ${a.sampleRate / 1000} kHz`.replace('  ', ' ');
-          const pic = msg.width ? `${msg.sourceWidth}×${msg.sourceHeight} ${msg.codec ?? ''}`.trim() : 'nur Ton';
-          this.set('live', a ? `${pic} · Ton ${a.codec ?? ''} ${a.sampleRate / 1000} kHz ${a.channels} Kan.` : msg.proto === 2 ? `${pic} · kein Ton` : pic);
+          const pic = msg.width ? `${msg.sourceWidth}×${msg.sourceHeight} ${msg.codec ?? ''}`.trim() : t('source.status.soundOnly');
+          this.set('live', a ? `${pic} · ${t('source.status.sound', { codec: a.codec ?? '', khz: a.sampleRate / 1000, ch: a.channels })}` : msg.proto === 2 ? `${pic} · ${t('source.status.noSound')}` : pic);
         } else if (msg.type === 'tc') {
           this.tc = { ...msg, at: performance.now() };
         } else if (msg.type === 'apts') {
@@ -501,8 +502,8 @@ export class Source {
       this.latency.onFrame(ev.meta);
       Source.onArrive?.(this);
     };
-    ws.onerror = () => this.set('error', 'Bridge nicht erreichbar – läuft `npm run dev` bzw. `npm start`?');
-    ws.onclose = () => { if (this.ws === ws && this.status === 'live') this.set('ended', 'Verbindung beendet'); };
+    ws.onerror = () => this.set('error', t('source.status.bridgeUnreachable'));
+    ws.onclose = () => { if (this.ws === ws && this.status === 'live') this.set('ended', t('source.status.connectionEnded')); };
   }
 
   /**
@@ -559,7 +560,7 @@ export class Source {
   async startFolder() {
     this.stop();
     const picker = (window as unknown as { showDirectoryPicker?: (o?: object) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
-    if (!picker) { this.set('error', 'Ordner-Überwachung braucht Chrome, Edge oder die Desktop-App'); return; }
+    if (!picker) { this.set('error', t('source.status.folderNeedsChrome')); return; }
     let dir: FileSystemDirectoryHandle;
     try { dir = await picker({ id: 'lz-scopes-watch', mode: 'read' }); } catch { this.set('idle'); return; }
     this.name = dir.name;
@@ -571,7 +572,7 @@ export class Source {
         const f = await (entry as FileSystemFileHandle).getFile();
         if (!newest || f.lastModified > newest.lastModified) newest = f;
       }
-      if (!newest) { this.set('live', `${dir.name}: noch kein Bild (JPG/PNG/WebP/AVIF)`); return; }
+      if (!newest) { this.set('live', t('source.status.folderEmpty', { dir: dir.name })); return; }
       const key = `${newest.name}:${newest.lastModified}:${newest.size}`;
       if (key === last) return;
       last = key;
@@ -591,7 +592,7 @@ export class Source {
 
   async startCapture(kind: 'webcam' | 'screen', deviceId?: string, desktopId?: string) {
     this.stop();
-    this.set('connecting', 'Warte auf Freigabe …');
+    this.set('connecting', t('source.status.waitPermission'));
     try {
       this.media = kind === 'webcam'
         ? await navigator.mediaDevices.getUserMedia({ video: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } }, audio: false })
@@ -605,7 +606,7 @@ export class Source {
       this.attachVideo(v);
       const track = this.media.getVideoTracks()[0];
       this.deviceId = track.getSettings().deviceId ?? deviceId ?? '';
-      track.addEventListener('ended', () => this.set('ended', 'Aufnahme beendet'));
+      track.addEventListener('ended', () => this.set('ended', t('source.status.captureEnded')));
       this.set('live', `${v.videoWidth}×${v.videoHeight} ${track.label}`);
     } catch (e) {
       this.set('error', (e as Error).message);
@@ -622,7 +623,7 @@ export class Source {
       await img.decode();
       this.element = img; this.width = img.naturalWidth; this.height = img.naturalHeight; this.depth = 8;
       this.tick();
-      this.set('live', `${this.width}×${this.height} Bild`);
+      this.set('live', `${this.width}×${this.height} ${t('source.status.image')}`);
       return;
     }
     const v = document.createElement('video');
@@ -633,7 +634,7 @@ export class Source {
       this.set('live', `${v.videoWidth}×${v.videoHeight} Video`);
       this.tapElement(v).catch(() => { /* no sound track or no AudioContext */ });
     } catch (e) {
-      this.set('error', `Nicht abspielbar: ${(e as Error).message}`);
+      this.set('error', t('source.status.notPlayable', { msg: (e as Error).message }));
     }
   }
 
@@ -726,7 +727,7 @@ export class Source {
   /** Sound of a video/audio element: routed into the analysis, audible only with monitoring. */
   private async tapElement(el: HTMLMediaElement) {
     this.audioTap?.close();
-    const tap = await AudioTap.fromElement(el, (chs, n, rate) => this.feed(chs, n, rate, `Datei · ${rate / 1000} kHz`));
+    const tap = await AudioTap.fromElement(el, (chs, n, rate) => this.feed(chs, n, rate, `${t('source.kind.file')} · ${rate / 1000} kHz`));
     this.audioTap = tap;
     el.addEventListener('play', () => tap.resume());
   }
@@ -753,8 +754,8 @@ export class Source {
     this.stop();
     const inp = this.audioIn;
     if (inp.mode === 'bridge') {
-      if (!inp.bridgeUrl) { this.set('idle', 'Gerät wählen'); return; }
-      if (!bridge) { this.set('error', 'Bridge nicht verbunden'); return; }
+      if (!inp.bridgeUrl) { this.set('idle', t('source.status.chooseDevice')); return; }
+      if (!bridge) { this.set('error', t('source.status.bridgeNotConnected')); return; }
       this.connectStream(inp.bridgeUrl, bridge);
       return;
     }
@@ -762,7 +763,7 @@ export class Source {
       if (inp.mode === 'generator') {
         generator.setLoopback((chs, n, rate) => this.feed(chs, n, rate, `Generator · ${rate / 1000} kHz`));
         this.generatorBound = true;
-        this.set('live', generator.running ? 'Generator (Rückweg)' : 'Generator (Rückweg) – Generator starten');
+        this.set('live', generator.running ? t('source.status.generatorReturn') : t('source.status.generatorReturnStart'));
         return;
       }
       if (inp.mode === 'file') {
@@ -777,15 +778,15 @@ export class Source {
         this.set('live', `${file.name}`);
         return;
       }
-      this.set('connecting', 'Warte auf Freigabe …');
+      this.set('connecting', t('source.status.waitPermission'));
       this.media = await navigator.mediaDevices.getUserMedia({ audio: measurementConstraints(inp.deviceId || undefined), video: false });
       const track = this.media.getAudioTracks()[0];
       const st = track.getSettings();
       const tap = await AudioTap.fromStream(this.media, (chs, n, rate) => this.feed(chs, n, rate, `${track.label} · ${rate / 1000} kHz`));
       this.audioTap = tap;
-      track.addEventListener('ended', () => this.set('ended', 'Gerät getrennt'));
-      const off = [st.echoCancellation, st.noiseSuppression, st.autoGainControl].some((x) => x === true) ? ' · Achtung: Browser-Regelung aktiv' : '';
-      this.set('live', `${track.label || 'Audiogerät'} · ${tap.ctx.sampleRate / 1000} kHz${st.channelCount ? ` · ${st.channelCount} Kan.` : ''}${off}`);
+      track.addEventListener('ended', () => this.set('ended', t('source.status.deviceDisconnected')));
+      const off = [st.echoCancellation, st.noiseSuppression, st.autoGainControl].some((x) => x === true) ? ` · ${t('source.status.browserAgc')}` : '';
+      this.set('live', `${track.label || t('source.audioDevice')} · ${tap.ctx.sampleRate / 1000} kHz${st.channelCount ? ` · ${t('source.channels', { n: st.channelCount })}` : ''}${off}`);
     } catch (e) {
       this.set('error', (e as Error).message);
     }

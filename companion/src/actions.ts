@@ -10,6 +10,7 @@ export const SCOPES: { id: string; label: string }[] = [
   { id: 'satlum', label: 'Sättigung über Luma' }, { id: 'chplot', label: 'Kanal-Plot' }, { id: 'minmax', label: 'Min/Max je Zeile' },
   { id: 'timeline', label: 'Zeitverlauf' }, { id: 'qclog', label: 'QC-Protokoll' },
   { id: 'hist', label: 'Histogramm' }, { id: 'stats', label: 'Messwerte' },
+  { id: 'wf-green', label: 'Waveform Grüntöne' }, { id: 'match', label: 'Farbabgleich' },
   { id: 'audio-meter', label: 'Audio Pegel & Lautheit' }, { id: 'audio-loudness', label: 'Audio Lautheitsverlauf' },
   { id: 'audio-spectrum', label: 'Audio Spektrum' }, { id: 'audio-phase', label: 'Audio Goniometer' },
   { id: 'clock', label: 'Uhr / Timecode' },

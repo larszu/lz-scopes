@@ -51,6 +51,9 @@ export function clockPanelSettings(p: PanelState, save: () => void, sources: Sou
 
   rows.push(h('div', { class: 'mtitle' }, 'Tageszeit-Timecode (ST 2059-1)'));
   row('Bildrate', select(o.rate, RATES.map((r) => [r.id, r.label]), (v) => set({ rate: v, df: rateById(v).dfAllowed && o.df }, true)));
+  if (rateById(o.rate).nominal > 30) {
+    row('Anzeige > 30 fps', select(o.tcDisplay, [['frames', 'Bilder 0…' + (rateById(o.rate).nominal - 1) + ' (wie NLEs)'], ['pairs', 'Frame-Paare (ST 12-1)']], (v) => set({ tcDisplay: v as ClockOptions['tcDisplay'] })));
+  }
   if (rateById(o.rate).dfAllowed) row('Zählung', select(o.df ? 'df' : 'ndf', [['ndf', 'Non-Drop-Frame'], ['df', 'Drop-Frame']], (v) => set({ df: v === 'df' })));
   row('Daily Jam', select(o.jam, JAMS, (v) => set({ jam: v })), 'Lokalzeit');
   hint('Ohne PTP zählt die Uhr aus der Systemzeit (UTC + TAI−UTC nach IERS) in der Zeitzone des Systems. Das ist keine Referenz. Bei 1/1,001-Raten läuft Drop-Frame bis zum nächsten Jam um bis zu 3 Frames pro Tag weg (ST 2059-1 §9.1.2).');
@@ -68,6 +71,10 @@ export function clockPanelSettings(p: PanelState, save: () => void, sources: Sou
   rows.push(h('div', { class: 'mtitle' }, 'PTP (SMPTE ST 2059-2)'));
   row('Monitor', check(o.ptp, 'passiv mithören (Bridge, UDP 319/320)', (v) => set({ ptp: v }, true), 'Die Node-Bridge lauscht auf 224.0.1.129; sie sendet nichts, solange „Laufzeit messen“ aus ist'));
   if (o.ptp) {
+    if (ptpClient.conn === 'denied' && ptpClient.allowUrl) {
+      rows.push(h('div', { class: 'mrow' }, h('button', { title: 'Öffnet die Freigabe-Seite der lokalen Bridge; nur dort lässt sich diese Web-Oberfläche zulassen', onclick: () => window.open(ptpClient.allowUrl, '_blank', 'noopener') }, 'In der Bridge zulassen …')));
+      hint(`Die Uhr der Bridge zeigt Netzwerk-Schnittstellen und Grandmaster. Fremde Web-Oberflächen wie ${location.origin} brauchen deshalb eine Freigabe, die nur auf der Seite der Bridge selbst erteilt werden kann.`);
+    }
     const ifaces = ptpClient.status?.ifaces ?? [];
     row('Schnittstelle', select(o.iface, [['', 'Standard (Routing)'], ...ifaces.map((i) => [i.address, `${i.name} ${i.address}`] as [string, string])], (v) => set({ iface: v })));
     row('Laufzeit', check(o.delayReq, 'messen (sendet 1 Delay_Req/s)', (v) => set({ delayReq: v }), 'Aktiv: die Bridge sendet Delay_Req an 224.0.1.129; Ergebnis mit Software-Zeitstempeln'));

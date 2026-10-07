@@ -48,3 +48,32 @@ Telestream PRISM zeigt im PTP-Bereich Grandmaster-ID, Domain, BMCA-Werte, Lock u
 ## Lizenzen
 
 Eigener Code für PTP, LTC und Timecode. Nicht verwendet: node-ptpv2 (laut Issue GPL, kann Domain 127 nicht – nicht erneut geprüft), linuxptp (GPL), libltc (nicht geprüft, nicht verwendet), Wireshark (GPL, nur Offsets als Fakten).
+
+## Timecode über 30 fps (Nachtrag 06.10.2026)
+
+Geöffnete Quellen:
+
+| Quelle | Aussage |
+|---|---|
+| FFmpeg `libavutil/timecode.c` und `timecode_internal.c` (LGPL, nur Fakten) | Zählt bei 60 fps 0…59; Drop-Frame bei 59,94 lässt 4 Nummern je Minute aus (`drop_frames = fps / 30 * 2`). Die SMPTE-Binärform (SEI/ATC) packt über 30 fps **Frame-Paare**: Paarnummer `ff / 2` plus ein Flag für das zweite Bild (bei 50 Bit 7 des Stunden-Bytes, sonst Bit 7 des Sekunden-Bytes), mit Verweis auf „SMPTE ST 12-1:2014 Sec 12.1“. Beim Lesen wird das Flag wieder zur vollen Zählung addiert. |
+| Avid, „What's New for Media Composer v8.3“ (resources.avid.com) | 50p/60p werden unterstützt; wahlweise läuft der Schnitt in einer 25p/30p-Editing-Timebase, dann zeigt die Timecode-Anzeige diese Rate („the timecode display will show the current editing frame rate“). Ohne diese Wahl gilt die Projektrate. |
+| Canon EOS R1, Handbuch „Time Code“ (cam.start.canon) | Drop-Frame bei 29,97, 59,94, 119,88 und 239,76 fps – Zählung in der vollen Bildrate. |
+| SMPTE-Blog „Understanding Standards: Time Code“ (smpte.org, 26.02.2025) | ST 12-3 erweitert auf 72, 96, 100 und 120 Bilder, rückwärtskompatibel zu ST 12-1/-2. |
+| DaVinci Resolve 21.1 Handbuch (lokal) und Scripting-README | Drop-Frame lässt sich für unterstützte Raten wählen (`'29.97 DF'`); eine Aussage zur Zählweise über 30 fps fand sich im Handbuch nicht. |
+
+ST 12-1 und ST 12-3 selbst sind nicht frei (pub.smpte.org: 403); Adobes Premiere-Hilfe war nicht abrufbar (403). Zur Paar-Form gibt es daher nur die Sekundärquelle FFmpeg.
+
+**Entscheidung:** Standardanzeige bei 50/59,94/60 fps ist die volle Zählung 0…49/59 (59,94 DF: Nummern 0–3 jeder Minute außer jeder zehnten fallen weg). So zeigen es FFmpeg (und damit alles, was SEI-Timecode über FFmpeg liest), Kameras und Schnittprogramme in Projektrate. Die ST-12-1-Form „Paar.Flag“ (z. B. `10:00:00:24.1`) gibt es als Option im ⚙ der Uhr; die Schreibweise mit `.0/.1` ist eigene Darstellung, ST 12-1 legt nur das Bit fest. Die volle 59,94-DF-Zählung ist exakt die 29,97-DF-Paarzählung mal zwei (Test über einen ganzen Tag).
+
+**LTC:** ST 2059-1 erlaubt LTC-Codewortraten nur bis 30 Hz; das Paar-Flag liegt in der Binärform auf der Bitposition, die im LTC das Polaritätsbit ist (Bit 27 bei 30, Bit 59 bei 25 fps). LTC zu 50/60p läuft deshalb mit 25/30 Wörtern pro Sekunde und trägt Paarnummern. Der Leser liest das unverändert; Test: 50p-Uhr → ein Wort je Paar → zurück auf das gerade 50p-Bild. VITC wird in LZ Scopes weder erzeugt noch gelesen.
+
+## Uhr über GitHub Pages (Nachtrag 06.10.2026)
+
+`/clock` liefert IP-Adressen der Schnittstellen und Grandmaster-Daten und kann Multicast-Gruppen abonnieren. Eine beliebige Webseite soll das nicht von einer lokalen Bridge abfragen dürfen. Lösung:
+
+- Zugriff nur von 127.0.0.1; ohne Freigabe nur für die UI gleicher Herkunft (Bridge, Desktop-App, Vite-Proxy).
+- Freigabe einer anderen Herkunft nur auf der Seite `/allow` der Bridge selbst: Die Seite lässt sich nicht einbetten (`X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`), das Formular wird nur angenommen, wenn der Browser die Herkunft der Bridge meldet und eine einmalige Nonce der Seite mitkommt (5 min gültig). Eine fremde Seite kann sich so nicht selbst freischalten.
+- Exakter Vergleich der normierten Herkunft (`https://host[:port]`), keine Platzhalter, kein Pfad, nur https (http nur für localhost/127.x).
+- Gespeichert in `allowed-origins.json` (Desktop-App: Benutzerdatenordner; CLI: `LZS_CONFIG_DIR` bzw. `~/.config/lz-scopes`), auf derselben Seite widerrufbar. `--allow-origin` erlaubt eine Herkunft nur für einen Lauf.
+- `GET /api/clock-access` beantwortet jeder Seite nur „freigegeben ja/nein“ (mit CORS- und Private-Network-Access-Antwort), damit die Pages-UI den Weg zur Freigabe anzeigen kann.
+- Live geprüft: vor der Freigabe 403, POST mit fremder oder fehlender Herkunft 403, Nonce nur einmal gültig, danach WebSocket offen. In einem echten Browser von github.io aus noch nicht geprüft (Chromes Abfrage für lokale Netzwerkzugriffe kann zusätzlich erscheinen).

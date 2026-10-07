@@ -7,9 +7,27 @@ Stand: 30.09.2026. Grundlage ist `colour-repos.md`, Abschnitt 9 (displaycal-py3)
 | Quelle | Lizenz | Verwendung in LZ Scopes |
 |---|---|---|
 | displaycal-py3 (lokal geklont, 29.07.2026) | GPL-3.0 | nur Abläufe und Fakten, kein Code: Ausgabeformat von `spotread`, Untethered-Kriterium, Uniformitäts-Auswertung. Alles neu geschrieben. |
-| ArgyllCMS ([ArgyllDoc.html](https://www.argyllcms.com/doc/ArgyllDoc.html), geöffnet) | „Almost all of the source code and provided executable files are … licensed under the Affero GNU Version 3 license“; einige Treiber GPL-2+ | **wird nicht mitgeliefert und nicht gelinkt.** LZ Scopes startet ein vom Nutzer installiertes `spotread` als eigenen Prozess und liest dessen Textausgabe, wie DisplayCAL. Die Seite sagt auch: „If you wish to incorporate or make use of the code in commercial or non-GPL products, you will need to negotiate a commercial license“. Einen fremden, getrennt installierten Prozess aufzurufen ist keine Einbindung von Code; die Einschätzung sollte Lars vor einem kommerziellen Vertrieb trotzdem bestätigen. Profile/Messdaten gehören laut derselben Seite dem, der sie misst. |
+| ArgyllCMS ([ArgyllDoc.html](https://www.argyllcms.com/doc/ArgyllDoc.html), geöffnet) | „Almost all of the source code and provided executable files are … licensed under the Affero GNU Version 3 license“; einige Treiber GPL-2+ | **wird nicht mitgeliefert und nicht gelinkt.** LZ Scopes startet ein vom Nutzer installiertes `spotread` als eigenen Prozess und liest dessen Textausgabe, wie DisplayCAL. Die Seite sagt auch: „If you wish to incorporate or make use of the code in commercial or non-GPL products, you will need to negotiate a commercial license“. Einen fremden, getrennt installierten Prozess aufzurufen ist keine Einbindung von Code; siehe Abschnitt „ArgyllCMS: Lizenzlage“. Profile/Messdaten gehören laut derselben Seite dem, der sie misst. |
 | alwan (MIT, `licenses/alwan-LICENSE.txt`) | MIT | Koeffizienten der Planck-Kurve nach Krystek 1985 (`src/alwan/data/planckian_locus_krystek_{u,v}.csv`) für CCT/Duv. Suchverfahren selbst geschrieben. |
 | Adobe Cube LUT Specification 1.0 (PDF, 2013, geöffnet) | Spezifikation | Schreibregeln für `.cube`: `LUT_3D_SIZE N`, N³ Zeilen, „first component index (Red) changing most rapidly“ (§ 7.2), `TITLE "…"`, Kommentare mit `#`, Domain ohne Angabe 0…1. |
+
+## ArgyllCMS: Lizenzlage (Stand 06.10.2026)
+
+Geöffnet: [argyllcms.com/commercialuse.html](https://www.argyllcms.com/commercialuse.html) („Commercial Use and non-GPL Licensing“) und [ArgyllDoc.html](https://www.argyllcms.com/doc/ArgyllDoc.html).
+- ArgyllCMS ist „licensed under the Affero GNU Version 3 license (AGPL3)“.
+- Graeme Gill bietet den von ihm geschriebenen Code als kommerzielle Lizenz unter dem Namen **ArgyllPRO** an (Computer Graphics Technology P.L.), „so that it may be incorporated in closed source or Server based products“.
+- „It is highly advisable that closed source products that make use of ArgyllCMS NOT be developed before securing an appropriate license.“
+- Den Aufruf von Argyll-Werkzeugen als getrennte Programme behandelt die Seite **nicht ausdrücklich**.
+
+**Umsetzung in LZ Scopes:**
+- Kein Argyll-Code, keine Argyll-Binaries und keine Argyll-Daten im Repo oder in den Installern. `electron-builder.js` schließt `spotread*`, `dispcal*`, `dispread*`, `colprof*`, `collink*` und alles mit `argyll` im Namen aus. `test/argyll-packaging.test.ts` prüft das und die Git-Dateiliste.
+- `server/meter.mjs` startet nur ein `spotread`, das der Nutzer selbst installiert hat, als eigenen Prozess. Die Kommunikation läuft über Kommandozeile, stdin und stdout, gelinkt wird nichts. So arbeitet auch DisplayCAL.
+- Die Funktion ist optional. Ohne ArgyllCMS bleibt die manuelle Eingabe, und der Dialog sagt das.
+- Der Kalibrier-Dialog nennt die Lizenz und dass Argyll separat installiert werden muss.
+
+**Bewertung:** Das ist ein separates, nicht gebündeltes Programm. Nach der üblichen GPL-Lesart sind Programme, die über Kommandozeile und Pipes kommunizieren, getrennte Werke („aggregate“). Damit wird LZ Scopes nicht AGPL-pflichtig, und es wird nichts weitergegeben, das unter Argylls Lizenz fällt.
+
+**Restrisiko:** Der Satz „closed source products that make use of ArgyllCMS“ ist weit formuliert, und die Seite grenzt den Prozessaufruf nicht ab. Bei einem kommerziellen Vertrieb von LZ Scopes, der mit der Messgerätefunktion wirbt, sollte das mit dem Rechteinhaber geklärt werden. Alternativ lässt sich eine ArgyllPRO-Lizenz anfragen. Das ist eine Rechts- und Kostenfrage für Lars, keine technische. Ein eigener Gerätetreiber würde die Abhängigkeit beseitigen, wäre aber ein großer, ungeprüfter Aufwand und wird nicht gebaut.
 
 ## ArgyllCMS `spotread`
 

@@ -62,7 +62,8 @@ export function openCalibration(host: CalibHost) {
   const meterBox = h('div');
   const renderMeter = () => {
     const bridge = !!httpBase;
-    const kids: Kid[] = [h('div', { class: 'mtitle' }, 'Messgerät (ArgyllCMS spotread)')];
+    const kids: Kid[] = [h('div', { class: 'mtitle' }, 'Messgerät (ArgyllCMS spotread)'),
+      h('p', { class: 'hint' }, 'ArgyllCMS (AGPL) separat installieren; LZ Scopes liefert es nicht mit und startet nur ein vorhandenes spotread als eigenes Programm.')];
     if (info === undefined) kids.push(h('p', { class: 'hint' }, 'Suche ArgyllCMS …'));
     else if (!bridge || info === null) kids.push(h('p', { class: 'hint' }, 'Keine Bridge: Messgeräte gehen nur in der Desktop-App oder mit „npm start“. Messwerte manuell eingeben.'));
     else if (!info.found) kids.push(h('p', { class: 'hint bad' }, 'ArgyllCMS nicht gefunden (spotread). Von argyllcms.com installieren und in den PATH legen oder LZS_ARGYLL_BIN setzen – bis dahin Messwerte manuell eingeben.'));

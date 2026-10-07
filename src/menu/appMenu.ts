@@ -4,13 +4,14 @@
 
 import { isMac, registersNatively, sep, type MenuItem, type TopMenu } from './model';
 import { MenuBar } from './menubar';
+import { lang, t } from '../i18n';
 
 export const REPO = 'https://github.com/larszu/lz-scopes';
 /** Guides in the Help menu (links). The inputs manual (#78) opens inside the app, see `manual:`. */
 export const GUIDES: { id: string; label: string; url: string }[] = [
-  { id: 'readme', label: 'Anleitung (README)', url: `${REPO}/blob/main/README.de.md` },
-  { id: 'control', label: 'Steuer-API und Companion', url: `${REPO}/blob/main/docs/control-api.md` },
-  { id: 'cable', label: 'cable-planner-Anbindung', url: `${REPO}/blob/main/docs/cable-planner-integration.md` },
+  { id: 'readme', label: t('menu.guide.readme'), url: `${REPO}/blob/main/${lang() === 'de' ? 'README.de.md' : 'README.md'}` },
+  { id: 'control', label: t('menu.guide.control'), url: `${REPO}/blob/main/docs/control-api.md` },
+  { id: 'cable', label: t('menu.guide.cable'), url: `${REPO}/blob/main/docs/cable-planner-integration.md` },
 ];
 
 export interface MenuState {
@@ -66,15 +67,15 @@ export function registerMenuCommand(menu: string, item: MenuItem, run: () => voi
 }
 
 export const SOURCE_ITEMS: [kind: string, label: string, title: string][] = [
-  ['pattern', 'Testbild', ''],
-  ['stream', 'RTSP / Netzwerk …', 'RTSP, SRT, HLS, NDI, DeckLink über die Bridge'],
-  ['resolve', 'DaVinci Resolve', 'Aktuelles Frame aus dem Resolve-Viewer (Scripting-API, Resolve Studio)'],
-  ['webcam', 'Kamera / Capture', 'Kamera oder USB-Capture-Gerät'],
-  ['screen', 'Bildschirm / Fenster …', 'z. B. der Viewer eines Programmfensters'],
-  ['file', 'Datei …', 'Bild oder Video'],
-  ['folder', 'Ordner …', 'neuestes Bild eines Export-Ordners'],
-  ['audio', 'Audio', 'Audiogerät, Audiodatei'],
-  ['generator', 'Tongenerator', 'Testtöne erzeugen und messen'],
+  ['pattern', t('menu.src.pattern'), ''],
+  ['stream', t('menu.src.stream'), t('menu.src.streamTitle')],
+  ['resolve', 'DaVinci Resolve', t('menu.src.resolveTitle')],
+  ['webcam', t('menu.src.webcam'), t('menu.src.webcamTitle')],
+  ['screen', t('menu.src.screen'), t('menu.src.screenTitle')],
+  ['file', t('menu.src.file'), t('menu.src.fileTitle')],
+  ['folder', t('menu.src.folder'), t('menu.src.folderTitle')],
+  ['audio', t('menu.src.audio'), t('menu.src.audioTitle')],
+  ['generator', t('menu.src.generator'), t('menu.src.generatorTitle')],
 ];
 
 export function buildMenu(s: MenuState): TopMenu[] {
@@ -82,95 +83,95 @@ export function buildMenu(s: MenuState): TopMenu[] {
   const extras = (id: string) => (x(id).length ? [sep(), ...x(id)] : []);
   return [
     {
-      id: 'file', label: 'Datei', items: [
-        { id: 'layouts', label: 'Layouts …', title: 'Layout-Konfigurationen speichern, laden, exportieren' },
-        { id: 'layouts:export', label: 'Layouts exportieren …' },
-        { id: 'layouts:import', label: 'Layouts importieren …' },
+      id: 'file', label: t('menu.file'), items: [
+        { id: 'layouts', label: 'Layouts …', title: t('menu.layoutsTitle') },
+        { id: 'layouts:export', label: t('menu.layoutsExport') },
+        { id: 'layouts:import', label: t('menu.layoutsImport') },
         sep(),
-        { id: 'snapshot', label: 'Screenshot als PNG', accel: 'S' },
+        { id: 'snapshot', label: t('menu.snapshot'), accel: 'S' },
         sep(),
-        { id: 'settings', label: 'Einstellungen …', accel: 'CmdOrCtrl+,', appMenu: true },
+        { id: 'settings', label: t('menu.settings'), accel: 'CmdOrCtrl+,', appMenu: true },
         ...extras('file'),
         { type: 'separator', nativeOnly: true },
-        { role: 'quit', label: 'Beenden', nativeOnly: true, appMenu: true },
+        { role: 'quit', label: t('menu.quit'), nativeOnly: true, appMenu: true },
       ],
     },
     {
-      id: 'edit', label: 'Bearbeiten', nativeOnly: true, items: [
-        { role: 'undo', label: 'Widerrufen' }, { role: 'redo', label: 'Wiederholen' }, sep(),
-        { role: 'cut', label: 'Ausschneiden' }, { role: 'copy', label: 'Kopieren' }, { role: 'paste', label: 'Einsetzen' }, { role: 'selectAll', label: 'Alles auswählen' },
+      id: 'edit', label: t('menu.edit'), nativeOnly: true, items: [
+        { role: 'undo', label: t('menu.undo') }, { role: 'redo', label: t('menu.redo') }, sep(),
+        { role: 'cut', label: t('menu.cut') }, { role: 'copy', label: t('menu.copy') }, { role: 'paste', label: t('menu.paste') }, { role: 'selectAll', label: t('menu.selectAll') },
       ],
     },
     {
-      id: 'view', label: 'Ansicht', items: [
-        { id: 'sidebar', label: 'Seitenleiste', type: 'checkbox', checked: s.sidebar, accel: 'B' },
+      id: 'view', label: t('menu.view'), items: [
+        { id: 'sidebar', label: t('menu.sidebar'), type: 'checkbox', checked: s.sidebar, accel: 'B' },
         sep(),
-        ...s.layouts.map(([k, l], i): MenuItem => ({ id: `layout:${k}`, label: `Layout ${l}`, type: 'radio', checked: s.layout === k, accel: i < 6 ? String(i + 1) : undefined })),
-        { id: 'panel:add', label: 'Panel hinzufügen' },
-        { id: 'solo:exit', label: 'Solo beenden', accel: 'Escape' },
+        ...s.layouts.map(([k, l], i): MenuItem => ({ id: `layout:${k}`, label: t('menu.layoutN', { name: l }), type: 'radio', checked: s.layout === k, accel: i < 6 ? String(i + 1) : undefined })),
+        { id: 'panel:add', label: t('menu.addPanel') },
+        { id: 'solo:exit', label: t('menu.exitSolo'), accel: 'Escape' },
         sep(),
-        { id: 'freeze', label: 'Einfrieren', type: 'checkbox', checked: s.frozen, accel: 'Space' },
-        { label: 'Messpunkt', type: 'submenu', submenu: [
+        { id: 'freeze', label: t('menu.freeze'), type: 'checkbox', checked: s.frozen, accel: 'Space' },
+        { label: t('menu.stage'), type: 'submenu', submenu: [
           ...s.stages.map(([id, l]): MenuItem => ({ id: `stage:${id}`, label: l, type: 'radio', checked: s.stage === id })),
-          sep(), { id: 'stage:next', label: 'Weiterschalten', accel: 'C' },
+          sep(), { id: 'stage:next', label: t('menu.stageNext'), accel: 'C' },
         ] },
-        { label: 'Oberfläche', type: 'submenu', submenu: s.themes.map(([id, l]): MenuItem => ({ id: `theme:${id}`, label: l, type: 'radio', checked: s.theme === id })) },
+        { label: t('menu.theme'), type: 'submenu', submenu: s.themes.map(([id, l]): MenuItem => ({ id: `theme:${id}`, label: l, type: 'radio', checked: s.theme === id })) },
         sep(),
-        { id: 'fullscreen', label: 'Vollbild', accel: 'F' },
+        { id: 'fullscreen', label: t('menu.fullscreen'), accel: 'F' },
         ...extras('view'),
       ],
     },
     {
-      id: 'sources', label: 'Quellen', items: [
-        ...SOURCE_ITEMS.map(([k, l, t]): MenuItem => ({ id: `source:${k}`, label: l, title: t || undefined })),
+      id: 'sources', label: t('menu.sources'), items: [
+        ...SOURCE_ITEMS.map(([k, l, title]): MenuItem => ({ id: `source:${k}`, label: l, title: title || undefined })),
         sep(),
-        { id: 'settings:bridge', label: 'Bridge und ffmpeg …' },
+        { id: 'settings:bridge', label: t('menu.bridge') },
         ...extras('sources'),
       ],
     },
     {
-      id: 'scopes', label: 'Scopes', items: [
-        { label: 'Panel hinzufügen', type: 'submenu', submenu: s.scopes.map(([id, l]): MenuItem => ({ id: `scope:${id}`, label: l })) },
+      id: 'scopes', label: t('menu.scopes'), items: [
+        { label: t('menu.addPanel'), type: 'submenu', submenu: s.scopes.map(([id, l]): MenuItem => ({ id: `scope:${id}`, label: l })) },
         sep(),
-        { id: 'settings:scopes', label: 'Darstellung …', title: 'Skala, Spurfarbe, Präzision, Falschfarben, Hautton, Zebra' },
-        { id: 'settings:stage', label: 'Messpunkt und ΔE …' },
+        { id: 'settings:scopes', label: t('menu.scopesDisplay'), title: t('menu.scopesDisplayTitle') },
+        { id: 'settings:stage', label: t('menu.stageDe') },
         ...extras('scopes'),
       ],
     },
     {
-      id: 'output', label: 'Ausgabe', items: [
-        { id: 'output', label: 'Ausgabe öffnen …', title: 'Gesamtansicht, Panel, Quellbild oder Overlay auf einen Bildschirm oder als Stream' },
-        { id: 'output:pattern', label: 'Testbild ausgeben', enabled: s.hasPattern },
+      id: 'output', label: t('menu.output'), items: [
+        { id: 'output', label: t('menu.outputOpen'), title: t('menu.outputOpenTitle') },
+        { id: 'output:pattern', label: t('menu.outputPattern'), enabled: s.hasPattern },
         sep(),
-        { id: 'led', label: 'LED-Wand …' },
-        { id: 'calibration', label: 'Display-Kalibrierung / Verifikation …' },
+        { id: 'led', label: t('menu.led') },
+        { id: 'calibration', label: t('menu.calibration') },
         ...extras('output'),
       ],
     },
     {
-      id: 'window', label: 'Fenster', items: [
-        { role: 'minimize', label: 'Minimieren', nativeOnly: true },
-        { role: 'zoom', label: 'Zoomen', nativeOnly: true },
+      id: 'window', label: t('menu.window'), items: [
+        { role: 'minimize', label: t('menu.minimize'), nativeOnly: true },
+        { role: 'zoom', label: t('menu.zoom'), nativeOnly: true },
         { type: 'separator', nativeOnly: true },
-        { id: 'fullscreen', label: 'Vollbild', accel: 'F' },
+        { id: 'fullscreen', label: t('menu.fullscreen'), accel: 'F' },
         ...extras('window'),
         { type: 'separator', nativeOnly: true },
-        { role: 'front', label: 'Alle nach vorne bringen', nativeOnly: true },
+        { role: 'front', label: t('menu.front'), nativeOnly: true },
       ],
     },
     {
-      id: 'help', label: 'Hilfe', items: [
-        { id: 'settings:keys', label: 'Tastenkürzel' },
+      id: 'help', label: t('menu.help'), items: [
+        { id: 'settings:keys', label: t('menu.keys') },
         sep(),
-        { id: 'manual:de', label: 'Anleitung: Eingänge (Resolve, Fenster, Ordner, Capture-Karten)' },
-        { id: 'manual:en', label: 'Inputs manual (English)' },
+        { id: `manual:${lang()}`, label: t('menu.manual') },
+        { id: `manual:${lang() === 'de' ? 'en' : 'de'}`, label: lang() === 'de' ? 'Inputs manual (English)' : 'Anleitung Eingänge (Deutsch)' }, // lang-ok: the other language, named in that language
         ...GUIDES.map((g): MenuItem => ({ id: `open:${g.id}`, label: g.label })),
         sep(),
-        { id: 'open:issues', label: 'Fehler melden …' },
-        { id: 'open:licenses', label: 'Lizenzen Dritter' },
+        { id: 'open:issues', label: t('menu.issues') },
+        { id: 'open:licenses', label: t('menu.licenses') },
         ...extras('help'),
         sep(),
-        { id: 'settings:about', label: 'Über LZ Scopes', appMenu: true },
+        { id: 'settings:about', label: t('menu.about'), appMenu: true },
       ],
     },
   ];
@@ -210,7 +211,7 @@ export function dispatch(id: string, a: MenuActions) {
   a.other?.(id);
 }
 
-interface NativeMenu { set: (m: TopMenu[]) => void; onCommand: (cb: (id: string) => void) => void }
+interface NativeMenu { set: (m: TopMenu[], lang?: string) => void; onCommand: (cb: (id: string) => void) => void }
 const native = (): NativeMenu | undefined => (window as unknown as { lzsDesktop?: { menu?: NativeMenu } }).lzsDesktop?.menu;
 
 let state: (() => MenuState) | null = null;
@@ -247,7 +248,7 @@ export function refreshMenu() {
   if (!state) return;
   const m = buildMenu(state());
   const n = native();
-  if (n) n.set(JSON.parse(JSON.stringify(m)));
+  if (n) n.set(JSON.parse(JSON.stringify(m)), lang());
   else bar?.set(m);
 }
 

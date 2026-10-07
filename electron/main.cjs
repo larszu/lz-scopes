@@ -6,6 +6,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { setupDisplayProfiles } = require('./displayProfile.cjs');
 const { setAppMenu } = require('./menu.cjs');
+const { text, setLang } = require('./i18n.cjs');
 const { registerScheme, setupTestVideos } = require('./testVideos.cjs');
 
 // test videos (#52) are played over lzs-media://; schemes must be registered before ready
@@ -49,8 +50,9 @@ async function createWindow() {
     webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
   });
   // Application menu (#53): the page sends its menu model, clicks go back as command ids.
-  ipcMain.on('lzs:menu-set', (e, model) => {
+  ipcMain.on('lzs:menu-set', (e, model, lang) => {
     if (e.sender !== mainWindow.webContents) return;
+    setLang(lang);
     setAppMenu(model, (id) => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send('lzs:menu', id); });
   });
   // Test videos (#52): download, check, cache in userData, play over lzs-media://
@@ -63,7 +65,7 @@ async function createWindow() {
   // watch folder in the bridge (16-bit TIFF/DPX/EXR exports of Lightroom, Capture One, Resolve)
   ipcMain.handle('lzs:watch-folder', async () => {
     const { dialog } = require('electron');
-    const r = await dialog.showOpenDialog(mainWindow, { title: 'Export-Ordner überwachen', properties: ['openDirectory'] });
+    const r = await dialog.showOpenDialog(mainWindow, { title: text('watchFolder'), properties: ['openDirectory'] });
     return r.canceled || !r.filePaths[0] ? null : addWatchDir(r.filePaths[0]);
   });
   ipcMain.handle('lzs:capture-sources', async () => {
@@ -107,7 +109,7 @@ async function createWindow() {
         action: 'allow',
         overrideBrowserWindowOptions: {
           x: b.x + (fs ? 0 : 60), y: b.y + (fs ? 0 : 60), width: fs ? b.width : 1280, height: fs ? b.height : 720,
-          fullscreen: fs, frame: !fs, backgroundColor: '#000000', autoHideMenuBar: true, title: 'LZ Scopes – Ausgabe',
+          fullscreen: fs, frame: !fs, backgroundColor: '#000000', autoHideMenuBar: true, title: text('output'),
           webPreferences: { contextIsolation: true, sandbox: true },
         },
       };
@@ -121,7 +123,7 @@ async function createWindow() {
         action: 'allow',
         overrideBrowserWindowOptions: {
           x: b.x + 40, y: b.y + 40, width: Math.min(1280, b.width - 80), height: Math.min(720, b.height - 80),
-          backgroundColor: '#000000', autoHideMenuBar: true, title: 'LZ Scopes – Ausgabe', fullscreenable: true,
+          backgroundColor: '#000000', autoHideMenuBar: true, title: text('output'), fullscreenable: true,
           webPreferences: { contextIsolation: true, sandbox: true },
         },
       };
@@ -139,7 +141,7 @@ app.setAboutPanelOptions({ applicationName: 'LZ Scopes', copyright: `© ${new Da
 
 app.whenReady().then(createWindow).catch((e) => {
   const { dialog } = require('electron');
-  dialog.showErrorBox('LZ Scopes', `Start fehlgeschlagen:\n${e && e.stack ? e.stack : e}`);
+  dialog.showErrorBox('LZ Scopes', `${text('startFailed')}\n${e && e.stack ? e.stack : e}`);
   app.quit();
 });
 app.on('window-all-closed', () => app.quit());

@@ -1,85 +1,89 @@
-# Steuer-API (Bitfocus Companion, curl)
+[Deutsch](control-api.de.md) | **English**
 
-Die Bridge (`server/index.mjs`, in der Desktop-App eingebaut) nimmt Befehle an und reicht sie an das **Hauptfenster** weiter. Das Hauptfenster hält eine WebSocket-Verbindung zur Bridge (`/control?role=app`), führt die Befehle aus und meldet seinen Zustand zurück. Ohne offenes Hauptfenster antwortet die Bridge mit `503`.
+# Control API (Bitfocus Companion, curl)
 
-| Weg | Adresse |
+The bridge (`server/index.mjs`, built into the desktop app) accepts commands and passes them on to the **main window**. The main window keeps a WebSocket connection to the bridge (`/control?role=app`), executes the commands and reports its state back. Without an open main window the bridge answers with `503`.
+
+| Path | Address |
 |---|---|
-| HTTP | `POST /api/control` mit `Content-Type: application/json`, ein Befehl pro Anfrage |
-| Zustand | `GET /api/control` → `{ ok, connected, state }` |
-| Befehlsliste | `GET /api/control/commands` |
-| WebSocket | `ws://host:port/control` – Befehle senden, Antworten und Zustand empfangen |
+| HTTP | `POST /api/control` with `Content-Type: application/json`, one command per request |
+| State | `GET /api/control` → `{ ok, connected, state }` |
+| Command list | `GET /api/control/commands` |
+| WebSocket | `ws://host:port/control` – send commands, receive answers and state |
 
-**Port:** Die Desktop-App nimmt 4192, wenn er frei ist, sonst einen freien Port (steht im Log: `bridge http://127.0.0.1:<port>`). `npm start` und die Bridge von `npm run dev` lauschen ebenfalls auf 4192 (im Dev-Betrieb reicht die UI auf 4191 `/control` weiter). 4190 wird bewusst nicht benutzt: Er steht auf der „bad ports“-Liste des Fetch-Standards, Chrome verweigert ihn.
+**Port:** the desktop app takes 4192 if it is free, otherwise a free port (shown in the log: `bridge http://127.0.0.1:<port>`). `npm start` and the bridge of `npm run dev` also listen on 4192 (in development the UI on 4191 forwards `/control`). 4190 is deliberately not used: it is on the “bad ports” list of the Fetch standard, and Chrome refuses it.
 
-## Zugriff
+## Access
 
-- Ohne Token nur von `127.0.0.1` / `::1`.
-- Mit Token jeder, der es mitschickt: `Authorization: Bearer <token>` oder `?token=<token>`. Token setzen: `LZS_CONTROL_TOKEN=<token>` (Desktop-App und `npm start`) oder `--control-token <token>`. Damit Companion auf einem anderen Rechner die Bridge überhaupt erreicht, muss sie außerdem auf dem Netz lauschen: `LZS_HOST=0.0.0.0` (App) bzw. `--host 0.0.0.0`.
-- Webseiten fremder Herkunft werden abgewiesen (Origin-Prüfung, nur `application/json`).
+- Without a token, only from `127.0.0.1` / `::1`.
+- With a token, anyone who sends it: `Authorization: Bearer <token>` or `?token=<token>`. Set the token with `LZS_CONTROL_TOKEN=<token>` (desktop app and `npm start`) or `--control-token <token>`. For Companion on another computer to reach the bridge at all, it must also listen on the network: `LZS_HOST=0.0.0.0` (app) or `--host 0.0.0.0`.
+- Web pages of a foreign origin are rejected (origin check, `application/json` only).
 
-## Befehle
+## Commands
 
-Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen zählen wie in der App ab 1 oder werden mit Namen (bzw. id) angegeben.
+Every command is a JSON object with `cmd`. Panels, sources, presets and scenes count from 1 as in the app, or are given by name (or id).
 
-| `cmd` | Felder |
+| `cmd` | Fields |
 |---|---|
-| `state` | – (Antwort `result` = Zustand) |
-| `source.select` | `source`; `panel` optional (ohne = alle Panels) |
-| `layout.preset` | `preset`: 1–6, Kennung (`lc`) oder Beschriftung (`2x2`, `Colorist`) |
-| `layout.load` | `name` einer gespeicherten Layout-Konfiguration |
+| `state` | – (answer `result` = state) |
+| `source.select` | `source`; `panel` optional (without = all panels) |
+| `layout.preset` | `preset`: 1–6, id (`lc`) or label (`2x2`, `Colorist`) |
+| `layout.load` | `name` of a saved layout configuration |
 | `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `qclog`, `hist`, `stats`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `clock`, `genlock`) |
-| `panel.maximize` | `panel`, `mode` `toggle`\|`on`\|`off`; `off` ohne `panel` = zurück |
+| `panel.maximize` | `panel`, `mode` `toggle`\|`on`\|`off`; `off` without `panel` = restore |
 | `freeze` | `mode` `toggle`\|`on`\|`off` |
-| `qc.clear` | – (QC-Protokoll leeren; Zustand `qc`: `active`, `total`, `last`) |
-| `roi.clear` | `source` optional (ohne = alle): Messrahmen und Messpunkt löschen |
-| `pattern.select` | `pattern` (id oder Name), `source` optional (sonst erste Testbild-Quelle) |
+| `qc.clear` | – (clear the QC log; state `qc`: `active`, `total`, `last`) |
+| `roi.clear` | `source` optional (without = all): delete measuring frame and measuring point |
+| `pattern.select` | `pattern` (id or name), `source` optional (otherwise the first test pattern source) |
 | `pattern.next`, `pattern.prev` | `source` optional |
-| `output.open` | `name`, `view` (`overlay` Standard, `grid`, `panel`, `clean`), `panel`, `source`, `scene`, `bg` `picture`\|`black`, `display` (Bildschirm-id), `fullscreen` (Standard `true`), `stream`, `target`, `codec` (10-bit-Stream: `hevc10`, `hevc422`, `v210`, `prores`; braucht `target`) |
-| `output.close` | `name` optional (ohne = alle) |
-| `scene.select` | `scene`; `output` optional (ohne = Vorgabe und alle offenen Overlay-Ausgaben) |
-| `stream.start` | `stream` (Name → `/out/<stream>.mjpeg`), `output` optional (sonst die erste offene Ausgabe; ist keine offen, öffnet sich ein Overlay-Fenster), `target` optional (`rtmp://`, `srt://`, `rtsp://`, `udp://`, `tcp://`, `rtp://`), `codec` optional (10 bit, wie bei `output.open`; ohne MJPEG, RTMP geht dann nicht) |
-| `stream.stop` | `output` oder `stream` optional (ohne = alle) |
-| `transport` | `op` `play`\|`pause`\|`toggle`\|`stop`\|`next`\|`prev`\|`forward`\|`rewind`\|`start`\|`end`, `source` optional (sonst die gezeigte Videodatei) |
-| `audio.reset` | `source` optional (sonst alle Quellen mit Ton): I, LRA, Max M/S, Max TP, Zähler und Protokoll zurücksetzen (EBU Tech 3341) |
-| `audio.pause` | `mode` `toggle`\|`on`\|`off`, `source` optional: I und LRA anhalten/fortsetzen (Tech 3341) |
-| `generator` | `mode` `toggle`\|`on`\|`off`, `signal` optional (`sine`, `ebu-ident`, `glits`, `blits`, `ebu-multi`, `ident-lr`, `pink`, `pink-band`, `white`, `sweep`, `steps`, `polarity`, `avsync`, …), `freq` 10–20000 Hz, `level` −90–0 dBFS; über −6 dBFS nur mit `"force": true` |
+| `output.open` | `name`, `view` (`overlay` default, `grid`, `panel`, `clean`), `panel`, `source`, `scene`, `bg` `picture`\|`black`, `display` (screen id), `fullscreen` (default `true`), `stream`, `target`, `codec` (10-bit stream: `hevc10`, `hevc422`, `v210`, `prores`; needs `target`) |
+| `output.close` | `name` optional (without = all) |
+| `scene.select` | `scene`; `output` optional (without = default and all open overlay outputs) |
+| `stream.start` | `stream` (name → `/out/<stream>.mjpeg`), `output` optional (otherwise the first open output; if none is open, an overlay window opens), `target` optional (`rtmp://`, `srt://`, `rtsp://`, `udp://`, `tcp://`, `rtp://`), `codec` optional (10 bit, as for `output.open`; without it MJPEG; a 10-bit codec cannot go over RTMP) |
+| `stream.stop` | `output` or `stream` optional (without = all) |
+| `transport` | `op` `play`\|`pause`\|`toggle`\|`stop`\|`next`\|`prev`\|`forward`\|`rewind`\|`start`\|`end`, `source` optional (otherwise the video file on screen) |
+| `audio.reset` | `source` optional (otherwise all sources with audio): reset I, LRA, max M/S, max TP, counter and log (EBU Tech 3341) |
+| `audio.pause` | `mode` `toggle`\|`on`\|`off`, `source` optional: pause/resume I and LRA (Tech 3341) |
+| `generator` | `mode` `toggle`\|`on`\|`off`, `signal` optional (`sine`, `ebu-ident`, `glits`, `blits`, `ebu-multi`, `ident-lr`, `pink`, `pink-band`, `white`, `sweep`, `steps`, `polarity`, `avsync`, …), `freq` 10–20000 Hz, `level` −90–0 dBFS; above −6 dBFS only with `"force": true` |
 
-Antwort: `{ ok, result?, error?, state }`. Status `400` = ungültiger Befehl, `422` = nicht ausführbar (z. B. Szene unbekannt), `503` = kein Hauptfenster, `401`/`403` = Zugriff. `error` ist ein englischer Text (z. B. `source.select: source missing`, `Token missing or wrong`); Skripte sollten sich auf den Status verlassen, nicht auf den Wortlaut.
+Answer: `{ ok, result?, error?, state }`. `error` is an English text naming the command and the problem (e.g. `source.select: source missing`, `Token missing or wrong`). Status `400` = invalid command, `422` = cannot be executed (e.g. unknown scene), `503` = no main window, `401`/`403` = access denied. Scripts should rely on `ok` and the status code, not on the wording.
 
-## Zustand (Feedbacks)
+## State (feedbacks)
 
 ```json
 {
-  "source": { "index": 1, "id": "s1", "name": "Kamera 1", "status": "live" },
+  "source": { "index": 1, "id": "s1", "name": "Camera 1", "status": "live" },
   "frozen": false,
   "clip": 0.4, "clipHigh": 0.4, "clipLow": 0,
   "yMin": 3.1, "yMax": 98.7,
   "layoutName": "Grading", "preset": "lc",
   "maximized": null,
-  "scene": { "id": "…", "name": "Waveform unten" },
-  "outputs": [{ "name": "key", "view": "overlay", "scene": "Waveform unten", "stream": "scopes" }],
-  "pattern": { "id": "smpte75", "name": "SMPTE 75 % Balken + PLUGE" },
+  "scene": { "id": "…", "name": "Waveform bottom" },
+  "outputs": [{ "name": "key", "view": "overlay", "scene": "Waveform bottom", "stream": "scopes" }],
+  "pattern": { "id": "smpte75", "name": "SMPTE 75% bars + PLUGE" },
   "playing": null,
-  "audio": { "source": "Kamera 1", "momentary": -22.8, "shortTerm": -23.1, "integrated": -23.0, "lra": 4.2, "maxTP": -2.1,
-             "paused": false, "seconds": 312, "avOffsetMs": 12.5, "ident": "EBU-Stereo-Ident (R 49)", "identProblems": [] },
+  "audio": { "source": "Camera 1", "momentary": -22.8, "shortTerm": -23.1, "integrated": -23.0, "lra": 4.2, "maxTP": -2.1,
+             "paused": false, "seconds": 312, "avOffsetMs": 12.5, "ident": "EBU stereo ident (R 49)", "identProblems": [] },
   "generator": { "running": false, "signal": "sine", "level": -18, "freq": 1000, "channels": 2 },
   "sources": [], "layouts": [], "presets": [], "panels": [], "scenes": [], "patterns": []
 }
 ```
 
-`clip`, `yMin`, `yMax` sind Prozent (0,1-genau) der aktiven Quelle – das ist die Quelle, die die meisten sichtbaren Panels zeigen. Ohne Statistik stehen sie auf `null`. `audio` gilt für die aktive Quelle mit Ton (sonst die erste mit Ton), Werte in LUFS/LU/dBTP auf 0,1 gerundet, `avOffsetMs` nach ITU-R BT.1359-1 (+ = Ton vor Bild), `null` ohne Messwert. `layoutName` ist die zuletzt geladene Layout-Konfiguration bzw. die Beschriftung der Vorlage.
+Names (sources, scenes, patterns, ident) appear as they are shown in the app; user-defined names stay as entered.
 
-Über WebSocket kommen `{type:"hello", connected, state, commands}` beim Verbinden, `{type:"state", state}` bei jeder Änderung (höchstens viermal pro Sekunde), `{type:"connected", connected}` wenn das Hauptfenster kommt oder geht, und `{type:"result", id, ok, result?, error?}` auf jeden Befehl (die `id` des Befehls wird zurückgegeben).
+`clip`, `yMin`, `yMax` are percentages (to 0.1) of the active source – the source shown by most visible panels. Without statistics they are `null`. `audio` refers to the active source with audio (otherwise the first one with audio); values in LUFS/LU/dBTP rounded to 0.1, `avOffsetMs` according to ITU-R BT.1359-1 (+ = audio ahead of picture), `null` without a reading. `layoutName` is the last loaded layout configuration or the label of the preset.
 
-## Beispiele
+Over WebSocket you receive `{type:"hello", connected, state, commands}` on connecting, `{type:"state", state}` on every change (at most four times per second), `{type:"connected", connected}` when the main window appears or goes away, and `{type:"result", id, ok, result?, error?}` for every command (the command's `id` is echoed).
+
+## Examples
 
 ```bash
-B=http://127.0.0.1:4192/api/control   # Desktop-App und npm start
+B=http://127.0.0.1:4192/api/control   # desktop app and npm start
 J='content-type: application/json'
-curl -s $B | jq .state.frozen                                              # Zustand
-curl -s -H "$J" -d '{"cmd":"freeze","mode":"toggle"}' $B                   # Einfrieren
-curl -s -H "$J" -d '{"cmd":"source.select","source":2}' $B                 # Quelle 2 in allen Panels
-curl -s -H "$J" -d '{"cmd":"source.select","source":"Kamera 1","panel":3}' $B
+curl -s $B | jq .state.frozen                                              # state
+curl -s -H "$J" -d '{"cmd":"freeze","mode":"toggle"}' $B                   # freeze
+curl -s -H "$J" -d '{"cmd":"source.select","source":2}' $B                 # source 2 in all panels
+curl -s -H "$J" -d '{"cmd":"source.select","source":"Camera 1","panel":3}' $B
 curl -s -H "$J" -d '{"cmd":"layout.preset","preset":"2x2"}' $B
 curl -s -H "$J" -d '{"cmd":"layout.load","name":"Grading"}' $B
 curl -s -H "$J" -d '{"cmd":"panel.scope","panel":2,"scope":"vector"}' $B
@@ -92,24 +96,24 @@ curl -s -H "$J" -d '{"cmd":"stream.start","stream":"scopes","output":"key","targ
 curl -s -H "$J" -d '{"cmd":"stream.stop"}' $B
 curl -s -H "$J" -d '{"cmd":"output.close"}' $B
 curl -s -H "$J" -d '{"cmd":"transport","op":"next"}' $B
-# mit Token von einem anderen Rechner
-curl -s -H "$J" -H 'Authorization: Bearer geheim' -d '{"cmd":"freeze"}' http://studio.local:4192/api/control
+# with a token from another computer
+curl -s -H "$J" -H 'Authorization: Bearer secret' -d '{"cmd":"freeze"}' http://studio.local:4192/api/control
 ```
 
-Im Browser öffnet `output.open` ein Fenster nur, wenn Pop-ups für die Seite erlaubt sind; die Desktop-App öffnet es immer.
+In the browser, `output.open` opens a window only if pop-ups are allowed for the page; the desktop app always opens it.
 
-## Companion-Modul
+## Companion module
 
-`companion/` enthält das Modul `companion-module-lz-scopes` (API `@companion-module/base` ~1.14.1, wie das Modul in lz-camera-bridge) mit Aktionen für alle Befehle oben, Feedbacks (Verbunden, Eingefroren, Quelle aktiv, Clipping/Y′ über Schwelle, Layout, Szene, Ausgabe offen, Stream läuft, Panel maximiert, Videodatei läuft, Tongenerator läuft, I/LRA angehalten, Max True Peak über Schwelle, Ident-Befund), Variablen (auch Lautheit M/S/I/LRA, True Peak, A/V-Versatz, Ident) und Presets.
+`companion/` contains the module `companion-module-lz-scopes` (API `@companion-module/base` ~1.14.1, like the module in lz-camera-bridge) with actions for all commands above, feedbacks (connected, frozen, source active, clipping/Y′ above threshold, layout, scene, output open, stream running, panel maximised, video file playing, tone generator running, I/LRA paused, max true peak above threshold, ident result), variables (including loudness M/S/I/LRA, true peak, A/V offset, ident) and presets.
 
 ```bash
 cd companion
 npm ci
-npm test            # Befehle, Zustand, Feedbacks; prüft die Befehle gegen server/control.mjs
+npm test            # commands, state, feedbacks; checks the commands against server/control.mjs
 npm run build       # → dist/
-COMPANION_DEV_MODULES=~/companion-dev npm run sync   # in Companions Ordner für Entwickler-Module kopieren
+COMPANION_DEV_MODULES=~/companion-dev npm run sync   # copy into Companion's folder for developer modules
 ```
 
-In Companion unter *Settings → Developer modules path* den Ordner (`~/companion-dev`) eintragen, dann die Verbindung „LZ Scopes“ anlegen.
+In Companion, enter the folder (`~/companion-dev`) under *Settings → Developer modules path*, then add the connection “LZ Scopes”.
 
-**Eigenes Repo?** Für den eigenen Einsatz nicht: Companion lädt das Modul aus dem Entwickler-Ordner. Für die offizielle Modulliste von Bitfocus braucht es ein eigenes Repo in der Bitfocus-Organisation (`companion-module-<hersteller>-<produkt>`, freie Lizenz, Paket per `@companion-module/tools`). Der Ordner `companion/` ist so aufgebaut, dass er sich dafür unverändert herauslösen lässt.
+**Separate repo?** Not for your own use: Companion loads the module from the developer folder. For Bitfocus's official module list it needs its own repo in the Bitfocus organisation (`companion-module-<manufacturer>-<product>`, free licence, package via `@companion-module/tools`). The `companion/` folder is structured so it can be split out for that unchanged.

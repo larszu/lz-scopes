@@ -1,6 +1,6 @@
 # lz-ndi – NDI®-Helfer
 
-Empfängt eine NDI®-Quelle und schreibt die Bilder im Helfer-Protokoll (`docs/frame-protocol.md`) auf stdout. Die Bridge startet ihn für Quellen `ndi:<Quellenname>`.
+Empfängt eine NDI®-Quelle und schreibt die Bilder im Helfer-Protokoll (`docs/frame-protocol.de.md`) auf stdout. Die Bridge startet ihn für Quellen `ndi:<Quellenname>`.
 
 - **NDI-Runtime vom Nutzer:** Der Helfer lädt die Runtime zur Laufzeit (`$NDI_RUNTIME_DIR_V6`, dann Systempfade wie `/usr/local/lib/libndi.dylib`). lz-scopes liefert nichts von NDI aus. Runtime: NDI Tools bzw. NDI-Runtime von [ndi.video](https://ndi.video/); macOS auch `brew install --cask libndi`.
 - **Ohne SDK baubar:** `ndi-min.h` enthält nur die nötigen Typen und Funktionsnamen aus den NDI-SDK-Headern 6.3, die dateiweise unter MIT stehen (Text in `licenses/ndi-sdk-headers-MIT.txt`). Laut NDI-Doku dürfen Open-Source-Projekte die Header mitführen und die Bibliothek dynamisch laden.

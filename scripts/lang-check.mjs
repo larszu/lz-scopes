@@ -27,6 +27,7 @@ const EXT = /\.(ts|mts|cts|js|mjs|cjs)$/;
 export const ALLOW_FILES = {
   'src/i18n/': 'the dictionaries themselves',
   'src/vendor/': 'third-party code',
+  'electron/i18n.cjs': 'texts of the Electron main process, which cannot import src/i18n',
 };
 
 /** Words that only exist in German (lower case, whole words). */

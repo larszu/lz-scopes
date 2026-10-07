@@ -55,7 +55,7 @@ Installer im [neuesten Release](https://github.com/larszu/lz-scopes/releases/lat
 
 **Web-Fassung:** <https://larszu.github.io/lz-scopes/>. Dort gehen Testbilder, Kamera, Bildschirm und Dateien. RTSP, SRT und andere Netzwerkstreams brauchen die Desktop-App oder `npm start`, weil ein Browser sie nicht öffnen kann.
 
-**iPhone und iPad** (`ios/`, Capacitor): dieselbe App in einer nativen Hülle. Die CI baut sie und startet sie im iOS-Simulator; auf echten Geräten ist sie noch ungeprüft, im App Store oder per TestFlight gibt es sie noch nicht (dafür ist ein Apple-Developer-Konto nötig). Möglich sind Kamera, USB-C-Capture-Karten ab iPadOS 17, Dateien und der Opple über CoreBluetooth. Netzwerkstreams kommen von einer Bridge auf einem Rechner im selben Netz (`npm start -- --host 0.0.0.0`), die App findet sie per Bonjour. Siehe [docs/ios.md](docs/ios.md).
+**iPhone und iPad** (`ios/`, Capacitor): dieselbe App in einer nativen Hülle. Die CI baut sie und startet sie im iOS-Simulator; auf echten Geräten ist sie noch ungeprüft, im App Store oder per TestFlight gibt es sie noch nicht (dafür ist ein Apple-Developer-Konto nötig). Möglich sind Kamera, USB-C-Capture-Karten ab iPadOS 17, Dateien und der Opple über CoreBluetooth. Netzwerkstreams kommen von einer Bridge auf einem Rechner im selben Netz (`npm start -- --host 0.0.0.0`), die App findet sie per Bonjour. Siehe [docs/ios.de.md](docs/ios.de.md).
 
 ## Schnellstart
 
@@ -147,7 +147,7 @@ Mehrere Quellen gleichzeitig, jedes Panel wählt seine Quelle. Pro Stream einste
 
 Einfrieren, PNG-Export, Vollbild.
 
-**Fernsteuerung** (Bitfocus Companion, curl): `POST /api/control` bzw. WebSocket `/control` an der Bridge; das Hauptfenster führt aus und meldet Quelle, Freeze, Clipping, Y′ min/max, Layout, Szene und Ausgaben zurück. Standardmäßig nur von 127.0.0.1, mit `LZS_CONTROL_TOKEN` auch aus dem Netz. Befehle und Beispiele: [docs/control-api.md](docs/control-api.md). Das Companion-Modul liegt in [`companion/`](companion).
+**Fernsteuerung** (Bitfocus Companion, curl): `POST /api/control` bzw. WebSocket `/control` an der Bridge; das Hauptfenster führt aus und meldet Quelle, Freeze, Clipping, Y′ min/max, Layout, Szene und Ausgaben zurück. Standardmäßig nur von 127.0.0.1, mit `LZS_CONTROL_TOKEN` auch aus dem Netz. Befehle und Beispiele: [docs/control-api.de.md](docs/control-api.de.md). Das Companion-Modul liegt in [`companion/`](companion).
 
 **Tasten:** `1`–`6` Layout-Vorlage · `C` Messpunkt (Signal / nach CST / nach LUT) · `Leertaste` Play/Pause (Videodatei) bzw. Einfrieren · `←`/`→` Frame · `J`/`K`/`L` Shuttle · `F` Vollbild · `S` PNG · `B` Seitenleiste · `Esc` Vergrößerung beenden bzw. Messpunkt/Rahmen löschen · im Overlay-Ausgabefenster `E` Bearbeiten
 
@@ -182,7 +182,7 @@ Grenze: Canvas arbeitet in Full-Range-RGB, deshalb gibt es keine Pegel unter 0 %
 Messkern in `src/audio/dsp` (reines TypeScript, ohne DOM, in vitest gegen die Normtests geprüft). Normwerte und Quellen: [docs/research/audio.md](docs/research/audio.md).
 
 **Quellen mit Ton**
-- *RTSP / Netz*: Die Bridge liefert den Ton des Streams mit (Auswahl „Ton“ an der Quelle, [Protokoll 2](docs/frame-protocol.md)). Bild und Ton kommen aus demselben ffmpeg-Prozess, ohne Umrechnung von Abtastrate und Kanälen. Die Testbilder `test:*` bringen einen 1-kHz-Ton mit −18 dBFS mit.
+- *RTSP / Netz*: Die Bridge liefert den Ton des Streams mit (Auswahl „Ton“ an der Quelle, [Protokoll 2](docs/frame-protocol.de.md)). Bild und Ton kommen aus demselben ffmpeg-Prozess, ohne Umrechnung von Abtastrate und Kanälen. Die Testbilder `test:*` bringen einen 1-kHz-Ton mit −18 dBFS mit.
 - *Datei* (Video): Der Ton der Datei wird mitgemessen und ist nur mit 🎧 hörbar.
 - *Audio*: Audiogerät im Browser (Echounterdrückung, Rauschunterdrückung und automatische Pegelregelung aus, Gerät wählbar: HDMI-Ton einer USB-Capture-Karte, Laptop-Mikrofon, USB-Interface, Dante Virtual Soundcard/Dante Via als Systemgerät – Chromium liefert höchstens 2 Kanäle), Audiogerät über die Bridge (ffmpeg liest alle Kanäle: `audio:avfoundation|dshow|alsa:<Name>`), Audiodatei (mit „Ganze Datei messen“, schneller als Echtzeit) oder der Generator als Rückweg.
 - *Gerät…* an einer Netz-Quelle: Capture-Gerät über die Bridge, auf Wunsch mit Ton (`device:…#audio=<Name>`), Bild und Ton dann aus einem ffmpeg-Prozess.
@@ -259,14 +259,14 @@ Ein Simulator läuft ohne Kamera. An einer Sony SRG-A40 steuert die Bridge über
 import { ScopeView, Source } from 'lz-scopes/src';
 const view = new ScopeView(el, { scopes: ['wf-luma', 'vector', 'parade', 'hist'] });
 const src = new Source('stream', 'Kamera 1');
-src.connectFrames('ws://bridge/scope/1');  // Frame-Protokoll: docs/frame-protocol.md
+src.connectFrames('ws://bridge/scope/1');  // Frame-Protokoll: docs/frame-protocol.de.md
 view.setSource(src);
 ```
 
 ## Integration
 
 - **lz-camera-bridge** (Nachfolger von av-control-center): Scopes an den RTSP-Kacheln der Ansicht *Video*, Bridge-Endpunkt `/scope/<n>`
-- **cable-planner**: Konzept in [docs/cable-planner-integration.md](docs/cable-planner-integration.md), Scopes am Gerät im Canvas, Frames per Electron-IPC (`Source.pushFrame`)
+- **cable-planner**: Konzept in [docs/cable-planner-integration.de.md](docs/cable-planner-integration.de.md), Scopes am Gerät im Canvas, Frames per Electron-IPC (`Source.pushFrame`)
 
 ## Technik
 

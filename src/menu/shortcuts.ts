@@ -1,25 +1,26 @@
+import { t } from '../i18n';
 // Keyboard shortcuts of the main window: one list for the menu labels, the settings page
-// "Tastatur", Help → Tastenkürzel and the README. The keys themselves are handled in
+// "Keyboard", Help → Keyboard Shortcuts and the README. The keys themselves are handled in
 // src/main.ts (keydown) and src/menu/appMenu.ts (Cmd/Ctrl+,).
 
 export interface Shortcut { keys: string[]; what: string; group: string }
 
 export const SHORTCUTS: Shortcut[] = [
-  { group: 'Allgemein', keys: ['CmdOrCtrl+,'], what: 'Einstellungen' },
-  { group: 'Allgemein', keys: ['F'], what: 'Vollbild' },
-  { group: 'Allgemein', keys: ['S'], what: 'Screenshot als PNG' },
-  { group: 'Allgemein', keys: ['B'], what: 'Seitenleiste (Quellen) ein/aus' },
-  { group: 'Ansicht', keys: ['1', '2', '3', '4', '5', '6'], what: 'Layout-Vorlage 1–6' },
-  { group: 'Ansicht', keys: ['Space'], what: 'Einfrieren / weiter (bei Videodateien: Wiedergabe)' },
-  { group: 'Ansicht', keys: ['Escape'], what: 'Solo beenden, sonst Messpunkt und Rahmen löschen' },
-  { group: 'Ansicht', keys: ['C'], what: 'Messpunkt der Kette (Signal, CST, LUT …) weiterschalten' },
-  { group: 'Videodatei', keys: ['Left', 'Right'], what: 'ein Bild zurück / vor' },
-  { group: 'Videodatei', keys: ['Shift+Left', 'Shift+Right'], what: 'eine Sekunde zurück / vor' },
-  { group: 'Videodatei', keys: ['J', 'K', 'L'], what: 'Shuttle rückwärts / Stopp / vorwärts' },
-  { group: 'Videodatei', keys: ['Home', 'End'], what: 'Anfang / Ende' },
-  { group: 'Maus', keys: ['Doppelklick'], what: 'Panel solo (groß) und zurück' },
-  { group: 'Maus', keys: ['Klick ins Bild'], what: 'Messpunkt setzen; Ziehen = Messrahmen' },
-  { group: 'Maus', keys: ['Rechtsklick'], what: 'Messpunkt und Rahmen löschen' },
-  { group: 'Ausgabefenster', keys: ['F'], what: 'Vollbild' },
-  { group: 'Ausgabefenster', keys: ['E'], what: 'Overlay bearbeiten (Scopes verschieben, skalieren)' },
+  { group: t('keys.g.general'), keys: ['CmdOrCtrl+,'], what: t('keys.settings') },
+  { group: t('keys.g.general'), keys: ['F'], what: t('keys.full') },
+  { group: t('keys.g.general'), keys: ['S'], what: t('keys.snapshot') },
+  { group: t('keys.g.general'), keys: ['B'], what: t('keys.sidebar') },
+  { group: t('keys.g.view'), keys: ['1', '2', '3', '4', '5', '6'], what: t('keys.layout') },
+  { group: t('keys.g.view'), keys: ['Space'], what: t('keys.freeze') },
+  { group: t('keys.g.view'), keys: ['Escape'], what: t('keys.escape') },
+  { group: t('keys.g.view'), keys: ['C'], what: t('keys.stage') },
+  { group: t('keys.g.video'), keys: ['Left', 'Right'], what: t('keys.frame') },
+  { group: t('keys.g.video'), keys: ['Shift+Left', 'Shift+Right'], what: t('keys.second') },
+  { group: t('keys.g.video'), keys: ['J', 'K', 'L'], what: t('keys.shuttle') },
+  { group: t('keys.g.video'), keys: ['Home', 'End'], what: t('keys.startEnd') },
+  { group: t('keys.g.mouse'), keys: [t('keys.dbl')], what: t('keys.dblWhat') },
+  { group: t('keys.g.mouse'), keys: [t('keys.click')], what: t('keys.clickWhat') },
+  { group: t('keys.g.mouse'), keys: [t('keys.right')], what: t('keys.rightWhat') },
+  { group: t('keys.g.output'), keys: ['F'], what: t('keys.full') },
+  { group: t('keys.g.output'), keys: ['E'], what: t('keys.overlay') },
 ];

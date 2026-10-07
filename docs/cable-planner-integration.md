@@ -1,76 +1,78 @@
-# LZ Scopes im cable-planner – Konzept
+[Deutsch](cable-planner-integration.de.md) | **English**
 
-Stand 29.09.2026. Nichts davon ist gebaut. Es beschreibt, wie die Scopes in den cable-planner passen, ohne zu einem „Extra-Tool“ zu werden.
+# LZ Scopes in cable-planner – concept
 
-## Grundsatz
+As of 29 September 2026. None of this is built. It describes how the scopes fit into cable-planner without becoming an “extra tool”.
 
-Messen gehört an das Gerät im Canvas, genau wie die ATEM-Multiviewer-Konfiguration, die Kamerasteuerung und das Videohub-Routing. Es gibt keine eigene Scopes-Ansicht in der Suite. Wer eine Kamera im Plan anklickt, findet dort *Vorschau* **und** *Scopes*.
+## Principle
 
-## Was der cable-planner schon hat
+Measuring belongs on the device in the canvas, just like the ATEM multiviewer configuration, camera control and Videohub routing. There is no separate scopes view in the suite. Clicking a camera in the plan offers *Preview* **and** *Scopes* right there.
 
-- `StreamsSection` (#946): Streams je Gerät (`StreamEndpoint`: Protokoll, Richtung, Adresse ohne Zugangsdaten)
-- `streamPreviewService` im Electron-Hauptprozess:
-  - nur lokale Adressen
-  - Zugangsdaten aus dem Schlüsselbund, sie erreichen den Renderer nie
-  - ffmpeg wird gesucht, nicht mitgeliefert
-  - holt bisher genau **ein** Standbild als `data:`-URI, damit die CSP des Fensters bleibt, wie sie ist
-- `streamPreviewStore`: Freigabe und Sperre der Vorschau je Projekt
+## What cable-planner already has
 
-Das sind genau die Riegel, die Live-Scopes auch brauchen. Die Scopes erweitern also diesen Dienst und bauen keinen zweiten Weg.
+- `StreamsSection` (#946): streams per device (`StreamEndpoint`: protocol, direction, address without credentials)
+- `streamPreviewService` in the Electron main process:
+  - local addresses only
+  - credentials from the keychain; they never reach the renderer
+  - ffmpeg is located, not bundled
+  - so far fetches exactly **one** still as a `data:` URI, so the window's CSP stays as it is
+- `streamPreviewStore`: allowing and blocking the preview per project
 
-## Vorschlag
+These are exactly the safeguards live scopes need too. The scopes therefore extend this service instead of building a second path.
 
-### 1. Transport: IPC statt WebSocket
+## Proposal
 
-Hauptprozess:
-- `streamScopeService.start(endpointId, { width, depth })` prüft dasselbe wie `streamPreviewService`: lokal, freigegeben, Zugangsdaten aus dem Schlüsselbund.
-- Danach startet er ffmpeg mit `-f rawvideo -pix_fmt rgba|rgba64le`. Der Aufruf und die explizite Matrix stehen in `frame-protocol.md`.
-- Die Frames gehen über einen `MessageChannelMain`-Port an den Renderer, als übertragbarer `ArrayBuffer`, also ohne Kopie.
+### 1. Transport: IPC instead of WebSocket
+
+Main process:
+- `streamScopeService.start(endpointId, { width, depth })` checks the same as `streamPreviewService`: local, allowed, credentials from the keychain.
+- It then starts ffmpeg with `-f rawvideo -pix_fmt rgba|rgba64le`. The command line and the explicit matrix are in [`frame-protocol.md`](frame-protocol.md).
+- Frames go to the renderer through a `MessageChannelMain` port as a transferable `ArrayBuffer`, i.e. without a copy.
 
 Renderer:
-- `source.pushInfo(info)`, danach je Frame `source.pushFrame(buf)`. Beides ist in lz-scopes vorhanden.
+- `source.pushInfo(info)`, then `source.pushFrame(buf)` per frame. Both exist in lz-scopes.
 
-Warum so:
-- Kein offener Port und keine CSP-Lockerung (`connect-src`).
-- Die Adresse mit Passwort bleibt im Hauptprozess.
-- Es braucht weder lz-camera-bridge noch die lz-scopes-Bridge.
+Why:
+- No open port and no relaxed CSP (`connect-src`).
+- The address with password stays in the main process.
+- Neither lz-camera-bridge nor the lz-scopes bridge is needed.
 
-Randbedingungen:
-- Höchstens ein ffmpeg je Endpunkt, egal wie viele Panels hinsehen.
-- ffmpeg läuft nur, solange ein Panel offen ist.
-- Fehlt ffmpeg, kommt dieselbe Meldung `no-ffmpeg` wie bei der Vorschau.
+Constraints:
+- At most one ffmpeg per endpoint, however many panels are watching.
+- ffmpeg runs only while a panel is open.
+- If ffmpeg is missing, the same `no-ffmpeg` message appears as for the preview.
 
-### 2. Oberfläche am Gerät
+### 2. User interface on the device
 
-- **Eigenschaften → Streams:** Neben *Vorschau* steht *Scopes* bei jedem sendenden Stream. Das Panel darunter zeigt Waveform und Vectorscope, per Kopf-Select auf Parade, Histogramm oder CIE umschaltbar (`ScopeView`, 2 Panels). Transfer und Farbraum stehen auf „auto“ und kommen aus ffprobe.
-- **Am Gerät im Canvas:** Die Plakette bekommt optional ein kleines Live-Waveform (~120×60), nur solange es eingeschaltet ist. Doppelklick öffnet das große Panel.
-- **Am Kabel (Messpunkt):** Ein Kabel, dessen Quellgerät einen sendenden Stream hat, bekommt im Kontextmenü *Signal messen*. Das entspricht dem Scope am Steckfeld: gemessen wird das, was auf dieser Leitung ankommt. Ohne Stream bleibt der Eintrag grau, mit dem Hinweis, woran es fehlt (etwa „SDI – Capture oder Encoder nötig“, wie in `lz-camera-bridge/docs/live-video.md`, Kategorie 4).
-- **Vergleich:** Mehrere Geräte auswählen und *Scopes vergleichen* wählen. Das Panel zeigt je Quelle eine Parade nebeneinander, gedacht für das Matching mehrerer Kameras. Das ist der einzige Ort mit mehr als einer Quelle, und er entsteht aus der Auswahl im Canvas, nicht als eigene Ansicht.
+- **Properties → Streams:** every sending stream gets *Scopes* next to *Preview*. The panel below shows waveform and vectorscope, switchable to parade, histogram or CIE through a header select (`ScopeView`, 2 panels). Transfer and colour space are set to “auto” and come from ffprobe.
+- **On the device in the canvas:** the badge can optionally carry a small live waveform (~120×60), only while it is switched on. Double-click opens the large panel.
+- **On the cable (measuring point):** a cable whose source device has a sending stream gets *Measure signal* in its context menu. This is the scope on the patch panel: what is measured is what arrives on this line. Without a stream the entry stays greyed out, with a hint saying what is missing (for example “SDI – capture or encoder needed”, as in `lz-camera-bridge/docs/live-video.md`, category 4).
+- **Comparison:** select several devices and choose *Compare scopes*. The panel shows one parade per source side by side, intended for matching several cameras. This is the only place with more than one source, and it comes from the selection in the canvas, not from a separate view.
 
-### 3. Testbilder als Gerät
+### 3. Test patterns as a device
 
-- Im Katalog steht ein virtuelles Gerät *Testbildgenerator* (Software, ohne Hardware). Es hat Ausgänge wie ein echter Generator und am Gerät die Musterwahl aus `PATTERNS`, samt Auflösung und Label.
-- Ist ein Ausgang mit einem Display oder Beamer im Plan verbunden und dieses einem Bildschirm des Rechners zugeordnet, öffnet *Ausgeben* ein randloses Vollbildfenster auf genau diesem Bildschirm (`BrowserWindow` mit `screen.getAllDisplays()`). Das ist der Weg von `?out=` in lz-scopes, nur mit Zielbildschirm aus dem Plan.
-- Die LZ-Displaytestbilder gehören dazu. Der cable-planner vendort nur die 1080p-Pngs, rund 600 KB.
+- The catalogue has a virtual device *Test pattern generator* (software, no hardware). It has outputs like a real generator and, on the device, the pattern choice from `PATTERNS`, including resolution and label.
+- If an output is connected to a display or projector in the plan, and that display is assigned to a screen of the computer, *Output* opens a borderless full-screen window on exactly that screen (`BrowserWindow` with `screen.getAllDisplays()`). This is the `?out=` path of lz-scopes, only with the target screen taken from the plan.
+- The LZ display test images belong to it. cable-planner vendors only the 1080p PNGs, about 600 KB.
 
-### 4. Web-Viewer und Mobile
+### 4. Web viewer and mobile
 
-`src/viewer` und `src/mobile` haben kein ffmpeg. Dort bleiben *Scopes* und *Signal messen* ausgeblendet. Die Testbild-Musterwahl funktioniert, weil sie reines Canvas ist.
+`src/viewer` and `src/mobile` have no ffmpeg. There, *Scopes* and *Measure signal* stay hidden. The test pattern choice works, because it is pure canvas.
 
-## Code-Teilung
+## Code sharing
 
-- Den lz-scopes-Kern (`color`, `renderer`, `graticule`, `panel`, `sources`, `patterns`, `embed`) vendoren, genauso wie ihn lz-camera-bridge vendort: `src/renderer/vendor/lz-scopes/` mit `VENDOR.md` (Quelle und Commit).
-- Ein Drift-Gate nach dem Muster der Suite (`npm run drift` in av-planner-suite) vergleicht gegen `larszu/lz-scopes@main`. So bleiben Planner und Bridge auf demselben Stand, ohne privates npm-Paket und ohne GitHub-Zugriff beim Installieren.
-- Der Hauptprozess-Teil (ffmpeg-Argumente, Matrix, Backpressure) kommt nach `src/main/util/streamUrl.ts` dazu. `ffmpegArgs` gibt es dort schon, er bekommt eine Variante `rawvideo`.
+- Vendor the lz-scopes core (`color`, `renderer`, `graticule`, `panel`, `sources`, `patterns`, `embed`) the same way lz-camera-bridge vendors it: `src/renderer/vendor/lz-scopes/` with `VENDOR.md` (source and commit).
+- A drift gate following the suite's pattern (`npm run drift` in av-planner-suite) compares against `larszu/lz-scopes@main`. This keeps planner and bridge on the same version without a private npm package and without GitHub access during installation.
+- The main-process part (ffmpeg arguments, matrix, backpressure) is added to `src/main/util/streamUrl.ts`. `ffmpegArgs` already exists there and gets a `rawvideo` variant.
 
-## Reihenfolge
+## Order
 
-1. IPC-Transport und Streams-Abschnitt (*Scopes* neben *Vorschau*), mit Tests für die Argumente und die Freigabelogik
-2. Messpunkt am Kabel und Plakette im Canvas
-3. Testbildgenerator als Gerät, Ausgabe auf den zugeordneten Bildschirm
-4. Vergleich mehrerer Quellen
+1. IPC transport and streams section (*Scopes* next to *Preview*), with tests for the arguments and the permission logic
+2. Measuring point on the cable and badge in the canvas
+3. Test pattern generator as a device, output on the assigned screen
+4. Comparison of several sources
 
-## Offen für Lars
+## Open decisions
 
-- Soll die Canvas-Plakette standardmäßig aus sein? Vorschlag: ja, denn Rechenlast und Netzlast entstehen nur, wenn jemand hinsieht.
-- Soll der Testbildgenerator ein Katalogeintrag sein (sichtbar im Plan und in der Stückliste) oder eine Funktion am Display („Testbild zeigen“)? Vorschlag: Funktion am Display plus optionales Gerät, weil ein reales Gerät wie ein Blackmagic-Generator sonst doppelt geführt würde.
+- Should the canvas badge be off by default? Proposal: yes, because processing and network load then only arise when someone is looking.
+- Should the test pattern generator be a catalogue entry (visible in the plan and the bill of materials) or a function on the display (“Show test pattern”)? Proposal: function on the display plus an optional device, because a real device such as a Blackmagic generator would otherwise be listed twice.

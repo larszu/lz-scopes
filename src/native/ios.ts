@@ -109,10 +109,10 @@ export function afterApp() {
 /** Inputs WKWebView cannot offer: say so on the button instead of failing later. */
 function markUnavailable() {
   const why: Record<string, string> = { screen: t('native.noScreen'), folder: t('native.noFolder') };
-  // buttons are found by data-kind; older builds without it by their German label
-  const legacy: Record<string, string> = { 'Bildschirm/Fenster': 'screen', 'Ordner': 'folder' }; // lang-ok: labels of older builds
+  // buttons are found by data-kind, else by their label in the UI language (main.add.*)
+  const byLabel: Record<string, string> = { [t('main.add.screen')]: 'screen', [t('main.add.folder')]: 'folder' };
   document.querySelectorAll<HTMLButtonElement>('#add button').forEach((b) => {
-    const reason = why[b.dataset.kind ?? legacy[b.textContent?.trim() ?? ''] ?? ''];
+    const reason = why[b.dataset.kind ?? byLabel[b.textContent?.trim() ?? ''] ?? ''];
     if (reason) { b.disabled = true; b.title = reason; }
   });
 }

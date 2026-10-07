@@ -920,10 +920,13 @@ export async function deckLinkReference(index) {
   if (hit && Date.now() - hit.t < 1000) return hit.v;
   const bin = helperPath('lz-decklink');
   let v;
-  if (!bin) v = { ok: false, helper: false, error: 'DeckLink-Helfer nicht gebaut (helpers/decklink, DeckLink SDK nötig)' };
+  if (!bin) v = { ok: false, helper: false, ...field('error', bmsg('decklink.noHelper', 'DeckLink helper not built (helpers/decklink, DeckLink SDK needed)')) };
   else {
     const r = await run(bin, ['--reference', String(index)], 4000);
-    try { v = { helper: true, ...JSON.parse((r?.out ?? '').trim().split('\n').pop() ?? '') }; } catch { v = { ok: false, helper: true, error: r?.err?.trim().split('\n').pop() || 'Helfer lieferte keinen Referenzstatus' }; }
+    try {
+      const j = JSON.parse((r?.out ?? '').trim().split('\n').pop() ?? '');
+      v = { helper: true, ...j, ...(j.error ? field('error', { message: j.error, code: j.code, params: j.params }) : {}) };
+    } catch { v = { ok: false, helper: true, ...field('error', r?.err?.trim().split('\n').pop() || bmsg('decklink.noReference', 'Helper returned no reference status')) }; }
   }
   refCache.set(index, { t: Date.now(), v });
   return v;

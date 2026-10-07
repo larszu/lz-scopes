@@ -55,6 +55,7 @@ export default {
   'bridge.decklink.noModes': 'Gerät meldet keine Videomodi',
   'bridge.decklink.inputBusy': 'Videoeingang lässt sich nicht öffnen (von anderer Software belegt?)',
   'bridge.decklink.noDetect': 'Gerät ohne Formaterkennung – Modus fest auf 1080i50',
+  'bridge.decklink.noReference': 'Helfer lieferte keinen Referenzstatus',
   'bridge.decklink.startFailed': 'Aufnahme lässt sich nicht starten',
 
   'bridge.ndi.noHelper': 'NDI-Helfer nicht gebaut (npm run build:helpers)',

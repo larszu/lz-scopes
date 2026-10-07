@@ -329,10 +329,10 @@ static std::string modeJson(IDeckLink* d, int64_t mode) {
  */
 static int reference(int index) {
   IDeckLinkIterator* probe = createIterator();
-  if (!probe) { printf("{\"ok\":false,\"error\":\"Blackmagic Desktop Video ist nicht installiert (DeckLink-Treiber fehlt)\"}\n"); return 0; }
+  if (!probe) { printf("{\"ok\":false,\"code\":\"decklink.noDriver\",\"error\":\"Blackmagic Desktop Video is not installed (DeckLink driver missing)\"}\n"); return 0; }
   probe->Release();
   std::vector<IDeckLink*> list = allDevices();
-  if (index < 0 || index >= (int)list.size()) { printf("{\"ok\":false,\"error\":\"DeckLink-Gerät %d nicht vorhanden\"}\n", index); return 0; }
+  if (index < 0 || index >= (int)list.size()) { printf("{\"ok\":false,\"code\":\"decklink.noDevice\",\"error\":\"DeckLink device %d not present\",\"params\":{\"index\":%d}}\n", index, index); return 0; }
   IDeckLink* d = list[index];
   DLString dn = nullptr;
   d->GetDisplayName(&dn);

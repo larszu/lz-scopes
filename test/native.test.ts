@@ -104,7 +104,7 @@ describe('Web Bluetooth shim (CoreBluetooth via bluetooth-le)', () => {
     expect(gone).toBe(true);
     expect(dev.gatt.connected).toBe(false);
     expect(calls).toEqual(['init', 'scan', 'stop', 'connect near', 'notify true', 'write true 3']);
-    await expect(svc.getCharacteristic('0000ffff-0000-1000-8000-00805f9b34fb')).rejects.toThrow(/fehlt/);
+    await expect(svc.getCharacteristic('0000ffff-0000-1000-8000-00805f9b34fb')).rejects.toThrow(/fehlt|missing/);
   });
 
   it('reports NotFoundError when no meter answers the scan', async () => {

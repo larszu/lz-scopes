@@ -37,6 +37,7 @@ const run = (cmd, args, opts = {}) => new Promise((ok, fail) => {
 
 // ---------------------------------------------------------------- Windows (untested)
 
+// lang-ok: C# source of the Windows helper (identifiers), not UI text
 const WIN_CS = String.raw`
 using System; using System.Runtime.InteropServices; using System.Collections.Generic; using System.Text;
 public static class LzsDisp {
@@ -115,20 +116,24 @@ const psStr = (s) => `'${String(s).replace(/'/g, "''")}'`;
 
 // ---------------------------------------------------------------- platform layer
 
+// Errors that reach the UI carry a code; the renderer (src/sysprofile.ts) shows them in the UI
+// language (sysprofile.err.<code>), the English message is the fallback (#94).
+const coded = (code, message) => Object.assign(new Error(message), { code });
+
 const platform = {
   async list() {
-    if (process.platform === 'darwin') { const h = helperPath(); if (!h) throw new Error('Helfer fehlt'); return JSON.parse(await run(h, ['list'])); }
+    if (process.platform === 'darwin') { const h = helperPath(); if (!h) throw coded('helperMissing', 'helper lzs-colorsync missing'); return JSON.parse(await run(h, ['list'])); }
     if (process.platform === 'win32') return JSON.parse(await winPs('[LzsDisp]::List()'));
-    throw new Error('nicht unterstützt');
+    throw coded('unsupported', 'not supported');
   },
   async set(id, profile) {
     if (process.platform === 'darwin') return run(helperPath(), ['set', String(id), profile]);
     if (process.platform === 'win32') return winPs(`[LzsDisp]::Set(${psStr(id)}, ${psStr(path.basename(profile))})`);
-    throw new Error('nicht unterstützt');
+    throw coded('unsupported', 'not supported');
   },
   async reset(id) {
     if (process.platform === 'darwin') return run(helperPath(), ['reset', String(id)]);
-    throw new Error('nicht unterstützt');
+    throw coded('unsupported', 'not supported');
   },
   restoreSync(id, prev) {
     // true = restored now. Windows: synchronous PowerShell on quit is too slow; the backup
@@ -149,10 +154,10 @@ function support() {
         : { tool: null, preset: false, brightness: false, tested: false };
   if (process.platform === 'darwin') {
     const h = helperPath();
-    return { platform: 'darwin', profiles: !!h, tested: true, reason: h ? '' : 'Helfer lzs-colorsync fehlt (npm run build:helpers)', ddc };
+    return { platform: 'darwin', profiles: !!h, tested: true, reason: h ? '' : 'helper lzs-colorsync missing (npm run build:helpers)', reasonCode: h ? '' : 'helperBuild', ddc };
   }
-  if (process.platform === 'win32') return { platform: 'win32', profiles: true, tested: false, reason: 'ungeprüft; braucht Windows 10 Build 20348 oder neuer', ddc };
-  return { platform: process.platform, profiles: false, tested: false, reason: 'Profilwechsel nur unter macOS und Windows', ddc };
+  if (process.platform === 'win32') return { platform: 'win32', profiles: true, tested: false, reason: 'unverified; needs Windows 10 build 20348 or later', reasonCode: 'windows', ddc };
+  return { platform: process.platform, profiles: false, tested: false, reason: 'profile switching only on macOS and Windows', reasonCode: 'platform', ddc };
 }
 
 function listProfiles() {
@@ -174,12 +179,12 @@ function listProfiles() {
 
 /** DDC/CI: code 0x14 (colour preset) or 0x10 (brightness). Untested on all platforms. */
 async function ddcSet(id, code, value) {
-  if (![0x10, 0x14].includes(code) || !Number.isInteger(value) || value < 0 || value > 0xffff) throw new Error('ungültiger VCP-Wert');
+  if (![0x10, 0x14].includes(code) || !Number.isInteger(value) || value < 0 || value > 0xffff) throw coded('vcpInvalid', 'invalid VCP value');
   const s = support().ddc;
   if (s.tool === 'dxva2') return winPs(`[LzsDisp]::Vcp(${psStr(id)}, ${code}, ${value})`);
   if (s.tool === 'ddcutil') return run(which('ddcutil'), ['setvcp', code.toString(16), String(value), '--display', String(Number(id) || 1)]);
   if (s.tool === 'm1ddc' && code === 0x10) return run(which('m1ddc'), ['set', 'luminance', String(value)]);
-  throw new Error(code === 0x14 ? 'Farbpreset (VCP 0x14) auf diesem System nicht verfügbar' : 'kein DDC/CI-Werkzeug gefunden');
+  throw code === 0x14 ? coded('noPreset', 'colour preset (VCP 0x14) not available on this system') : coded('noDdcTool', 'no DDC/CI tool found');
 }
 
 class ProfileSwitcher {
@@ -197,11 +202,11 @@ class ProfileSwitcher {
   async restoreLeftovers() { if (Object.keys(this.backup).length) await this.restore().catch(() => {}); }
   async list() { return (await this.p.list()).map((d) => ({ ...d, switched: String(d.id) in this.backup })); }
   async set(id, profile) {
-    if (typeof profile !== 'string' || !/\.ic[cm]$/i.test(profile) || !fs.existsSync(profile)) throw new Error('Profil nicht gefunden');
+    if (typeof profile !== 'string' || !/\.ic[cm]$/i.test(profile) || !fs.existsSync(profile)) throw coded('profileNotFound', 'profile not found');
     const key = String(id);
     if (!(key in this.backup)) {
       const d = (await this.p.list()).find((x) => String(x.id) === key);
-      if (!d) throw new Error('Display nicht gefunden');
+      if (!d) throw coded('displayNotFound', 'display not found');
       // previous custom profile (null = factory) is stored BEFORE anything changes
       this.backup[key] = { previous: d.custom ?? null, name: d.name, at: new Date().toISOString() };
       this.save();
@@ -233,7 +238,7 @@ class ProfileSwitcher {
 function setupDisplayProfiles(ipcMain, app) {
   const sw = new ProfileSwitcher(app.getPath('userData'));
   sw.restoreLeftovers();
-  const wrap = (fn) => async (_e, ...a) => { try { return { ok: true, value: await fn(...a) } } catch (e) { return { ok: false, error: e.message } } };
+  const wrap = (fn) => async (_e, ...a) => { try { return { ok: true, value: await fn(...a) } } catch (e) { return { ok: false, error: e.message, code: e.code } } };
   ipcMain.handle('lzs:profile-support', wrap(async () => support()));
   ipcMain.handle('lzs:profile-list', wrap(async () => ({ displays: await sw.list(), profiles: listProfiles() })));
   ipcMain.handle('lzs:profile-set', wrap((id, profile) => sw.set(id, profile)));

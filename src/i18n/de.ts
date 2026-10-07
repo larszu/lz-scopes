@@ -27,6 +27,11 @@ import shading from './de/shading';
 import source from './de/source';
 import testmedia from './de/testmedia';
 import theme from './de/theme';
+import native from './de/native';
+import sysprofile from './de/sysprofile';
+import opple from './de/opple';
+import led from './de/led';
+import calib from './de/calib';
 import type { Key } from './en';
 import type { Msg } from './types';
 
@@ -54,4 +59,9 @@ export const de: Record<Key, Msg> = {
   ...source,
   ...testmedia,
   ...theme,
+  ...native,
+  ...sysprofile,
+  ...opple,
+  ...led,
+  ...calib,
 };

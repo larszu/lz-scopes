@@ -362,9 +362,9 @@ dialog.calib .calib-log { max-height: 160px; overflow: auto; font: 11px var(--mo
 .calib-table, .calib-grid { border-collapse: collapse; font-size: 12px; }
 .calib-table td, .calib-table th { padding: 2px 8px; border-top: 1px solid var(--line); text-align: right; }
 .calib-grid td { width: 44px; height: 30px; text-align: center; border: 1px solid var(--line); }
-.calib-grid td.g-gut { background: #1d3324; }
+.calib-grid td.g-good { background: #1d3324; }
 .calib-grid td.g-ok { background: #3a3414; }
-.calib-grid td.g-aus { background: #4a1c1c; }
+.calib-grid td.g-fail { background: #4a1c1c; }
 
 /* running DaVinci Resolve in the source sidebar (src/resolveLive.ts) */
 .resolve-live { display: flex; gap: 8px; align-items: center; margin: 6px 0; padding: 6px 8px; border: 1px solid var(--line-2); border-left: 3px solid var(--ok, #3fb950); border-radius: 4px; font-size: 11px; }

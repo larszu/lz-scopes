@@ -10,10 +10,13 @@ import { D65, inv3, mul3, xyToUv, xyToXyz, type XY } from '../color';
 import { cctDuv, planckUv } from '../calib/colorimetry';
 import type { PatchFrame, RGB } from '../patchSequencer';
 import { cabinets, pictureSize, type WallConfig } from './wall';
+import { num, t } from '../i18n';
 
 export type XYZ = [number, number, number];
 export type ColourKey = 'W' | 'L' | 'R' | 'G' | 'B';
-export const COLOUR_LABELS: Record<ColourKey, string> = { W: 'Weiß', L: 'Grau', R: 'Rot', G: 'Grün', B: 'Blau' };
+export const COLOUR_LABELS: Record<ColourKey, string> = { W: t('led.col.W'), L: t('led.col.L'), R: t('led.col.R'), G: t('led.col.G'), B: t('led.col.B') };
+/** Point name of the single full-field measurement. */
+export const FULL_POINT = t('led.chk.fullArea');
 
 export interface PlanOptions {
   /** 'all' cabinets, a list of labels (C1-R1 …) or one full-field point */
@@ -34,7 +37,7 @@ export function buildPlan(wall: WallConfig, o: PlanOptions): PlanStep[] {
   if (o.primaries) colours.push(['R', [o.white, 0, 0]], ['G', [0, o.white, 0]], ['B', [0, 0, o.white]]);
   const steps: PlanStep[] = [];
   if (o.points === 'full') {
-    for (const [colour, rgb] of colours) steps.push({ point: 'Vollfläche', colour, frame: { rgb, window: 1, label: `Vollfläche ${COLOUR_LABELS[colour]}` } });
+    for (const [colour, rgb] of colours) steps.push({ point: FULL_POINT, colour, frame: { rgb, window: 1, label: `${FULL_POINT} ${COLOUR_LABELS[colour]}` } });
     return steps;
   }
   const want = o.points === 'all' ? null : new Set(o.points.map((s) => s.trim().toUpperCase()));
@@ -100,8 +103,8 @@ export function planckXy(T: number): XY {
   return [(3 * u) / d, (2 * v) / d];
 }
 export const WHITE_TARGETS: WhiteTarget[] = [
-  { id: 'd65', name: 'D65 (x 0,3127 y 0,3290)', xy: () => D65 },
-  { id: 'd50', name: 'D50 (x 0,3457 y 0,3585)', xy: () => [0.3457, 0.3585] },
+  { id: 'd65', name: t('led.target.d65'), xy: () => D65 },
+  { id: 'd50', name: t('led.target.d50'), xy: () => [0.3457, 0.3585] },
   { id: 'p6500', name: '6500 K Planck', xy: () => planckXy(6500) },
   { id: 'p5600', name: '5600 K Planck', xy: () => planckXy(5600) },
   { id: 'p3200', name: '3200 K Planck', xy: () => planckXy(3200) },
@@ -118,7 +121,7 @@ export interface WhiteCorrection {
   luminanceAfter: number | null;
   /** |R+G+B − W| / W_Y in %, only with measured primaries */
   additivity: number | null;
-  primariesSource: 'gemessen' | 'eingegeben' | null;
+  primariesSource: 'measured' | 'entered' | null;
   warnings: string[];
 }
 
@@ -141,25 +144,25 @@ export function whiteCorrection(W: XYZ, target: XY, primaries: { measured?: [XYZ
   if (primaries.measured) {
     const [R, G, B] = primaries.measured;
     M = [R[0], G[0], B[0], R[1], G[1], B[1], R[2], G[2], B[2]];
-    base.primariesSource = 'gemessen';
+    base.primariesSource = 'measured';
     const sum = [0, 1, 2].map((i) => R[i] + G[i] + B[i]);
     base.additivity = (Math.hypot(sum[0] - W[0], sum[1] - W[1], sum[2] - W[2]) / W[1]) * 100;
-    if (base.additivity > 5) warnings.push(`R+G+B weicht ${base.additivity.toFixed(1).replace('.', ',')} % vom gemessenen Weiß ab – Kanäle nicht additiv oder Primärfarben falsch gemessen (Filtersensor bei schmalbandigen LEDs). Gains nicht verlässlich.`);
-    warnings.push('Primärfarben mit dem Opple gemessen: bei schmalbandigen LEDs nur eine Näherung. Besser die Primärvalenzen aus Datenblatt/Prozessor eingeben.');
+    if (base.additivity > 5) warnings.push(t('led.chk.notAdditive', { v: num(base.additivity, 1) }));
+    warnings.push(t('led.chk.oppleApprox'));
   } else if (primaries.xy) {
     const P = primaries.xy.map(xyToXyz);
     const Pm = [P[0][0], P[1][0], P[2][0], P[0][1], P[1][1], P[2][1], P[0][2], P[1][2], P[2][2]];
     const s = mul3(inv3(Pm), W);
-    if (s.some((v) => !(v > 0))) warnings.push('Gemessenes Weiß liegt außerhalb des Dreiecks der eingegebenen Primärvalenzen – Werte prüfen.');
+    if (s.some((v) => !(v > 0))) warnings.push(t('led.chk.outsideTriangle'));
     M = Pm.map((v, i) => v * s[i % 3]);
-    base.primariesSource = 'eingegeben';
+    base.primariesSource = 'entered';
   }
   if (!M) return base;
   const Minv = inv3(M);
-  if (Minv.some((v) => !Number.isFinite(v))) { warnings.push('Primärfarben linear abhängig.'); return base; }
+  if (Minv.some((v) => !Number.isFinite(v))) { warnings.push(t('led.chk.dependent')); return base; }
   const g = mul3(Minv, xyToXyz(target).map((v) => v * W[1]));
   const mx = Math.max(...g);
-  if (!(mx > 0) || g.some((v) => v < 0)) { warnings.push('Ziel liegt außerhalb des Farbraums der Wand – keine Gains möglich.'); return base; }
+  if (!(mx > 0) || g.some((v) => v < 0)) { warnings.push(t('led.chk.outsideGamut')); return base; }
   const gains = g.map((v) => (v / mx) * 100) as [number, number, number];
   base.gains = gains;
   base.luminanceAfter = (1 / mx) * 100;
@@ -172,22 +175,22 @@ const f = (v: number, d: number) => (Number.isFinite(v) ? v.toFixed(d) : '');
 
 export function meterCsv(wall: WallConfig, res: MeterResults, ref: string, stats: PointStat[], corr: WhiteCorrection | null, flicker: string, distance: string) {
   const lines = [
-    '# LZ Scopes – LED-Wand mit Opple Light Master (Trendmessgerät, kein Kolorimeter für schmalbandige LEDs; Werte relativ)',
-    `# Wand,"${wall.name.replace(/"/g, '""')}",Referenz,${ref},Abstand/Auflage,"${distance.replace(/"/g, '""')}"`,
-    ...(flicker ? [`# Flimmern,"${flicker}"`] : []),
-    'punkt,farbe,X,Y_lx,Z,x,y',
+    `# ${t('led.chk.csvHead')}`,
+    `# ${t('led.csv.wall')},"${wall.name.replace(/"/g, '""')}",${t('led.chk.csvRef')},${ref},${t('led.chk.csvDistance')},"${distance.replace(/"/g, '""')}"`,
+    ...(flicker ? [`# ${t('led.chk.csvFlicker')},"${flicker}"`] : []),
+    'point,colour,X,Y_lx,Z,x,y',
     ...[...res].flatMap(([p, m]) => (Object.entries(m) as [ColourKey, XYZ][]).map(([c, v]) => { const xy = xyOf(v); return [p, c, f(v[0], 4), f(v[1], 4), f(v[2], 4), f(xy[0], 5), f(xy[1], 5)].join(','); })),
     '',
-    'punkt,Y_lx,dY_prozent,dx,dy,du_v_1976,cct_k,duv_planck',
+    'point,Y_lx,dY_percent,dx,dy,du_v_1976,cct_k,duv_planck',
     ...stats.map((s) => [s.point, f(s.Y, 3), f(s.dY, 2), f(s.dx, 5), f(s.dy, 5), f(s.duv, 5), f(s.cct, 0), f(s.duvPlanck, 5)].join(',')),
   ];
   if (corr) {
-    lines.push('', 'weisspunkt,x,y,cct_k,duv',
-      ['ist', f(corr.ist.xy[0], 5), f(corr.ist.xy[1], 5), f(corr.ist.cct, 0), f(corr.ist.duv, 5)].join(','),
-      ['soll', f(corr.soll.xy[0], 5), f(corr.soll.xy[1], 5), f(corr.soll.cct, 0), f(corr.soll.duv, 5)].join(','),
+    lines.push('', 'white_point,x,y,cct_k,duv',
+      ['measured', f(corr.ist.xy[0], 5), f(corr.ist.xy[1], 5), f(corr.ist.cct, 0), f(corr.ist.duv, 5)].join(','),
+      ['target', f(corr.soll.xy[0], 5), f(corr.soll.xy[1], 5), f(corr.soll.cct, 0), f(corr.soll.duv, 5)].join(','),
       `delta_u_v_1976,${f(corr.duv, 5)}`);
-    if (corr.gains) lines.push(`gains_prozent_rgb,${corr.gains.map((g) => f(g, 1)).join(',')},primaervalenzen,${corr.primariesSource},helligkeit_danach_prozent,${f(corr.luminanceAfter ?? NaN, 1)}`);
-    for (const w of corr.warnings) lines.push(`# Hinweis,"${w.replace(/"/g, '""')}"`);
+    if (corr.gains) lines.push(`gains_percent_rgb,${corr.gains.map((g) => f(g, 1)).join(',')},primaries,${corr.primariesSource},luminance_after_percent,${f(corr.luminanceAfter ?? NaN, 1)}`);
+    for (const w of corr.warnings) lines.push(`# ${t('led.chk.csvNote')},"${w.replace(/"/g, '""')}"`);
   }
   return lines.join('\n') + '\n';
 }

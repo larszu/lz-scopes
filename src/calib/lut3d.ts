@@ -8,6 +8,7 @@
 import { inv3, mul3 } from '../color';
 import { patchDelta, stats, targetXyz, whiteXyz, type Stats, type Target, type XYZ } from './colorimetry';
 import type { TestSet } from './testsets';
+import { num, t } from '../i18n';
 
 type Curve = { x: number[]; y: number[] };
 export interface DisplayModel { black: XYZ; m: number[]; mInv: number[]; trc: [Curve, Curve, Curve] }
@@ -40,15 +41,15 @@ function invertCurve(c: Curve, y: number) {
 export function fitModel(set: TestSet, readings: (XYZ | null)[]): DisplayModel | string {
   const K = reading(set, readings, [0, 0, 0]);
   const R = reading(set, readings, [1, 0, 0]), G = reading(set, readings, [0, 1, 0]), B = reading(set, readings, [0, 0, 1]);
-  if (!K || !R || !G || !B) return 'Für das Modell fehlen Messungen von Schwarz, Rot, Grün und Blau (je 100 %).';
+  if (!K || !R || !G || !B) return t('calib.lut.missing');
   const col = (p: XYZ) => p.map((v, i) => v - K[i]);
   const [r, g, b] = [col(R), col(G), col(B)];
   const m = [r[0], g[0], b[0], r[1], g[1], b[1], r[2], g[2], b[2]];
   const mInv = inv3(m);
-  if (!mInv.every(Number.isFinite)) return 'Primärfarben-Matrix ist nicht invertierbar.';
+  if (!mInv.every(Number.isFinite)) return t('calib.lut.singular');
   const greys = set.patches.map((p, i) => ({ v: p.rgb[0], xyz: readings[i] })).filter((p, i) => set.patches[i].kind === 'grey' && p.xyz)
     .sort((a, b2) => a.v - b2.v);
-  if (greys.length < 5) return 'Für die Kanalkurven werden mindestens 5 gemessene Graustufen gebraucht.';
+  if (greys.length < 5) return t('calib.lut.fewGreys');
   const trc = [0, 1, 2].map((ch) => {
     const x = [0], y = [0];
     for (const p of greys) {
@@ -79,12 +80,12 @@ export interface CubeResult { text: string; clipped: number; whiteScale: number;
  * shows the target. SDR only. Returns an explanation string when the model is not good enough.
  */
 export function buildCube(set: TestSet, readings: (XYZ | null)[], target: Target, size: 33 | 65): CubeResult | string {
-  if (target.transfer === 'pq') return 'Für PQ/HDR wird keine LUT erzeugt (Modell nur für SDR geprüft).';
+  if (target.transfer === 'pq') return t('calib.lut.noHdr');
   const model = fitModel(set, readings);
   if (typeof model === 'string') return model;
   const error = modelError(model, set, readings);
   if (!(error.mean <= MODEL_LIMITS.mean && error.p95 <= MODEL_LIMITS.p95)) {
-    return `Displaymodell passt nicht (Modellfehler ΔE00 Mittel ${error.mean.toFixed(2)}, 95 % ${error.p95.toFixed(2)}; Grenze ${MODEL_LIMITS.mean}/${MODEL_LIMITS.p95}). Display ist vermutlich nicht additiv (ABL, Dynamik-Modus) – keine LUT erzeugt.`;
+    return t('calib.lut.noFit', { mean: num(error.mean, 2), p95: num(error.p95, 2), lm: num(MODEL_LIMITS.mean), lp: num(MODEL_LIMITS.p95) });
   }
   const lb = model.black[1];
   const toLin = (xyz: number[]) => mul3(model.mInv, xyz.map((v, i) => v - model.black[i]));
@@ -109,12 +110,12 @@ export function buildCube(set: TestSet, readings: (XYZ | null)[], target: Target
   }
   // red index changes fastest: the loop above has red innermost
   const head = [
-    `TITLE "LZ Scopes Display-Korrektur ${size}"`,
-    '# Erzeugt von LZ Scopes aus Verifikationsmessungen (Matrix/Shaper-Modell)',
-    `# Ziel: ${target.transfer} / Gamut ${target.gamut} / Weiß xy ${target.white.join(' ')}`,
-    `# Messsatz: ${set.name}; Modellfehler dE00 Mittel ${error.mean.toFixed(3)} Max ${error.max.toFixed(3)} P95 ${error.p95.toFixed(3)}`,
-    `# Weiß ${lw.toFixed(2)} cd/m2 (Faktor ${whiteScale.toFixed(4)}), Schwarz ${lb.toFixed(4)} cd/m2; geclippt ${clipped} von ${n ** 3} Stützstellen`,
-    '# Eingang: Signal im Zielraum (Full Range 0..1), Ausgang: Display-Codewerte (Full Range 0..1)',
+    `TITLE "LZ Scopes display correction ${size}"`,
+    '# Created by LZ Scopes from verification readings (matrix/shaper model)',
+    `# Target: ${target.transfer} / gamut ${target.gamut} / white xy ${target.white.join(' ')}`,
+    `# Patch set: ${set.name}; model error dE00 mean ${error.mean.toFixed(3)} max ${error.max.toFixed(3)} P95 ${error.p95.toFixed(3)}`,
+    `# White ${lw.toFixed(2)} cd/m2 (factor ${whiteScale.toFixed(4)}), black ${lb.toFixed(4)} cd/m2; clipped ${clipped} of ${n ** 3} grid points`,
+    '# Input: signal in the target space (full range 0..1), output: display code values (full range 0..1)',
     `LUT_3D_SIZE ${n}`,
   ];
   return { text: `${head.join('\n')}\n${lines.join('\n')}\n`, clipped, whiteScale, error };

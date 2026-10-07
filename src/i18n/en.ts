@@ -21,6 +21,11 @@ import shading from './en/shading';
 import source from './en/source';
 import testmedia from './en/testmedia';
 import theme from './en/theme';
+import native from './en/native';
+import sysprofile from './en/sysprofile';
+import opple from './en/opple';
+import led from './en/led';
+import calib from './en/calib';
 
 
 import tools from './en/tools';
@@ -51,6 +56,11 @@ export const en = {
   ...source,
   ...testmedia,
   ...theme,
+  ...native,
+  ...sysprofile,
+  ...opple,
+  ...led,
+  ...calib,
 };
 
 export type Key = keyof typeof en;

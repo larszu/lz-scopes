@@ -2,6 +2,7 @@
 // spotread as a separate process. Without bridge or ArgyllCMS the UI falls back to manual input.
 
 import type { XYZ } from './colorimetry';
+import { t } from '../i18n';
 import { bridgeMessage } from '../i18n/bridgeMessage';
 
 export interface MeterInfo { found: boolean; path: string | null; instruments: { port: number; name: string }[]; version?: string | null }
@@ -30,16 +31,16 @@ export class Meter {
       const ws = new WebSocket(`${this.wsBase}/meter`);
       this.ws = ws;
       ws.onopen = () => { ws.send(JSON.stringify({ cmd: 'open', ...opts })); ok(); };
-      ws.onerror = () => fail(new Error('Bridge nicht erreichbar'));
-      ws.onclose = () => { this.ready = false; this.reject(new Error('Verbindung zum Messgerät beendet')); };
+      ws.onerror = () => fail(new Error(t('calib.meter.noBridgeReach')));
+      ws.onclose = () => { this.ready = false; this.reject(new Error(t('calib.meter.closed'))); };
       ws.onmessage = (e) => {
         const m = JSON.parse(String(e.data));
         if (m.type === 'log') this.onLog(m.text);
         else if (m.type === 'status') this.onStatus(bridgeMessage(m), 'info');
-        else if (m.type === 'ready') { this.ready = true; this.onStatus('Messgerät bereit', 'ok'); }
+        else if (m.type === 'ready') { this.ready = true; this.onStatus(t('calib.meter.ready'), 'ok'); }
         else if (m.type === 'reading') { const p = this.pending; this.pending = null; p?.ok(m.xyz); }
         else if (m.type === 'error') { this.onStatus(bridgeMessage(m), 'error'); this.reject(new Error(bridgeMessage(m))); }
-        else if (m.type === 'closed') { this.ready = false; this.onStatus(`spotread beendet (Code ${m.code ?? '?'})`, 'info'); this.reject(new Error('spotread beendet')); }
+        else if (m.type === 'closed') { this.ready = false; this.onStatus(t('calib.meter.endedCode', { code: m.code ?? '?' }), 'info'); this.reject(new Error(t('calib.meter.ended'))); }
       };
     });
   }
@@ -48,11 +49,11 @@ export class Meter {
 
   /** One reading (absolute XYZ in cd/m²). */
   read(signal?: AbortSignal): Promise<XYZ> {
-    if (!this.connected) return Promise.reject(new Error('Messgerät nicht verbunden'));
-    this.reject(new Error('neue Messung angefordert'));
+    if (!this.connected) return Promise.reject(new Error(t('calib.meter.notConnected')));
+    this.reject(new Error(t('calib.meter.superseded')));
     return new Promise((ok, fail) => {
       this.pending = { ok, fail };
-      signal?.addEventListener('abort', () => this.reject(new DOMException('abgebrochen', 'AbortError') as unknown as Error), { once: true });
+      signal?.addEventListener('abort', () => this.reject(new DOMException('aborted', 'AbortError') as unknown as Error), { once: true });
       this.ws!.send(JSON.stringify({ cmd: 'read' }));
     });
   }

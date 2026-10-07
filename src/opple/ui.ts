@@ -8,6 +8,7 @@ import { compareLights, greenMagentaHint } from './lightScience';
 import { desktopBluetooth, lightStore, oppleMeter, type LightStore } from './store';
 import { ArgyllLightMeter, DRIVER_LABELS } from './drivers';
 import type { SpectrumUnit } from './spectrum';
+import { num, t } from '../i18n';
 
 export { oppleMeter };
 
@@ -22,8 +23,8 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, 
   el.append(...kids);
   return el;
 };
-const de = (v: number, d: number) => (Number.isFinite(v) ? v.toFixed(d).replace('.', ',').replace('-', '−') : '–');
-const sgn = (v: number, d: number) => (Number.isFinite(v) ? (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(d).replace('.', ',') : '–');
+const de = (v: number, d: number) => (Number.isFinite(v) ? num(v, d).replace('-', '−') : '–');
+const sgn = (v: number, d: number) => (Number.isFinite(v) ? (v >= 0 ? '+' : '−') + num(Math.abs(v), d) : '–');
 
 const CSS = `
 .opple .big { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 6px; }
@@ -54,7 +55,7 @@ function download(name: string, text: string) {
 }
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
 
-export const NO_PAIRING_HINT = 'Keine Kopplung nötig: Light Master einschalten (Schieber auf), in Reichweite bringen, dann „Light Master suchen“. Er erscheint nicht in den Bluetooth-Einstellungen des Systems – das ist normal. Die Opple-App schließen (nur eine Verbindung je Gerät).';
+export const NO_PAIRING_HINT = t('opple.ui.noPairing');
 
 /**
  * Device list of the Electron app while a scan runs (Chrome shows its own chooser). Also used by
@@ -66,13 +67,13 @@ export function pickerBox(s: LightStore = lightStore()): HTMLElement {
     if (!s.picker) { box.replaceChildren(); return; }
     const p = s.picker;
     box.replaceChildren(h('div', { class: 'picker' },
-      h('div', { class: 'hint' }, p.devices.length ? 'Gefundene Light Master – zum Verbinden anklicken:' : 'Suche Light Master … (einschalten, Schieber auf, in die Nähe legen)'),
+      h('div', { class: 'hint' }, p.devices.length ? t('opple.ui.found') : t('opple.ui.searching')),
       ...p.devices.map((d) => {
         const known = s.known.find((k) => k.nativeId === d.id);
         const busy = [...s.meters.keys()].includes(known?.key ?? '-');
-        return h('button', { class: 'pick', disabled: busy, onclick: () => s.pick(d.id) }, `${known ? `${known.alias} · ` : ''}${d.name || 'Light Master'}${busy ? ' (schon verbunden)' : known ? '' : ' (neu)'}`);
+        return h('button', { class: 'pick', disabled: busy, onclick: () => s.pick(d.id) }, `${known ? `${known.alias} · ` : ''}${d.name || 'Light Master'}${busy ? ` ${t('opple.ui.alreadyConnected')}` : known ? '' : ` ${t('opple.ui.new')}`}`);
       }),
-      h('div', { class: 'row' }, h('button', { onclick: () => s.cancelPick() }, 'Abbrechen'), p.scanning ? h('span', { class: 'hint' }, 'Suche läuft …') : '')));
+      h('div', { class: 'row' }, h('button', { onclick: () => s.cancelPick() }, t('opple.ui.cancel')), p.scanning ? h('span', { class: 'hint' }, t('opple.ui.scanning')) : '')));
   };
   s.addEventListener('change', render);
   render();
@@ -89,7 +90,7 @@ export function mountOpple(root: HTMLElement, hooks: { openScopes?: () => void; 
   const status = h('p', { class: 'hint' });
   const devices = h('div');
   const vals = h('div', { class: 'big' });
-  const chart = h('canvas', { width: 280, height: 40, title: 'Beleuchtungsstärke der letzten Messungen (aktives Gerät)' }) as HTMLCanvasElement;
+  const chart = h('canvas', { width: 280, height: 40, title: t('opple.ui.chartTitle') }) as HTMLCanvasElement;
   const info = h('p', { class: 'hint' });
   const buttons = h('div', { class: 'row' });
   const points = h('div');
@@ -101,19 +102,19 @@ export function mountOpple(root: HTMLElement, hooks: { openScopes?: () => void; 
     const rows = s.known.map((k) => {
       const m = s.meters.get(k.key), st = m?.state ?? 'idle';
       const r = s.latest(k.key);
-      const alias = h('input', { class: 'alias', value: k.alias, title: `Name für ${k.name} (wird gemerkt)`, onchange: (e: Event) => s.rename(k.key, (e.target as HTMLInputElement).value) });
+      const alias = h('input', { class: 'alias', value: k.alias, title: t('opple.ui.aliasTitle', { name: k.name }), onchange: (e: Event) => s.rename(k.key, (e.target as HTMLInputElement).value) });
       return h('div', { class: `dev${s.active === k.key ? ' active' : ''}` },
-        h('span', { class: `dot ${st === 'connected' ? 'on' : st === 'error' ? 'err' : st === 'idle' ? '' : 'busy'}`, title: m?.message || 'nicht verbunden' }),
+        h('span', { class: `dot ${st === 'connected' ? 'on' : st === 'error' ? 'err' : st === 'idle' ? '' : 'busy'}`, title: m?.message || t('opple.ui.notConnected') }),
         alias,
         st === 'connected'
-          ? h('button', { class: 'mini', onclick: () => s.disconnect(k.key) }, 'Trennen')
-          : h('button', { class: 'mini', disabled: (k.driver !== 'argyll' && !sup.ok) || (st !== 'idle' && st !== 'error'), title: 'Verbinden (eingeschaltet, in Reichweite bzw. angeschlossen)', onclick: () => connect(s.reconnect(k)) }, 'Verbinden'),
-        m instanceof ArgyllLightMeter && st !== 'idle' ? h('button', { class: 'mini', title: 'spotread-Taste k: Kalibrierung (Gerät dafür in die Kalibrierposition bringen, Anweisung im Status)', onclick: () => m.key('k') }, 'Kalibrieren') : '',
-        st === 'connected' && s.active !== k.key ? h('button', { class: 'mini', title: 'Werte dieses Geräts oben anzeigen und für Messpunkte nutzen', onclick: () => { s.active = k.key; s.changed(); } }, 'aktiv') : '',
-        h('button', { class: 'icon', title: 'Vergessen', onclick: () => s.forget(k.key) }, '✕'),
-        h('div', { class: 'val' }, st === 'connected' && r ? `${de(r.lux, r.lux < 10 ? 1 : 0)} ${r.quantity ?? 'lx'} · ${de(r.cct, 0)} K · Duv ${sgn(r.duv, 4)}` : `${k.driver === 'argyll' ? `${DRIVER_LABELS.argyll} (ungeprüft)` : `${k.name}${k.model ? ` · ${k.model === 'lm4' ? 'LM4' : 'LM3'}` : ''}`}${m?.message && st !== 'connected' ? ` · ${m.message}` : ''}`));
+          ? h('button', { class: 'mini', onclick: () => s.disconnect(k.key) }, t('opple.ui.disconnect'))
+          : h('button', { class: 'mini', disabled: (k.driver !== 'argyll' && !sup.ok) || (st !== 'idle' && st !== 'error'), title: t('opple.ui.connectTitle'), onclick: () => connect(s.reconnect(k)) }, t('opple.ui.connect')),
+        m instanceof ArgyllLightMeter && st !== 'idle' ? h('button', { class: 'mini', title: t('opple.ui.calTitle'), onclick: () => m.key('k') }, t('opple.ui.calibrate')) : '',
+        st === 'connected' && s.active !== k.key ? h('button', { class: 'mini', title: t('opple.ui.activeTitle'), onclick: () => { s.active = k.key; s.changed(); } }, t('opple.ui.active')) : '',
+        h('button', { class: 'icon', title: t('opple.ui.forget'), onclick: () => s.forget(k.key) }, '✕'),
+        h('div', { class: 'val' }, st === 'connected' && r ? `${de(r.lux, r.lux < 10 ? 1 : 0)} ${r.quantity ?? 'lx'} · ${de(r.cct, 0)} K · Duv ${sgn(r.duv, 4)}` : `${k.driver === 'argyll' ? `${DRIVER_LABELS.argyll} ${t('opple.ui.unverified')}` : `${k.name}${k.model ? ` · ${k.model === 'lm4' ? 'LM4' : 'LM3'}` : ''}`}${m?.message && st !== 'connected' ? ` · ${m.message}` : ''}`));
     });
-    devices.replaceChildren(...(rows.length ? [h('h3', {}, 'Geräte'), ...rows] : []));
+    devices.replaceChildren(...(rows.length ? [h('h3', {}, t('opple.ui.devices')), ...rows] : []));
   }
 
   function render() {
@@ -121,23 +122,23 @@ export function mountOpple(root: HTMLElement, hooks: { openScopes?: () => void; 
     const act = s.meters.get(s.active);
     const r = s.latest(s.active) ?? s.latest();
     vals.replaceChildren(
-      cell(r?.quantity === 'cd/m²' ? 'cd/m² (kein Umgebungsmodus)' : 'Lux', r ? de(r.lux, r.lux < 10 ? 2 : 0) : '–'),
+      cell(r?.quantity === 'cd/m²' ? t('opple.ui.cdNoAmbient') : 'Lux', r ? de(r.lux, r.lux < 10 ? 2 : 0) : '–'),
       cell('CCT K (McCamy)', r ? de(r.cct, 0) : '–'),
       cell('Duv (Ohno)', r ? de(r.duv, 4) : '–'),
       cell('x / y (CIE 1931)', r ? `${de(r.x, 4)} / ${de(r.y, 4)}` : '–'),
     );
     info.textContent = r
-      ? `${s.label(r.device ?? '')} · ${r.model === 'argyll' ? 'ArgyllCMS' : r.model === 'datei' ? 'Spektrum aus Datei' : r.model === 'lm4' ? 'Light Master 4' : `Light Master 3${r.mode ? `, Matrix ${LM3_MODE_NAMES[r.mode]}` : ''}`}${r.spectrum ? ` · Spektrum ${r.spectrum.values.length} Werte` : ''}${r.cri ? ` · Ra ${de(r.cri.ra, 1)}` : ''} · ${r.model === 'lm3' || r.model === 'lm4' ? (r.calibrated ? 'mit Kalibrierfaktoren' : 'ohne Kalibrierfaktoren') : 'Messwerte des Geräts'}${r.temperature != null ? ` · ${de(r.temperature, 1)} °C` : ''} · ${s.history.length} Messungen im Verlauf`
+      ? `${s.label(r.device ?? '')} · ${r.model === 'argyll' ? 'ArgyllCMS' : r.model === 'datei' /* lang-ok: driver id */ ? t('opple.ui.fromFile') : r.model === 'lm4' ? 'Light Master 4' : `Light Master 3${r.mode ? `, Matrix ${LM3_MODE_NAMES[r.mode]}` : ''}`}${r.spectrum ? ` · ${t('opple.ui.spectrumN', { n: r.spectrum.values.length })}` : ''}${r.cri ? ` · Ra ${de(r.cri.ra, 1)}` : ''} · ${r.model === 'lm3' || r.model === 'lm4' ? (r.calibrated ? t('opple.ui.withCal') : t('opple.ui.withoutCal')) : t('opple.ui.deviceValues')}${r.temperature != null ? ` · ${de(r.temperature, 1)} °C` : ''} · ${t('opple.ui.historyN', { n: s.history.length })}`
       : '';
     const anyConnected = s.connected.length > 0;
     const scanning = [...s.meters.values()].some((m) => m.state === 'requesting' || m.state === 'connecting' || m.state === 'calibrating');
     buttons.replaceChildren(
-      h('button', { class: 'primary', disabled: !sup.ok || scanning, title: NO_PAIRING_HINT, onclick: () => connect(s.connectNew()) }, anyConnected ? '+ Weiteren Light Master suchen …' : 'Light Master suchen …'),
-      anyConnected ? h('button', { onclick: () => s.setRunning(!s.running) }, s.running ? '❚❚ Anhalten' : '▶ Laufend') : '',
-      hooks.openScopes ? h('button', { title: 'Layout mit Farbort, Vectorscope, Filterkanälen, Zeitverlauf und Messfeld – zurück über die Layout-Knöpfe oben. Doppelklick auf ein Panel = groß; ⧉ Ausgabe → Panel zeigt es auf einem anderen Bildschirm.', onclick: () => hooks.openScopes!() }, '▦ Licht-Ansichten') : '',
-      s.history.length ? h('button', { title: 'Verlauf als CSV', onclick: () => download(`lichtmesser-${stamp()}.csv`, readingsCsv(s.history)) }, '⤓ CSV') : '',
-      s.history.length ? h('button', { onclick: () => { s.history.length = 0; s.changed(); } }, 'Verlauf leeren') : '',
-      act?.frames.length ? h('button', { title: 'Mitgeschnittene BLE-Rahmen (hex) in die Zwischenablage – für Protokollprüfung und Tests', onclick: () => navigator.clipboard?.writeText(act.frames.join('\n')) }, 'Rohdaten kopieren') : '',
+      h('button', { class: 'primary', disabled: !sup.ok || scanning, title: NO_PAIRING_HINT, onclick: () => connect(s.connectNew()) }, anyConnected ? t('opple.ui.searchMore') : t('opple.ui.search')),
+      anyConnected ? h('button', { onclick: () => s.setRunning(!s.running) }, s.running ? t('opple.ui.pause') : t('opple.ui.run')) : '',
+      hooks.openScopes ? h('button', { title: t('opple.ui.scopesTitle'), onclick: () => hooks.openScopes!() }, t('opple.ui.scopes')) : '',
+      s.history.length ? h('button', { title: t('opple.ui.csvTitle'), onclick: () => download(`${t('opple.file.prefix')}-${stamp()}.csv`, readingsCsv(s.history)) }, '⤓ CSV') : '',
+      s.history.length ? h('button', { onclick: () => { s.history.length = 0; s.changed(); } }, t('opple.ui.clearHistory')) : '',
+      act?.frames.length ? h('button', { title: t('opple.ui.rawTitle'), onclick: () => navigator.clipboard?.writeText(act.frames.join('\n')) }, t('opple.ui.raw')) : '',
     );
     const msg = s.message || act?.message || '';
     status.textContent = msg || (sup.ok ? (anyConnected ? '' : NO_PAIRING_HINT) : sup.reason);
@@ -148,44 +149,44 @@ export function mountOpple(root: HTMLElement, hooks: { openScopes?: () => void; 
   let label = '';
   function renderPoints() {
     const o = s.opts;
-    const num = (v: number, set: (n: number) => void, max = 12) => h('input', { type: 'number', class: 'num', min: 1, max, value: v, onchange: (e: Event) => { set(Math.max(1, Math.min(max, Number((e.target as HTMLInputElement).value) || 1))); s.saveOpts(); s.changed(); } });
+    const numIn = (v: number, set: (n: number) => void, max = 12) => h('input', { type: 'number', class: 'num', min: 1, max, value: v, onchange: (e: Event) => { set(Math.max(1, Math.min(max, Number((e.target as HTMLInputElement).value) || 1))); s.saveOpts(); s.changed(); } });
     const can = s.connected.length > 0;
     const take = (grid: boolean) => { s.capture(label, grid).then(() => { label = ''; }).catch((e) => { s.message = (e as Error).message; s.changed(); }); };
     const cellName = `${String.fromCharCode(65 + o.cursor[1])}${o.cursor[0] + 1}`;
     const a = s.point(o.ref), b = s.point(o.cmp);
     const cmp = a && b && a !== b ? compareLights(a.reading, b.reading, o.gelMaker) : null;
     points.replaceChildren(
-      h('h3', {}, 'Messpunkte, Messfeld, Vergleich'),
+      h('h3', {}, t('opple.ui.pointsTitle')),
       h('div', { class: 'row' },
-        h('input', { placeholder: 'Name (optional)', value: label, style: 'flex:1 1 80px;min-width:60px', oninput: (e: Event) => { label = (e.target as HTMLInputElement).value; } }),
-        h('select', { title: 'Messungen je Punkt mitteln', onchange: (e: Event) => { o.avg = Number((e.target as HTMLSelectElement).value); s.saveOpts(); } },
+        h('input', { placeholder: t('opple.ui.namePh'), value: label, style: 'flex:1 1 80px;min-width:60px', oninput: (e: Event) => { label = (e.target as HTMLInputElement).value; } }),
+        h('select', { title: t('opple.ui.avgTitle'), onchange: (e: Event) => { o.avg = Number((e.target as HTMLSelectElement).value); s.saveOpts(); } },
           ...[1, 3, 5, 10].map((n) => h('option', { value: n, selected: n === o.avg }, `⌀ ${n}`)))),
       h('div', { class: 'row' },
-        h('button', { disabled: !can, title: 'Messung (gemittelt) als Punkt behalten – für Vergleich und Diagramme', onclick: () => take(false) }, '◉ Punkt'),
-        h('button', { disabled: !can, title: 'Messung in die markierte Zelle des Messfelds, dann weiter zur nächsten', onclick: () => take(true) }, `▦ Zelle ${cellName}`),
-        h('button', { class: 'mini', title: 'Zelle überspringen', onclick: () => s.advance() }, '→')),
-      h('div', { class: 'row' }, 'Messfeld', num(o.cols, (n) => { o.cols = n; }), '×', num(o.rows, (n) => { o.rows = n; }, 26),
-        h('span', { class: 'hint' }, 'Spalten × Zeilen (z. B. Set-Fläche, LED-Wand)')),
+        h('button', { disabled: !can, title: t('opple.ui.pointTitle'), onclick: () => take(false) }, t('opple.ui.point')),
+        h('button', { disabled: !can, title: t('opple.ui.cellTitle'), onclick: () => take(true) }, t('opple.ui.cell', { cell: cellName })),
+        h('button', { class: 'mini', title: t('opple.ui.skipCell'), onclick: () => s.advance() }, '→')),
+      h('div', { class: 'row' }, t('opple.ui.grid'), numIn(o.cols, (n) => { o.cols = n; }), '×', numIn(o.rows, (n) => { o.rows = n; }, 26),
+        h('span', { class: 'hint' }, t('opple.ui.gridHint'))),
       s.points.length ? h('table', {},
         h('tr', {}, h('td', {}, ''), h('td', {}, 'Ref'), h('td', {}, 'B'), h('td', { class: 'n' }, 'lx'), h('td', { class: 'n' }, 'K'), h('td', { class: 'n' }, 'Duv'), h('td', {}, '')),
         ...s.points.map((p) => h('tr', {},
           h('td', {}, p.label),
-          h('td', {}, h('input', { type: 'radio', name: 'opple-ref', checked: p.id === o.ref, title: 'Referenz (A)', onchange: () => { o.ref = p.id; s.saveOpts(); s.changed(); } })),
-          h('td', {}, h('input', { type: 'radio', name: 'opple-cmp', checked: p.id === o.cmp, title: 'Vergleich (B)', onchange: () => { o.cmp = p.id; s.saveOpts(); s.changed(); } })),
+          h('td', {}, h('input', { type: 'radio', name: 'opple-ref', checked: p.id === o.ref, title: t('opple.ui.refTitle'), onchange: () => { o.ref = p.id; s.saveOpts(); s.changed(); } })),
+          h('td', {}, h('input', { type: 'radio', name: 'opple-cmp', checked: p.id === o.cmp, title: t('opple.ui.cmpTitle'), onchange: () => { o.cmp = p.id; s.saveOpts(); s.changed(); } })),
           h('td', { class: 'n' }, de(p.reading.lux, p.reading.lux < 10 ? 1 : 0)), h('td', { class: 'n' }, de(p.reading.cct, 0)), h('td', { class: 'n' }, sgn(p.reading.duv, 3)),
-          h('td', {}, h('button', { class: 'icon', title: 'Punkt löschen', onclick: () => s.removePoint(p.id) }, '✕'))))) : '',
+          h('td', {}, h('button', { class: 'icon', title: t('opple.ui.deletePoint'), onclick: () => s.removePoint(p.id) }, '✕'))))) : '',
       cmp ? h('div', { class: 'cmp' },
         h('b', {}, `${a!.label} (A) → ${b!.label} (B)`), h('br'),
-        `Δu′v′ ${de(cmp.duv, 4)} · CCT ${de(cmp.cctA, 0)} → ${de(cmp.cctB, 0)} K · Helligkeit ${sgn(cmp.stops, 2)} Blenden`, h('br'),
-        `Mired-Korrektur für B: ${sgn(cmp.shift, 0)} `,
+        t('opple.ui.cmpLine', { duv: de(cmp.duv, 4), a: de(cmp.cctA, 0), b: de(cmp.cctB, 0), stops: sgn(cmp.stops, 2) }), h('br'),
+        `${t('opple.ui.miredFix', { v: sgn(cmp.shift, 0) })} `,
         h('select', { onchange: (e: Event) => { o.gelMaker = (e.target as HTMLSelectElement).value as 'Lee' | 'Rosco'; s.saveOpts(); s.changed(); } },
           ...['Lee', 'Rosco'].map((m) => h('option', { value: m, selected: m === o.gelMaker }, m))), h('br'),
-        ...(cmp.gels.length ? cmp.gels.map((g, i) => h('span', {}, `${i + 1}. ${g.gels.map((x) => x.name).join(' + ')} (${sgn(g.mired, 0)}) → ${de(g.resultK, 0)} K, Rest ${sgn(g.residual, 0)} mired`, h('br'))) : ['keine Farbtemperatur-Folie nötig (< 5 mired)', h('br')]),
+        ...(cmp.gels.length ? cmp.gels.map((g, i) => h('span', {}, t('opple.ui.gelLine', { i: i + 1, gels: g.gels.map((x) => x.name).join(' + '), m: sgn(g.mired, 0), k: de(g.resultK, 0), rest: sgn(g.residual, 0) }), h('br'))) : [t('opple.ui.noGel'), h('br')]),
         greenMagentaHint(cmp.dDuv, cmp.cctB), h('br'),
-        h('span', { class: 'hint' }, 'Mired-Werte: Lee-Datenblätter, Rosco-Produktangaben (einige Rosco-CTB aus einer Sekundärtabelle). Folien addieren sich in Mired. Grün/Magenta-Stärke aus den von Lee angegebenen Farborten (Kunstlicht bzw. Tageslicht).')) : '',
+        h('span', { class: 'hint' }, t('opple.ui.gelSources'))) : '',
       s.points.length ? h('div', { class: 'row' },
-        h('button', { class: 'mini', onclick: () => download(`lichtmesser-punkte-${stamp()}.csv`, pointsCsv(s)) }, '⤓ Punkte CSV'),
-        h('button', { class: 'mini', onclick: () => s.clearPoints() }, 'Punkte löschen')) : '',
+        h('button', { class: 'mini', onclick: () => download(`${t('opple.file.prefix')}-${t('opple.file.points')}-${stamp()}.csv`, pointsCsv(s)) }, t('opple.ui.pointsCsv')),
+        h('button', { class: 'mini', onclick: () => s.clearPoints() }, t('opple.ui.clearPoints'))) : '',
     );
   }
 
@@ -215,9 +216,9 @@ export function mountOpple(root: HTMLElement, hooks: { openScopes?: () => void; 
   });
 
   root.replaceChildren(
-    h('p', { class: 'warnbox' }, 'Geprüft mit einem Light Master 3 (Verbindung, Kalibrierfaktoren, Messung) am 30.09.2026. Light Master 4, Flimmern und mehrere Geräte gleichzeitig nur ohne zweites Gerät bzw. mit aufgezeichneten Paketen getestet.'),
+    h('p', { class: 'warnbox' }, t('opple.ui.tested')),
     buttons, pickerBox(s), status, devices, vals, chart, info, points, otherMeters(s, () => render()),
-    h('p', { class: 'hint' }, `Lux, xy, CCT und Duv rechnet LZ Scopes aus den Rohkanälen (Filtersensor, 6 bzw. 8 Kanäle, Matrizen der Opple-App). Ein Wert je Messung an einer Stelle, kein Bild. Für schmalbandige LED-Primärfarben, z. B. einer LED-Wand, und für Displays nur als Trendmesser geeignet.${desktopBluetooth() ? '' : ' Im Browser: Chrome/Edge zeigen die Geräteauswahl selbst; bekannte Geräte verbinden dort ohne Auswahl, wenn der Browser sie sich merkt.'}`),
+    h('p', { class: 'hint' }, `${t('opple.ui.footer')}${desktopBluetooth() ? '' : ` ${t('opple.ui.footerBrowser')}`}`),
   );
   render();
 }
@@ -227,8 +228,9 @@ export function pointsCsv(s: LightStore) {
   const f = (v: number, d: number) => (Number.isFinite(v) ? v.toFixed(d) : '');
   const r0 = s.point(s.opts.ref);
   return [
-    '# LZ Scopes – Opple Light Master, Messpunkte (Trendmessung; Δu′v′ zur Referenz)',
-    'punkt,zelle,geraet,zeit,lux,x,y,cct_k,duv,du_v_ref',
+    `# ${t('opple.csv.pointsHead')}`,
+    // column names: stable English ids, independent of the UI language
+    'point,cell,device,time,lux,x,y,cct_k,duv,du_v_ref',
     ...s.points.map((p) => {
       const r: Reading = p.reading;
       const d = r0 ? compareLights(r0.reading, r).duv : NaN;
@@ -245,22 +247,22 @@ function otherMeters(s: LightStore, done: () => void): HTMLElement {
   let info = '';
   const render = () => {
     box.replaceChildren(
-      h('summary', {}, 'Weitere Messgeräte: Spektrometer, Spektrum-Datei'),
-      h('p', {}, 'Spektrometer und Kolorimeter, die ArgyllCMS kennt (i1Pro, ColorMunki, JETI specbos/spectraval, i1Display …), über die Bridge mit spotread im Umgebungsmodus. Spektrometer liefern das Spektrum; CRI, TLCI und TM-30 rechnet ArgyllCMS. Ungeprüft: hier ist weder ArgyllCMS noch ein solches Gerät vorhanden.'),
+      h('summary', {}, t('opple.ui.others')),
+      h('p', {}, t('opple.ui.othersHint')),
       h('div', { class: 'row' },
         h('select', { onchange: (e: Event) => { sel = Number((e.target as HTMLSelectElement).value) || undefined; } },
-          h('option', { value: '' }, ports.length ? 'erstes Gerät' : 'Gerät (Liste laden …)'), ...ports.map((p) => h('option', { value: p.port }, `${p.port}: ${p.name}`))),
-        h('button', { class: 'mini', title: 'Geräteliste von spotread über die Bridge', onclick: () => {
+          h('option', { value: '' }, ports.length ? t('opple.ui.firstDevice') : t('opple.ui.deviceLoad')), ...ports.map((p) => h('option', { value: p.port }, `${p.port}: ${p.name}`))),
+        h('button', { class: 'mini', title: t('opple.ui.listTitle'), onclick: () => {
           fetch(`${s.bridgeWs().replace(/^ws/, 'http')}/api/meter`).then((r) => r.json()).then((m: { found: boolean; instruments: { port: number; name: string }[]; version?: string }) => {
-            ports = m.instruments ?? []; info = m.found ? `ArgyllCMS ${m.version ?? ''} gefunden, ${ports.length} Gerät(e)` : 'ArgyllCMS (spotread) nicht gefunden – installieren oder LZS_ARGYLL_BIN setzen'; render();
-          }).catch(() => { info = 'Bridge nicht erreichbar (Desktop-App oder npm start)'; render(); });
-        } }, 'Liste'),
-        h('button', { class: 'mini', onclick: () => { s.connectArgyll(sel).then(() => s.setRunning(true)).catch(() => {}).finally(done); } }, 'Verbinden')),
+            ports = m.instruments ?? []; info = m.found ? t('opple.ui.argyllFound', { v: m.version ?? '', n: ports.length }) : t('opple.ui.argyllMissing'); render();
+          }).catch(() => { info = t('opple.ui.noBridge'); render(); });
+        } }, t('opple.ui.list')),
+        h('button', { class: 'mini', onclick: () => { s.connectArgyll(sel).then(() => s.setRunning(true)).catch(() => {}).finally(done); } }, t('opple.ui.connect'))),
       info ? h('p', {}, info) : '',
-      h('p', {}, 'Spektrum-Datei: Argyll .sp (spotread -O) oder zwei Spalten Wellenlänge, Wert (CSV, gleicher Abstand). Wird als Messpunkt übernommen.'),
+      h('p', {}, t('opple.ui.fileHint')),
       h('div', { class: 'row' },
-        h('select', { title: 'Einheit der CSV-Werte (.sp-Dateien bringen sie mit)', onchange: (e: Event) => { unit = (e.target as HTMLSelectElement).value as SpectrumUnit; } },
-          ...([['relativ', 'CSV: relativ'], ['mW/(m²·nm)', 'CSV: mW/(m²·nm) (Bestrahlungsstärke)'], ['mW/(m²·sr·nm)', 'CSV: mW/(m²·sr·nm) (Strahldichte)']] as [SpectrumUnit, string][]).map(([v, l]) => h('option', { value: v, selected: v === unit }, l))),
+        h('select', { title: t('opple.ui.unitTitle'), onchange: (e: Event) => { unit = (e.target as HTMLSelectElement).value as SpectrumUnit; } },
+          ...([['relativ', t('opple.ui.unitRel')], ['mW/(m²·nm)', t('opple.ui.unitIrr')], ['mW/(m²·sr·nm)', t('opple.ui.unitRad')]] as [SpectrumUnit, string][]).map(([v, l]) => h('option', { value: v, selected: v === unit }, l))),
         h('input', { type: 'file', accept: '.sp,.csv,.txt,.tsv', onchange: async (e: Event) => {
           const f = (e.target as HTMLInputElement).files?.[0];
           if (!f) return;

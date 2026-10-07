@@ -10,6 +10,7 @@ import { UntetheredDetector } from '../src/calib/untethered';
 import { verifyCsv, verifyHtml, uniformityHtml } from '../src/calib/report';
 import { PatchSequencer, patchRect, quantize, type PatchFrame } from '../src/patchSequencer';
 import { parseCube, apply3D } from '../src/lut';
+import { t } from '../src/i18n';
 // @ts-expect-error plain JS module
 import { parseSpotread, parseInstruments, spotreadArgs, writeCorrection, spotreadCandidates } from '../server/meter.mjs';
 
@@ -54,7 +55,7 @@ describe('test sets', () => {
   it('HDR PQ set: greys stop at the peak, 203 cd/m² grey ≈ 58 % PQ', () => {
     const s = hdrPqSet(1000);
     expect(s.patches.filter((p) => p.kind === 'grey').every((p) => p.rgb[0] <= 0.753)).toBe(true);
-    const g203 = s.patches.find((p) => p.label === 'Grau 203 cd/m²')!;
+    const g203 = s.patches.find((p) => p.label === t('calib.patch.grey', { v: '203 cd/m²' }))!;
     expect(g203.rgb[0]).toBeCloseTo(0.58, 2);
   });
   it('uniformity cells tile the output', () => {
@@ -82,7 +83,7 @@ describe('verification report', () => {
     const r = verify(set, readings, target);
     expect(r.lw).toBeCloseTo(120, 6); expect(r.lb).toBeCloseTo(0.06, 6);
     expect(r.dE00.max).toBeLessThan(1e-6); expect(r.dITP.max).toBeLessThan(1e-6);
-    expect(r.grades.mean).toBe('gut');
+    expect(r.grades.mean).toBe('good');
     expect(Math.abs(r.white!.cct - 6504)).toBeLessThan(15);
     expect(r.contrast).toBeCloseTo(2000, 3);
     // effective gamma of a BT.1886 curve with a small black is close to (not exactly) 2.4
@@ -94,10 +95,10 @@ describe('verification report', () => {
     const d = display('709', 2.0, 100, 0.01);
     const r = verify(set, set.patches.map((p) => d(p.rgb)), target);
     expect(r.dE00.mean).toBeGreaterThan(1.5);
-    expect(r.grades.mean).toBe('aus');
+    expect(r.grades.mean).toBe('fail');
     expect(r.white!.dE00).toBeLessThan(0.01);
     expect(verifyCsv(r).trim().split('\n')).toHaveLength(48);
-    expect(verifyHtml(r)).toContain('Graukurve');
+    expect(verifyHtml(r)).toContain(t('calib.html.greyCurve'));
   });
   it('missing readings are ignored in the statistics', () => {
     const target = defaultTarget(false);
@@ -138,7 +139,7 @@ describe('3D LUT from measurements', () => {
   });
   it('needs black and the primaries', () => {
     const g = testSet('grey21');
-    expect(fitModel(g, g.patches.map(() => [1, 1, 1] as XYZ))).toMatch(/Rot/);
+    expect(fitModel(g, g.patches.map(() => [1, 1, 1] as XYZ))).toBe(t('calib.lut.missing'));
   });
   it('predict() reproduces the fitted display at a grey step', () => {
     const d = display('709', 2.4, 100, 0.1);
@@ -155,12 +156,12 @@ describe('uniformity', () => {
   const cell = (k: number, tint = 0): XYZ[] => levels.map((l) => { const y = 120 * k * l ** 2.2; return [0.9505 * y * (1 + tint), y, 1.089 * y]; });
   it('uniform panel: ΔE 0, T 0, grade gut; a dim corner with a tint shows up', () => {
     const flat = evaluateUniformity(5, Array.from({ length: 25 }, () => cell(1)));
-    expect(flat.maxDE00).toBeLessThan(1e-9); expect(flat.maxT).toBeLessThan(1e-9); expect(flat.grade).toBe('gut');
+    expect(flat.maxDE00).toBeLessThan(1e-9); expect(flat.maxT).toBeLessThan(1e-9); expect(flat.grade).toBe('good');
     const readings = Array.from({ length: 25 }, (_, i) => (i === 0 ? cell(0.8, 0.05) : cell(1)));
     const u = evaluateUniformity(5, readings);
     expect(u.cells[0].lumDev[0]).toBeCloseTo(-20, 6);
     expect(u.cells[0].dE00[0]).toBeGreaterThan(4);
-    expect(u.grade).toBe('aus');
+    expect(u.grade).toBe('fail');
     expect(u.cells[12].dE00.every((d) => d === 0)).toBe(true);
     expect(uniformityHtml(u)).toContain('5×5');
   });

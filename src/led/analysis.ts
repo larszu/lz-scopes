@@ -7,6 +7,7 @@
 
 import { bt709InverseOetf, inv3 } from '../color';
 import { cabinets, type WallConfig } from './wall';
+import { t } from '../i18n';
 
 /** RGB frame, 3 floats per pixel in 0–1 (camera code values). */
 export interface Frame { width: number; height: number; rgb: Float32Array }
@@ -26,7 +27,7 @@ function solve(A: number[][], b: number[]): number[] {
   for (let c = 0; c < n; c++) {
     let p = c;
     for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
-    if (Math.abs(M[p][c]) < 1e-12) throw new Error('Eckpunkte liegen auf einer Linie – bitte neu setzen');
+    if (Math.abs(M[p][c]) < 1e-12) throw new Error(t('led.err.collinear'));
     [M[c], M[p]] = [M[p], M[c]];
     for (let r = 0; r < n; r++) {
       if (r === c) continue;
@@ -226,7 +227,7 @@ export function analyseSeams(f: Frame, wall: WallConfig, H: number[], transfer: 
 export function averageFrames(frames: Frame[]): Frame {
   const f0 = frames[0], rgb = new Float32Array(f0.rgb.length);
   for (const f of frames) {
-    if (f.width !== f0.width || f.height !== f0.height) throw new Error('Bildgröße hat sich zwischen den Aufnahmen geändert');
+    if (f.width !== f0.width || f.height !== f0.height) throw new Error(t('led.err.sizeChanged'));
     for (let i = 0; i < rgb.length; i++) rgb[i] += f.rgb[i];
   }
   for (let i = 0; i < rgb.length; i++) rgb[i] /= frames.length;
@@ -345,7 +346,7 @@ export function angleSeries(list: { angle: number; result: WallResult }[]): Angl
 export function cameraMatrix(r: number[], g: number[], b: number[], w: number[]) {
   const F = [r[0], g[0], b[0], r[1], g[1], b[1], r[2], g[2], b[2]];
   const I = inv3(F);
-  if (I.some((v) => !Number.isFinite(v))) throw new Error('R, G, B sind linear abhängig – Messung prüfen');
+  if (I.some((v) => !Number.isFinite(v))) throw new Error(t('led.err.dependent'));
   const mx = Math.max(...w);
   const wn = w.map((v) => v / mx);
   const S = [0, 1, 2].map((i) => I[i * 3] * wn[0] + I[i * 3 + 1] * wn[1] + I[i * 3 + 2] * wn[2]);
@@ -368,23 +369,23 @@ const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
 export function reportCsv(res: WallResult, meta: Record<string, string> = {}, delta: DeltaStat[] | null = null) {
   const w = res.wall;
   const lines = [
-    `# LZ Scopes – LED-Wand-Prüfung (relativ, Kamera ist kein Kolorimeter; Kalibrierung erfolgt im LED-Prozessor)`,
-    `# Datum,${res.date}`,
-    `# Wand,${q(w.name)},Cabinet ${w.cabW}x${w.cabH} px,${w.cols} Spalten x ${w.rows} Reihen,Modul ${w.modW}x${w.modH},Zählung ${w.order} ab ${w.start}`,
-    `# Signal,${res.transfer === 'bt709' ? 'linearisiert (inverse BT.709-OETF)' : "Codewerte Y'"},Randzone ${Math.round(res.margin * 100)} %,Aufnahmen ${res.captures}`,
-    `# Eckpunkte (Bildpixel TL TR BR BL),${res.corners.map((p) => `${num(p[0], 1)} ${num(p[1], 1)}`).join(',')}`,
+    `# ${t('led.csv.head')}`,
+    `# ${t('led.csv.date')},${res.date}`,
+    `# ${t('led.csv.wall')},${q(w.name)},Cabinet ${w.cabW}x${w.cabH} px,${t('led.csv.grid', { c: w.cols, r: w.rows })},${t('led.csv.module', { w: w.modW, h: w.modH })},${t('led.csv.order', { order: w.order, start: w.start })}`,
+    `# Signal,${res.transfer === 'bt709' ? t('led.cam.linearised') : t('led.csv.codeValues')},${t('led.csv.margin', { m: Math.round(res.margin * 100) })},${t('led.csv.captures', { n: res.captures })}`,
+    `# ${t('led.csv.corners')},${res.corners.map((p) => `${num(p[0], 1)} ${num(p[1], 1)}`).join(',')}`,
     ...Object.entries(meta).filter(([, v]) => v).map(([k, v]) => `# ${k},${q(v)}`),
-    `# Wandmedian,${num(res.wallMedian, 5)},Uniformität min/max %,${num(res.uniformity, 2)},Streuung %,${num(res.spread, 2)}`,
+    `# ${t('led.res.wallMedian')},${num(res.wallMedian, 5)},${t('led.csv.uniformity')},${num(res.uniformity, 2)},${t('led.res.spreadPct')},${num(res.spread, 2)}`,
     '',
-    'id,label,spalte,reihe,mittel,median,std,abweichung_prozent,cb,cr,delta_cb_x100,delta_cr_x100,stichproben' + (delta ? ',vorher_prozent,delta_vorher_pp' : ''),
+    'id,label,column,row,mean,median,std,deviation_percent,cb,cr,delta_cb_x100,delta_cr_x100,samples' + (delta ? ',before_percent,delta_before_pp' : ''),
     ...res.cabinets.map((c) => {
       const d = delta?.find((x) => x.label === c.label);
       return [c.id, c.label, c.c + 1, c.r + 1, num(c.mean, 5), num(c.median, 5), num(c.std, 5), num(c.dev, 2), num(c.cb, 5), num(c.cr, 5), num(c.dCb, 3), num(c.dCr, 3), c.n,
         ...(delta ? [num(d?.before ?? NaN, 2), num(d?.delta ?? NaN, 2)] : [])].join(',');
     }),
     '',
-    'naht,richtung,cabinet_a,cabinet_b,kontrast_prozent',
-    ...[...res.seams].sort((a, b) => Math.abs(b.contrast) - Math.abs(a.contrast)).map((s, i) => [i + 1, s.dir === 'v' ? 'senkrecht' : 'waagerecht', s.a, s.b, num(s.contrast, 2)].join(',')),
+    'seam,direction,cabinet_a,cabinet_b,contrast_percent',
+    ...[...res.seams].sort((a, b) => Math.abs(b.contrast) - Math.abs(a.contrast)).map((s, i) => [i + 1, s.dir === 'v' ? 'vertical' : 'horizontal', s.a, s.b, num(s.contrast, 2)].join(',')),
   ];
   return lines.join('\n') + '\n';
 }

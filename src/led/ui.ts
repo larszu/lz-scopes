@@ -15,6 +15,7 @@ import {
 import { bt709InverseOetf } from '../color';
 import { mountMeterCheck } from './oppleUi';
 import type { PointStat } from './oppleCheck';
+import { lang, num, t } from '../i18n';
 
 export interface LedHost {
   sources: () => Source[];
@@ -43,7 +44,8 @@ const numIn = (value: number, title: string, onchange: (n: number) => void, step
 const sel = (value: string, opts: [string, string][], onchange: (v: string) => void, title = '') =>
   h('select', { title, onchange: (e: Event) => onchange((e.target as HTMLSelectElement).value) }, ...opts.map(([v, l]) => h('option', { value: v, selected: v === value }, l)));
 const lab = (text: string, ...kids: (Node | string)[]) => h('label', { class: 'inline' }, text, ...kids);
-const fmt = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d).replace('.', ',') : '–');
+const fmt = (v: number, d = 1) => (Number.isFinite(v) ? num(v, d) : '–');
+const locale = () => (lang() === 'de' ? 'de-DE' : 'en-GB');
 const signed = (v: number, d = 1) => (Number.isFinite(v) ? `${v > 0 ? '+' : ''}${fmt(v, d)}` : '–');
 
 function download(name: string, blob: Blob) {
@@ -141,19 +143,19 @@ export function openLedTool(host: LedHost) {
     wallBox.replaceChildren(
       h('div', { class: 'row' },
         lab('Name', (() => { const i = h('input', { value: w.name, style: 'width:140px' }) as HTMLInputElement; i.onchange = () => setWall({ name: i.value }); return i; })()),
-        walls.length ? sel('', [['', 'Gespeicherte Wand …'], ...walls.map((x) => [x.name, x.name] as [string, string])], (v) => { const x = walls.find((y) => y.name === v); if (x) setWall(x); }) : '',
-        h('button', { onclick: () => { saveWall(s.wall); renderWall(); } }, 'Speichern'),
-        walls.some((x) => x.name === w.name) ? h('button', { onclick: () => { deleteWall(w.name); renderWall(); } }, 'Löschen') : ''),
+        walls.length ? sel('', [['', t('led.wall.saved')], ...walls.map((x) => [x.name, x.name] as [string, string])], (v) => { const x = walls.find((y) => y.name === v); if (x) setWall(x); }) : '',
+        h('button', { onclick: () => { saveWall(s.wall); renderWall(); } }, t('led.save')),
+        walls.some((x) => x.name === w.name) ? h('button', { onclick: () => { deleteWall(w.name); renderWall(); } }, t('led.delete')) : ''),
       h('div', { class: 'row' },
-        lab('Cabinet B×H px', numIn(w.cabW, 'Cabinet-Breite in Pixeln', (n) => setWall({ cabW: n })), '×', numIn(w.cabH, 'Cabinet-Höhe in Pixeln', (n) => setWall({ cabH: n }))),
-        lab('Spalten × Reihen', numIn(w.cols, 'Cabinets nebeneinander', (n) => setWall({ cols: n }), '1', 52), '×', numIn(w.rows, 'Cabinets übereinander', (n) => setWall({ rows: n }), '1', 52)),
-        lab('Modul B×H', numIn(w.modW, 'Modulbreite in Pixeln (0 = ohne Modulraster)', (n) => setWall({ modW: n }), '1', 52), '×', numIn(w.modH, 'Modulhöhe in Pixeln', (n) => setWall({ modH: n }), '1', 52))),
+        lab(t('led.wall.cabinetPx'), numIn(w.cabW, t('led.wall.cabWTitle'), (n) => setWall({ cabW: n })), '×', numIn(w.cabH, t('led.wall.cabHTitle'), (n) => setWall({ cabH: n }))),
+        lab(t('led.wall.colsRows'), numIn(w.cols, t('led.wall.colsTitle'), (n) => setWall({ cols: n }), '1', 52), '×', numIn(w.rows, t('led.wall.rowsTitle'), (n) => setWall({ rows: n }), '1', 52)),
+        lab(t('led.wall.module'), numIn(w.modW, t('led.wall.modWTitle'), (n) => setWall({ modW: n }), '1', 52), '×', numIn(w.modH, t('led.wall.modHTitle'), (n) => setWall({ modH: n }), '1', 52))),
       h('div', { class: 'row' },
-        lab('Versatz X/Y', numIn(w.offX, 'Lage der Wand im Ausgabebild (links)', (n) => setWall({ offX: n })), numIn(w.offY, 'Lage der Wand im Ausgabebild (oben)', (n) => setWall({ offY: n }))),
-        lab('Prozessor', sel(w.processor, Object.entries(PROCESSOR_LABELS) as [string, string][], (v) => setWall({ processor: v as WallConfig['processor'] }), 'Bestimmt die Begriffe und Menüwege der Korrekturhinweise. Cabinet-Maße werden nicht aus Prozessor-Dateien importiert (kein öffentlich belegtes Format).')),
-        lab('Zählung', sel(w.order, [['rows', 'zeilenweise'], ['cols', 'spaltenweise'], ['snake', 'Schlange']], (v) => setWall({ order: v as WallConfig['order'] })),
-          'ab', numIn(w.start, 'Nummer des ersten Cabinets', (n) => setWall({ start: n }), '1', 52)),
-        h('span', { class: 'hint' }, `Wand ${ws.w}×${ws.h} px · Ausgabebild ${ps.w}×${ps.h} px · ${w.cols * w.rows} Cabinets`)),
+        lab(t('led.wall.offset'), numIn(w.offX, t('led.wall.offXTitle'), (n) => setWall({ offX: n })), numIn(w.offY, t('led.wall.offYTitle'), (n) => setWall({ offY: n }))),
+        lab(t('led.wall.processor'), sel(w.processor, Object.entries(PROCESSOR_LABELS) as [string, string][], (v) => setWall({ processor: v as WallConfig['processor'] }), t('led.wall.processorTitle'))),
+        lab(t('led.wall.order'), sel(w.order, [['rows', t('led.wall.byRows')], ['cols', t('led.wall.byCols')], ['snake', t('led.wall.snake')]], (v) => setWall({ order: v as WallConfig['order'] })),
+          t('led.wall.from'), numIn(w.start, t('led.wall.startTitle'), (n) => setWall({ start: n }), '1', 52)),
+        h('span', { class: 'hint' }, t('led.wall.summary', { ww: ws.w, wh: ws.h, pw: ps.w, ph: ps.h, n: w.cols * w.rows }))),
     );
   }
 
@@ -162,29 +164,29 @@ export function openLedTool(host: LedHost) {
   let patId = 'led-cabinet-grid';
   function renderPatterns() {
     const p = s.patch, ps = pictureSize(s.wall);
-    const listText = h('textarea', { title: 'Eine Farbe je Zeile: r g b in 0–1, 0–255 oder mit %' }, p.list.map((c) => c.map((v) => Number(v.toFixed(4))).join(' ')).join('\n')) as HTMLTextAreaElement;
+    const listText = h('textarea', { title: t('led.pat.listTitle') }, p.list.map((c) => c.map((v) => Number(v.toFixed(4))).join(' ')).join('\n')) as HTMLTextAreaElement;
     listText.onchange = () => { const l = parsePatchList(listText.value); if (l.length) { set({ patch: { ...p, list: l, index: 0 } }); renderPatterns(); } };
     const code = Math.round((s.level / 100) * 255);
     patBox.replaceChildren(
       h('div', { class: 'row' },
         sel(patId, LED_PATTERNS.map((x) => [x.id, x.name] as [string, string]), (v) => { patId = v; }),
-        h('button', { class: 'primary', title: `Im Ausgabefenster in ${ps.w}×${ps.h} (Wand + Versatz) zeigen`, onclick: () => host.showPattern(patId, ps.w, ps.h) }, `⧉ Ausgeben ${ps.w}×${ps.h}`)),
+        h('button', { class: 'primary', title: t('led.pat.showTitle', { w: ps.w, h: ps.h }), onclick: () => host.showPattern(patId, ps.w, ps.h) }, t('led.pat.show', { w: ps.w, h: ps.h }))),
       h('div', { class: 'row' },
-        lab('Vollfeld-Pegel %', numIn(s.level, 'Pegel 0–100 % (Codewert = gerundet auf 8 bit)', (n) => { set({ level: n }); renderPatterns(); }, '0.5', 70), h('span', { class: 'hint' }, `= Code ${code}`)),
+        lab(t('led.pat.level'), numIn(s.level, t('led.pat.levelTitle'), (n) => { set({ level: n }); renderPatterns(); }, '0.5', 70), h('span', { class: 'hint' }, `= ${t('led.pat.code', { code })}`)),
         ...(['R', 'G', 'B'] as const).map((c, i) => lab(c, (() => {
           const cb = h('input', { type: 'checkbox', checked: s.channels[i] }) as HTMLInputElement;
           cb.onchange = () => { const ch = [...s.channels] as LedSettings['channels']; ch[i] = cb.checked; set({ channels: ch }); };
           return cb;
         })())),
-        lab('Gitter alle', numIn(s.gridStep, 'Abstand des 1-px-Gitters im Pixel-Mapping', (n) => set({ gridStep: n }), '1', 52), 'px'),
-        lab('Low-Level bis Code', numIn(s.lowMax, 'Höchster Codewert der feinen Graustufen/Rampen (8 bit)', (n) => set({ lowMax: n }), '1', 52)),
-        lab('Scroll', sel(s.scroll, [['h', 'waagerecht'], ['v', 'senkrecht']], (v) => set({ scroll: v as 'h' | 'v' })))),
-      h('p', { class: 'hint' }, 'Ausgabe über Canvas = 8 bit Full-Range-RGB: feinere Stufen als 1/255 (≈ 0,39 %) sind so nicht darstellbar; für tiefere Low-Level-Tests die Testbilder des Prozessors oder einen Signalgenerator nehmen.'),
+        lab(t('led.pat.gridEvery'), numIn(s.gridStep, t('led.pat.gridTitle'), (n) => set({ gridStep: n }), '1', 52), 'px'),
+        lab(t('led.pat.lowMax'), numIn(s.lowMax, t('led.pat.lowMaxTitle'), (n) => set({ lowMax: n }), '1', 52)),
+        lab('Scroll', sel(s.scroll, [['h', t('led.pat.horizontal')], ['v', t('led.pat.vertical')]], (v) => set({ scroll: v as 'h' | 'v' })))),
+      h('p', { class: 'hint' }, t('led.pat.canvasHint')),
       h('div', { class: 'row' },
-        h('b', {}, 'Patch-Sequenzer'),
-        lab('Fenster', sel(String(p.window), ['1', '4', '10', '25', '100'].map((v) => [v, `${v} %`] as [string, string]), (v) => set({ patch: { ...p, window: Number(v) } }))),
-        lab('Umfeld %', numIn(p.surround, 'Pegel um das Feld', (n) => set({ patch: { ...p, surround: n } }), '1', 52)),
-        sel('', [['', 'Satz laden …'], ...PATCH_PRESETS.map((x) => [x.id, x.name] as [string, string])], (v) => {
+        h('b', {}, t('led.pat.sequencer')),
+        lab(t('led.pat.window'), sel(String(p.window), ['1', '4', '10', '25', '100'].map((v) => [v, `${v} %`] as [string, string]), (v) => set({ patch: { ...p, window: Number(v) } }))),
+        lab(t('led.pat.surround'), numIn(p.surround, t('led.pat.surroundTitle'), (n) => set({ patch: { ...p, surround: n } }), '1', 52)),
+        sel('', [['', t('led.pat.loadSet')], ...PATCH_PRESETS.map((x) => [x.id, x.name] as [string, string])], (v) => {
           const pr = PATCH_PRESETS.find((x) => x.id === v); if (pr) { set({ patch: { ...p, list: pr.list(), index: 0 } }); renderPatterns(); }
         })),
       h('div', { class: 'row' },
@@ -192,13 +194,13 @@ export function openLedTool(host: LedHost) {
         h('div', {},
           h('div', { class: 'row' },
             h('button', { class: 'mini', onclick: () => { set({ patch: { ...p, index: (p.index - 1 + p.list.length) % p.list.length } }); renderPatterns(); } }, '◀'),
-            h('span', {}, `Feld ${Math.min(p.index, p.list.length - 1) + 1} / ${p.list.length}: ${p.list[Math.min(p.index, p.list.length - 1)].map((v) => Math.round(v * 255)).join(' ')}`),
+            h('span', {}, t('led.pat.patch', { i: Math.min(p.index, p.list.length - 1) + 1, n: p.list.length, rgb: p.list[Math.min(p.index, p.list.length - 1)].map((v) => Math.round(v * 255)).join(' ') })),
             h('button', { class: 'mini', onclick: () => { set({ patch: { ...p, index: (p.index + 1) % p.list.length } }); renderPatterns(); } }, '▶')),
           h('div', { class: 'row' },
-            lab('automatisch', (() => { const cb = h('input', { type: 'checkbox', checked: p.auto }) as HTMLInputElement; cb.onchange = () => set({ patch: { ...p, auto: cb.checked } }); return cb; })()),
-            lab('je', numIn(p.seconds, 'Sekunden je Feld', (n) => set({ patch: { ...p, seconds: n } }), '0.5', 56), 's'),
-            lab('Beschriftung', (() => { const cb = h('input', { type: 'checkbox', checked: p.label }) as HTMLInputElement; cb.onchange = () => set({ patch: { ...p, label: cb.checked } }); return cb; })())),
-          h('p', { class: 'hint' }, 'Für Sonde, Opple oder Kamera: Muster „Messfeld / Patch-Sequenzer“ ausgeben. Automatisch zählt ab Öffnen des Ausgabefensters.'))),
+            lab(t('led.pat.auto'), (() => { const cb = h('input', { type: 'checkbox', checked: p.auto }) as HTMLInputElement; cb.onchange = () => set({ patch: { ...p, auto: cb.checked } }); return cb; })()),
+            lab(t('led.pat.each'), numIn(p.seconds, t('led.pat.secondsTitle'), (n) => set({ patch: { ...p, seconds: n } }), '0.5', 56), 's'),
+            lab(t('led.pat.label'), (() => { const cb = h('input', { type: 'checkbox', checked: p.label }) as HTMLInputElement; cb.onchange = () => set({ patch: { ...p, label: cb.checked } }); return cb; })())),
+          h('p', { class: 'hint' }, t('led.pat.seqHint')))),
     );
   }
 
@@ -218,7 +220,7 @@ export function openLedTool(host: LedHost) {
   const cams = () => host.sources().filter((x) => x.ready);
   function drawCam() {
     const ctx = camCanvas.getContext('2d')!;
-    if (!frame) { camCanvas.width = 960; camCanvas.height = 540; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 960, 540); ctx.fillStyle = '#888'; ctx.font = '16px system-ui'; ctx.textAlign = 'center'; ctx.fillText('Quelle wählen, „Bild holen“', 480, 270); return; }
+    if (!frame) { camCanvas.width = 960; camCanvas.height = 540; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 960, 540); ctx.fillStyle = '#888'; ctx.font = '16px system-ui'; ctx.textAlign = 'center'; ctx.fillText(t('led.cam.placeholder'), 480, 270); return; }
     camCanvas.width = frame.width; camCanvas.height = frame.height;
     ctx.drawImage(camImg, 0, 0);
     const lw = Math.max(1, frame.width / 700);
@@ -233,7 +235,7 @@ export function openLedTool(host: LedHost) {
     }
     corners.forEach((p, i) => {
       ctx.fillStyle = '#ffb44a'; ctx.beginPath(); ctx.arc(p[0], p[1], lw * 5, 0, Math.PI * 2); ctx.fill();
-      ctx.font = `bold ${Math.round(lw * 13)}px system-ui`; ctx.fillText(['OL', 'OR', 'UR', 'UL'][i], p[0] + lw * 14, p[1] - lw * 8);
+      ctx.font = `bold ${Math.round(lw * 13)}px system-ui`; ctx.fillText([t('led.cam.tlShort'), t('led.cam.trShort'), t('led.cam.brShort'), t('led.cam.blShort')][i], p[0] + lw * 14, p[1] - lw * 8);
     });
     ctx.strokeStyle = '#ff3b3b'; ctx.lineWidth = lw * 1.5;
     for (const hit of hits.slice(0, 500)) { ctx.beginPath(); ctx.arc(hit.x + 0.5, hit.y + 0.5, lw * 6, 0, Math.PI * 2); ctx.stroke(); }
@@ -257,17 +259,17 @@ export function openLedTool(host: LedHost) {
 
   const updateCamMsg = () => {
     camMsg.textContent = !frame ? '' : corners.length < 4
-      ? `Wandecken anklicken: ${['oben links', 'oben rechts', 'unten rechts', 'unten links'][corners.length]} (Ecken der äußeren Cabinets, ziehbar)`
-      : 'Raster liegt? Sonst Ecken ziehen. Dann „Auswerten“.';
+      ? t('led.cam.clickCorners', { corner: [t('led.cam.tl'), t('led.cam.tr'), t('led.cam.br'), t('led.cam.bl')][corners.length] })
+      : t('led.cam.wallPlaced');
   };
 
   async function grab() {
     const src = cams().find((x) => x.id === srcId) ?? cams()[0];
-    if (!src) { camMsg.textContent = 'Keine laufende Quelle.'; return; }
+    if (!src) { camMsg.textContent = t('led.cam.noSource'); return; }
     srcId = src.id;
-    camMsg.textContent = `Hole ${captures} Bild${captures > 1 ? 'er' : ''} …`;
+    camMsg.textContent = t('led.cam.grabbing', { n: captures });
     const f = await grabAveraged(src, captures);
-    if (!f) { camMsg.textContent = 'Kein Bild erhalten.'; return; }
+    if (!f) { camMsg.textContent = t('led.cam.noPicture'); return; }
     if (frame && (frame.width !== f.width || frame.height !== f.height)) corners = [];
     frame = f; hits = [];
     camImg.width = f.width; camImg.height = f.height;
@@ -278,7 +280,7 @@ export function openLedTool(host: LedHost) {
   }
 
   function evaluate() {
-    if (!frame || corners.length !== 4) { camMsg.textContent = 'Erst Bild holen und vier Ecken setzen.'; return; }
+    if (!frame || corners.length !== 4) { camMsg.textContent = t('led.cam.needCorners'); return; }
     try { result = analyseWall(frame, s.wall, corners, { margin: margin / 100, transfer, captures }); }
     catch (e) { camMsg.textContent = (e as Error).message; return; }
     renderResult();
@@ -312,8 +314,8 @@ export function openLedTool(host: LedHost) {
       ctx.stroke();
     }
     ctx.fillStyle = '#aaa'; ctx.font = '12px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    const what = { dev: 'Helligkeit zum Wandmedian %', cb: 'ΔCb ×100', cr: 'ΔCr ×100', delta: 'Nachher − Vorher (Prozentpunkte)', 'o-dy': 'Opple: Helligkeit zum Referenz-Cabinet % (Trendmessung)', 'o-duv': 'Opple: Δu′v′ ×1000 zum Referenz-Cabinet (Trendmessung)' }[heatMode];
-    ctx.fillText(`${w.name} · ${what} · Skala ±${range} · ${new Date(result.date).toLocaleString('de-DE')} · Nähte als Linien`, 6, Ht + 14);
+    const what = { dev: t('led.heat.dev'), cb: 'ΔCb ×100', cr: 'ΔCr ×100', delta: t('led.heat.delta'), 'o-dy': t('led.heat.oDy'), 'o-duv': t('led.heat.oDuv') }[heatMode];
+    ctx.fillText(t('led.heat.caption', { name: w.name, what, range, date: new Date(result.date).toLocaleString(locale()) }), 6, Ht + 14);
   }
 
   function renderResult() {
@@ -324,23 +326,23 @@ export function openLedTool(host: LedHost) {
     const pts = angleSeries(series);
     resBox.replaceChildren(
       h('div', { class: 'row' },
-        h('b', {}, `Uniformität (min/max) ${fmt(r.uniformity)} % · Streuung ${fmt(r.spread, 2)} % · ${r.cabinets.length} Cabinets`),
-        lab('Karte', sel(heatMode, [['dev', 'Helligkeit'], ['cb', 'ΔCb'], ['cr', 'ΔCr'], ...(d ? [['delta', 'Vorher/Nachher'] as [string, string]] : []), ...(meterStats.length ? [['o-dy', 'Opple: Helligkeit'], ['o-duv', 'Opple: Δu′v′']] as [string, string][] : [])], (v) => { heatMode = v as typeof heatMode; drawHeat(); })),
-        lab('Skala ±', sel(String(range), ['1', '2', '5', '10', '20'].map((v) => [v, v] as [string, string]), (v) => { range = Number(v); drawHeat(); }))),
+        h('b', {}, t('led.res.summary', { u: fmt(r.uniformity), s: fmt(r.spread, 2), n: r.cabinets.length })),
+        lab(t('led.res.map'), sel(heatMode, [['dev', t('led.res.brightness')], ['cb', 'ΔCb'], ['cr', 'ΔCr'], ...(d ? [['delta', t('led.res.beforeAfter')] as [string, string]] : []), ...(meterStats.length ? [['o-dy', t('led.res.oppleBrightness')], ['o-duv', 'Opple: Δu′v′']] as [string, string][] : [])], (v) => { heatMode = v as typeof heatMode; drawHeat(); })),
+        lab(t('led.res.scale'), sel(String(range), ['1', '2', '5', '10', '20'].map((v) => [v, v] as [string, string]), (v) => { range = Number(v); drawHeat(); }))),
       heat,
       h('div', { class: 'row' },
-        h('button', { onclick: () => download(`led-wand-${r.wall.name}-${r.date.slice(0, 16).replace(/[:T]/g, '-')}.csv`, new Blob([reportCsv(r, { Kamera: camNote }, d)], { type: 'text/csv' })) }, '⤓ CSV'),
-        h('button', { onclick: () => heat.toBlob((b) => b && download(`led-wand-${r.wall.name}-heatmap.png`, b), 'image/png') }, '⤓ PNG'),
-        h('button', { title: 'Diese Auswertung als Vorher-Stand merken (z. B. vor der Kalibrierung im Prozessor)', onclick: () => { before = r; renderResult(); } }, 'Als Vorher merken'),
-        before ? h('span', { class: 'hint' }, `Vorher: ${new Date(before.date).toLocaleTimeString('de-DE')}, Streuung ${fmt(before.spread, 2)} % → jetzt ${fmt(r.spread, 2)} %`) : '',
-        lab('Winkel °', numIn(angle, 'Kamerawinkel zur Wandnormalen', (n) => { angle = n; }, '1', 52)),
-        h('button', { title: 'Auswertung mit diesem Kamerawinkel in die Blickwinkelserie übernehmen', onclick: () => { series.push({ angle, result: r }); renderResult(); } }, '+ Blickwinkelserie')),
+        h('button', { onclick: () => download(`${t('led.file.prefix')}-${r.wall.name}-${r.date.slice(0, 16).replace(/[:T]/g, '-')}.csv`, new Blob([reportCsv(r, { [t('led.csv.camera')]: camNote }, d)], { type: 'text/csv' })) }, '⤓ CSV'),
+        h('button', { onclick: () => heat.toBlob((b) => b && download(`${t('led.file.prefix')}-${r.wall.name}-heatmap.png`, b), 'image/png') }, '⤓ PNG'),
+        h('button', { title: t('led.res.rememberTitle'), onclick: () => { before = r; renderResult(); } }, t('led.res.remember')),
+        before ? h('span', { class: 'hint' }, t('led.res.before', { time: new Date(before.date).toLocaleTimeString(locale()), a: fmt(before.spread, 2), b: fmt(r.spread, 2) })) : '',
+        lab('Winkel °', numIn(angle, t('led.res.angleTitle'), (n) => { angle = n; }, '1', 52)),
+        h('button', { title: t('led.res.seriesTitle'), onclick: () => { series.push({ angle, result: r }); renderResult(); } }, t('led.res.series'))),
       h('div', { class: 'cols' },
-        h('table', {}, h('tr', {}, h('th', {}, 'Cabinet'), h('th', {}, 'Abw. %'), h('th', {}, 'ΔCb'), h('th', {}, 'ΔCr'), h('th', {}, 'Std')),
+        h('table', {}, h('tr', {}, h('th', {}, 'Cabinet'), h('th', {}, t('led.res.devPct')), h('th', {}, 'ΔCb'), h('th', {}, 'ΔCr'), h('th', {}, 'Std')),
           ...worst.map((c) => h('tr', {}, h('td', {}, `${c.label} #${c.id}`), h('td', {}, signed(c.dev, 2)), h('td', {}, signed(c.dCb, 2)), h('td', {}, signed(c.dCr, 2)), h('td', {}, fmt(c.std * 100, 2))))),
-        h('table', {}, h('tr', {}, h('th', {}, 'Naht'), h('th', {}, 'Kontrast %'), h('th', {}, 'Profil')),
+        h('table', {}, h('tr', {}, h('th', {}, t('led.res.seam')), h('th', {}, t('led.res.contrastPct')), h('th', {}, t('led.res.profile'))),
           ...seams.map((sm) => h('tr', {}, h('td', {}, `${sm.a} | ${sm.b}`), h('td', {}, signed(sm.contrast, 2)), h('td', {}, sparkline(sm.profile)))))),
-      pts.length ? h('table', {}, h('tr', {}, h('th', {}, 'Winkel °'), h('th', {}, 'Wandmedian'), h('th', {}, 'relativ %'), h('th', {}, 'Cb ×100'), h('th', {}, 'Cr ×100'), h('th', {}, 'Streuung %')),
+      pts.length ? h('table', {}, h('tr', {}, h('th', {}, t('led.res.angle')), h('th', {}, t('led.res.wallMedian')), h('th', {}, t('led.res.relative')), h('th', {}, 'Cb ×100'), h('th', {}, 'Cr ×100'), h('th', {}, t('led.res.spreadPct'))),
         ...pts.map((p) => h('tr', {}, h('td', {}, fmt(p.angle, 0)), h('td', {}, fmt(p.median, 4)), h('td', {}, fmt(p.relative)), h('td', {}, signed(p.cb, 2)), h('td', {}, signed(p.cr, 2)), h('td', {}, fmt(p.spread, 2))))) : '',
     );
     drawHeat();
@@ -362,45 +364,45 @@ export function openLedTool(host: LedHost) {
     const list = cams();
     camBox.replaceChildren(
       h('div', { class: 'row' },
-        sel(srcId, list.length ? list.map((x) => [x.id, x.name] as [string, string]) : [['', 'keine laufende Quelle']], (v) => { srcId = v; }, 'Kamera, Capture oder RTSP, die die Wand filmt'),
-        h('button', { class: 'mini', title: 'Quellenliste neu lesen', onclick: renderCam }, '↻'),
-        lab('mitteln', numIn(captures, 'Anzahl Bilder, die gemittelt werden (Rauschen, Scan-Linien)', (n) => { captures = Math.max(1, Math.min(32, Math.round(n))); }, '1', 48)),
-        h('button', { class: 'primary', onclick: grab }, 'Bild holen'),
-        h('button', { onclick: () => { corners = []; hits = []; drawCam(); updateCamMsg(); } }, 'Ecken zurücksetzen'),
+        sel(srcId, list.length ? list.map((x) => [x.id, x.name] as [string, string]) : [['', t('led.cam.noSourceOpt')]], (v) => { srcId = v; }, t('led.cam.sourceTitle')),
+        h('button', { class: 'mini', title: t('led.cam.reloadTitle'), onclick: renderCam }, '↻'),
+        lab(t('led.cam.average'), numIn(captures, t('led.cam.averageTitle'), (n) => { captures = Math.max(1, Math.min(32, Math.round(n))); }, '1', 48)),
+        h('button', { class: 'primary', onclick: grab }, t('led.cam.grab')),
+        h('button', { onclick: () => { corners = []; hits = []; drawCam(); updateCamMsg(); } }, t('led.cam.resetCorners')),
         camMsg),
       camCanvas,
       h('div', { class: 'row' },
-        lab('Randzone %', numIn(margin, 'Rand jedes Cabinets, der nicht in die Zellstatistik eingeht (Nähte werden getrennt ausgewertet)', (n) => { margin = n; }, '1', 48)),
-        lab('Signal', sel(transfer, [['code', "Codewerte Y′ (wie aufgenommen)"], ['bt709', 'linearisiert (inverse BT.709-OETF)']], (v) => { transfer = v as CameraTransfer; })),
-        lab('Kamera/Notiz', (() => { const i = h('input', { value: camNote, placeholder: 'Kamera, Blende, Shutter, ISO, WB', style: 'width:220px' }) as HTMLInputElement; i.onchange = () => { camNote = i.value; }; return i; })()),
-        h('button', { class: 'primary', onclick: evaluate }, 'Auswerten')),
-      h('p', { class: 'hint' }, 'Vorgehen: Muster „Vollfeld freier Pegel“ (z. B. 50 % Grau) ausgeben, Kamera fest, Belichtung und WB manuell, gegen Moiré leicht defokussieren. Prozentwerte sind relativ zum Wandmedian; mit Log-Kameras erst eine Rec.709-Kurve oder „Codewerte“ nehmen.'),
+        lab(t('led.cam.margin'), numIn(margin, t('led.cam.marginTitle'), (n) => { margin = n; }, '1', 48)),
+        lab('Signal', sel(transfer, [['code', t('led.cam.codeValues')], ['bt709', t('led.cam.linearised')]], (v) => { transfer = v as CameraTransfer; })),
+        lab(t('led.cam.camNote'), (() => { const i = h('input', { value: camNote, placeholder: t('led.cam.camNotePh'), style: 'width:220px' }) as HTMLInputElement; i.onchange = () => { camNote = i.value; }; return i; })()),
+        h('button', { class: 'primary', onclick: evaluate }, t('led.cam.evaluate'))),
+      h('p', { class: 'hint' }, t('led.cam.howto')),
       resBox,
       h('div', { class: 'row' },
-        h('b', {}, 'Scan-Linien-Index'),
-        (() => { const i = h('input', { placeholder: 'Einstellung, z. B. 180° / Phase 0', style: 'width:200px' }) as HTMLInputElement; i.onchange = () => { scanNote = i.value; }; return i; })(),
-        h('button', { title: 'Zeilenprofil-Varianz im Wandbereich des geholten Bildes (Muster: Vollfeld)', onclick: () => {
-          if (!frame) { scanBox.textContent = 'Erst Bild holen.'; return; }
+        h('b', {}, t('led.scan.title')),
+        (() => { const i = h('input', { placeholder: t('led.scan.notePh'), style: 'width:200px' }) as HTMLInputElement; i.onchange = () => { scanNote = i.value; }; return i; })(),
+        h('button', { title: t('led.scan.measureTitle'), onclick: () => {
+          if (!frame) { scanBox.textContent = t('led.grabFirst'); return; }
           const r = scanLineIndex(frame, corners.length === 4 ? corners : null);
-          scans.push({ note: scanNote || `Messung ${scans.length + 1}`, index: r.index });
+          scans.push({ note: scanNote || t('led.scan.n', { n: scans.length + 1 }), index: r.index });
           scanBox.textContent = scans.map((x) => `${x.note}: ${fmt(x.index, 3)} %`).join(' · ');
-        } }, 'Messen'), scanBox),
-      h('p', { class: 'hint' }, 'Vergleichswert, keine Norm: RMS der Zeilenmittel nach Abzug des gleitenden Mittels, in % vom Mittel. Mit einem Bild (mitteln = 1) messen, Shutter/Phase ändern, erneut holen und messen – kleiner ist besser.'),
+        } }, t('led.scan.measure')), scanBox),
+      h('p', { class: 'hint' }, t('led.scan.hint')),
       h('div', { class: 'row' },
-        h('b', {}, 'Tote/hängende Pixel'),
-        lab('Schwelle %', numIn(thr, 'Abweichung vom Median der 8 Nachbarn', (n) => { thr = n; }, '1', 48)),
+        h('b', {}, t('led.px.title')),
+        lab(t('led.px.threshold'), numIn(thr, t('led.px.thresholdTitle'), (n) => { thr = n; }, '1', 48)),
         h('button', { onclick: () => {
-          if (!frame) { hitBox.textContent = 'Erst Bild holen.'; return; }
+          if (!frame) { hitBox.textContent = t('led.grabFirst'); return; }
           hits = findOutlierPixels(frame, corners.length === 4 ? corners : null, thr / 100);
           drawCam();
           const where = hits.slice(0, 40).map((p) => {
             const loc = corners.length === 4 ? locateOnWall(s.wall, corners, p.x, p.y) : null;
-            return `${p.kind} ${p.x}/${p.y}${loc ? ` → ${loc.label} Pixel ${loc.px}/${loc.py}` : ''}`;
+            return `${p.kind} ${p.x}/${p.y}${loc ? ` → ${t('led.px.loc', { label: loc.label, x: loc.px, y: loc.py })}` : ''}`;
           });
-          hitBox.textContent = hits.length ? `${hits.length}${hits.length >= 500 ? '+' : ''} Auffälligkeiten: ${where.join(' · ')}` : 'Keine Ausreißer über der Schwelle.';
-        } }, 'Suchen')),
+          hitBox.textContent = hits.length ? t('led.px.found', { n: `${hits.length}${hits.length >= 500 ? '+' : ''}`, list: where.join(' · ') }) : t('led.px.none');
+        } }, t('led.px.search'))),
       hitBox,
-      h('p', { class: 'hint' }, 'Vollfelder Schwarz, Weiß, R, G, B nacheinander ausgeben und jeweils holen und suchen. Einzelne LEDs findet das nur, wenn die Kamera im Ausschnitt mehr Pixel hat als die Wand (nah heran, Teilbereiche).'),
+      h('p', { class: 'hint' }, t('led.px.hint')),
     );
     drawCam();
   }
@@ -412,7 +414,7 @@ export function openLedTool(host: LedHost) {
   async function measure(k: keyof typeof meas) {
     const src = cams().find((x) => x.id === srcId) ?? cams()[0];
     const f = src ? await grabAveraged(src, Math.max(1, captures)) : null;
-    if (!f) { renderMatrix('Kein Bild.'); return; }
+    if (!f) { renderMatrix(t('led.mat.noPicture')); return; }
     // centre 20 % of the wall area (or of the frame)
     const region = corners.length === 4 ? corners : null;
     const b = bbox(f, region), cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, rw = (b.x1 - b.x0) * 0.1, rh = (b.y1 - b.y0) * 0.1;
@@ -434,17 +436,17 @@ export function openLedTool(host: LedHost) {
         const txt = ocioMatrix(m);
         out = h('div', {},
           h('table', {}, ...[0, 1, 2].map((i) => h('tr', {}, ...[0, 1, 2].map((j) => h('td', {}, m[i * 3 + j].toFixed(5)))))),
-          h('div', { class: 'row' }, h('code', {}, txt), h('button', { class: 'mini', onclick: () => navigator.clipboard?.writeText(txt) }, 'Kopieren')));
+          h('div', { class: 'row' }, h('code', {}, txt), h('button', { class: 'mini', onclick: () => navigator.clipboard?.writeText(txt) }, t('led.mat.copy'))));
       } catch (e) { out = (e as Error).message; }
     }
     const showPatch = (i: number) => { set({ patch: { ...s.patch, list: PATCH_PRESETS[0].list(), index: i, auto: false, window: 25 } }); const ps = pictureSize(s.wall); host.showPattern('led-patch', ps.w, ps.h); renderPatterns(); };
     matBox.replaceChildren(
-      h('p', { class: 'hint' }, 'Nach Epic „Camera Color Calibration for In-Camera VFX“ (UE 5.7): R-, G-, B-Feld als Spalten von F, S = F⁻¹·W/max(W), F spaltenweise mit S skalieren, Kalibriermatrix = Inverse. Voraussetzung laut Epic: Kamera-WB 6500 K, Belichtung ohne Clipping, Prozessor im nativen Farbraum, Kamerawerte linearisiert. Gemessen wird die Mitte (20 %) des Wandbereichs.'),
+      h('p', { class: 'hint' }, t('led.mat.hint')),
       h('div', { class: 'row' },
-        lab('Linearisierung', sel(matTransfer, [['bt709', 'inverse BT.709-OETF'], ['code', 'Werte sind schon linear']], (v) => { matTransfer = v as CameraTransfer; })),
+        lab(t('led.mat.linearisation'), sel(matTransfer, [['bt709', t('led.mat.inverse709')], ['code', t('led.mat.alreadyLinear')]], (v) => { matTransfer = v as CameraTransfer; })),
         ...(['r', 'g', 'b', 'w'] as const).map((k, i) => h('span', { class: 'row', style: 'margin:0' },
-          h('button', { class: 'mini', title: 'Dieses Feld ausgeben', onclick: () => showPatch(i) }, `${'RGBW'[i]} zeigen`),
-          h('button', { onclick: () => measure(k) }, `${'RGBW'[i]} messen`),
+          h('button', { class: 'mini', title: t('led.mat.showTitle'), onclick: () => showPatch(i) }, t('led.mat.show', { c: 'RGBW'[i] })),
+          h('button', { onclick: () => measure(k) }, t('led.mat.measure', { c: 'RGBW'[i] })),
           h('span', { class: 'hint' }, meas[k] ? meas[k]!.map((v) => v.toFixed(3)).join(' ') : '–')))),
       msg ? h('p', { class: 'note' }, msg) : '', out);
   }
@@ -454,7 +456,7 @@ export function openLedTool(host: LedHost) {
   const meterCheck = mountMeterCheck(meterBox, {
     wall: () => s.wall,
     openOutput: () => { const ps = pictureSize(s.wall); host.showPattern('led-flat', ps.w, ps.h); },
-    cameraCsv: () => (result ? reportCsv(result, { Kamera: camNote }, delta()) : null),
+    cameraCsv: () => (result ? reportCsv(result, { [t('led.csv.camera')]: camNote }, delta()) : null),
     cameraHeat: () => (result ? heat : null),
     onStats: (st) => { meterStats = st; if (result) renderResult(); },
   });
@@ -463,14 +465,14 @@ export function openLedTool(host: LedHost) {
   // ------------------------------------------------ assemble
   dlg.append(
     h('div', { class: 'row', style: 'justify-content:space-between;margin:0' },
-      h('h3', {}, 'LED-Wand: Testbilder und Kamera-Prüfung'),
-      h('button', { onclick: () => dlg.close() }, 'Schließen')),
-    h('p', { class: 'note' }, 'Kalibriert wird die Wand im LED-Prozessor (Brompton Tessera/Hydra, NovaStar NovaLCT/NovaCLB, Colorlight) – LZ Scopes schreibt keine Korrekturwerte. Hier: Testbilder in Wandauflösung und eine relative Prüfung mit der Kamera (die Kamera ist kein Kolorimeter). Die Auswertung ist mit synthetischen Bildern getestet, an einer echten Wand noch nicht erprobt.'),
-    h('details', { open: true }, h('summary', {}, 'Wand und Cabinets'), wallBox),
-    h('details', { open: true }, h('summary', {}, 'Testbilder'), patBox),
-    h('details', {}, h('summary', {}, 'Kamera-Prüfung: Heatmap, Nähte, Vorher/Nachher, Blickwinkel, Scan-Linien, tote Pixel'), camBox),
-    h('details', {}, h('summary', {}, 'Messung mit Opple Light Master: Uniformität, Weißpunkt, Flimmern (Trendmessung, ungeprüft)'), meterBox),
-    h('details', {}, h('summary', {}, 'Kameramatrix (Unreal-Verfahren)'), matBox),
+      h('h3', {}, t('led.title')),
+      h('button', { onclick: () => dlg.close() }, t('led.close'))),
+    h('p', { class: 'note' }, t('led.intro')),
+    h('details', { open: true }, h('summary', {}, t('led.sec.wall')), wallBox),
+    h('details', { open: true }, h('summary', {}, t('led.sec.patterns')), patBox),
+    h('details', {}, h('summary', {}, t('led.sec.camera')), camBox),
+    h('details', {}, h('summary', {}, t('led.sec.opple')), meterBox),
+    h('details', {}, h('summary', {}, t('led.sec.matrix')), matBox),
   );
   renderWall(); renderPatterns(); renderCam(); renderMatrix();
   dlg.showModal();

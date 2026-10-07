@@ -13,7 +13,7 @@ export const SCOPES: { id: string; label: string }[] = [
   { id: 'wf-green', label: 'Waveform Grüntöne' }, { id: 'match', label: 'Farbabgleich' },
   { id: 'audio-meter', label: 'Audio Pegel & Lautheit' }, { id: 'audio-loudness', label: 'Audio Lautheitsverlauf' },
   { id: 'audio-spectrum', label: 'Audio Spektrum' }, { id: 'audio-phase', label: 'Audio Goniometer' },
-  { id: 'clock', label: 'Uhr / Timecode' },
+  { id: 'clock', label: 'Uhr / Timecode' }, { id: 'genlock', label: 'Referenz / Genlock' },
   { id: 'audio-check', label: 'Audio Ident & A/V-Versatz' },
   { id: 'light-cie', label: 'Licht: Farbort (CIE)' }, { id: 'light-vector', label: 'Licht: Vectorscope' },
   { id: 'light-bands', label: 'Licht: Filterkanäle' }, { id: 'light-trend', label: 'Licht: Zeitverlauf' }, { id: 'light-map', label: 'Licht: Messfeld' }, { id: 'light-spectrum', label: 'Licht: Wellenlängen' }, { id: 'light-swatch', label: 'Licht: Farbfläche' },

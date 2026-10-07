@@ -43,6 +43,7 @@ export default {
   'opple.ui.listTitle': 'Geräteliste von spotread über die Bridge',
   'opple.ui.list': 'Liste',
   'opple.ui.fileHint': 'Spektrum-Datei: Argyll .sp (spotread -O) oder zwei Spalten Wellenlänge, Wert (CSV, gleicher Abstand). Wird als Messpunkt übernommen.',
+  'opple.ui.spectrumFile': 'Spektrum-Datei öffnen …',
   'opple.ui.unitTitle': 'Einheit der CSV-Werte (.sp-Dateien bringen sie mit)',
   'opple.ui.noPairing': 'Keine Kopplung nötig: Light Master einschalten (Schieber auf), in Reichweite bringen, dann „Light Master suchen“. Er erscheint nicht in den Bluetooth-Einstellungen des Systems – das ist normal. Die Opple-App schließen (nur eine Verbindung je Gerät).',
   'opple.ui.alreadyConnected': '(schon verbunden)',

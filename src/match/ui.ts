@@ -8,25 +8,10 @@ import {
 } from './core';
 import { measure, spaceOf } from './panel';
 import { t } from '../i18n';
+import { button, download, field, filePicker, h, hint, iconButton, kicker, numberInput, openModal, row as line, select, textInput } from '../ui';
 
-type Kid = Node | string;
-const h = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, unknown> = {}, ...kids: Kid[]) => {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k.startsWith('on')) el.addEventListener(k.slice(2), v as EventListener);
-    else if (k === 'class') el.className = String(v);
-    else if (v === true) el.setAttribute(k, '');
-    else if (v !== false && v != null) el.setAttribute(k, String(v));
-  }
-  el.append(...kids);
-  return el;
-};
-const select = (value: string, options: [string, string][], onchange: (v: string) => void, title = '') =>
-  h('select', { title, onchange: (e: Event) => onchange((e.target as HTMLSelectElement).value) },
-    ...options.map(([v, l]) => h('option', { value: v, selected: v === value }, l)));
-const row = (label: string, ...kids: Kid[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
-const num = (value: number, min: number, max: number, set: (v: number) => void) =>
-  h('input', { type: 'number', class: 'num', min, max, step: 1, value, onchange: (e: Event) => set(Number((e.target as HTMLInputElement).value)) });
+const row = field;
+const num = (value: number, min: number, max: number, set: (v: number) => void) => numberInput(value, set, { min, max, size: 's' });
 
 export interface MatchUi {
   targets: ColorTarget[];
@@ -46,56 +31,52 @@ const targetCss = (tg: ColorTarget) => (tg.ci ? toHex(tg.ci.v) : `rgb(${tg.rgb.m
 
 /** Target list ("Kunden-CI") with input as hex/RGB, from the probe/ROI and from a logo. */
 export function targetEditor(src: Source | null, c: MatchUi): Node[] {
-  const rows: Node[] = [h('div', { class: 'mtitle' }, t('match.targetsTitle'))];
+  const rows: Node[] = [kicker(t('match.targetsTitle'))];
   const add = (tg: Omit<ColorTarget, 'name'> & { name?: string }) => {
     c.targets.push({ ...tg, name: uniqueName(c.targets, tg.name || t('match.targetN', { n: c.targets.length + 1 })), ...(input.group ? { group: input.group } : {}) });
     c.save(); c.refresh();
   };
   c.targets.forEach((tg, i) => {
-    const name = h('input', { value: tg.name, title: t('match.name') }) as HTMLInputElement;
-    name.onchange = () => { tg.name = uniqueName(c.targets.filter((x) => x !== tg), name.value.trim() || tg.name); c.save(); c.refresh(); };
+    const name = textInput(tg.name, (v) => { tg.name = uniqueName(c.targets.filter((x) => x !== tg), v.trim() || tg.name); c.save(); c.refresh(); }, { title: t('match.name') });
     const info = tg.ci ? `${toHex(tg.ci.v)} ${tg.ci.interp === 'srgb' ? 'sRGB' : t('match.video')}` : tg.space ? t('match.measured') : t('match.signal');
-    rows.push(h('div', { class: 'mrow', title: `${tg.group ? `${t('match.listPrefix', { group: tg.group })} · ` : ''}${info}` },
+    rows.push(h('div', { class: 'field target', title: `${tg.group ? `${t('match.listPrefix', { group: tg.group })} · ` : ''}${info}` },
       h('span', { class: 'swatch', style: `background:${targetCss(tg)}` }), name,
       h('span', { class: 'hint' }, `${tg.group ? `${tg.group} · ` : ''}${info}`),
-      h('button', { class: 'mini', title: t('match.remove'), onclick: () => { c.targets.splice(i, 1); c.save(); c.refresh(); } }, '✕')));
+      iconButton('✕', t('match.remove'), () => { c.targets.splice(i, 1); c.save(); c.refresh(); }, { small: true })));
   });
-  const grp = h('input', { value: input.group, placeholder: t('match.groupPlaceholder'), list: 'lzs-target-groups' }) as HTMLInputElement;
-  grp.onchange = () => { input.group = grp.value.trim(); };
+  const grp = textInput(input.group, (v) => { input.group = v.trim(); }, { placeholder: t('match.groupPlaceholder'), attrs: { list: 'lzs-target-groups' } });
   rows.push(row(t('match.newTargetsIn'), grp, h('datalist', { id: 'lzs-target-groups' }, ...groups(c.targets).map((g) => h('option', { value: g })))));
-  rows.push(h('div', { class: 'mrow' },
-    h('button', { title: t('match.fromProbeTitle'), onclick: () => {
+  rows.push(line(
+    button(t('match.fromProbe'), () => {
       const m = src && src.probe ? src.readPixel(src.probe.x, src.probe.y) : null;
       if (!src || !m) { c.alert(t('match.noValueProbe')); return; }
       add({ rgb: m, space: spaceOf(src), name: t('match.namePoint', { src: src.name }) });
-    } }, t('match.fromProbe')),
-    h('button', { title: t('match.fromRoiTitle'), onclick: () => {
+    }, { title: t('match.fromProbeTitle') }),
+    button(t('match.fromRoi'), () => {
       const m = src ? measure(src) : null;
       if (!src || !m || !src.activeRois().length) { c.alert(t('match.noValueRoi')); return; }
       add({ rgb: m.rgb, space: spaceOf(src), name: t('match.nameRoi', { src: src.name }) });
-    } }, t('match.fromRoi')),
-    h('button', { title: t('match.logoTitle'), onclick: () => openLogoPicker((v, name) => add({ rgb: v, ci: { v, interp: 'video' }, name })) }, t('match.logo'))));
-  const text = h('input', { class: 'url', placeholder: t('match.colorPlaceholder') }) as HTMLInputElement;
+    }, { title: t('match.fromRoiTitle') }),
+    button(t('match.logo'), () => openLogoPicker((v, name) => add({ rgb: v, ci: { v, interp: 'video' }, name })), { title: t('match.logoTitle') })));
   const addTyped = () => {
     const v = parseColor(text.value, input.fmt);
     if (!v) { c.alert(t('match.invalidFor', { fmt: INPUT_FORMATS.find(([k]) => k === input.fmt)![1] })); return; }
     const legal = input.fmt === 'legal8' || input.fmt === 'legal10';
     add({ rgb: v, ci: { v, interp: legal ? 'video' : input.interp }, name: input.fmt === 'hex' ? toHex(v) : text.value.trim() });
   };
-  text.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); addTyped(); } };
+  const text = textInput('', () => {}, { placeholder: t('match.colorPlaceholder'), mono: true, onEnter: () => addTyped() });
   rows.push(row(t('match.input'), select(input.fmt, INPUT_FORMATS, (v) => { input.fmt = v as InputFormat; })));
   rows.push(row(t('match.meaning'), select(input.interp, [['video', t('match.interpVideo')], ['srgb', t('match.interpSrgb')]], (v) => { input.interp = v as Interp; },
     t('match.interpTitle'))));
-  rows.push(h('div', { class: 'mrow' }, text, h('button', { onclick: addTyped }, '+')));
-  rows.push(h('div', { class: 'mrow' },
-    h('button', { class: 'mini', title: t('match.exportTitle'), onclick: () => exportTargets(c.targets) }, t('match.export')),
-    h('button', { class: 'mini', title: t('match.importTitle'), onclick: () => importTargets(c) }, t('match.import'))));
+  rows.push(line(text, button('+', addTyped)));
+  rows.push(line(
+    button(t('match.export'), () => exportTargets(c.targets), { small: true, title: t('match.exportTitle') }),
+    button(t('match.import'), () => importTargets(c), { small: true, title: t('match.importTitle') })));
   return rows;
 }
 
 function exportTargets(list: ColorTarget[]) {
-  const a = h('a', { href: URL.createObjectURL(new Blob([JSON.stringify({ lzScopesTargets: 1, targets: list }, null, 2)], { type: 'application/json' })), download: t('match.exportFileName') }) as HTMLAnchorElement;
-  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  download(t('match.exportFileName'), JSON.stringify({ lzScopesTargets: 1, targets: list }, null, 2), 'application/json');
 }
 
 /** Accepts our export and plain lists [{ name, hex, group? }]. */
@@ -117,27 +98,23 @@ export function parseTargetFile(json: unknown): ColorTarget[] {
 }
 
 function importTargets(c: MatchUi) {
-  const f = h('input', { type: 'file', accept: '.json,application/json' }) as HTMLInputElement;
-  f.onchange = async () => {
-    const file = f.files?.[0];
-    if (!file) return;
+  filePicker('.json,application/json', async ([file]) => {
     try {
       const add = parseTargetFile(JSON.parse(await file.text()));
       if (!add.length) { c.alert(t('match.noTargetsInFile')); return; }
       for (const tg of add) c.targets.push({ ...tg, name: uniqueName(c.targets, tg.name) });
       c.save(); c.refresh();
     } catch { c.alert(t('match.invalidJson')); }
-  };
-  f.click();
+  }).pick();
 }
 
 /** Logo pipette: load an image (PNG/JPEG/SVG …), click = pixel, drag = mean of the rectangle (sRGB). */
 export function openLogoPicker(onPick: (v: Rgb, name: string) => void) {
-  const canvas = h('canvas', { class: 'logopick', width: 640, height: 200 }) as HTMLCanvasElement;
+  const canvas = h('canvas', { class: 'logopick', width: 640, height: 200 });
   const ctx = canvas.getContext('2d', { colorSpace: 'srgb', willReadFrequently: true })!;
   let img: HTMLImageElement | null = null, pick: Rgb | null = null, sel: [number, number, number, number] | null = null;
   const sw = h('span', { class: 'swatch big' }), val = h('span', { class: 'hint' }, t('match.logoHint'));
-  const name = h('input', { placeholder: t('match.logoNamePlaceholder') }) as HTMLInputElement;
+  const name = textInput('', () => {}, { placeholder: t('match.logoNamePlaceholder') });
   const draw = () => {
     if (!img) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -165,10 +142,7 @@ export function openLogoPicker(onPick: (v: Rgb, name: string) => void) {
     const [a, b, c2, d] = sel; sel = null;
     read(Math.min(a, c2), Math.min(b, d), Math.max(a, c2) + 1, Math.max(b, d) + 1);
   });
-  const file = h('input', { type: 'file', accept: 'image/*,.svg' }) as HTMLInputElement;
-  file.onchange = () => {
-    const f = file.files?.[0];
-    if (!f) return;
+  const file = filePicker('image/*,.svg', ([f]) => {
     const im = new Image();
     im.onload = () => {
       const s = Math.min(1, 4096 / Math.max(im.naturalWidth || 1, im.naturalHeight || 1));
@@ -178,19 +152,15 @@ export function openLogoPicker(onPick: (v: Rgb, name: string) => void) {
     };
     im.onerror = () => { val.textContent = t('match.imageUnreadable'); };
     im.src = URL.createObjectURL(f);
-  };
-  const dlg = h('dialog', { class: 'lutlib logodlg' },
-    h('h3', {}, t('match.logoDlgTitle')),
-    h('p', { class: 'hint' }, t('match.logoDlgHint')),
-    h('div', { class: 'row' }, file),
-    canvas,
-    h('div', { class: 'row' }, sw, val),
-    h('div', { class: 'row' }, name,
-      h('button', { onclick: () => { if (!pick) return; onPick(pick, name.value.trim() || toHex(pick)); dlg.close(); } }, t('match.useAsTarget')),
-      h('button', { onclick: () => dlg.close() }, t('match.close'))));
-  document.body.append(dlg);
-  dlg.addEventListener('close', () => { if (img) URL.revokeObjectURL(img.src); dlg.remove(); });
-  dlg.showModal();
+  });
+  const dlg = openModal({
+    title: t('match.logoDlgTitle'), cls: 'logodlg', size: 'lg',
+    body: [hint(t('match.logoDlgHint')), line(button(t('match.logo'), () => file.pick()), file.input), canvas, line(sw, val)],
+    actions: [name,
+      button(t('match.useAsTarget'), () => { if (!pick) return; onPick(pick, name.value.trim() || toHex(pick)); dlg.close(); }, { variant: 'primary' }),
+      button(t('match.close'), () => dlg.close())],
+    onClose: () => { if (img) URL.revokeObjectURL(img.src); },
+  });
 }
 
 /** ⚙ rows of the "Farbabgleich" panel. */
@@ -205,16 +175,16 @@ export function matchPanelSettings(p: PanelState, src: Source | null, c: MatchUi
   rows.push(row(t('match.tolerance'), select(String(m.tol ?? 3), [['2', 'ΔE 2'], ['3', 'ΔE 3'], ['5', 'ΔE 5']], (v) => { m.tol = Number(v); c.save(); },
     t('match.toleranceTitle'))));
   const n = m.series?.length ?? 0;
-  rows.push(h('div', { class: 'mrow' },
-    h('button', { title: t('match.addSeriesTitle'), onclick: () => {
+  rows.push(line(
+    button(`${t('match.addSeries')}${n ? ` (${n})` : ''}`, () => {
       const v = src ? measure(src) : null;
       if (!src || !v) { c.alert(t('match.needProbeOrRoi')); return; }
       const sp = spaceOf(src);
       if (m.seriesSpace && JSON.stringify(m.seriesSpace) !== JSON.stringify(sp)) m.series = [];
       m.series = [...(m.series ?? []), v.rgb]; m.seriesSpace = sp; c.save(); c.refresh();
-    } }, `${t('match.addSeries')}${n ? ` (${n})` : ''}`),
-    n ? h('button', { class: 'mini', onclick: () => { m.series = undefined; m.seriesSpace = undefined; c.save(); c.refresh(); } }, t('match.clearSeries')) : ''));
-  rows.push(h('p', { class: 'hint narrow' }, t('match.panelHint')));
+    }, { title: t('match.addSeriesTitle') }),
+    n > 0 && button(t('match.clearSeries'), () => { m.series = undefined; m.seriesSpace = undefined; c.save(); c.refresh(); }, { small: true })));
+  rows.push(hint(t('match.panelHint')));
   return [...rows, ...targetEditor(src, c)];
 }
 
@@ -231,7 +201,7 @@ export function greenSettings(g: SkinRange, src: Source | null, c: MatchUi, with
     }, t('match.presetTitle'))),
   ];
   if (withRoi) {
-    rows.push(row('', h('button', { title: t('match.fromRoiRangeTitle'), onclick: () => {
+    rows.push(row('', button(t('match.rangeFromRoi'), () => {
       const s = src?.roiSamples() ?? [];
       const cs = src?.colorspace ?? '709';
       const hue = meanHue(s, cs);
@@ -239,8 +209,8 @@ export function greenSettings(g: SkinRange, src: Source | null, c: MatchUi, with
       const r = wedgeLumaRange(s, cs, hue, g.tol);
       if (!r) { c.alert(t('match.tooFewInWedge')); return; }
       set({ hue: Math.round(hue), lo: Math.round(r.lo * 100) / 100, hi: Math.round(r.hi * 100) / 100 }); c.refresh();
-    } }, t('match.rangeFromRoi'))));
-    rows.push(h('p', { class: 'hint narrow' }, t('match.greenHint')));
+    }, { title: t('match.fromRoiRangeTitle') })));
+    rows.push(hint(t('match.greenHint')));
   }
   return rows;
 }

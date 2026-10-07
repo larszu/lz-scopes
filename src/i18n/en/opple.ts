@@ -42,6 +42,7 @@ export default {
   'opple.ui.listTitle': 'Device list from spotread via the bridge',
   'opple.ui.list': 'List',
   'opple.ui.fileHint': 'Spectrum file: Argyll .sp (spotread -O) or two columns wavelength, value (CSV, equal spacing). Taken as a measuring point.',
+  'opple.ui.spectrumFile': 'Open spectrum file …',
   'opple.ui.unitTitle': 'Unit of the CSV values (.sp files bring their own)',
   'opple.ui.noPairing': 'No pairing needed: switch the Light Master on (slider open), bring it within range, then “Find Light Master”. It does not appear in the system’s Bluetooth settings – that is normal. Close the Opple app (only one connection per device).',
   'opple.ui.alreadyConnected': '(already connected)',

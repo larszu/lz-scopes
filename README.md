@@ -41,6 +41,7 @@
 
 - **Real scopes, in software.** Waveform (luma, RGB overlay, RGB / YRGB / YCbCr parade), vectorscope, Tektronix-style diamond (R′G′B′ gamut), CIE 1931 xy or 1976 u′v′, histogram, false colour (ARRI-style, RED video mode, Sony SDR / S-Log3 palettes), zebra, gamut warning and numeric readout with MaxCLL / MaxFALL for PQ.
 - **Streams, not just files.** RTSP, RTMP, SRT, UDP, RTP, HLS and HTTP via an ffmpeg bridge; capture cards through the bridge (`device:`, explicit mode, raw 10-bit formats and decode matrix, also on remote bridges); Blackmagic DeckLink / UltraStudio through a native helper built against the DeckLink SDK (`decklink:`, see [helpers/decklink](helpers/decklink/README.md), untested with hardware); NDI® sources through a helper that loads the user-installed NDI runtime (`ndi:`, [ndi.video](https://ndi.video/), 8-bit UYVY or 16-bit P216, tested only in loopback); watch folders on the bridge machine (`folder:`, newest 16-bit TIFF / DPX / EXR still, only folders released with `--watch-dir` or, in the desktop app, by dialog); DaVinci Resolve in 16 bit through its scripting API (a running Resolve is detected and offered in the source list); camera / USB capture with device picker, screen or window with crop, watch folder, video and image files directly in the browser.
+- **Manual for the inputs** (Resolve, window capture, folders, clean feed, capture cards): [docs/manual/inputs.md](docs/manual/inputs.md), in the app under **Hilfe → Inputs manual**.
 - **HDR aware.** The picture view down-maps HDR and log for SDR screens after BT.2408 (hybrid-linear, highlights through the BT.2390 EETF, reference white ≈ 93 %) or BT.2446 Method A. 8 or 16 bit analysis, PQ and HLG (display peak Lw 500-10 000 cd/m², system gamma applied to luminance per BT.2100, EBU R 167 presets), BT.709 / 2020 / 601 with 525- and 625-line primaries, waveform scale in cd/m² with BT.2408 reference marks (75 % HLG, 58 % PQ, 38 % grey card) and optional EBU R 103 limits (-5 / 105 %).
 - **Camera log.** ARRI LogC3 / LogC4, Sony S-Log3, Panasonic V-Log, Blackmagic Film Gen 5, Canon Log 2 / 3, RED Log3G10, Fujifilm F-Log2, DJI D-Log, Nikon N-Log and Apple Log with their camera gamuts (Bradford-adapted where the white differs). Log acts on the scene-referred waveform scale (reflectance, 18 % grey), the CIE diagram, the picture view and the vectorscope targets.
 - **CST and LUTs per source.** Colour space transform to Rec.709 / Rec.2020 PQ / HLG (or any gamut and transfer) with Bradford adaptation and tone mapping (ACES 2.0 tonescale, BT.2390 EETF, extended Reinhard, clip), camera presets (log → Rec.709), then up to two LUTs (`.cube`, `.3dl`, `.spi3d`, `.spi1d`, `.csp`, tetrahedral, by drag and drop). Each panel measures the signal, after the CST or after the LUTs (gear menu, key `C`), shown in the panel head. Manufacturer look LUTs are not bundled; the app links their official download pages ([docs/research/lut-cst.md](docs/research/lut-cst.md)).
@@ -153,6 +154,15 @@ Panel type **Clock / time code** (and an optional corner read-out in the picture
 - **LTC** from any source with sound: own biphase-mark reader (24–30 fps, forward and reverse).
 - **PTP monitor** in the bridge (own code, UDP 319/320 on 224.0.1.129): grandmaster, domain, clockClass, rates, SMPTE SM TLV (lock, local offset, next jam), offset and optional mean path delay as software-timestamp estimates. No PTP on the network → “no PTP received”. The UI served by the bridge or the desktop app may use it directly; another web origin (e.g. GitHub Pages) only after the user allows it on the bridge's own `/allow` page.
 - **ST 2110 RTP check**: RTP timestamp (90 kHz, zero offset at the epoch) against arrival time and frame grid.
+
+## Touch Shading
+
+**Scopes → Touch Shading** controls a camera from the scopes:
+- **Parade:** grab a channel low to move Black R/G/B, high to move White R/G/B.
+- **Luma waveform:** shadows move Master Black, mids Master Gamma, highlights White.
+- **Vectorscope:** drag radially for saturation, turn for hue (hue in the simulator only).
+
+Commands go through [lz-camera-bridge](https://github.com/larszu/lz-camera-bridge) in its own vocabulary. Nothing moves until *Shading aktiv* is ticked and a target is chosen. Every change is step-limited, and **■ Ausgangswerte** (Esc) restores the session's starting values. A simulator works without a camera. Sony SRG-A40 paint over VISCA is not in the bridge yet. Details: [docs/research/touch-shading.md](docs/research/touch-shading.md).
 
 ## Architecture
 

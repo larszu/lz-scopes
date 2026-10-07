@@ -82,6 +82,8 @@ Für Netzwerkquellen ohne Desktop-App: `npm run ffmpeg:fetch` lädt dasselbe ffm
 
 ## Quellen
 
+Anleitung zu Resolve, Fenster-Capture, Ordnern, Clean Feed und Capture-Karten: [docs/manual/inputs.de.md](docs/manual/inputs.de.md), in der App unter **Hilfe → Anleitung: Eingänge**.
+
 | Quelle | Weg |
 |---|---|
 | `rtsp://`, `rtsps://`, `rtmp://`, `rtp://`, `udp://`, `srt://`, `tcp://`, `http(s)://` (auch HLS) | Bridge: ffprobe → ffmpeg → rohe RGBA-Frames per WebSocket |
@@ -230,6 +232,20 @@ Panel-Typ **Uhr / Timecode**, dazu wahlweise eine Einblendung im Bild-Panel (⚙
 - **LTC** aus dem Ton jeder Quelle: eigener Biphase-Mark-Leser (24–30 fps, vorwärts und rückwärts).
 - **PTP-Monitor** in der Bridge (eigener Code, UDP 319/320, 224.0.1.129): Grandmaster, Domain, clockClass, Nachrichtenraten, SMPTE-SM-TLV (Lock, Lokal-Offset, nächster Jam), Offset und auf Wunsch Mean Path Delay – als Schätzung mit Software-Zeitstempeln. Ohne PTP im Netz: „kein PTP empfangen“. Die UI aus Bridge oder Desktop-App darf das direkt; eine andere Web-Oberfläche (z. B. GitHub Pages) erst nach Freigabe auf der Seite `/allow` der Bridge (⚙ → „In der Bridge zulassen …“).
 - **ST-2110-RTP-Prüfung**: RTP-Zeitstempel (90 kHz, Offset 0 zur Epoche) gegen Ankunftszeit und Frame-Raster.
+
+## Touch Shading
+
+**Scopes → Touch Shading** steuert eine Kamera direkt an den Scopes:
+- **Parade:** Kanal unten greifen = Black R/G/B, oben = White R/G/B.
+- **Luma-Waveform:** Schatten = Master Black, Mitten = Master Gamma, Lichter = White.
+- **Vectorscope:** radial = Sättigung, drehen = Hue (nur im Simulator).
+
+Die Kommandos gehen über [lz-camera-bridge](https://github.com/larszu/lz-camera-bridge), in deren Vokabular.
+- Ohne Haken bei *Shading aktiv* und ohne gewähltes Ziel bewegt sich nichts.
+- Jede Änderung ist in der Schrittweite begrenzt.
+- **■ Ausgangswerte** (Esc) stellt die Werte vom Sitzungsbeginn wieder her.
+
+Ein Simulator läuft ohne Kamera. Bildwerte der Sony SRG-A40 über VISCA kann die Bridge noch nicht. Mehr in [docs/research/touch-shading.md](docs/research/touch-shading.md).
 
 ## Einbetten
 

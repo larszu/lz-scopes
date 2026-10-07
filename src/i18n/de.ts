@@ -1,6 +1,8 @@
 // German translation. `Record<Key, Msg>` makes a missing key a type error; the area files
 // catch extra or mistyped keys (`satisfies Translation<typeof en>`).
 import common from './de/common';
+import native from './de/native';
+import sysprofile from './de/sysprofile';
 import testmedia from './de/testmedia';
 import render from './de/render';
 import output from './de/output';
@@ -23,6 +25,8 @@ import type { Msg } from './types';
 
 export const de: Record<Key, Msg> = {
   ...common,
+  ...native,
+  ...sysprofile,
   ...testmedia,
   ...render,
   ...output,

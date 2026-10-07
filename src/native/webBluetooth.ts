@@ -10,6 +10,7 @@
 // Light Master am iPhone/iPad: the Simulator has no Bluetooth.
 
 import type { BleClientInterface, BleService } from '@capacitor-community/bluetooth-le';
+import { t } from '../i18n';
 
 interface Filter { namePrefix?: string; name?: string }
 interface RequestOptions { filters?: Filter[]; optionalServices?: string[]; acceptAllDevices?: boolean }
@@ -50,7 +51,7 @@ class ShimService {
   constructor(private ble: BleClientInterface, private deviceId: string, private svc: BleService) {}
   async getCharacteristic(uuid: string) {
     const c = this.svc.characteristics.find((x) => same(x.uuid, uuid));
-    if (!c) throw Object.assign(new Error(`Characteristic ${uuid} fehlt`), { name: 'NotFoundError' });
+    if (!c) throw Object.assign(new Error(t('native.ble.noChar', { uuid })), { name: 'NotFoundError' });
     return new ShimCharacteristic(this.ble, this.deviceId, this.svc.uuid, c.uuid,
       { write: c.properties.write, writeWithoutResponse: c.properties.writeWithoutResponse, notify: c.properties.notify });
   }
@@ -79,7 +80,7 @@ class ShimDevice extends EventTarget {
       connected: true,
       async getPrimaryService(uuid: string) {
         const s = services.find((x) => same(x.uuid, uuid));
-        if (!s) throw Object.assign(new Error(`Dienst ${uuid} fehlt`), { name: 'NotFoundError' });
+        if (!s) throw Object.assign(new Error(t('native.ble.noService', { uuid })), { name: 'NotFoundError' });
         return new ShimService(ble, id, s);
       },
       disconnect() { server.connected = false; ble.disconnect(id).catch(() => {}); },
@@ -106,7 +107,7 @@ export function createBluetooth(ble: BleClientInterface, scanMs = 5000) {
       await new Promise((ok) => setTimeout(ok, scanMs));
       await ble.stopLEScan().catch(() => {});
       const best = strongest([...hits.values()]);
-      if (!best) throw Object.assign(new Error('Kein passendes Bluetooth-Gerät gefunden'), { name: 'NotFoundError' });
+      if (!best) throw Object.assign(new Error(t('native.ble.noDevice')), { name: 'NotFoundError' });
       return new ShimDevice(ble, best.id, best.name);
     },
     async getDevices() { return []; },

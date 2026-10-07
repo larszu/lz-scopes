@@ -103,6 +103,8 @@ The desktop app contains the bridge and a redistributable ffmpeg 9.0.2 (GPLv3, w
 
 **Menu and settings.** The desktop app has a native menu bar (macOS: system menu bar with the app menu first; Windows: in the window): *Datei, Bearbeiten, Ansicht, Quellen, Scopes, Ausgabe, Fenster, Hilfe*. In the browser the same menus sit at the top left of the header (below 900 px behind ☰). All global settings are in one window, *Einstellungen …* (`Cmd+,` / `Ctrl+,`, or ⚙ at the top right): interface skin, display, scopes, measuring stage, latency, clock, bridge/ffmpeg, audio, keyboard, about/licences. The ⚙ in a panel head holds only that panel's options. *Hilfe* links the guides and lists the shortcuts. Reasoning: [docs/research/menue.md](docs/research/menue.md).
 
+**Light, dark, any screen size.** *Einstellungen → Oberfläche → Erscheinungsbild*: dark (default), light or like the system; the scopes stay dark. From phone to multi-monitor the window adapts: below 1000 px presets and scale move into ⋯, below 800 px the sources become a drawer, below 640 px the panels become tabs and menus open as bottom sheets; touch gets 44 px targets. How the interface is built: [docs/architecture/ui.md](docs/architecture/ui.md).
+
 **Language.** English and German. The app follows the system language (anything other than German shows English); *Settings → Interface → Language* overrides it.
 
 Keys: `Cmd+,` / `Ctrl+,` settings, `1`-`6` layout, `C` measuring stage (signal / after CST / after LUT), `Space` freeze or play, `Left` / `Right` frame, `Shift+Left` / `Shift+Right` second, `J` `K` `L` shuttle, `Home` / `End`, `F` full screen, `S` PNG, `B` sidebar, `Esc` leave zoom or clear the measuring point, `E` edit overlay in an output window. Full list: *Hilfe → Tastenkürzel*.

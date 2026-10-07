@@ -5,6 +5,7 @@
 
 import type { DisplaySpace } from './color';
 import { hasKey, t } from './i18n';
+import { button, checkbox, field, h, hint, kicker, numberInput, select, type Kid } from './ui';
 
 type Res<T> = { ok: true; value: T } | { ok: false; error: string; code?: string };
 interface Display { id: number | string; name: string; current: string | null; custom: string | null; switched?: boolean; builtin?: boolean }
@@ -69,51 +70,46 @@ export async function applySysProfile(space: DisplaySpace | null): Promise<strin
   return status;
 }
 
-type H = <K extends keyof HTMLElementTagNameMap>(tag: K, attrs?: Record<string, unknown>, ...kids: (Node | string)[]) => HTMLElementTagNameMap[K];
-
 /** ⚙ section. `current` = the display space now in effect (null = auto). */
-export function sysProfileSection(h: H, current: () => DisplaySpace | null): HTMLElement {
-  const box = h('div', { class: 'sysprofile' });
-  const row = (label: string, ...kids: (Node | string)[]) => h('label', { class: 'mrow' }, h('span', {}, label), ...kids);
+export function sysProfileSection(current: () => DisplaySpace | null): HTMLElement {
+  const box = h('div', { class: 'sysprofile section' });
   const render = () => {
     const s = load();
     const save = (patch: Partial<Settings>) => { Object.assign(s, patch); store(s); };
-    if (!cache) { box.replaceChildren(h('p', { class: 'hint' }, t('sysprofile.reading'))); return; }
+    if (!cache) { box.replaceChildren(hint(t('sysprofile.reading'))); return; }
     const sup = cache.support;
-    if (!sup.profiles) { box.replaceChildren(h('p', { class: 'hint' }, t('sysprofile.unavailable', { reason: reasonText(sup) }))); return; }
-    const sel = (value: string, opts: [string, string][], on: (v: string) => void) =>
-      h('select', { onchange: (e: Event) => on((e.target as HTMLSelectElement).value) }, ...opts.map(([v, l]) => h('option', { value: v, selected: v === value }, l)));
+    if (!sup.profiles) { box.replaceChildren(hint(t('sysprofile.unavailable', { reason: reasonText(sup) }))); return; }
     const base = (p: string | null) => (p ? p.split(/[\\/]/).pop()!.replace(/\.ic[cm]$/i, '') : t('sysprofile.factory'));
     if (!s.display && cache.displays.length) save({ display: String(cache.displays[0].id) });
     const disp = cache.displays.find((d) => String(d.id) === s.display);
-    const enable = h('input', { type: 'checkbox', checked: s.enabled }) as HTMLInputElement;
-    enable.onchange = async () => {
-      if (enable.checked && !confirm(t('sysprofile.confirm'))) { enable.checked = false; return; }
-      save({ enabled: enable.checked });
-      status = await applySysProfile(enable.checked ? current() : null);
+    const enable = checkbox(s.enabled, t('sysprofile.switchLabel'), async (on) => {
+      if (on && !confirm(t('sysprofile.confirm'))) { enable.querySelector('input')!.checked = false; return; }
+      save({ enabled: on });
+      status = await applySysProfile(on ? current() : null);
       render();
-    };
+    });
     const profOpts: [string, string][] = [['', `– ${t('sysprofile.default')} –`], ...cache.profiles.map((p): [string, string] => [p.path, p.name])];
-    const kids: (Node | string)[] = [
-      h('div', { class: 'mtitle' }, t('sysprofile.title')),
-      row(t('sysprofile.switchAlong'), h('label', { class: 'inline' }, enable, t('sysprofile.switchLabel'))),
-      row(t('sysprofile.screen'), sel(s.display, cache.displays.map((d) => [String(d.id), `${d.name || t('sysprofile.screen')} – ${base(d.current)}${d.switched ? ` ${t('sysprofile.switched')}` : ''}`]), (v) => { save({ display: v }); render(); })),
-      ...(Object.keys(SPACE_LABELS) as Space[]).map((sp) => row(t('sysprofile.profileFor', { space: SPACE_LABELS[sp] }), sel(s.map[sp] ?? '', profOpts.map(([v, l]) => [v, v ? l : `– ${t('sysprofile.default')}: ${base(profileFor(sp, { ...s, map: {} })) || t('sysprofile.none')} –`]), (v) => { save({ map: { ...s.map, [sp]: v || undefined } }); }))),
-      row('', h('button', { class: 'mini', onclick: async () => { status = await applySysProfile(current()); render(); } }, t('sysprofile.applyNow')),
-        h('button', { class: 'mini', onclick: async () => { const r = await api!.restore(disp?.id); status = r.ok ? t('sysprofile.restored') : failed(r); statusBad = !r.ok; if (r.ok) cache!.displays = r.value; render(); } }, t('sysprofile.reset'))),
-      h('p', { class: 'hint' }, `${t('sysprofile.hint1')} ${sup.tested ? t('sysprofile.testedMac') : t('sysprofile.untested', { reason: reasonText(sup) })} ${t('sysprofile.hintXdr')}`),
+    const send = (code: number, value: () => number, ok: string) => button(t('sysprofile.send'), async () => {
+      const r = await api!.ddc(disp?.id ?? s.display, code, value()); status = r.ok ? ok : failed(r); statusBad = !r.ok; render();
+    }, { small: true });
+    const kids: Kid[] = [
+      kicker(t('sysprofile.title')),
+      field(t('sysprofile.switchAlong'), enable),
+      field(t('sysprofile.screen'), select(s.display, cache.displays.map((d) => [String(d.id), `${d.name || t('sysprofile.screen')} – ${base(d.current)}${d.switched ? ` ${t('sysprofile.switched')}` : ''}`]), (v) => { save({ display: v }); render(); })),
+      ...(Object.keys(SPACE_LABELS) as Space[]).map((sp) => field(t('sysprofile.profileFor', { space: SPACE_LABELS[sp] }), select(s.map[sp] ?? '', profOpts.map(([v, l]) => [v, v ? l : `– ${t('sysprofile.default')}: ${base(profileFor(sp, { ...s, map: {} })) || t('sysprofile.none')} –`]), (v) => { save({ map: { ...s.map, [sp]: v || undefined } }); }))),
+      field('', button(t('sysprofile.applyNow'), async () => { status = await applySysProfile(current()); render(); }, { small: true }),
+        button(t('sysprofile.reset'), async () => { const r = await api!.restore(disp?.id); status = r.ok ? t('sysprofile.restored') : failed(r); statusBad = !r.ok; if (r.ok) cache!.displays = r.value; render(); }, { small: true })),
+      hint(`${t('sysprofile.hint1')} ${sup.tested ? t('sysprofile.testedMac') : t('sysprofile.untested', { reason: reasonText(sup) })} ${t('sysprofile.hintXdr')}`),
     ];
     if (sup.ddc.tool) {
       let preset = 1, bright = 50;
-      kids.push(h('div', { class: 'mtitle' }, t('sysprofile.ddcTitle', { tool: sup.ddc.tool })));
-      if (sup.ddc.preset) kids.push(row(t('sysprofile.preset'), sel('1', PRESETS.map(([v, l]) => [String(v), l]), (v) => (preset = Number(v))),
-        h('button', { class: 'mini', onclick: async () => { const r = await api!.ddc(disp?.id ?? s.display, 0x14, preset); status = r.ok ? t('sysprofile.presetSent') : failed(r); statusBad = !r.ok; render(); } }, t('sysprofile.send'))));
-      if (sup.ddc.brightness) kids.push(row(t('sysprofile.brightness'), h('input', { type: 'number', class: 'num', min: 0, max: 100, value: bright, onchange: (e: Event) => (bright = Number((e.target as HTMLInputElement).value)) }),
-        h('button', { class: 'mini', onclick: async () => { const r = await api!.ddc(disp?.id ?? s.display, 0x10, bright); status = r.ok ? t('sysprofile.brightnessSent') : failed(r); statusBad = !r.ok; render(); } }, t('sysprofile.send'))));
-      if (!sup.ddc.preset) kids.push(h('p', { class: 'hint' }, t('sysprofile.noPreset')));
+      kids.push(kicker(t('sysprofile.ddcTitle', { tool: sup.ddc.tool })));
+      if (sup.ddc.preset) kids.push(field(t('sysprofile.preset'), select('1', PRESETS.map(([v, l]) => [String(v), l]), (v) => (preset = Number(v))), send(0x14, () => preset, t('sysprofile.presetSent'))));
+      if (sup.ddc.brightness) kids.push(field(t('sysprofile.brightness'), numberInput(bright, (v) => (bright = v), { min: 0, max: 100, size: 's' }), send(0x10, () => bright, t('sysprofile.brightnessSent'))));
+      if (!sup.ddc.preset) kids.push(hint(t('sysprofile.noPreset')));
     }
-    if (status) kids.push(h('p', { class: `hint${statusBad ? ' bad' : ''}` }, status));
-    box.replaceChildren(...kids);
+    if (status) kids.push(h('p', { class: ['hint', statusBad && 'bad'] }, status));
+    box.replaceChildren(...(kids.filter(Boolean) as Node[]));
   };
   render();
   if (!cache) refresh().then(render);

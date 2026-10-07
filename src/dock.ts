@@ -72,9 +72,51 @@ export function createDock(el: HTMLElement, host: DockHost) {
     });
   };
 
+  /**
+   * Compact mode (narrow windows, phones): all open panels as tabs of one group, no dragging.
+   * The full layout is kept aside and comes back unchanged when the window gets wide again;
+   * layoutJSON() returns it, so a narrow window never overwrites the saved layout.
+   */
+  let compact = false, saved: unknown = null;
+  const enterCompact = () => {
+    const idxs = api.panels.map((p) => panelIdx(p.id));
+    // the first panel (usually the picture) is in front; dockview's active panel is just the last one built
+    const active = idxs[0];
+    saved = api.toJSON();
+    api.clear();
+    idxs.forEach((idx, i) => api.addPanel({
+      id: panelId(idx), component: 'scope', title: host.title(idx), params: { idx },
+      ...(i ? { position: { referencePanel: panelId(idxs[0]), direction: 'within' as const } } : {}),
+    }));
+    if (active !== undefined) api.getPanel(panelId(active))?.api.setActive();
+  };
+  const leaveCompact = () => {
+    const idxs = api.panels.map((p) => panelIdx(p.id));
+    try { if (saved) api.fromJSON(saved as Parameters<DockviewApi['fromJSON']>[0]); } catch { /* keep the tabs */ }
+    // panels added while compact join the full layout on the right
+    for (const idx of idxs) if (!api.getPanel(panelId(idx))) add(idx, api.panels.length ? panelIdx(api.panels[api.panels.length - 1].id) : undefined, 'right');
+    saved = null;
+  };
+  /** Run a layout change on the full layout, then fold it again when compact. */
+  const full = (fn: () => void) => {
+    if (!compact) return fn();
+    compact = false; fn(); compact = true; enterCompact();
+  };
+
   return {
     api,
-    applyPreset(key: string) {
+    get compact() { return compact; },
+    setCompact(on: boolean) {
+      if (on === compact) return;
+      compact = on;
+      api.updateOptions({ disableDnd: on });
+      el.classList.toggle('compact', on);
+      if (on) enterCompact(); else leaveCompact();
+    },
+    /** The layout to save: the full one, also while compact. */
+    layoutJSON: () => (compact ? saved : api.toJSON()),
+    applyPreset(key: string) { full(() => this.applyPresetFull(key)); },
+    applyPresetFull(key: string) {
       api.clear();
       const preset = PRESETS[key] ?? PRESETS.lc;
       sizing = preset.size ?? {};
@@ -91,7 +133,8 @@ export function createDock(el: HTMLElement, host: DockHost) {
       });
     },
     /** Replace the layout by the given panels in rows of `cols` (e.g. the light scopes). */
-    showGrid(idxs: number[], cols: number) {
+    showGrid(idxs: number[], cols: number) { full(() => this.showGridFull(idxs, cols)); },
+    showGridFull(idxs: number[], cols: number) {
       api.clear();
       idxs.forEach((idx, i) => {
         if (i === 0) add(idx);
@@ -102,10 +145,13 @@ export function createDock(el: HTMLElement, host: DockHost) {
     /** Add a panel next to the active one (or at the end). */
     addPanel(idx: number) {
       const active = api.activePanel;
+      if (compact) { api.addPanel({ id: panelId(idx), component: 'scope', title: host.title(idx), params: { idx }, ...(active ? { position: { referencePanel: active.id, direction: 'within' as const } } : {}) }); return; }
       add(idx, active ? panelIdx(active.id) : undefined, 'right');
     },
     restore(json: unknown): boolean {
-      try { api.fromJSON(json as Parameters<DockviewApi['fromJSON']>[0]); return api.panels.length > 0; } catch { return false; }
+      let ok = false;
+      full(() => { try { api.fromJSON(json as Parameters<DockviewApi['fromJSON']>[0]); ok = api.panels.length > 0; } catch { ok = false; } });
+      return ok;
     },
     openIdx: () => api.panels.map((p) => panelIdx(p.id)),
     setTitle(idx: number) { api.getPanel(panelId(idx))?.api.setTitle(host.title(idx)); },

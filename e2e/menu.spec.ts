@@ -27,9 +27,9 @@ test('Einstellungen-Fenster mit allen Rubriken', async () => {
   await menuClick(a, 'settings');
   const dlg = a.page.locator('dialog#settings');
   await expect(dlg).toBeVisible();
-  const tabs = await dlg.locator('.set-tab').allTextContents();
+  const tabs = await dlg.locator('[role=tab]').allTextContents();
   for (const t of ['Oberfläche', 'Display', 'Scopes', 'Messpunkt / CST', 'Latenz', 'Uhr / Timecode', 'Bridge / ffmpeg', 'Audio', 'Tastatur', 'Über / Lizenzen']) expect(tabs).toContain(t);
-  await dlg.locator('.set-tab', { hasText: 'Tastatur' }).click();
+  await dlg.locator('[role=tab]', { hasText: 'Tastatur' }).click();
   await expect(dlg.locator('table.keys')).toContainText('Layout-Vorlage');
   // Escape closes; keys typed inside do not reach the global shortcuts
   await a.page.keyboard.press('Escape');

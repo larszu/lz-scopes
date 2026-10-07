@@ -5,6 +5,7 @@
 import inputsDe from '../docs/manual/inputs.de.md?raw';
 import inputs from '../docs/manual/inputs.md?raw';
 import { t } from './i18n';
+import { button, h, openModal, type Modal } from './ui';
 
 const IMAGES = import.meta.glob('../docs/manual/img/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 const img = (name: string) => IMAGES[`../docs/manual/${name}`] ?? '';
@@ -65,29 +66,11 @@ export function renderMarkdown(md: string, resolveImg: (p: string) => string = i
 }
 
 /** Opens the manual as a dialog over the app. */
+let open: Modal | null = null;
 export function openManual(lang: 'de' | 'en' = 'de') {
-  document.querySelector('.manual-dlg')?.remove();
-  const dlg = document.createElement('div');
-  dlg.className = 'modal manual-dlg';
-  dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.remove(); });
-  const body = document.createElement('div');
-  body.className = 'modal-body manual';
-  const bar = document.createElement('div');
-  bar.className = 'manual-bar';
-  const sw = document.createElement('button');
-  sw.className = 'mini';
-  sw.textContent = lang === 'de' ? 'English' : 'Deutsch'; // lang-ok: name of the other language, in that language
-  sw.onclick = () => openManual(lang === 'de' ? 'en' : 'de');
-  const close = document.createElement('button');
-  close.className = 'mini';
-  close.textContent = t('common.close');
-  close.onclick = () => dlg.remove();
-  bar.append(sw, close);
-  const article = document.createElement('article');
+  open?.close();
+  const article = h('article');
   article.innerHTML = renderMarkdown(MANUALS[lang]);
-  body.append(bar, article);
-  dlg.append(body);
-  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { dlg.remove(); document.removeEventListener('keydown', onKey); } };
-  document.addEventListener('keydown', onKey);
-  document.body.append(dlg);
+  const sw = button(lang === 'de' ? 'English' : 'Deutsch', () => openManual(lang === 'de' ? 'en' : 'de'), { small: true }); // lang-ok: name of the other language, in that language
+  open = openModal({ title: t('menu.manual'), cls: 'manual', size: 'lg', headExtra: [sw], body: [article], onClose: () => { open = null; } });
 }

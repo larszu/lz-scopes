@@ -59,6 +59,8 @@ jobs:
           sudo apt-get install -y -q ffmpeg xvfb
           curl -fsSL "https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMTX_VERSION}/mediamtx_${MEDIAMTX_VERSION}_linux_amd64.tar.gz" | sudo tar -xz -C /usr/local/bin mediamtx
           mediamtx --version
+      # headless Chromium for the viewport checks (e2e/responsive.spec.ts)
+      - run: npx playwright install --with-deps chromium
       # Electron downloads its binary on first use; WebGL runs in SwiftShader (slow, see e2e/playwright.config.ts)
       - run: xvfb-run -a npm run test:e2e
 

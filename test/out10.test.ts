@@ -31,6 +31,9 @@ function receive(port: number, fmt: string, extra: string[] = [], proto: 'tcp' |
   });
 }
 
+/** Time for the receiving ffmpeg to listen; a probe connection would use up its single accept. Generous: the whole suite runs in parallel. */
+const LISTEN_WAIT = 1500;
+
 /** Fake WebSocket for handleOut10. */
 class FakeWs extends EventEmitter {
   OPEN = 1; readyState = 1; sent: string[] = [];
@@ -71,7 +74,7 @@ describe.skipIf(!shippedFfmpeg)('10-bit output through the shipped ffmpeg', () =
   it.each(['tcp', 'srt'] as const)('v210 over %s: every code arrives unchanged (bit-exact)', async (proto) => {
     const w = 192, h = 108, f = testFrame(w, h), port = await freePort();
     const rx = receive(port, 'nut', [], proto);
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, LISTEN_WAIT));
     const ws = fakeWs();
     handleOut10(ws, new URLSearchParams({ target: `${proto}://127.0.0.1:${port}`, codec: 'v210', fps: '25' }), [ffmpeg]);
     ws.emit('message', Buffer.from(f.buf), true);
@@ -89,7 +92,7 @@ describe.skipIf(!shippedFfmpeg)('10-bit output through the shipped ffmpeg', () =
   it.each(['tcp', 'srt'] as const)('hevc10 over %s: HEVC Main 10 with BT.709 tags', async (proto) => {
     const w = 192, h = 108, port = await freePort();
     const rx = receive(port, 'mpegts', [], proto);
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, LISTEN_WAIT));
     const ws = fakeWs();
     handleOut10(ws, new URLSearchParams({ target: `${proto}://127.0.0.1:${port}`, codec: 'hevc10', fps: '25' }), [ffmpeg]);
     ws.emit('message', Buffer.from(testFrame(w, h).buf), true);

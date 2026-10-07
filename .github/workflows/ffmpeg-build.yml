@@ -1,0 +1,126 @@
+name: ffmpeg build
+
+# LZ Scopes' own minimal ffmpeg (scripts/ffmpeg-build/): FFmpeg + x264 + x265 10 bit + libsrt
+# + mbedTLS + zlib, static, GPLv3, no nonfree. Every target is built and tested on its own OS
+# (licence, SRT, v210/HEVC 10 over TCP and SRT: test/ffmpeg.test.ts, test/out10.test.ts).
+#
+#   pull request touching the build  → build + test, nothing published
+#   workflow_dispatch, publish=true  → release ffmpeg-<version>-<rev> (prerelease, never
+#                                      "latest") with the zips, every source archive and
+#                                      SHA256SUMS. scripts/ffmpeg-builds.json then pins them.
+# Research and licence duties: docs/research/ffmpeg-lizenz.md
+
+on:
+  pull_request:
+    paths: ['scripts/ffmpeg-build/**', '.github/workflows/ffmpeg-build.yml']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Release ffmpeg-<version>-<rev> anlegen (Binaries + Quelltext)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: darwin-arm64, os: macos-latest, test: darwin-universal }
+          - { target: darwin-x64, os: macos-15-intel, test: darwin-universal }
+          - { target: linux-x64, os: ubuntu-24.04, test: linux-x64 }
+          - { target: win32-x64, os: ubuntu-24.04, test: '' }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      LZS_FFMPEG_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build tools (not shipped)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            brew install nasm pkgconf cmake || true
+          else
+            sudo apt-get update -q
+            sudo apt-get install -y -q nasm cmake pkg-config zip ${{ matrix.target == 'win32-x64' && 'mingw-w64' || '' }}
+          fi
+          cmake --version | head -1; nasm -v || true
+      - name: Build ${{ matrix.target }}
+        run: bash scripts/ffmpeg-build/build.sh ${{ matrix.target }} "$PWD/ffbuild/out"
+      - uses: actions/setup-node@v5
+        if: matrix.test != ''
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - name: Test on this OS (licence, SRT, 10 bit)
+        if: matrix.test != ''
+        shell: bash
+        run: |
+          npm ci
+          mkdir -p "vendor/ffmpeg/${{ matrix.test }}"
+          unzip -o ffbuild/out/*.zip -d "vendor/ffmpeg/${{ matrix.test }}"
+          vendor/ffmpeg/${{ matrix.test }}/ffmpeg -hide_banner -version | head -3
+          npx vitest run test/ffmpeg.test.ts test/out10.test.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: ffbuild/out/*.zip
+          retention-days: 2
+
+  test-windows:
+    needs: build
+    runs-on: windows-latest
+    env:
+      LZS_FFMPEG_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-win32-x64
+          path: ffbuild/out
+      - name: Test on Windows (licence, SRT, 10 bit)
+        shell: bash
+        run: |
+          npm ci
+          7z x -y -ovendor/ffmpeg/win32-x64 ffbuild/out/*.zip
+          vendor/ffmpeg/win32-x64/ffmpeg.exe -hide_banner -version | head -3
+          npx vitest run test/ffmpeg.test.ts test/out10.test.ts
+
+  publish:
+    needs: [build, test-windows]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Sources (SHA-256 checked) and release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # same checked download as the build (SHA-256, or the commit hash for git sources)
+          FFBUILD_DIR="$PWD/ffbuild" bash scripts/ffmpeg-build/build.sh --sources-only
+          mkdir -p src
+          cp ffbuild/sources/* src/
+          cp scripts/ffmpeg-build/build.sh scripts/ffmpeg-build/sources.txt src/
+          name="$(ls dist/*.zip | head -1 | xargs basename | sed -E 's/^(ffmpeg-[^-]+-[^-]+)-.*/\1/')"
+          (cd dist && sha256sum *.zip; cd ../src && sha256sum *) > SHA256SUMS
+          cat SHA256SUMS
+          {
+            echo "Own ffmpeg build of LZ Scopes: FFmpeg + x264 + x265 (10 bit) + libsrt + mbedTLS + zlib, static, GPL-3.0-or-later, no nonfree."
+            echo
+            echo "Built by .github/workflows/ffmpeg-build.yml from scripts/ffmpeg-build/ at ${GITHUB_SHA}. The source archives below are the exact, SHA-256-checked inputs (GPLv3 section 6d)."
+            echo "Not an app release; the desktop app pins these files in scripts/ffmpeg-builds.json."
+          } > notes.md
+          gh release create "$name" dist/*.zip src/* SHA256SUMS --target "$GITHUB_SHA" --prerelease --latest=false --title "$name (ffmpeg für LZ Scopes)" --notes-file notes.md

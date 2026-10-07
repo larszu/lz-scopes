@@ -1,0 +1,6 @@
+/* macOS-Desktop-App: Begründungen (Deutsch), kopiert nach Contents/Resources/de.lproj (electron-builder.js). */
+"NSCameraUsageDescription" = "LZ Scopes misst das Bild einer angeschlossenen Kamera oder Capture-Karte.";
+"NSBluetoothAlwaysUsageDescription" = "LZ Scopes verbindet sich per Bluetooth mit einem Lichtmesser (Opple Light Master).";
+"NSMicrophoneUsageDescription" = "LZ Scopes misst den Ton eines Audiogeräts, einer Capture-Karte oder eines Mikrofons.";
+"NSAudioCaptureUsageDescription" = "LZ Scopes misst aufgenommenen Ton (Pegel, Lautheit, Phase).";
+"NSBluetoothPeripheralUsageDescription" = "LZ Scopes verbindet sich per Bluetooth mit einem Lichtmesser (Opple Light Master).";

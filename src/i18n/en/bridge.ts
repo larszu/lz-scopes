@@ -111,4 +111,8 @@ export default {
   'bridge.ptp.lock2': 'cold locking',
   'bridge.ptp.lock3': 'warm locking',
   'bridge.ptp.lock4': 'locked',
+
+  // iOS app: Bonjour search for the bridge (ios/App/App/LzNative.swift)
+  'bridge.ios.localNetworkDenied': 'Access to the local network denied (Settings → Privacy & Security → Local Network)',
+  'bridge.ios.browseFailed': 'Bonjour search failed ({code})',
 } as const satisfies Messages;

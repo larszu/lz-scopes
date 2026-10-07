@@ -66,7 +66,8 @@ public class LzNativePlugin: CAPPlugin, CAPBridgedPlugin {
             session = BridgeBrowse(timeout: timeout) { [weak self] list, error in
                 self?.browses.removeAll { $0 === session }
                 var result: [String: Any] = ["bridges": list]
-                if let error = error { result["error"] = error }
+                // error, errorCode, errorParams (English text + code for the web UI)
+                if let error = error { result.merge(error) { _, new in new } }
                 call.resolve(result)
             }
             if let s = session {
@@ -108,10 +109,10 @@ final class BridgeBrowse: NSObject, NetServiceBrowserDelegate, NetServiceDelegat
     private let browser = NetServiceBrowser()
     private let timeout: TimeInterval
     private var services: [NetService] = []
-    private var done: (([[String: Any]], String?) -> Void)?
-    private var error: String?
+    private var done: (([[String: Any]], [String: Any]?) -> Void)?
+    private var error: [String: Any]?
 
-    init(timeout: TimeInterval, done: @escaping ([[String: Any]], String?) -> Void) {
+    init(timeout: TimeInterval, done: @escaping ([[String: Any]], [String: Any]?) -> Void) {
         self.timeout = timeout
         self.done = done
     }
@@ -131,7 +132,10 @@ final class BridgeBrowse: NSObject, NetServiceBrowserDelegate, NetServiceDelegat
     func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String: NSNumber]) {
         let code = errorDict[NetService.errorCode]?.intValue ?? 0
         // -72008 (NoAuth): local network access denied or NSBonjourServices missing
-        error = code == -72008 ? "Zugriff auf das lokale Netzwerk verweigert (Einstellungen → Datenschutz → Lokales Netzwerk)" : "Bonjour-Suche fehlgeschlagen (\(code))"
+        // English text plus a code the web UI translates (bridge.ios.*, src/i18n/bridgeMessage.ts)
+        error = code == -72008
+            ? ["error": "Access to the local network denied (Settings → Privacy & Security → Local Network)", "errorCode": "ios.localNetworkDenied"]
+            : ["error": "Bonjour search failed (\(code))", "errorCode": "ios.browseFailed", "errorParams": ["code": code]]
         finish()
     }
 

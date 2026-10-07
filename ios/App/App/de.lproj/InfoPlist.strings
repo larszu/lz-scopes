@@ -1,0 +1,5 @@
+/* Begründungen für Berechtigungen (Deutsch), Gegenstück zu en.lproj/InfoPlist.strings. */
+"NSBluetoothAlwaysUsageDescription" = "LZ Scopes verbindet sich per Bluetooth mit dem Opple Light Master, um Beleuchtungsstärke, Farbtemperatur und Spektrum zu messen.";
+"NSCameraUsageDescription" = "LZ Scopes zeigt das Bild der Kamera oder einer USB-Capture-Karte in Waveform, Vektorskop und den anderen Scopes. Das Bild verlässt das Gerät nicht.";
+"NSLocalNetworkUsageDescription" = "LZ Scopes sucht im lokalen Netzwerk nach der LZ-Scopes-Bridge (Desktop-App oder npm start), die RTSP-, SRT- und Capture-Quellen dekodiert.";
+"NSMicrophoneUsageDescription" = "LZ Scopes misst Ton (Pegel, Phasenkorrelation, Spektrum) vom Mikrofon oder einem USB-Audioeingang. Der Ton verlässt das Gerät nicht.";

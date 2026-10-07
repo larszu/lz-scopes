@@ -109,4 +109,7 @@ export default {
   'bridge.ptp.lock2': 'Cold Locking',
   'bridge.ptp.lock3': 'Warm Locking',
   'bridge.ptp.lock4': 'extern gebunden',
+
+  'bridge.ios.localNetworkDenied': 'Zugriff auf das lokale Netzwerk verweigert (Einstellungen → Datenschutz & Sicherheit → Lokales Netzwerk)',
+  'bridge.ios.browseFailed': 'Bonjour-Suche fehlgeschlagen ({code})',
 } satisfies Translation<typeof en>;

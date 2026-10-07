@@ -1,6 +1,7 @@
 // German translation. `Record<Key, Msg>` makes a missing key a type error; the area files
 // catch extra or mistyped keys (`satisfies Translation<typeof en>`).
 import common from './de/common';
+import genlock from './de/genlock';
 import shading from './de/shading';
 import menu from './de/menu';
 import panel from './de/panel';
@@ -10,6 +11,7 @@ import type { Msg } from './types';
 
 export const de: Record<Key, Msg> = {
   ...common,
+  ...genlock,
   ...shading,
   ...menu,
   ...panel,

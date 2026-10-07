@@ -9,6 +9,7 @@
 // NOT TESTED WITH HARDWARE (no DeckLink card with reference input was available).
 
 import type { Source } from './sources';
+import { lang, tIn, type Key as I18nKey } from './i18n';
 
 export interface RefMode { name: string; width: number; height: number; fpsNum: number; fpsDen: number; field: 'progressive' | 'interlaced' | 'psf' }
 export interface RefStatus {
@@ -19,34 +20,9 @@ export interface RefStatus {
 export interface PhaseReport { periodMs: number; meanMs: number; sdMs: number; driftPpm: number | null; driftSePpm?: number | null; jumps?: number; n: number; spanS: number; ref: 'system' | 'ptp' }
 export interface GenlockOptions { device: number }
 
-// Texts, bundled until src/i18n is on main (rule 07.10.: everything also in English).
-const TEXTS = {
-  de: {
-    title: 'REFERENZ / GENLOCK · DeckLink-Referenzeingang', untested: 'ungeprüft – keine DeckLink-Karte mit Referenzeingang im Test',
-    noHelper: 'DeckLink nicht verfügbar', noRefInput: 'Diese Karte hat keinen Referenzeingang', locked: 'gelockt', notLocked: 'nicht gelockt', unknown: 'unbekannt',
-    reference: 'Referenz', format: 'Format', formatUnknown: 'nicht erkannt (Karte ohne Referenz-Formaterkennung oder kein Signal)',
-    bb: 'Black Burst (SD-Format)', tls: 'Tri-Level-Sync (HD-Format)', derived: 'aus dem Format abgeleitet',
-    offset: 'Genlock-Offset (eingestellt)', px: 'Pixel', range511: 'Bereich ±511 Pixel', rangeFull: 'Bereich ± halbes Gesamtraster',
-    input: 'Eingang', noPhaseApi: 'Zeitversatz Eingang ↔ Referenz: liefert die DeckLink-API nicht',
-    phaseTitle: 'BILDTAKT ↔ ST-2059-RASTER', phaseSystem: 'Systemuhr', phasePtp: 'PTP (Uhr-Panel)', phaseNone: 'Quelle im Panel ist keine laufende DeckLink-/NDI-Quelle',
-    mean: 'Lage', sd: 'Streuung', drift: 'Drift', jumps: 'Sprünge – Drift unsicher', driftWait: 'Drift: sammelt …', phaseNote: 'Ankunftszeit inkl. Übertragung – aussagekräftig sind Konstanz und Drift',
-    tc: 'Timecode der Quelle', tcNote: 'Vergleich mit LTC und Tageszeit im Uhr-Panel', device: 'DeckLink-Gerät',
-  },
-  en: {
-    title: 'REFERENCE / GENLOCK · DeckLink reference input', untested: 'untested – no DeckLink card with reference input was available',
-    noHelper: 'DeckLink not available', noRefInput: 'This card has no reference input', locked: 'locked', notLocked: 'not locked', unknown: 'unknown',
-    reference: 'Reference', format: 'Format', formatUnknown: 'not detected (card without reference format detection or no signal)',
-    bb: 'Black burst (SD format)', tls: 'Tri-level sync (HD format)', derived: 'derived from the format',
-    offset: 'Genlock offset (configured)', px: 'pixels', range511: 'range ±511 pixels', rangeFull: 'range ± half the total raster',
-    input: 'Input', noPhaseApi: 'Timing input ↔ reference: not provided by the DeckLink API',
-    phaseTitle: 'FRAME TIMING ↔ ST 2059 GRID', phaseSystem: 'system clock', phasePtp: 'PTP (clock panel)', phaseNone: 'source of this panel is no running DeckLink/NDI source',
-    mean: 'Position', sd: 'Scatter', drift: 'Drift', jumps: 'jumps – drift unreliable', driftWait: 'Drift: collecting …', phaseNote: 'arrival time incl. transfer – constancy and drift are what counts',
-    tc: 'Source timecode', tcNote: 'compared with LTC and time of day in the clock panel', device: 'DeckLink device',
-  },
-};
-type Key = keyof typeof TEXTS.de;
-export const tr = (k: Key, lang: 'de' | 'en' = uiLang()) => TEXTS[lang][k];
-function uiLang(): 'de' | 'en' { return typeof document !== 'undefined' && document.documentElement.lang.startsWith('en') ? 'en' : 'de'; }
+// Texts: src/i18n/{en,de}/genlock.ts (keys genlock.*); `lang` picks a language explicitly.
+type GenlockKey = 'bridgeDown' | 'title' | 'untested' | 'noHelper' | 'noRefInput' | 'locked' | 'notLocked' | 'unknown' | 'reference' | 'format' | 'formatUnknown' | 'bb' | 'tls' | 'derived' | 'offset' | 'px' | 'range511' | 'rangeFull' | 'input' | 'noPhaseApi' | 'phaseTitle' | 'phaseSystem' | 'phasePtp' | 'phaseNone' | 'mean' | 'sd' | 'drift' | 'jumps' | 'driftWait' | 'phaseNote' | 'tc' | 'tcNote' | 'device';
+export const tr = (k: GenlockKey, l: 'de' | 'en' = lang()) => tIn(l, `genlock.${k}` as I18nKey);
 
 /**
  * Black burst or tri-level from the detected reference format: black burst is the SD
@@ -66,8 +42,8 @@ export const modeText = (m: RefMode | null | undefined) => {
 };
 
 /** Text lines of the panel (pure, tested). */
-export function genlockLines(st: RefStatus | null, phase: PhaseReport | null, tc: string | null, lang: 'de' | 'en' = 'de') {
-  const t = (k: Key) => TEXTS[lang][k];
+export function genlockLines(st: RefStatus | null, phase: PhaseReport | null, tc: string | null, l: 'de' | 'en' = lang()) {
+  const t = (k: GenlockKey) => tr(k, l);
   const ref: { label: string; value: string; tone: 'good' | 'bad' | 'warn' | 'dim' | 'fg' }[] = [];
   if (!st) ref.push({ label: t('reference'), value: '…', tone: 'dim' });
   else if (!st.ok) ref.push({ label: t('noHelper'), value: st.error ?? '', tone: 'warn' });
@@ -106,7 +82,7 @@ export function referenceStatus(index: number): RefStatus | null {
     c.busy = true;
     fetch(`${bridgeUrl().replace(/^ws/, 'http')}/api/decklink/reference?index=${index}`).then((r) => r.json())
       .then((st: RefStatus) => { c.st = st; })
-      .catch(() => { c.st = { ok: false, error: 'Bridge nicht erreichbar' }; })
+      .catch(() => { c.st = { ok: false, error: tr('bridgeDown') }; })
       .finally(() => { c.at = Date.now(); c.busy = false; });
   }
   return c.st;
@@ -118,12 +94,12 @@ const C = { fg: '#e6e6e6', dim: '#8a9099', good: '#7ddc8a', warn: '#ffb840', bad
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
 export function drawGenlockPanel(ctx: CanvasRenderingContext2D, o: Partial<GenlockOptions> | undefined, src: Source | null, w: number, h: number) {
-  const lang = uiLang();
+  const ui = lang();
   const st = referenceStatus(o?.device ?? 0);
   const live = src && (src.url.startsWith('decklink:') || src.url.startsWith('ndi:')) && src.status === 'live';
   const phase = live ? src.phase : null;
   const tc = live ? (src as unknown as { tc?: { tc?: string } | null }).tc?.tc ?? null : null;
-  const L = genlockLines(st, phase, tc, lang);
+  const L = genlockLines(st, phase, tc, ui);
   const pad = 12, size = Math.max(11, Math.min(14, w / 42));
   let y = pad;
   ctx.textBaseline = 'top'; ctx.textAlign = 'left';
@@ -134,8 +110,8 @@ export function drawGenlockPanel(ctx: CanvasRenderingContext2D, o: Partial<Genlo
     ctx.fillText(t, x, y);
   };
   const nl = (k = 1.45) => { y += size * k; };
-  put(tr('title', lang), pad, C.dim); nl();
-  put(tr('untested', lang), pad, C.warn); nl(1.8);
+  put(tr('title', ui), pad, C.dim); nl();
+  put(tr('untested', ui), pad, C.warn); nl(1.8);
   ctx.font = `${size}px ${MONO}`;
   const labelW = Math.min(w * 0.45, Math.max(0, ...L.ref.map((r) => (r.label ? ctx.measureText(r.label).width : 0))) + size);
   for (const r of L.ref) {
@@ -145,8 +121,8 @@ export function drawGenlockPanel(ctx: CanvasRenderingContext2D, o: Partial<Genlo
   }
   nl(0.8);
   if (y > h - size * 3) return;
-  put(`${tr('phaseTitle', lang)}${L.phase ? ` · ${L.phase.ref}` : ''}`, pad, C.dim); nl();
-  if (!L.phase || !phase) { put(tr('phaseNone', lang), pad, C.dim); nl(); }
+  put(`${tr('phaseTitle', ui)}${L.phase ? ` · ${L.phase.ref}` : ''}`, pad, C.dim); nl();
+  if (!L.phase || !phase) { put(tr('phaseNone', ui), pad, C.dim); nl(); }
   else {
     put(`${L.phase.mean}   ${L.phase.sd}`, pad, C.fg); nl();
     put(L.phase.drift, pad, phase.jumps ? C.warn : C.fg); nl(1.6);
@@ -158,14 +134,14 @@ export function drawGenlockPanel(ctx: CanvasRenderingContext2D, o: Partial<Genlo
     ctx.fillStyle = 'rgba(0,220,255,0.35)'; ctx.fillRect(Math.max(bx, fx(phase.meanMs) - s), y, Math.min(2 * s, bw), bh);
     ctx.fillStyle = C.accent; ctx.fillRect(fx(phase.meanMs) - 1, y - 3, 3, bh + 6);
     y += bh + size * 0.8;
-    put(tr('phaseNote', lang), pad, C.dim); nl();
+    put(tr('phaseNote', ui), pad, C.dim); nl();
   }
-  if (L.tc && y < h - size * 2) { nl(0.5); put(L.tc, pad, C.fg); nl(); put(tr('tcNote', lang), pad, C.dim); }
+  if (L.tc && y < h - size * 2) { nl(0.5); put(L.tc, pad, C.fg); nl(); put(tr('tcNote', ui), pad, C.dim); }
 }
 
 /** ⚙ settings of the panel: which DeckLink device. */
 export function genlockPanelSettings(p: { genlock?: Partial<GenlockOptions> }, save: () => void): Node[] {
-  const lang = uiLang();
+  const ui = lang();
   const sel = document.createElement('select');
   const cur = p.genlock?.device ?? 0;
   const fill = (devs: { index: number; name: string }[]) => {
@@ -176,8 +152,8 @@ export function genlockPanelSettings(p: { genlock?: Partial<GenlockOptions> }, s
   sel.onchange = () => { p.genlock = { ...p.genlock, device: Number(sel.value) }; save(); };
   const label = document.createElement('label');
   label.className = 'mrow';
-  const span = document.createElement('span'); span.textContent = tr('device', lang);
+  const span = document.createElement('span'); span.textContent = tr('device', ui);
   label.append(span, sel);
-  const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = tr('untested', lang);
+  const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = tr('untested', ui);
   return [label, hint];
 }

@@ -58,7 +58,7 @@ describe('Electron main process texts (electron/i18n.cjs)', () => {
     const { TEXT } = createRequire(import.meta.url)('../electron/i18n.cjs') as { TEXT: Record<'de' | 'en', Record<string, string | ((n: string) => string)>> };
     expect(Object.keys(TEXT.de).sort()).toEqual(Object.keys(TEXT.en).sort());
     for (const k of Object.keys(TEXT.en)) expect(typeof TEXT.de[k], k).toBe(typeof TEXT.en[k]);
-  });
+  }, 30_000); // erster require von electron/i18n.cjs dauert auf dem Windows-Runner >5 s
 });
 
 describe('t()', () => {

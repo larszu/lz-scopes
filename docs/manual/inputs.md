@@ -4,7 +4,7 @@ How a picture gets into LZ Scopes. All inputs are in the **Sources** sidebar on 
 
 | Input | Bit depth | When |
 |---|---|---|
-| DaVinci Resolve (scripting) | 16 bit | graded picture from the Resolve viewer, no extra hardware |
+| DaVinci Resolve (scripting) | 16 bit (paused), 8 bit (playback) | graded picture from the Resolve viewer, no extra hardware |
 | Clean feed via capture card | 10 bit | Resolve outputs through a DeckLink/UltraStudio, LZ Scopes captures it with a card |
 | Clean feed or window via screen capture | 8 bit | quick, no hardware; the display alters colours and levels |
 | Folder | 8 bit (browser), 16 bit (bridge) | stills from Lightroom, Capture One, Resolve |
@@ -44,8 +44,23 @@ There is no network scan of its own. Resolve writes the still to the disk of the
 **Good to know**
 
 - What the viewer shows is measured: the picture at the current playhead, graded.
-- During playback the measurement lags slightly behind. For a smooth real-time picture use the clean feed (next section).
 - The timeline timecode is passed along.
+
+**Playback**
+
+While the timeline plays, Resolve answers no scripting request; stills come again only once it pauses. LZ Scopes therefore switches by itself, and the source card says which route is active and why:
+
+| Route | When | Colour accuracy |
+|---|---|---|
+| **Exaktes Standbild** (exact still) | timeline paused | 16 bit, graded, as Resolve renders it. Colour-accurate. |
+| **Live: Fensteraufnahme** (window capture) | timeline playing, LZ Scopes on the Resolve computer | 8 bit, scaled to the viewer size, after the viewer's and the operating system's display colour management (e.g. *Use Mac Display Color Profile for viewers*). Shows movement and rough levels; not for colour judgement. |
+| **Letztes Standbild gehalten** (last still held) | timeline playing, no window capture possible | the card says why, e.g. bridge on another computer |
+
+- The switch to the window capture takes about a second after playback starts. Pausing brings back the exact still.
+- The **desktop app** captures the Resolve window by itself and finds the viewer in it by comparing it with the last still. On macOS it needs the permission under **System Settings → Privacy & Security → Screen & System Audio Recording**.
+- In the **browser**, click **Resolve-Fenster wählen** (choose Resolve window) in the source card once and pick the Resolve window.
+- If the viewer is not found (viewer hidden, very small or layout changed), pause and play again.
+- For an exact live picture during playback use the clean feed through a capture card (next section).
 
 ## Clean feed
 

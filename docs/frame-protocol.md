@@ -10,6 +10,7 @@ A WebSocket delivers uncompressed frames to the browser. This repo's bridge spea
 | Server → client | Binary | one frame: `width × height × 4` samples R, G, B, A, row by row from the top; `depth` 8 → Uint8, 16 → Uint16 LE |
 | Server → client | Text | `{"type":"stats","sent":n,"dropped":n}` (optional, 1 Hz) |
 | Server → client | Text | `{"type":"tc","tc":"10:00:07:05","tcPts":7.2,"pts":7.4,"first":0.96,"kind":"gop"\|"s12m"}` (optional, at most 25/s): last timecode from the frame side data and the PTS of the newest decoded frame; Resolve: `{"type":"tc","tc":…,"kind":"resolve","fps":25,"df":false}` before every frame |
+| Server → client | Text | Resolve only: `{"type":"resolve","state":"playing"\|"paused","played":true,"project":"…"}` – the timeline started playing (the scripting API blocks, no stills until the pause) or paused again; `played` false = it was only a slow export (#88, `server/resolveWatch.mjs`) |
 | Server → client | Text | `{"type":"error"\|"end","message":"…","code":"…","params":{…}}`, then the server closes. `message` is English; the interface translates `code`/`params` (optional, `server/messages.mjs`) as `bridge.<code>` and shows unknown codes with `message`. `stats` can carry `message`/`code`/`params` in the same way. |
 
 Values are full-range R′G′B′ (0 = 0 %, maximum = 100 %). The transfer function is left unchanged; PQ and HLG arrive as code values. `transfer`, `matrix` and `primaries` follow the ffprobe names; if they are missing, the client assumes SDR and BT.709 for HD or BT.601 for SD.

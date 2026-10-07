@@ -33,6 +33,7 @@ import { GREEN_DEFAULT, targetSignal } from './match/core';
 import { drawMatchPanel, matchSignature, type MatchSettings } from './match/panel';
 import { drawLightPanel, isLight, lightSignature, type LightPanelOptions } from './opple/scopes';
 import { t } from './i18n';
+import { IDENTITY, isIdentity, viewRect, waveRange, type View, type ViewLimits } from './view';
 
 export interface PanelState {
   scope: ScopeType; sourceId: string; gain: number; colorize: boolean; zoom: number;
@@ -96,14 +97,49 @@ export interface PanelState {
   clockOverlay?: boolean;
   /** light scopes (Opple Light Master, src/opple/scopes.ts) */
   light?: Partial<LightPanelOptions>;
+  /** zoom/pan from gestures (#89, view.ts); the 3D volume keeps its view in `cube` */
+  view?: View;
 }
+
+// ------------------------------------------------------------------ zoom and pan (#89)
+
+const XY: ViewLimits = { min: 1, max: 16, axes: 'xy', cover: true };
+/** Zoom range and axes of a scope; null = no zoom (audio, clock, tables …). */
+export function viewLimits(scope: ScopeType): ViewLimits | null {
+  if (isWaveform(scope)) return { min: 1, max: 20, axes: 'y', cover: true };
+  if (scope === 'cube') return { min: 0.3, max: 8, axes: 'xy', cover: false };
+  if (scope === 'vector' || scope === 'cie' || scope === 'satlum' || scope === 'chplot' || scope === 'diamond' || scope === 'hist' || scope === 'picture') return XY;
+  return null;
+}
+/** Current view of a panel (the 3D volume: its own zoom/pan). */
+export function panelView(p: PanelState): View {
+  if (p.scope === 'cube') return { z: p.cube?.zoom ?? 1, x: p.cube?.panX ?? 0, y: p.cube?.panY ?? 0 };
+  return p.view ?? IDENTITY;
+}
+export function setPanelView(p: PanelState, v: View) {
+  if (p.scope === 'cube') p.cube = { ...DEFAULT_CUBE, ...p.cube, zoom: v.z, panX: v.x, panY: v.y };
+  else p.view = isIdentity(v) ? undefined : { z: v.z, x: v.x, y: v.y };
+}
+/** Waveform level range on screen: magnifier preset plus gesture zoom. */
+export const waveRangeOf = (p: PanelState): [number, number] => waveRange(WAVE_ZOOMS[p.waveZoom ?? 'full'], isWaveform(p.scope) ? p.view : undefined);
+/** 2D scopes and the picture: the plot rect with the gesture view applied (pointer mapping, overlay). */
+export function contentRect(p: PanelState, w: number, h: number, aspect = 16 / 9): Rect {
+  const r = plotRect(p.scope, w, h, aspect), v = xyView(p);
+  return v ? viewRect(r, v) : r;
+}
+/** The gesture view of a 2D scope or the picture (not waveforms, not the 3D volume); null = none. */
+function xyView(p: PanelState): View | null {
+  return p.view && !isIdentity(p.view) && viewLimits(p.scope)?.axes === 'xy' && p.scope !== 'cube' ? p.view : null;
+}
+/** Scopes whose labels sit outside the plot: their overlay is clipped to the panel, not the plot. */
+const LABELS_OUTSIDE: ScopeType[] = ['cie', 'satlum', 'chplot', 'hist'];
 
 /** CRT settings of a panel with defaults; null = digital display. */
 export const crtOf = (p: PanelState): CrtSettings | null => (p.crt?.on ? { ...DEFAULT_CRT, ...p.crt, on: true } : null);
 
 /** Graticule options of a waveform panel. */
 export const waveOpts = (p: PanelState, src: Source | null): WaveOpts => ({
-  lw: src?.hlgLw, r103: p.r103, marks: p.marks, range: WAVE_ZOOMS[p.waveZoom ?? 'full'], channels: p.channels, names: p.names,
+  lw: src?.hlgLw, r103: p.r103, marks: p.marks, range: waveRangeOf(p), channels: p.channels, names: p.names,
 });
 
 export const TINTS = { white: [1, 1, 1], green: [0.55, 1, 0.62], amber: [1, 0.82, 0.45] } as const;
@@ -282,15 +318,26 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   }
   if (src) src = stageView(src, p.stage ?? o.stage ?? 'signal');
   const aspect = src && src.width ? src.width / src.height : 16 / 9;
-  const r = plotRect(p.scope, body.w, body.h, aspect);
-  const abs = { x: body.x + r.x, y: body.y + r.y, w: r.w, h: r.h };
+  const frame = plotRect(p.scope, body.w, body.h, aspect);
+  const abs = { x: body.x + frame.x, y: body.y + frame.y, w: frame.w, h: frame.h };
   renderer.clearRect(abs);
+  // gesture zoom (#89): GL through the shader view (scatter) or a larger picture rect; the
+  // overlay draws with the zoomed rect `r`, clipped, so graticule and markers follow the trace
+  const xv = xyView(p);
+  const r = xv ? viewRect(frame, xv) : frame;
+  const absV = { x: body.x + r.x, y: body.y + r.y, w: r.w, h: r.h };
+  const wz = isWaveform(p.scope) && p.view ? p.view.z : 1;
 
   if (!src || !src.ready) {
     ctx.fillStyle = '#6b7078'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(src ? (src.message || t('panel.draw.noData')) : (o.emptyText ?? t('panel.draw.addSource')), body.w / 2, body.h / 2);
     if (isWaveform(p.scope)) drawWaveGraticule(ctx, p.scope, r, o.unit, src?.transfer ?? 'sdr', waveOpts(p, src));
     return;
+  }
+  if (xv) {
+    ctx.save();
+    const c = LABELS_OUTSIDE.includes(p.scope) ? { x: 0, y: 0, w: body.w, h: body.h } : frame;
+    ctx.beginPath(); ctx.rect(c.x, c.y, c.w, c.h); ctx.clip();
   }
   const probeRgb = src.probe ? src.readPixel(src.probe.x, src.probe.y) : null;
   const mode = p.scope === 'cube' && p.cube?.lutOnly && p.cube?.lut ? undefined : SCATTER[p.scope];
@@ -306,9 +353,10 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
         white: mul3(rgbToXyzMatrix(GAMUTS[src.gamut]), [1, 1, 1]), nits: cubeNits(src.transfer),
         view: { zoom: cube.zoom ?? 1, panX: cube.panX ?? 0, panY: cube.panY ?? 0 },
       } } : {}),
+      ...(xv ? { view: [xv.z, xv.x, xv.y] as [number, number, number], density: xv.z * xv.z } : wz !== 1 ? { density: wz } : {}),
       mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: crt ? [...PHOSPHORS[crt.phosphor].color] as [number, number, number] : [...TINTS[o.tint]] as [number, number, number],
       maxSamples: o.maxSamples, roi: src.activeRois(), skin: p.scope === 'wf-green' ? greenOf(o) : o.skin, cieUv: p.scope === 'cie' && !!p.cieUv,
-      ...(isWaveform(p.scope) ? { range: WAVE_ZOOMS[p.waveZoom ?? 'full'], ...(({ sec, n }) => ({ sec, secN: n }))(channelLayout(p.scope, p.channels)) } : {}),
+      ...(isWaveform(p.scope) ? { range: waveRangeOf(p), ...(({ sec, n }) => ({ sec, secN: n }))(channelLayout(p.scope, p.channels)) } : {}),
     });
   }
   if (isWaveform(p.scope)) {
@@ -369,14 +417,14 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     const picB = (s: Source) => pic(s, ab?.b === 'rgc' ? !p.rgc : !!p.rgc);
     if (ab && bSrc?.ready) {
       if (ab.mode === 'diff') {
-        if (!renderer.drawPictureDiff(key, src, pic(src), bSrc, picB(bSrc), abs, ab.gain ?? 4)) renderer.drawPicture(src, abs, pic(src));
+        if (!renderer.drawPictureDiff(key, src, pic(src), bSrc, picB(bSrc), absV, ab.gain ?? 4, abs)) renderer.drawPicture(src, absV, pic(src), abs);
       } else {
         const pos = ab.mode === 'split' ? 0.5 : Math.max(0, Math.min(1, ab.pos ?? 0.5));
-        renderer.drawPicture(src, abs, pic(src), { x: abs.x, y: abs.y, w: abs.w * pos, h: abs.h });
-        renderer.drawPicture(bSrc, abs, picB(bSrc), { x: abs.x + abs.w * pos, y: abs.y, w: abs.w * (1 - pos), h: abs.h });
+        renderer.drawPicture(src, absV, pic(src), { x: abs.x, y: abs.y, w: abs.w * pos, h: abs.h });
+        renderer.drawPicture(bSrc, absV, picB(bSrc), { x: abs.x + abs.w * pos, y: abs.y, w: abs.w * (1 - pos), h: abs.h });
       }
-    } else renderer.drawPicture(src, abs, pic(src));
-    if (ab) drawAbLabels(ctx, r, ab, src, bSrc);
+    } else renderer.drawPicture(src, absV, pic(src), abs);
+    if (ab) drawAbLabels(ctx, frame, ab, src, bSrc);
     if (src.faceTrack) {
       // detected faces, numbered left to right; active ones highlighted
       src.faces.forEach(({ id, box: f }, i) => {
@@ -390,8 +438,8 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
         ctx.fillStyle = '#111'; ctx.font = '600 11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(String(i + 1), rx + 9, ry - 7);
       });
-      if (!src.faces.length) drawTextBox(ctx, r.x + 6, r.y + r.h - 28, [t('panel.draw.searchFaces')]);
-      else if (src.faceMode === 'detect' && !src.faceSel.size) drawTextBox(ctx, r.x + 6, r.y + r.h - 28, [t('panel.draw.clickFace')]);
+      if (!src.faces.length) drawTextBox(ctx, frame.x + 6, frame.y + frame.h - 28, [t('panel.draw.searchFaces')]);
+      else if (src.faceMode === 'detect' && !src.faceSel.size) drawTextBox(ctx, frame.x + 6, frame.y + frame.h - 28, [t('panel.draw.clickFace')]);
     } else if (src.roi) {
       const [x0, y0, x1, y1] = src.roi;
       ctx.strokeStyle = '#ffb840'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
@@ -410,10 +458,10 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       const text = bands.map((bd) => `${bandRange(bd)} % ${bd.label}`);
       const bw = Math.max(150, ...text.map((s) => ctx.measureText(s).width + 20));
       bands.forEach((bd, i) => {
-        const y = r.y + r.h - 12 - (bands.length - 1 - i) * 14;
-        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(r.x + 4, y - 7, bw, 14);
-        ctx.fillStyle = bd.color; ctx.fillRect(r.x + 6, y - 4, 8, 8);
-        ctx.fillStyle = '#ddd'; ctx.fillText(text[i], r.x + 18, y);
+        const y = frame.y + frame.h - 12 - (bands.length - 1 - i) * 14;
+        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(frame.x + 4, y - 7, bw, 14);
+        ctx.fillStyle = bd.color; ctx.fillRect(frame.x + 6, y - 4, 8, 8);
+        ctx.fillStyle = '#ddd'; ctx.fillText(text[i], frame.x + 18, y);
       });
     }
     if (p.picture === 'r103') {
@@ -425,17 +473,17 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       if (!src.yuv) legend.push(['#888', t('panel.draw.rgbClipped')]);
       ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
       legend.forEach(([col, label], i) => {
-        const y = r.y + r.h - 12 - (legend.length - 1 - i) * 14;
-        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(r.x + 4, y - 7, 250, 14);
-        ctx.fillStyle = col; ctx.fillRect(r.x + 6, y - 4, 8, 8);
-        ctx.fillStyle = '#ddd'; ctx.fillText(label, r.x + 18, y);
+        const y = frame.y + frame.h - 12 - (legend.length - 1 - i) * 14;
+        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(frame.x + 4, y - 7, 250, 14);
+        ctx.fillStyle = col; ctx.fillRect(frame.x + 6, y - 4, 8, 8);
+        ctx.fillStyle = '#ddd'; ctx.fillText(label, frame.x + 18, y);
       });
     }
     if (p.picture === 'neutral') {
       const np = neutralParams(p), nc = src.neutralCast(np.threshold, np.lo, np.hi);
       const lines = [t('panel.draw.nearNeutral', { sat: (np.threshold * 100).toFixed(0), lo: (np.lo * 100).toFixed(0), hi: (np.hi * 100).toFixed(0) }),
         nc ? `${t('panel.draw.castShare', { share: (nc.share * 100).toFixed(1), amount: (nc.amount * 100).toFixed(2) })}${nc.amount > 0.002 ? ` ${t('panel.draw.castTowards', { hue: castName(nc.deg, src.colorspace) })}` : t('panel.draw.castNeutral')}` : t('panel.draw.noCpu')];
-      drawTextBox(ctx, r.x + 6, r.y + r.h - 6 - lines.length * 15 - 8, lines);
+      drawTextBox(ctx, frame.x + 6, frame.y + frame.h - 6 - lines.length * 15 - 8, lines);
     }
     if (p.picture === 'gamut') {
       const legend: [string, string][] = [
@@ -443,10 +491,10 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       ];
       ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
       legend.forEach(([col, label], i) => {
-        const y = r.y + r.h - 12 - (legend.length - 1 - i) * 14;
-        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(r.x + 4, y - 7, 200, 14);
-        ctx.fillStyle = col; ctx.fillRect(r.x + 6, y - 4, 8, 8);
-        ctx.fillStyle = '#ddd'; ctx.fillText(label, r.x + 18, y);
+        const y = frame.y + frame.h - 12 - (legend.length - 1 - i) * 14;
+        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(frame.x + 4, y - 7, 200, 14);
+        ctx.fillStyle = col; ctx.fillRect(frame.x + 6, y - 4, 8, 8);
+        ctx.fillStyle = '#ddd'; ctx.fillText(label, frame.x + 18, y);
       });
     }
     if (src.probe && probeRgb) {
@@ -454,11 +502,11 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       ctx.strokeStyle = '#00dcff'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(x - 10, y); ctx.lineTo(x - 3, y); ctx.moveTo(x + 3, y); ctx.lineTo(x + 10, y);
       ctx.moveTo(x, y - 10); ctx.lineTo(x, y - 3); ctx.moveTo(x, y + 3); ctx.lineTo(x, y + 10); ctx.stroke();
-      drawTextBox(ctx, r.x + r.w - 6, r.y + 6, [...probeLines(src, probeRgb, o.unit), ...deLines(src, probeRgb, o)], 'right');
+      drawTextBox(ctx, frame.x + frame.w - 6, frame.y + 6, [...probeLines(src, probeRgb, o.unit), ...deLines(src, probeRgb, o)], 'right');
     }
-    if (o.frozen) drawTextBox(ctx, r.x + 6, r.y + 6, [t('panel.draw.frozen')]);
-    if (p.clockOverlay) drawClockOverlay(ctx, clockOpts(p.clock), src, r.x + r.w - 6, r.y + r.h - 6);
-    if (p.audioBar !== false && src.audio) drawAudioBar(ctx, src.audio, r);
+    if (o.frozen) drawTextBox(ctx, frame.x + 6, frame.y + 6, [t('panel.draw.frozen')]);
+    if (p.clockOverlay) drawClockOverlay(ctx, clockOpts(p.clock), src, frame.x + frame.w - 6, frame.y + frame.h - 6);
+    if (p.audioBar !== false && src.audio) drawAudioBar(ctx, src.audio, frame);
   } else if (p.scope === 'match') {
     drawMatchPanel(ctx, body.w, body.h, p.match, src, matchCtx(o));
   } else if (p.scope === 'stats') {
@@ -467,4 +515,5 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.fillStyle = '#d6d6d6'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     lines.forEach((l, i) => ctx.fillText(l, 12, 10 + i * 15));
   }
+  if (xv) ctx.restore();
 }

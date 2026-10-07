@@ -11,6 +11,7 @@ import { RGC, RGC_GLSL, rgcScale } from './rgc';
 import { CUBE_GLSL, CUBE_SCALE } from './cube';
 import { t } from './i18n';
 import { R103, R103_GLSL, YUV_FETCH_GLSL, yuvScale } from './ycbcr';
+import { intersect } from './view';
 import { BLUR_FS, CRT_DISPLAY_FS, CRT_FS, CRT_VS_MAIN, PERSIST_FS, PHOSPHORS, beamSigma, persistDecay, type CrtSettings } from './crt';
 
 /** Beam segments per CRT scope and frame (each is a quad, far more fill than a point). */
@@ -90,6 +91,7 @@ uniform int uStep, uCols, uMode, uColorize, uCieUv, uSecN, uPair;
 uniform ivec4 uSec; // section per trace instance (-1 = hidden channel)
 uniform vec2 uK;
 uniform float uZoom, uIntensity, uWMin, uWMax, uPointSize;
+uniform vec3 uPanZoom; // gesture view of 2D scopes (view.ts): pos · z + (x, y)
 uniform mat3 uToXYZ;
 uniform vec4 uCie;
 ${ROI_GLSL}
@@ -176,6 +178,7 @@ bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
     pos = vec2((xy.x - uCie.x) / (uCie.y - uCie.x), (xy.y - uCie.z) / (uCie.w - uCie.z)) * 2.0 - 1.0;
     col = uColorize == 1 ? clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0) : mono;
   }
+  pos = pos * uPanZoom.x + uPanZoom.yz;
   if (uRoiCount > 0) {
     bool inside = inRoi(p);
     bool colored = uColorize >= 1 || uMode == 1 || uMode == 7;
@@ -213,6 +216,15 @@ out vec2 vUv;
 void main() {
   vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
   vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+/** Picture: like QUAD_VS, but showing only the part uUv (offset, size) of the picture (gesture zoom, #89). */
+const PICTURE_VS = `#version 300 es
+uniform vec4 uUv;
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = uUv.xy + p * uUv.zw; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
 const DISPLAY_FS = `#version 300 es
@@ -358,6 +370,10 @@ export interface ScatterParams {
   persist?: number;
   /** analogue beam look (crt.ts) */
   crt?: CrtSettings;
+  /** 2D scopes: gesture zoom/pan (view.ts) as [z, x, y] in clip units */
+  view?: [number, number, number];
+  /** trace weight factor, so zoomed traces keep their brightness (z² in 2D, z for waveforms) */
+  density?: number;
 }
 /** How the picture view maps the signal to the screen. */
 export interface DisplayParams {
@@ -625,7 +641,7 @@ export class Renderer {
     const area = (vp.w / sections) * vp.h;
     // the 3D volume spreads the points thinly: bigger dots and more weight so colours stay visible
     const dot = !crt && !wave ? Math.max(1, Math.round(this.dpr)) * (p.mode === 'cube' ? 3 : 1) : 1;
-    const intensity = ((wave ? 0.9 : 0.6) * area) / n / (dot * dot) * (p.mode === 'cube' ? 6 : 1);
+    const intensity = ((wave ? 0.9 : 0.6) * area) / n / (dot * dot) * (p.mode === 'cube' ? 6 : 1) * (p.density ?? 1);
 
     // Only re-scatter when the frame or a parameter changed; otherwise reuse the accumulation.
     const sig = `${src.id}:${src.frameSeq}:${t.w}x${t.h}:${acc.w}x${acc.h}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${chainOf(src)?.sig ?? ''}:${JSON.stringify(baseOf(src).yuv)}:${baseOf(src).colorspace}:${this.dpr}:${JSON.stringify(p)}`;
@@ -654,6 +670,7 @@ export class Renderer {
       gl.uniform1i(this.u(prog, 'uColorize'), Number(p.colorize));
       gl.uniform2f(this.u(prog, 'uK'), kr, kb);
       gl.uniform1f(this.u(prog, 'uZoom'), p.zoom);
+      gl.uniform3f(this.u(prog, 'uPanZoom'), ...(p.view ?? [1, 0, 0]));
       gl.uniform1f(this.u(prog, 'uIntensity'), intensity);
       gl.uniform1f(this.u(prog, 'uPointSize'), dot);
       gl.uniform1f(this.u(prog, 'uWMin'), p.range?.[0] ?? WAVE_MIN);
@@ -806,21 +823,26 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
   }
 
   /**
-   * @param clip  only draw inside this rect (A/B wipe)
+   * @param rect  where the whole picture lies (larger than the panel when zoomed, #89)
+   * @param clip  only draw inside this rect (panel plot area, A/B wipe); the viewport covers just
+   *              the visible part, so a zoomed picture never needs an oversized viewport
    * @param target render into an offscreen buffer instead of the canvas (A/B difference)
    */
   drawPicture(src: Source, rect: Rect, p: PictureParams, clip?: Rect, target?: Accum) {
     const t = this.sourceTexture(baseOf(src));
     if (!t) return false;
     const gl = this.gl;
-    const vp = this.viewport(rect);
+    const vis = clip ? intersect(rect, clip) : rect;
+    if (!vis) return true;
+    const vp = this.viewport(vis);
     gl.bindFramebuffer(gl.FRAMEBUFFER, target?.fbo ?? null);
     if (target) gl.viewport(0, 0, target.w, target.h); else gl.viewport(vp.x, vp.y, vp.w, vp.h);
-    if (clip && !target) { const c = this.viewport(clip); gl.enable(gl.SCISSOR_TEST); gl.scissor(c.x, c.y, c.w, c.h); }
     const kind = this.texKind(src, t);
     const r103 = p.mode === 'r103';
-    const prog = this.program(`picture${kind}${r103 ? 'r103' : ''}`, QUAD_VS, PICTURE_FS(kind, r103));
+    const prog = this.program(`picture${kind}${r103 ? 'r103' : ''}`, PICTURE_VS, PICTURE_FS(kind, r103));
     gl.useProgram(prog);
+    // visible part in picture coordinates (vUv: origin bottom left)
+    gl.uniform4f(this.u(prog, 'uUv'), (vis.x - rect.x) / rect.w, (rect.y + rect.h - vis.y - vis.h) / rect.h, vis.w / rect.w, vis.h / rect.h);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, t.tex);
     const { kr, kb } = LUMA[src.colorspace];
@@ -860,7 +882,6 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
     gl.uniform1i(this.u(prog, 'uBands'), Math.min(12, p.bands.length));
     gl.bindVertexArray(this.vao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.disable(gl.SCISSOR_TEST);
     return true;
   }
 
@@ -868,10 +889,12 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
    * A/B difference: both pictures rendered offscreen (display-encoded, as shown), then
    * max |A − B| over R, G, B × gain as grey.
    */
-  drawPictureDiff(key: string, a: Source, pa: PictureParams, b: Source, pb: PictureParams, rect: Rect, gain: number) {
-    const gl = this.gl, vp = this.viewport(rect);
+  drawPictureDiff(key: string, a: Source, pa: PictureParams, b: Source, pb: PictureParams, rect: Rect, gain: number, clip?: Rect) {
+    const vis = clip ? intersect(rect, clip) : rect;
+    if (!vis) return true;
+    const gl = this.gl, vp = this.viewport(vis);
     const ta = this.accum(`${key}#da`, vp.w, vp.h), tb = this.accum(`${key}#db`, vp.w, vp.h);
-    if (!this.drawPicture(a, rect, pa, undefined, ta) || !this.drawPicture(b, rect, pb, undefined, tb)) return false;
+    if (!this.drawPicture(a, rect, pa, vis, ta) || !this.drawPicture(b, rect, pb, vis, tb)) return false;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(vp.x, vp.y, vp.w, vp.h);
     const prog = this.program('abdiff', QUAD_VS, `#version 300 es

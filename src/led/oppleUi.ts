@@ -11,7 +11,8 @@ import {
   COLOUR_LABELS, WHITE_TARGETS, buildPlan, evaluatePoints, meterCsv, summarize, whiteCorrection,
   type MeterResults, type PlanStep, type PointStat, type WhiteCorrection, type XYZ,
 } from './oppleCheck';
-import type { WallConfig } from './wall';
+import { PROCESSOR_LABELS, type WallConfig } from './wall';
+import { cabinetMatch, cabinetMatchHint, whitePointHints } from './processorHints';
 
 export interface MeterCheckHost {
   wall: () => WallConfig;
@@ -114,6 +115,13 @@ export function mountMeterCheck(box: HTMLElement, host: MeterCheckHost) {
     return whiteCorrection(pt.W, target, ok ? { xy: [[n[0], n[1]], [n[2], n[3]], [n[4], n[5]]] } : {});
   }
 
+  /** Entered primary chromaticities, if complete. */
+  function enteredXy(): [XY, XY, XY] | undefined {
+    const n = primXy.map(Number);
+    return primSource === 'xy' && primXy.every((v) => v.trim() !== '') && n.every((v) => v > 0 && v < 1) ? [[n[0], n[1]], [n[2], n[3]], [n[4], n[5]]] : undefined;
+  }
+  let currentK = 6504;
+
   function drawMap() {
     const vals = new Map<string, number>();
     for (const s of stats) vals.set(s.point, mapMode === 'dy' ? s.dY : mapMode === 'duv' ? s.duv * 1000 : s.cct);
@@ -207,11 +215,26 @@ export function mountMeterCheck(box: HTMLElement, host: MeterCheckHost) {
         h('tr', {}, h('td', {}, 'Ist'), h('td', {}, de(c.ist.xy[0], 4)), h('td', {}, de(c.ist.xy[1], 4)), h('td', {}, de(c.ist.cct, 0)), h('td', {}, sg(c.ist.duv, 4))),
         h('tr', {}, h('td', {}, 'Soll'), h('td', {}, de(c.soll.xy[0], 4)), h('td', {}, de(c.soll.xy[1], 4)), h('td', {}, de(c.soll.cct, 0)), h('td', {}, sg(c.soll.duv, 4))),
         h('tr', {}, h('td', {}, 'Δ'), h('td', {}, sg(c.ist.xy[0] - c.soll.xy[0], 4)), h('td', {}, sg(c.ist.xy[1] - c.soll.xy[1], 4)), h('td', {}, sg(c.ist.cct - c.soll.cct, 0)), h('td', {}, `Δu′v′ ${de(c.duv, 4)}`))),
-      c.gains ? h('p', {}, h('b', {}, `Korrekturhinweis: Gain R ${de(c.gains[0], 1)} % · G ${de(c.gains[1], 1)} % · B ${de(c.gains[2], 1)} %`),
-        ` (relativ zum jetzigen Stand, größter Kanal = 100 %; Weiß danach ≈ ${de(c.luminanceAfter ?? NaN, 0)} % so hell; Primärvalenzen ${c.primariesSource}${c.additivity != null ? `, Additivität R+G+B↔W ${de(c.additivity, 1)} %` : ''}). ` +
-        'Im Prozessor als Kanal-Helligkeit/Gain eintragen (NovaLCT: Advanced Adjustment, Helligkeit je Rot/Grün/Blau; Brompton Tessera bietet dafür den Farbtemperatur-Regler), danach neu messen. Annahme: Kanäle addieren sich, Gains wirken linear auf das Licht.')
-        : h('p', { class: 'hint' }, 'Keine Gains: dafür Primärfarben mitmessen oder Primärvalenzen eingeben. Angezeigt wird nur Δ.'),
+      c.gains ? h('p', {}, h('b', {}, `Korrekturhinweis: R ${de(c.gains[0], 1)} % · G ${de(c.gains[1], 1)} % · B ${de(c.gains[2], 1)} % des jetzigen Werts`),
+        ` (größter Kanal = 100 %; Weiß danach ≈ ${de(c.luminanceAfter ?? NaN, 0)} % so hell; Primärvalenzen ${c.primariesSource}${c.additivity != null ? `, Additivität R+G+B↔W ${de(c.additivity, 1)} %` : ''}). Annahme: Kanäle addieren sich, Gains wirken linear auf das Licht.`)
+        : h('p', { class: 'hint' }, 'Keine Kanalwerte: dafür Primärfarben mitmessen oder Primärvalenzen eingeben. Angezeigt wird nur Δ.'),
+      host.wall().processor === 'brompton' ? h('div', { class: 'row' }, lab('Tessera-Regler steht auf', numIn(currentK, 'Aktuelle Einstellung „Colour Temperature“ in K (Standard 6504)', (n) => { currentK = Math.min(11000, Math.max(2000, n)); render(); }, '1', 70), 'K')) : '',
+      ...whitePointHints(host.wall().processor, c, currentK).map((hint) => h('div', {}, h('b', {}, `${PROCESSOR_LABELS[host.wall().processor]} – ${hint.title}`), h('ul', {}, ...hint.lines.map((l) => h('li', {}, l))))),
+      matchBox(),
       ...c.warnings.map((w) => h('p', { class: 'note' }, w)));
+  }
+
+  /** Per-cabinet gains to match the reference cabinet. */
+  function matchBox() {
+    if (stats.length < 2) return '';
+    const m = cabinetMatch(results, ref, enteredXy());
+    const ok = m.rows.filter((r) => r.gains);
+    if (!ok.length) return h('p', { class: 'hint' }, 'Angleich der Cabinets an die Referenz: Primärfarben je Cabinet mitmessen oder Primärvalenzen eingeben.');
+    return h('div', {},
+      h('b', {}, `Angleich an Referenz-Cabinet ${ref}`),
+      h('p', { class: 'hint' }, `${cabinetMatchHint(host.wall().processor)} Werte in % der jetzigen Einstellung; alle gemeinsam so skaliert, dass kein Kanal über 100 % muss (Faktor ${de(m.scale * 100, 1)} % – das dunkelste Cabinet bestimmt die Helligkeit). Trendmessung: nach dem Eintragen neu messen.`),
+      h('table', {}, h('tr', {}, ...['Cabinet', 'R %', 'G %', 'B %', 'Hinweis'].map((t) => h('th', {}, t))),
+        ...m.rows.map((r) => h('tr', {}, h('td', {}, r.point), ...(r.gains ? r.gains.map((g) => h('td', {}, de(g, 1))) : [h('td', {}, '–'), h('td', {}, '–'), h('td', {}, '–')]), h('td', { class: 'hint' }, r.warnings.join(' '))))));
   }
 
   render();

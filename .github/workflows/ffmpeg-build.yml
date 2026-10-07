@@ -102,8 +102,9 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
-          path: dist
+          path: ffdist
           merge-multiple: true
+      # own folder names: the checkout already has src/ and may have dist/
       - name: Sources (SHA-256 checked) and release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -111,11 +112,11 @@ jobs:
           set -eu
           # same checked download as the build (SHA-256, or the commit hash for git sources)
           FFBUILD_DIR="$PWD/ffbuild" bash scripts/ffmpeg-build/build.sh --sources-only
-          mkdir -p src
-          cp ffbuild/sources/* src/
-          cp scripts/ffmpeg-build/build.sh scripts/ffmpeg-build/sources.txt src/
-          name="$(ls dist/*.zip | head -1 | xargs basename | sed -E 's/^(ffmpeg-[^-]+-[^-]+)-.*/\1/')"
-          (cd dist && sha256sum *.zip; cd ../src && sha256sum *) > SHA256SUMS
+          mkdir -p ffsrc
+          cp ffbuild/sources/* ffsrc/
+          cp scripts/ffmpeg-build/build.sh scripts/ffmpeg-build/sources.txt ffsrc/
+          name="$(ls ffdist/*.zip | head -1 | xargs basename | sed -E 's/^(ffmpeg-[^-]+-[^-]+)-.*/\1/')"
+          (cd ffdist && sha256sum *.zip; cd ../ffsrc && sha256sum *) > SHA256SUMS
           cat SHA256SUMS
           {
             echo "Own ffmpeg build of LZ Scopes: FFmpeg + x264 + x265 (10 bit) + libsrt + mbedTLS + zlib, static, GPL-3.0-or-later, no nonfree."
@@ -123,4 +124,4 @@ jobs:
             echo "Built by .github/workflows/ffmpeg-build.yml from scripts/ffmpeg-build/ at ${GITHUB_SHA}. The source archives below are the exact, SHA-256-checked inputs (GPLv3 section 6d)."
             echo "Not an app release; the desktop app pins these files in scripts/ffmpeg-builds.json."
           } > notes.md
-          gh release create "$name" dist/*.zip src/* SHA256SUMS --target "$GITHUB_SHA" --prerelease --latest=false --title "$name (ffmpeg für LZ Scopes)" --notes-file notes.md
+          gh release create "$name" ffdist/*.zip ffsrc/* SHA256SUMS --target "$GITHUB_SHA" --prerelease --latest=false --title "$name (ffmpeg for LZ Scopes)" --notes-file notes.md

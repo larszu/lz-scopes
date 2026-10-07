@@ -22,6 +22,15 @@ contextBridge.exposeInMainWorld('lzsDesktop', {
   },
   /** Release a folder to the bridge's watch-folder input (native dialog); → { name, url } or null. */
   watchFolder: () => ipcRenderer.invoke('lzs:watch-folder'),
+  /** Test videos (#52): status, download (checked SHA-256), cancel, delete; progress events. */
+  testVideos: {
+    status: (list) => ipcRenderer.invoke('lzs:tv-status', list),
+    download: (entry) => ipcRenderer.invoke('lzs:tv-download', entry),
+    cancel: (id) => ipcRenderer.invoke('lzs:tv-cancel', id),
+    remove: (entry) => ipcRenderer.invoke('lzs:tv-delete', entry),
+    folder: () => ipcRenderer.invoke('lzs:tv-folder'),
+    onProgress: (cb) => { const f = (_e, m) => cb(m); ipcRenderer.on('lzs:tv-progress', f); return () => ipcRenderer.removeListener('lzs:tv-progress', f); },
+  },
   /** Native application menu (#53): set the model, receive the chosen command ids. */
   menu: {
     set: (model) => ipcRenderer.send('lzs:menu-set', model),

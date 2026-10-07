@@ -43,8 +43,8 @@ export class ModuleInstance extends InstanceBase<ModuleConfig> {
 
   /** Send a command; errors show up in the log and the connection status. */
   async run(command: Command): Promise<void> {
-    const reply = await (this.client?.send(command) ?? Promise.resolve({ ok: false, error: 'Nicht verbunden' }))
-    if (!reply.ok) this.log('warn', `${command.cmd}: ${reply.error ?? 'fehlgeschlagen'}`)
+    const reply = await (this.client?.send(command) ?? Promise.resolve({ ok: false, error: 'Not connected' }))
+    if (!reply.ok) this.log('warn', `${command.cmd}: ${reply.error ?? 'failed'}`)
   }
 
   private rebuild(): void {
@@ -54,8 +54,8 @@ export class ModuleInstance extends InstanceBase<ModuleConfig> {
   }
 
   private status(): void {
-    if (!this.bridgeUp) this.updateStatus(InstanceStatus.ConnectionFailure, 'Bridge nicht erreichbar')
-    else if (!this.appConnected) this.updateStatus(InstanceStatus.UnknownWarning, 'Bridge erreichbar, LZ-Scopes-Fenster nicht verbunden')
+    if (!this.bridgeUp) this.updateStatus(InstanceStatus.ConnectionFailure, 'Bridge not reachable')
+    else if (!this.appConnected) this.updateStatus(InstanceStatus.UnknownWarning, 'Bridge reachable, LZ Scopes window not connected')
     else this.updateStatus(InstanceStatus.Ok)
   }
 

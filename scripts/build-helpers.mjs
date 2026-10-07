@@ -23,8 +23,10 @@ const want = (name) => !only.length || only.includes(name);
 const run = (cmd, args) => { console.log(`> ${cmd} ${args.join(' ')}`); execFileSync(cmd, args, { stdio: 'inherit' }); };
 
 function buildDeckLink() {
-  const sdk = process.env.DECKLINK_SDK_DIR;
-  if (!sdk) return console.log('decklink: übersprungen – DECKLINK_SDK_DIR nicht gesetzt (DeckLink SDK von blackmagicdesign.com/developer)');
+  // DECKLINK_SDK_DIR, else the include files fetched by scripts/decklink-sdk-fetch.mjs
+  const fetched = join(root, 'vendor', 'decklink-sdk');
+  const sdk = process.env.DECKLINK_SDK_DIR || (existsSync(fetched) ? fetched : '');
+  if (!sdk) return console.log('decklink: übersprungen – erst npm run decklink:fetch (oder DECKLINK_SDK_DIR setzen)');
   const src = join(root, 'helpers', 'decklink', 'lz-decklink.cpp');
   if (process.platform === 'darwin') {
     const inc = [join(sdk, 'Mac', 'include'), sdk].find((d) => existsSync(join(d, 'DeckLinkAPI.h')));
@@ -35,8 +37,17 @@ function buildDeckLink() {
     const inc = [join(sdk, 'Linux', 'include'), sdk].find((d) => existsSync(join(d, 'DeckLinkAPI.h')));
     if (!inc) throw new Error(`DeckLinkAPI.h nicht gefunden unter ${sdk}/Linux/include`);
     run('g++', ['-std=c++17', '-O2', `-I${inc}`, src, join(inc, 'DeckLinkAPIDispatch.cpp'), '-ldl', '-lpthread', '-o', join(bin, 'lz-decklink')]);
+  } else if (process.platform === 'win32') {
+    // MSVC developer environment needed (midl, cl): "x64 Native Tools" console or, in CI, ilammy/msvc-dev-cmd
+    const inc = join(sdk, 'Win', 'include');
+    if (!existsSync(join(inc, 'DeckLinkAPI.idl'))) throw new Error(`DeckLinkAPI.idl nicht gefunden unter ${inc}`);
+    const gen = join(root, 'helpers', 'decklink', 'win-gen');
+    mkdirSync(gen, { recursive: true });
+    run('midl', ['/nologo', '/env', 'x64', '/h', 'DeckLinkAPI.h', '/iid', 'DeckLinkAPI_i.c', '/out', gen, '/I', inc, join(inc, 'DeckLinkAPI.idl')]);
+    run('cl', ['/nologo', '/EHsc', '/O2', '/std:c++17', '/utf-8', `/I${gen}`, src, join(gen, 'DeckLinkAPI_i.c'), `/Fo${gen}\\`,
+      `/Fe${join(bin, 'lz-decklink.exe')}`, 'ole32.lib', 'oleaut32.lib']);
   } else {
-    console.log('decklink: Windows-Build siehe helpers/decklink/README.md (MIDL + cl.exe)');
+    console.log(`decklink: ${process.platform} nicht unterstützt`);
   }
 }
 

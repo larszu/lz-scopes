@@ -27,7 +27,7 @@ Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen
 | `source.select` | `source`; `panel` optional (ohne = alle Panels) |
 | `layout.preset` | `preset`: 1–6, Kennung (`lc`) oder Beschriftung (`2x2`, `Colorist`) |
 | `layout.load` | `name` einer gespeicherten Layout-Konfiguration |
-| `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `qclog`, `hist`, `stats`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `clock`) |
+| `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `qclog`, `hist`, `stats`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `clock`, `genlock`) |
 | `panel.maximize` | `panel`, `mode` `toggle`\|`on`\|`off`; `off` ohne `panel` = zurück |
 | `freeze` | `mode` `toggle`\|`on`\|`off` |
 | `qc.clear` | – (QC-Protokoll leeren; Zustand `qc`: `active`, `total`, `last`) |
@@ -44,7 +44,7 @@ Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen
 | `audio.pause` | `mode` `toggle`\|`on`\|`off`, `source` optional: I und LRA anhalten/fortsetzen (Tech 3341) |
 | `generator` | `mode` `toggle`\|`on`\|`off`, `signal` optional (`sine`, `ebu-ident`, `glits`, `blits`, `ebu-multi`, `ident-lr`, `pink`, `pink-band`, `white`, `sweep`, `steps`, `polarity`, `avsync`, …), `freq` 10–20000 Hz, `level` −90–0 dBFS; über −6 dBFS nur mit `"force": true` |
 
-Antwort: `{ ok, result?, error?, state }`. Status `400` = ungültiger Befehl, `422` = nicht ausführbar (z. B. Szene unbekannt), `503` = kein Hauptfenster, `401`/`403` = Zugriff.
+Antwort: `{ ok, result?, error?, state }`. Status `400` = ungültiger Befehl, `422` = nicht ausführbar (z. B. Szene unbekannt), `503` = kein Hauptfenster, `401`/`403` = Zugriff. `error` ist ein englischer Text (z. B. `source.select: source missing`, `Token missing or wrong`); Skripte sollten sich auf den Status verlassen, nicht auf den Wortlaut.
 
 ## Zustand (Feedbacks)
 

@@ -93,7 +93,7 @@ Anleitung zu Resolve, Fenster-Capture, Ordnern, Clean Feed und Capture-Karten: [
 | Testbild-Generator (siehe unten) | direkt im Browser, auch als Ausgabefenster |
 | Kamera, Bildschirm, Video-/Bilddatei | direkt im Browser |
 | `device:` – Capture-Karten, die sich als Systemgerät melden (AVFoundation/DirectShow/V4L2) | Bridge: ffmpeg mit festem Modus, Rohformat (10 bit, wenn angeboten) und wählbarer Matrix; auch am entfernten Bridge-Rechner |
-| `decklink:<n>` – Blackmagic DeckLink/UltraStudio | Bridge + eigener Helfer (DeckLink SDK, [helpers/decklink](helpers/decklink/README.md)); nur wenn gebaut und Desktop Video installiert, **mit Hardware ungeprüft** |
+| `decklink:<n>` – kompatibel mit Blackmagic Design DeckLink | Bridge + eigener Helfer ([helpers/decklink](helpers/decklink/README.md)), in der Desktop-App enthalten (macOS universal, Windows); aktiv nur mit installiertem Treiber Desktop Video, sonst „Desktop Video nicht installiert“; **mit Hardware ungeprüft** |
 | `ndi:<Quelle>` – NDI® | Bridge + NDI-Helfer ([helpers/ndi](helpers/ndi/README.md)), lädt die vom Nutzer installierte NDI-Runtime ([ndi.video](https://ndi.video/)); UYVY bzw. 16 bit P216; nur im Loopback mit eigenem Testsender geprüft |
 | `resolve:` – DaVinci Resolve (Studio, externes Scripting „Lokal“) | Bridge: gegradetes Bild über die Scripting-API in 16 bit; ein laufendes Resolve erscheint von selbst in der Quellenleiste („läuft: Projekt / Timeline – Verbinden“) |
 | `folder:<Name>` – Watch-Ordner auf dem Bridge-Rechner (Exporte aus Lightroom, Capture One, Resolve) | Bridge: neuestes TIFF/DPX/PNG/JPEG/WebP/EXR in voller Tiefe; Ordner nur ausdrücklich freigegeben (`--watch-dir`, `LZS_WATCH_DIRS`, Desktop-App per Dialog) |
@@ -164,7 +164,10 @@ Die Quelle *Testbild* erzeugt die Muster selbst, in 720p bis 2160p oder in freie
 - **HDR** PQ-Graukeil 0–10 000 cd/m², HLG-Graukeil, PQ-Verlauf mit Referenzweiß 203, PLUGE nach BT.814-4 (Higher level 38,2 %) und Graukarte 38 % (BT.2408) jeweils für HLG und PQ; die Scopes schalten dabei automatisch auf PQ bzw. HLG
 - **LZ Displaytest** die 20 Displaytestbilder (1920×1080) aus `Broadcast/displaytest`
 - **LED-Wand** Cabinet-Raster mit ID (auch mit Modulraster), Pixel-Mapping (1-px-Gitter, Diagonale, R/G/B/W-Eckpixel je Cabinet), Scroll 1 px/Frame, Vollfeld mit freiem Pegel und Kanalwahl, feine Graustufen und Rampen für Low-Level, Shutter/Genlock mit Frame-Zähler, Moiré, Messfeld mit Patch-Sequenzer (u. a. Unreal-Sätze R/G/B/W und 5×5×5)
-- **Eigene Bilder** über *+ Bilder*, gelten für die laufende Sitzung
+- **Eigene Bilder** über *+ Bilder* oder *Quellen → Eigene Testbilder und Logo …*: bleiben im Browser bzw. im Profil der Desktop-App gespeichert (IndexedDB), bis sie gelöscht werden, auch im Ausgabefenster
+- **Logo**: ein hochgeladenes Bild als Logo wählen; dann gibt es *Eigenes Logo* (mittig auf Schwarz, höchstens halbe Bildhöhe) und *Testbild mit Kreis und Uhr + Logo*
+- **Favoriten**: ☆ neben der Testbild-Auswahl; Favoriten stehen oben in der Liste
+- **Testvideos** (*Quellen → Testvideos …*): Big Buck Bunny (CC BY 3.0, Blender Foundation) von 320×180 bis 2160p60 in der Fassung 2008 und der Neuberechnung 2013, dazu die HDR-Fassungen (P3/PQ, 8-bit-H.264) von Cosmos Laundromat und Meridian (CC BY 4.0, Netflix Open Content). Nicht im Programm: Die Desktop-App lädt sie auf Klick vom offiziellen Server, prüft Größe und SHA-256 und behält sie im Profilordner; im Browser verhindern die Server das Laden (kein CORS), dort führt ein Link zur Datei. Lizenz und Namensnennung stehen im Dialog und in [THIRD_PARTY.md](THIRD_PARTY.md), Recherche in [docs/research/testvideos.md](docs/research/testvideos.md)
 
 Optional lässt sich eine Kennung einblenden. *⧉ Ausgeben* öffnet das Muster in einem eigenen Fenster (`?out=<id>&w=&h=&label=`) für Monitor, Beamer oder Capture: `←`/`→` wechseln, `F` Vollbild, `L` Label. In nativer Auflösung und im Vollbild wird 1:1 ausgegeben.
 
@@ -225,12 +228,28 @@ Eigene Festlegungen (nicht genormt): Kanal-Ident L/R (L ein Ton, R zwei Töne, Z
 
 Panel-Typ **Uhr / Timecode**, dazu wahlweise eine Einblendung im Bild-Panel (⚙ → Uhr). Quellen und Befunde: [docs/research/clock-ptp.md](docs/research/clock-ptp.md).
 
+Panel-Typ **Referenz / Genlock**: Haustakt am Referenzeingang einer DeckLink. Es zeigt, ob die Referenz gelockt ist, das erkannte Format (Black Burst bei SD, Tri-Level bei HD), den eingestellten Genlock-Offset und den Eingangsstatus, alles aus dem DeckLink-SDK. Den Zeitversatz zwischen Eingang und Referenz meldet das SDK nicht, deshalb zeigt das Panel keinen an. Dazu kommen die Lage des Bildtakts von DeckLink-/NDI-Quellen im SMPTE-ST-2059-1-Raster (Systemuhr oder PTP; Lage, Streuung, Drift in ppm) und der Timecode der Karte. Mit Hardware ungeprüft. Recherche: [docs/research/genlock.md](docs/research/genlock.md).
+
 - **Über 30 fps** zählt der Timecode 0…49/59 wie Schnittprogramme und FFmpeg; Frame-Paare nach ST 12-1 als Option. LTC läuft dort mit 25/30 Codewörtern (Paare).
 - **Tageszeit** nach SMPTE ST 2059-1: Systemzeit → TAI (IERS Bulletin C 72, TAI − UTC = 37 s) → Timecode mit Daily Jam, 23,98 … 60 fps, DF/NDF, Frame-Phase zur SMPTE-Epoche. Gekennzeichnet als „Systemuhr – keine Referenz“, solange kein PTP die Uhr korrigiert.
 - **Quell-Timecode**: Start-Timecode des Containers (ffprobe-Tag), GOP-/SEI-Timecode je Bild (ffmpeg `showinfo`), Timeline-Timecode aus DaVinci Resolve, Videodateien im Browser aus `currentTime`; Differenz zur Tageszeit in Frames.
 - **LTC** aus dem Ton jeder Quelle: eigener Biphase-Mark-Leser (24–30 fps, vorwärts und rückwärts).
 - **PTP-Monitor** in der Bridge (eigener Code, UDP 319/320, 224.0.1.129): Grandmaster, Domain, clockClass, Nachrichtenraten, SMPTE-SM-TLV (Lock, Lokal-Offset, nächster Jam), Offset und auf Wunsch Mean Path Delay – als Schätzung mit Software-Zeitstempeln. Ohne PTP im Netz: „kein PTP empfangen“. Die UI aus Bridge oder Desktop-App darf das direkt; eine andere Web-Oberfläche (z. B. GitHub Pages) erst nach Freigabe auf der Seite `/allow` der Bridge (⚙ → „In der Bridge zulassen …“).
 - **ST-2110-RTP-Prüfung**: RTP-Zeitstempel (90 kHz, Offset 0 zur Epoche) gegen Ankunftszeit und Frame-Raster.
+
+## Touch Shading
+
+**Scopes → Touch Shading** steuert eine Kamera direkt an den Scopes:
+- **Parade:** Kanal unten greifen = Black R/G/B, oben = White R/G/B.
+- **Luma-Waveform:** Schatten = Master Black, Mitten = Master Gamma, Lichter = White.
+- **Vectorscope:** radial = Sättigung, drehen = Hue (nur im Simulator).
+
+Die Kommandos gehen über [lz-camera-bridge](https://github.com/larszu/lz-camera-bridge), in deren Vokabular.
+- Ohne Haken bei *Shading aktiv* und ohne gewähltes Ziel bewegt sich nichts.
+- Jede Änderung ist in der Schrittweite begrenzt.
+- **■ Ausgangswerte** (Esc) stellt die Werte vom Sitzungsbeginn wieder her.
+
+Ein Simulator läuft ohne Kamera. An einer Sony SRG-A40 steuert die Bridge über HTTP-CGI R- und B-Gain des Weißabgleichs (gemessen). Hue, Schwarz und Gamma gibt es dort nicht. Mehr in [docs/research/touch-shading.md](docs/research/touch-shading.md).
 
 ## Einbetten
 
@@ -271,7 +290,7 @@ Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in
 - Sub-Black und Super-White bleiben nur im Bridge-Modus *16 bit Y′CbCr* und bei den 16-bit-Testbildern erhalten. R′G′B′-Streams (8/16 bit) und Browser-Quellen sind auf 0–100 % beschnitten; die R-103-Prüfung weist dann darauf hin.
 - Die R-103-Prüfung misst am Analysebild. Bei skalierter Analysebreite ist sie nicht normgerecht (Breite „nativ“ wählen).
 - Die Ausgabefenster rechnen über 8 bit, wo der Browser es erlaubt (Testbilder: float16-Canvas mit exakten 10-bit-Codes, `R` wechselt zwischen Pegel 0–100 % und Codes 1:1 für einen Monitor in Limited Range; Scope-Fenster: WebGL-Puffer RGBA16F). Das Fenster zeigt, was die Pipeline liefert; ob die Verbindung zum Monitor 10 bit trägt, ist unbekannt – Prüfmuster *10-bit-Rampe* oder Capture-Karte. Ein 10-bit-Stream (`codec=hevc10|hevc422|v210|prores`, v210 bit-exakt) läuft über die Bridge. Siehe [docs/research/10bit-ausgabe.md](docs/research/10bit-ausgabe.md).
-- Kein AJA. NDI nur mit installierter NDI-Runtime, ohne Ton, mit echten Quellen im Netz ungeprüft. DeckLink nur über den selbst zu bauenden Helfer (ffmpegs eigener DeckLink-Weg ist „nonfree“ und nicht weitergebbar) und noch nie mit Hardware gelaufen.
+- Kein AJA. NDI nur mit installierter NDI-Runtime, ohne Ton, mit echten Quellen im Netz ungeprüft. DeckLink nur über den eigenen Helfer (ffmpegs eigener DeckLink-Weg ist „nonfree“ und nicht weitergebbar); der Helfer ist in der Desktop-App enthalten, lief aber noch nie mit Hardware, der Windows-Helfer ist nur kompiliert.
 - Audio: Browser liefern über `getUserMedia` höchstens 2 Kanäle; Mehrkanal kommt nur über die Bridge. Ungeprüft: Mehrkanal-Interfaces und Dante mit echter Hardware, die Bridge unter Windows (Ersatzweg für `pipe:3`, DirectShow-Ton), der A/V-Versatz gegen eine echte Kamera.
 - Browser-Quellen (Kamera, Datei) liefern immer 8 bit und durchlaufen das Farbmanagement des Browsers.
 

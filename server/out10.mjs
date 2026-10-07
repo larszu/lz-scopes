@@ -14,6 +14,7 @@
 
 import { spawn } from 'node:child_process';
 import { ffmpegFor, noFfmpegMessage } from './ffmpeg.mjs';
+import { bmsg, toMsg } from './messages.mjs';
 
 export const CODECS10 = {
   hevc10: { args: (fps) => ['-c:v', 'libx265', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p10le', '-x265-params', `repeat-headers=1:keyint=${fps * 2}:log-level=error`], mux: 'ts' },
@@ -33,20 +34,20 @@ export function parseFrame10(buf) {
   return { w, h, full: (buf[8] & 1) === 1, matrix: buf[9] === 1 ? '2020' : '709', transfer: tf === 1 ? 'pq' : tf === 2 ? 'hlg' : 'sdr' };
 }
 
-/** Container for target + codec, or an error text. */
+/** Container for target + codec, or { error, code?, params? } (server/messages.mjs). */
 export function out10Format(target, codec) {
   const c = CODECS10[codec];
   if (!c) return { error: `Codec: ${Object.keys(CODECS10).join(', ')}` };
-  if (typeof target !== 'string' || target.length > 2048) return { error: 'Push-Ziel fehlt' };
-  if (/^rtmps?:\/\//i.test(target)) return { error: 'RTMP/FLV trägt kein 10-bit-HEVC (ffmpeg 6.0) – udp://, tcp://, srt://, rtp:// oder rtsp:// verwenden' };
+  if (typeof target !== 'string' || target.length > 2048) return { error: 'Push target missing', code: 'push.noTarget' };
+  if (/^rtmps?:\/\//i.test(target)) return { error: 'RTMP/FLV does not carry 10-bit HEVC (ffmpeg 6.0) – use udp://, tcp://, srt://, rtp:// or rtsp://', code: 'out10.rtmp' };
   if (c.mux === 'nut') {
-    if (!/^(tcp|srt|udp):\/\//i.test(target)) return { error: `${codec} geht nur über tcp://, srt:// oder udp:// (NUT-Container)` };
+    if (!/^(tcp|srt|udp):\/\//i.test(target)) return { error: `${codec} only works over tcp://, srt:// or udp:// (NUT container)`, code: 'out10.nut', params: { codec } };
     return { format: 'nut' };
   }
   if (/^rtsp:\/\//i.test(target)) return { format: 'rtsp' };
   if (/^rtp:\/\//i.test(target)) return { format: 'rtp_mpegts' };
   if (/^(udp|tcp|srt):\/\//i.test(target)) return { format: 'mpegts' };
-  return { error: 'Push-Ziel nur udp://, tcp://, srt://, rtp:// oder rtsp://' };
+  return { error: 'Push target only udp://, tcp://, srt://, rtp:// or rtsp://', code: 'out10.scheme' };
 }
 
 /** ffmpeg arguments: raw yuv422p10le on stdin → codec → target. */
@@ -74,9 +75,9 @@ export function out10Args({ w, h, fps, codec, target, full, matrix, transfer }) 
 export function handleOut10(ws, q, ffmpegs) {
   const target = q.get('target') ?? '', codec = q.get('codec') ?? '';
   const fps = Math.min(60, Math.max(1, Number(q.get('fps')) || 25));
-  const msg = (type, message) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type, message }));
+  const msg = (type, m) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type, ...toMsg(m) }));
   const f = out10Format(target, codec);
-  if (f.error) { msg('error', f.error); ws.close(); return; }
+  if (f.error) { msg('error', { message: f.error, code: f.code, params: f.params }); ws.close(); return; }
   let ff = null, key = '', last = null, closed = false, err = '';
   const start = async (meta) => {
     const ffmpeg = await ffmpegFor(target, ffmpegs);
@@ -87,8 +88,8 @@ export function handleOut10(ws, q, ffmpegs) {
     ff = p;
     p.stderr.on('data', (d) => { err = (err + d).slice(-1000); });
     p.stdin.on('error', () => {});
-    p.on('error', (e) => msg('error', `ffmpeg nicht startbar: ${e.message}`));
-    p.on('close', (code) => { if (ff === p) ff = null; if (code && !closed) msg('error', `Push beendet: ${err.trim().split('\n').pop() || code}`); });
+    p.on('error', (e) => msg('error', bmsg('ffmpeg.spawn', `ffmpeg cannot be started: ${e.message}`, { reason: e.message })));
+    p.on('close', (code) => { if (ff === p) ff = null; if (code && !closed) { const why = err.trim().split('\n').pop() || String(code); msg('error', bmsg('push.exit', `Push ended: ${why}`, { reason: why })); } });
     msg('live', `10 bit ${codec} ${meta.w}×${meta.h} → ${target}`);
   };
   const timer = setInterval(() => {
@@ -100,7 +101,7 @@ export function handleOut10(ws, q, ffmpegs) {
     if (!isBinary) return;
     const buf = Buffer.from(data);
     const meta = parseFrame10(buf);
-    if (!meta) { msg('error', 'kein gültiges 10-bit-Bild (Kopf LZ10, gerade Breite, Größe)'); return; }
+    if (!meta) { msg('error', bmsg('out10.badFrame', 'no valid 10-bit picture (header LZ10, even width, size)')); return; }
     const k = JSON.stringify(meta);
     if (k !== key) { key = k; ff?.stdin.end(); ff?.kill('SIGTERM'); ff = null; start(meta); }
     last = buf.subarray(HEADER10);

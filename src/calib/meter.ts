@@ -3,6 +3,7 @@
 
 import type { XYZ } from './colorimetry';
 import { t } from '../i18n';
+import { bridgeMessage } from '../i18n/bridgeMessage';
 
 export interface MeterInfo { found: boolean; path: string | null; instruments: { port: number; name: string }[]; version?: string | null }
 export interface MeterOptions { port?: number; displayType?: string; correction?: { name: string; text: string }; skipCal?: boolean }
@@ -35,10 +36,10 @@ export class Meter {
       ws.onmessage = (e) => {
         const m = JSON.parse(String(e.data));
         if (m.type === 'log') this.onLog(m.text);
-        else if (m.type === 'status') this.onStatus(m.message, 'info');
+        else if (m.type === 'status') this.onStatus(bridgeMessage(m), 'info');
         else if (m.type === 'ready') { this.ready = true; this.onStatus(t('calib.meter.ready'), 'ok'); }
         else if (m.type === 'reading') { const p = this.pending; this.pending = null; p?.ok(m.xyz); }
-        else if (m.type === 'error') { this.onStatus(m.message, 'error'); this.reject(new Error(m.message)); }
+        else if (m.type === 'error') { this.onStatus(bridgeMessage(m), 'error'); this.reject(new Error(bridgeMessage(m))); }
         else if (m.type === 'closed') { this.ready = false; this.onStatus(t('calib.meter.endedCode', { code: m.code ?? '?' }), 'info'); this.reject(new Error(t('calib.meter.ended'))); }
       };
     });

@@ -25,7 +25,7 @@ export function avcCodecString(profile, compat, level) {
 
 /** Parse an AVCDecoderConfigurationRecord: NAL length size, SPS and PPS lists, codec string. */
 export function parseAvcConfig(rec) {
-  if (rec.length < 7 || rec[0] !== 1) throw new Error('AVCDecoderConfigurationRecord ungültig');
+  if (rec.length < 7 || rec[0] !== 1) throw new Error('AVCDecoderConfigurationRecord invalid');
   const lengthSize = (rec[4] & 3) + 1;
   let i = 5;
   const sps = [], pps = [];
@@ -65,7 +65,7 @@ export class FlvH264Demuxer {
     this.buf = this.buf.length ? Buffer.concat([this.buf, chunk]) : chunk;
     if (!this.headerDone) {
       if (this.buf.length < 13) return;
-      if (this.buf.toString('ascii', 0, 3) !== 'FLV') throw new Error('kein FLV');
+      if (this.buf.toString('ascii', 0, 3) !== 'FLV') throw new Error('not FLV');
       const size = this.buf.readUInt32BE(5);
       this.buf = this.buf.subarray(size + 4); // header + PreviousTagSize0
       this.headerDone = true;

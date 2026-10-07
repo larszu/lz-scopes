@@ -1,6 +1,7 @@
 // Draws one scope panel (WebGL trace + 2D overlay). Shared by the full app and the
 // embeddable ScopeView (src/embed.ts).
 
+import { drawGenlockPanel, type GenlockOptions } from './genlock';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, mul3, rgbToXyzMatrix, bandRange, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId, type HdrPreview } from './color';
 import {
   drawChannelPlotGraticule, drawCubeGraticule, drawLutVolume, drawDiamondGraticule, drawSatLumGraticule, diamondPoint, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
@@ -63,6 +64,8 @@ export interface PanelState {
   waveZoom?: WaveZoom; channels?: WaveChannels; names?: boolean;
   /** clock panel settings (src/clock/panel.ts); also used by the picture overlay */
   clock?: Partial<ClockOptions>;
+  /** reference/genlock panel (src/genlock.ts) */
+  genlock?: Partial<GenlockOptions>;
   /** scatter scopes: analogue beam look (crt.ts) */
   crt?: Partial<CrtSettings>;
   /** Min/Max per line: limits ('r103' −5/105 %, 'legal' 0/100 %) and up to 4 target lines in % */
@@ -207,6 +210,7 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
   // clocks run: redraw at 25 Hz
   const tick = p.scope === 'clock' || (p.scope === 'picture' && p.clockOverlay) ? `|t${Math.floor(performance.now() / 40)}`
     // QC log: new events, and the durations of active ones once a second
+    : p.scope === 'genlock' ? `|g${Math.floor(Date.now() / 250)}`
     : p.scope === 'qclog' ? `|q${qcLog.version}:${Math.floor(Date.now() / 1000)}` : '';
   if (p.scope === 'clock') return `C|${src?.id}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}${tick}`;
   if (isLight(p.scope)) return `${lightSignature(p.scope, p.light, body.w, body.h)}|${body.x},${body.y}`;
@@ -258,6 +262,11 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       return;
     }
     drawTimeline(ctx, { x: 4, y: 6, w: body.w - 8, h: body.h - 8 }, src.history, src.colorspace, p.span ?? 10);
+    return;
+  }
+  if (p.scope === 'genlock') {
+    renderer.clearRect(body);
+    drawGenlockPanel(ctx, p.genlock, src, body.w, body.h);
     return;
   }
   if (p.scope === 'clock') {

@@ -60,7 +60,7 @@ def probe():
     try:
         import DaVinciResolveScript as dvr  # noqa: N813
     except Exception as e:  # noqa: BLE001
-        out({"scripting": False, "error": f"Resolve-Scripting-Modul nicht gefunden: {e}"})
+        out({"scripting": False, "error": str(e)})
         return
     resolve = dvr.scriptapp("Resolve")
     if not resolve:
@@ -95,11 +95,12 @@ def main():
     try:
         import DaVinciResolveScript as dvr  # noqa: N813
     except Exception as e:  # noqa: BLE001
-        out({"error": f"Resolve-Scripting-Modul nicht gefunden: {e}"})
+        # "code" lets the UI translate the message (server/messages.mjs, src/i18n bridge.*)
+        out({"error": f"Resolve scripting module not found: {e}", "code": "resolve.module", "params": {"reason": str(e)}})
         return
     resolve = dvr.scriptapp("Resolve")
     if not resolve:
-        out({"error": "Resolve läuft nicht oder externes Scripting ist aus (Einstellungen → System → Allgemein → Externes Scripting: Lokal)"})
+        out({"error": "Resolve is not running or external scripting is off (Preferences → System → General → External scripting using: Local)", "code": "resolve.notRunning"})
         return
     i = 0
     while True:
@@ -107,7 +108,7 @@ def main():
         project = resolve.GetProjectManager().GetCurrentProject()
         timeline = project.GetCurrentTimeline() if project else None
         if not timeline:
-            out({"wait": "Kein Projekt/keine Timeline geöffnet"})
+            out({"wait": "No project/timeline open", "code": "resolve.noTimeline"})
         else:
             path = os.path.join(folder, f"f{i % 2}.tif")
             if project.ExportCurrentFrameAsStill(path):
@@ -115,7 +116,7 @@ def main():
                 out({"path": path, "tc": timeline.GetCurrentTimecode(), "fps": fps, "df": df, "timeline": timeline.GetName(), "project": project.GetName()})
                 i += 1
             else:
-                out({"wait": "Standbild-Export fehlgeschlagen (Farbseite/Viewer prüfen)"})
+                out({"wait": "Still export failed (check the Color page/viewer)", "code": "resolve.exportFailed"})
         time.sleep(max(0.0, 1.0 / fps - (time.time() - t0)))
 
 

@@ -54,7 +54,7 @@ Both contain GPL libraries (x264, x265) and **libsrt** (MPL-2.0); the macOS buil
 
 ## Capture helpers (optional, built locally)
 
-- **DeckLink helper** (`helpers/decklink/`): own code, built against the Blackmagic Desktop Video SDK, which is **not** in this repository (free download after registration). The SDK headers carry Blackmagic Design's permissive licence (use, reproduce, distribute; notice kept in source copies). The terms of the SDK download itself were not reviewed – check them before shipping a built helper. ffmpeg's own DeckLink device is `nonfree` and is not used.
+- **DeckLink helper** (`helpers/decklink/`, shipped in the desktop app for macOS and Windows): own code, compiled against the include files of the DeckLink SDK 12.0 (headers, IDL, `DeckLinkAPIDispatch.cpp`). They are not in this repository; CI fetches them from the copy in the OBS Studio repository at a fixed commit, every file checked by its git blob hash ([scripts/decklink-sdk.json](scripts/decklink-sdk.json), `npm run decklink:fetch`). The include files carry Blackmagic Design's own permissive licence ([licenses/decklink-sdk-headers.txt](licenses/decklink-sdk-headers.txt)); the [DeckLink SDK EULA](https://www.blackmagicdesign.com/EULA/DeckLinkSDK) exempts `/Mac/Include`, `/Win/Include` and `/Linux/Include` from its clauses 1, 4.3, 4.4, 5, 7 and 8 (§0.1) and permits creating software compatible with Blackmagic products (§1.2). The driver (Blackmagic Desktop Video) is installed by the user and not shipped. Designation per EULA §6.2: "LZ Scopes compatible with Blackmagic Design DeckLink". DeckLink is a trademark of Blackmagic Design Pty. Ltd. ffmpeg's own DeckLink device is `nonfree` and is not used.
 - **NDI® helper** (`helpers/ndi/`): own code; `ndi-min.h` takes over type and function declarations from the NDI SDK 6.3 headers, which are MIT-licensed file by file (text in [licenses/ndi-sdk-headers-MIT.txt](licenses/ndi-sdk-headers-MIT.txt)). The NDI runtime is **not** shipped; the helper loads the one the user installed. NDI® is a registered trademark of Vizrt NDI AB (<https://ndi.video/>).
 
 ## ArgyllCMS (optional, not shipped)
@@ -68,6 +68,18 @@ LZ Scopes contains **no ArgyllCMS code, binaries or data**, and the installers d
 - `helpers/colorsync/lzs-colorsync.swift`: own code on Apple's public ColorSync API, built into `helpers/bin/` and shipped with the macOS app.
 - DDC/CI uses tools only if the user installed them and only as separate programs: [m1ddc](https://github.com/waydabber/m1ddc) (MIT, macOS, brightness) and ddcutil (GPL-2.0-or-later, Linux). Neither is bundled. The VCP values follow ddcutil's feature table (read as facts, no code taken). Windows uses the system DLLs `mscms.dll` and `dxva2.dll` through PowerShell.
 
+## Test videos (desktop app, downloaded on request, not shipped)
+
+*Quellen → Testvideos …* lists freely licensed films. Nothing of them is in the repository or the installers: the desktop app downloads a file only when the user clicks, from the publisher's server, checks size and SHA-256 (values computed on 06.10.2026, `src/testVideoCatalog.ts`), unpacks the single-entry ZIP (CRC-32 checked) and keeps it in `<userData>/testvideos`. The dialog shows licence and attribution next to each title. Research: [docs/research/testvideos.md](docs/research/testvideos.md).
+
+| Title | Files | Licence | Attribution |
+|---|---|---|---|
+| Big Buck Bunny (2008; 2013 re-render "sunflower") | download.blender.org/peach/bigbuckbunny_movies/ (320×180 … 1080p), download.blender.org/demo/movies/BBB/ (1080p/2160p, 30/60 fps) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) ([peach.blender.org/about](https://peach.blender.org/about/)) | (c) copyright 2008, Blender Foundation / www.bigbuckbunny.org |
+| Cosmos Laundromat, HDR P3/PQ 2K 24p | s3.amazonaws.com/download.opencontent.netflix.com/CosmosLaundromat/ | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) ([opencontent.netflix.com](https://opencontent.netflix.com/)) | Cosmos Laundromat – Blender Studio (Blender Foundation), HDR grade Netflix with Fotokem Keep Me Posted; Netflix Open Content |
+| Meridian, HDR P3/PQ UHD 59.94p | s3.amazonaws.com/download.opencontent.netflix.com/Meridian/ | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) ([opencontent.netflix.com](https://opencontent.netflix.com/)) | Meridian – Netflix, Inc.; Netflix Open Content |
+
+The licences do not cover the logos and trademarks of Blender Foundation or Netflix.
+
 ## Development only (not shipped)
 
 TypeScript, Vite, Vitest, electron-builder, concurrently, `@types/*`: MIT or Apache-2.0, see `package-lock.json`.
@@ -76,5 +88,5 @@ TypeScript, Vite, Vitest, electron-builder, concurrently, `@types/*`: MIT or Apa
 
 - **Logo and trademark of Lars Zumpe Medienproduktion** (`docs/brand/`, `src/brand/`, `build/icon.png`, `public/icons/`): signet, logo and app icon, unchanged files from the Brand Kit 2.0. Own trademark of Lars Zumpe, **not free to use**: no permission of the licence covers them (see [LICENSE](LICENSE), section 10).
 - **LZ display test images** (`public/patterns/lz-display/`, 20 images, 1920 x 1080): own work of Lars Zumpe Medienproduktion.
-- **Test patterns** generated in code (`src/patterns.ts`): own work. Standards such as SMPTE RP 219 / EBU R 95 / ITU-R BT.709 are referenced by name only.
+- **Test patterns** generated in code (`src/patterns.ts`): own work. Pictures and logos users upload stay in their own browser profile (IndexedDB) and are not part of the app. Standards such as SMPTE RP 219 / EBU R 95 / ITU-R BT.709 are referenced by name only.
 - Research notes in `docs/research/` cite third-party projects and standards by link and summary.

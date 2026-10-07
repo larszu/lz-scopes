@@ -7,6 +7,7 @@ import { SCOPE_LABELS, type ScopeType, type Unit } from './graticule';
 import { DEFAULT_SKIN, defaultPanel, drawPanel, panelSignature, type PanelState, type Tint } from './panel';
 import { Renderer } from './renderer';
 import type { Source } from './sources';
+import { t } from './i18n';
 
 export interface ScopeViewOptions {
   scopes?: ScopeType[];
@@ -118,7 +119,7 @@ export class ScopeView {
       const o = {
         unit: this.opts.unit, tint: this.opts.tint, maxSamples: this.opts.maxSamples, falsePreset: 'ARRI',
         zebra: 0.95, zebraLow: 0, frozen: false, displayFps: 0, skin: DEFAULT_SKIN, display,
-        emptyText: this.opts.emptyText ?? 'Kein Signal',
+        emptyText: this.opts.emptyText ?? t('output.noSignal'),
       };
       const sig = panelSignature(p.state, src, body, o) + dpr;
       if (this.sigs.get(i) === sig) return;

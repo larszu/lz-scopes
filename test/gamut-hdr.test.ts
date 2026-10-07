@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   FALSE_COLOR_PRESETS, HDR_PREVIEW_GLSL, bandRange, bt2446a, bt2446aKnee, hdrToSdr, hlgInverseOetf, hlgGamma, pqEncode, pqDecode,
 } from '../src/color';
+import { t } from '../src/i18n';
 import { DIAMOND_SCALE, diamondPoint, plotRect } from '../src/graticule';
 import { computeStats } from '../src/sources';
 
@@ -59,28 +60,28 @@ describe('HDR → SDR preview', () => {
   });
 });
 
-describe('false-colour presets RED / Sony', () => {
+describe('false-colour presets RED / Sony (labels in the active language)', () => {
   const bandAt = (preset: string, pct: number) => {
     let hit: string | undefined;
     for (const b of FALSE_COLOR_PRESETS[preset]) if (pct >= b.from && pct < b.to) hit = b.label;
     return hit;
   };
   it('RED video mode (docs.red.com): 18 % grey green at IRE 41–48, clip red at 99–100', () => {
-    expect(bandAt('RED Video', 41)).toMatch(/^Grün/);
-    expect(bandAt('RED Video', 48.9)).toMatch(/^Grün/);
+    expect(bandAt('RED Video', 41)).toMatch(new RegExp(`^${t('color.fc.green')}`));
+    expect(bandAt('RED Video', 48.9)).toMatch(new RegExp(`^${t('color.fc.green')}`));
     expect(bandAt('RED Video', 49)).toBeUndefined();
-    expect(bandAt('RED Video', 65)).toMatch(/^Rosa/);
-    expect(bandAt('RED Video', 99.5)).toMatch(/^Rot/);
-    expect(bandAt('RED Video', 100)).toMatch(/^Rot/);
+    expect(bandAt('RED Video', 65)).toMatch(new RegExp(`^${t('color.fc.pink')}`));
+    expect(bandAt('RED Video', 99.5)).toMatch(new RegExp(`^${t('color.fc.red')}`));
+    expect(bandAt('RED Video', 100)).toMatch(new RegExp(`^${t('color.fc.red')}`));
     expect(bandRange(FALSE_COLOR_PRESETS['RED Video'][3])).toBe('41–48');
   });
   it('Sony Monitor & Control palettes', () => {
-    expect(bandAt('Sony S-Log3', 41)).toBe('Grün'); // S-Log3 18 % grey = 41 %
-    expect(bandAt('Sony S-Log3', 95)).toBe('Rot');
-    expect(bandAt('Sony S-Log3', 92)).toBe('Gelb');
-    expect(bandAt('Sony SDR', 45)).toBe('Grün');
-    expect(bandAt('Sony SDR', 105)).toBe('Rot');
-    expect(bandAt('Sony SDR', -3)).toBe('Schwarz');
+    expect(bandAt('Sony S-Log3', 41)).toBe(t('color.fc.green')); // S-Log3 18 % grey = 41 %
+    expect(bandAt('Sony S-Log3', 95)).toBe(t('color.fc.red'));
+    expect(bandAt('Sony S-Log3', 92)).toBe(t('color.fc.yellow'));
+    expect(bandAt('Sony SDR', 45)).toBe(t('color.fc.green'));
+    expect(bandAt('Sony SDR', 105)).toBe(t('color.fc.red'));
+    expect(bandAt('Sony SDR', -3)).toBe(t('color.fc.black'));
   });
   it('every preset fits the shader (≤ 12 bands) and has no overlapping bands', () => {
     for (const [name, bands] of Object.entries(FALSE_COLOR_PRESETS)) {

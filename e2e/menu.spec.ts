@@ -50,7 +50,8 @@ test('Menübefehle und Häkchen folgen dem Zustand', async () => {
   await menuClick(a, 'sidebar');
   await expect(page.locator('#side')).toBeHidden();
   await until(async () => (await checked('sidebar')) === false, 10_000, 'Häkchen Seitenleiste');
-  await page.keyboard.press('b');
+  // (header button; a key press depends on window focus after the native menu, flaky on CI)
+  await page.locator('#toggle-side').click();
   await expect(page.locator('#side')).toBeVisible();
 
   await menuClick(a, 'freeze');

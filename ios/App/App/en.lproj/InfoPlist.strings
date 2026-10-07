@@ -1,0 +1,5 @@
+/* Permission texts (English). Same as Info.plist; ios/App/App/de.lproj has the German ones. */
+"NSBluetoothAlwaysUsageDescription" = "LZ Scopes connects to the Opple Light Master over Bluetooth to measure illuminance, colour temperature and spectrum.";
+"NSCameraUsageDescription" = "LZ Scopes shows the picture of the camera or a USB capture card in the waveform, vectorscope and the other scopes. The picture does not leave the device.";
+"NSLocalNetworkUsageDescription" = "LZ Scopes searches the local network for the LZ Scopes bridge (desktop app or npm start), which decodes RTSP, SRT and capture sources.";
+"NSMicrophoneUsageDescription" = "LZ Scopes measures sound (levels, phase correlation, spectrum) from the microphone or a USB audio input. The sound does not leave the device.";

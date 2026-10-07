@@ -1,7 +1,7 @@
 import './vendor/dockview.css';
 import './style.css';
 import { DEFAULT_THEME, SIGNET, THEMES, applyTheme, isTheme, type UiTheme } from './theme';
-import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, HDR_PREVIEW_LABELS, HLG_PEAKS, LUMA, detectDisplay, transferLabel, type DisplaySpace, type GamutId, type HdrPreview } from './color';
+import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, falseColorName, GAMUTS, HDR_PREVIEW_LABELS, HLG_PEAKS, LUMA, detectDisplay, transferLabel, type DisplaySpace, type GamutId, type HdrPreview } from './color';
 import { CAMERA_GAMUTS, LOG_CURVES } from './camera';
 import {
   CAMERA_PRESETS, CST_TARGETS, DEFAULT_CST, STAGES, STAGE_LABELS, TONEMAP_LABELS, autoPeaks, stageNote,
@@ -242,7 +242,7 @@ registerSettingsSection({ id: 'scopes', label: t('settings.scopes'), order: 30, 
   srow(t('settings.scopes.scale'), select(state.unit, [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', t('settings.scopes.nitsScene')]], (v) => { state.unit = v as Unit; save(); renderHeader(); })),
   srow(t('settings.scopes.tint'), select(state.tint, [['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]], (v) => { state.tint = v as Tint; save(); })),
   srow(t('settings.scopes.precision'), select(String(state.maxSamples), [['250000', t('settings.scopes.fast')], ['1000000', t('settings.scopes.standard')], ['4000000', t('settings.scopes.full')]], (v) => { state.maxSamples = Number(v); save(); }, t('settings.scopes.samplesTitle'))),
-  srow(t('settings.scopes.falseColour'), select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); })),
+  srow(t('settings.scopes.falseColour'), select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, falseColorName(k)] as [string, string]), (v) => { state.falsePreset = v; save(); })),
   srow(t('settings.scopes.skinLuma'),
     numIn(Math.round(state.skin.lo * 100), 0, 100, (v) => { state.skin.lo = v / 100; }), '–',
     numIn(Math.round(state.skin.hi * 100), 0, 100, (v) => { state.skin.hi = v / 100; }), '%'),
@@ -1062,7 +1062,7 @@ function panelSettings(p: PanelState): Node[] {
       row(t('panel.range'), select(p.neutral?.range ?? 'all', [['all', t('panel.rangeAll')], ['shadows', t('panel.shadows')], ['mids', t('panel.mids')], ['highlights', t('panel.highlights')]], (v) => { p.neutral = { ...p.neutral, range: v as 'all' }; save(); }));
     }
     if (p.picture === 'gamut') row(t('panel.tgtGamut'), select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, t('panel.tgtGamutTitle')));
-    if (p.picture === 'false') row(t('settings.scopes.falseColour'), select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, k]), (v) => { state.falsePreset = v; save(); }));
+    if (p.picture === 'false') row(t('settings.scopes.falseColour'), select(state.falsePreset, Object.keys(FALSE_COLOR_PRESETS).map((k) => [k, falseColorName(k)] as [string, string]), (v) => { state.falsePreset = v; save(); }));
     if (p.picture === 'zebra') row(t('panel.zebraFrom'), numIn(Math.round(state.zebra * 100), 50, 109, (v) => { state.zebra = v / 100; }), '%');
     const clk = h('input', { type: 'checkbox', checked: !!p.clockOverlay }) as HTMLInputElement;
     clk.onchange = () => { p.clockOverlay = clk.checked; save(); };

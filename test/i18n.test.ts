@@ -18,6 +18,17 @@ const placeholders = (m: Msg) => [...new Set((typeof m === 'string' ? m : `${m.o
 describe('i18n dictionaries', () => {
   const keys = Object.keys(en) as Key[];
 
+  it('no key is defined in two area files (a later spread would silently win)', () => {
+    const seen = new Map<string, string>();
+    for (const [file, mod] of Object.entries(import.meta.glob('../src/i18n/en/*.ts', { eager: true }) as Record<string, { default: object }>)) {
+      for (const k of Object.keys(mod.default)) {
+        expect(seen.get(k), `${k} in ${file} and ${seen.get(k)}`).toBeUndefined();
+        seen.set(k, file);
+      }
+    }
+    expect(seen.size).toBe(Object.keys(en).length);
+  });
+
   it('de has exactly the keys of en', () => {
     expect(Object.keys(de).sort()).toEqual([...keys].sort());
   });

@@ -13,6 +13,7 @@
 import type { Colorspace } from './color';
 import { LUMA } from './color';
 import { CodeRaster, level10 } from './patterns16';
+import { bridgeMessage } from './i18n/bridgeMessage';
 
 /** How 10-bit codes become canvas values: levels (0 % → 0, 100 % → 1) or codes 1:1 (code/1023). */
 export type LevelMode = 'full' | 'code';
@@ -272,7 +273,7 @@ export function startStream10(bridge: string, name: string, target: string, code
   const q = new URLSearchParams({ name, fps: String(fps), depth: '10', codec, target });
   const ws = new WebSocket(`${bridge}/out?${q}`);
   let stopped = false;
-  ws.onmessage = (e) => { try { const m = JSON.parse(e.data); status(m.message ?? m.type); } catch { /* ignore */ } };
+  ws.onmessage = (e) => { try { const m = JSON.parse(e.data); status(bridgeMessage(m, m.type)); } catch { /* ignore */ } };
   ws.onclose = () => { if (!stopped) status('beendet'); };
   ws.onerror = () => status('Bridge nicht erreichbar');
   const timer = setInterval(() => {

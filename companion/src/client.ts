@@ -38,17 +38,17 @@ export class ScopesClient {
     this.destroyed = true
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
-    for (const done of this.pending.values()) done({ ok: false, error: 'Verbindung beendet' })
+    for (const done of this.pending.values()) done({ ok: false, error: 'Connection closed' })
     this.pending.clear()
     if (this.ws) { this.ws.removeAllListeners(); this.ws.on('error', () => {}); this.ws.close(); this.ws = null }
   }
 
   send(command: Command, timeoutMs = 5000): Promise<CommandReply> {
     const ws = this.ws
-    if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.resolve({ ok: false, error: 'Bridge nicht verbunden' })
+    if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.resolve({ ok: false, error: 'Bridge not connected' })
     const id = `m${++this.seq}`
     return new Promise((resolve) => {
-      const t = setTimeout(() => { this.pending.delete(id); resolve({ ok: false, error: 'Keine Antwort' }) }, timeoutMs)
+      const t = setTimeout(() => { this.pending.delete(id); resolve({ ok: false, error: 'No answer' }) }, timeoutMs)
       this.pending.set(id, (r) => { clearTimeout(t); resolve(r) })
       ws.send(JSON.stringify({ ...command, id }))
     })
@@ -61,7 +61,7 @@ export class ScopesClient {
     ws.on('open', () => this.onBridge?.(true))
     ws.on('message', (data) => this.handle(String(data)))
     ws.on('unexpected-response', (_req, res) => {
-      this.onError?.(res.statusCode === 401 ? 'Token fehlt oder falsch' : res.statusCode === 403 ? 'Zugriff verweigert (nur 127.0.0.1 ohne Token)' : `HTTP ${res.statusCode}`)
+      this.onError?.(res.statusCode === 401 ? 'Token missing or wrong' : res.statusCode === 403 ? 'Access denied (only 127.0.0.1 without a token)' : `HTTP ${res.statusCode}`)
     })
     ws.on('error', (e) => this.onError?.(e.message))
     ws.on('close', () => {

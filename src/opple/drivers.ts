@@ -10,6 +10,7 @@
 import type { MeterState } from './meter';
 import { cctMcCamy, duvFromUv, xyToUv, xyzToXy, type Reading } from './photometry';
 import { spectrumToXyz, type Spectrum } from './spectrum';
+import { bridgeMessage } from '../i18n/bridgeMessage';
 
 export type DriverId = 'opple' | 'argyll' | 'datei';
 export const DRIVER_LABELS: Record<DriverId, string> = {
@@ -96,10 +97,10 @@ export class ArgyllLightMeter extends EventTarget implements LightDevice {
       ws.onmessage = (e) => {
         const m = JSON.parse(String(e.data));
         if (m.type === 'log') { for (const l of String(m.text).split(/\r?\n/)) if (l.trim()) this.frames.push(l); if (this.frames.length > 300) this.frames.splice(0, this.frames.length - 300); if (/Ambient/.test(m.text)) this.ambient = true; }
-        else if (m.type === 'status') this.status(this.state === 'connected' ? 'connected' : 'calibrating', m.message);
+        else if (m.type === 'status') this.status(this.state === 'connected' ? 'connected' : 'calibrating', bridgeMessage(m));
         else if (m.type === 'ready') { if (!settled) { settled = true; this.status('connected', 'Messgerät bereit (ArgyllCMS, ungeprüft)'); ok(); } }
         else if (m.type === 'light') this.onLight(m as LightEvent);
-        else if (m.type === 'error') { this.status('error', m.message); this.reject(new Error(m.message)); if (!settled) { settled = true; fail(new Error(m.message)); } }
+        else if (m.type === 'error') { const text = bridgeMessage(m); this.status('error', text); this.reject(new Error(text)); if (!settled) { settled = true; fail(new Error(text)); } }
         else if (m.type === 'closed') { this.status('error', `spotread beendet (Code ${m.code ?? '?'})`); if (!settled) { settled = true; fail(new Error(this.message)); } }
       };
     });

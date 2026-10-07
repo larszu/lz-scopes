@@ -28,6 +28,7 @@ import { OVERLAY_SCOPES } from '../server/control.mjs';
 import { HUD_STYLE, onThemeChange, storedTheme } from './theme';
 import { deepContext, isCodec10, pipelineText, pixelsToFrame10, readPixels, startStream10, type Codec10 } from './deep';
 import { t } from './i18n';
+import { bridgeMessage } from './i18n/bridgeMessage';
 
 export interface OutputHost {
   panels: PanelState[];
@@ -420,7 +421,7 @@ function startStream(host: OutputHost, gl: HTMLCanvasElement, cells: Cell[], nam
   const ws = new WebSocket(`${host.bridgeUrl()}/out?${q}`);
   const comp = document.createElement('canvas');
   let stopped = false;
-  ws.onmessage = (e) => { try { const m = JSON.parse(e.data); status(m.message ?? m.type); } catch { /* ignore */ } };
+  ws.onmessage = (e) => { try { const m = JSON.parse(e.data); status(bridgeMessage(m, m.type)); } catch { /* ignore */ } };
   ws.onclose = () => { if (!stopped) status(t('output.streamEnded')); };
   ws.onerror = () => status(t('output.bridgeUnreachable'));
   let busy = false;

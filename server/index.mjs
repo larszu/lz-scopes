@@ -5,7 +5,7 @@
 //
 // WebSocket: ws://host:port/stream?url=<input>&width=960&fps=25&depth=8|16&transport=tcp|udp[&audio=1][&video=0][&format=yuv]
 //   text  {type:"info", width, height, depth, fps, codec, transfer, primaries, matrix, range[, proto:2, audio]}
-//   text  {type:"error"|"end", message}
+//   text  {type:"error"|"end", message, code?, params?}  (code: server/messages.mjs)
 //   binary one frame per message, width*height*4 samples (Uint8 or Uint16 LE)
 //   with audio=1 (proto 2) every binary message starts with a 16-byte header, LZV1 = frame,
 //   LZA1 = PCM (f32 interleaved); see docs/frame-protocol.md
@@ -30,8 +30,9 @@ import { resolveStatus } from './resolve.mjs';
 import { handleMeterSocket, meterInfo } from './meter.mjs';
 import { PtpMonitor, RtpMonitor, ipv4Interfaces, isMulticastV4, nowUtcNs } from './ptp.mjs';
 import { taiMinusUtc } from './leap.mjs';
-import { CONSENT_HEADERS, OriginStore, clockAccess, consentPage, defaultOriginsFile, newNonce, normalizeOrigin, takeNonce } from './origins.mjs';
+import { CONSENT_HEADERS, OriginStore, clockAccess, consentLang, consentPage, defaultOriginsFile, newNonce, normalizeOrigin, takeNonce } from './origins.mjs';
 import { ffmpegCandidates, ffmpegFor, ffmpegInfo, noFfmpegMessage } from './ffmpeg.mjs';
+import { BridgeError, bmsg, field, toMsg } from './messages.mjs';
 
 export { ffmpegCandidates, ffmpegInfo };
 import { FlvH264Demuxer } from './flv.mjs';
@@ -77,14 +78,14 @@ const TEST_PATTERNS = {
 const TEST_TONE = 'sine=frequency=1000:sample_rate=48000,pan=stereo|c0=c0|c1=c0';
 
 export function validateInput(url) {
-  if (typeof url !== 'string' || url.length === 0 || url.length > 2048) return 'Keine Quelle angegeben';
+  if (typeof url !== 'string' || url.length === 0 || url.length > 2048) return bmsg('input.missing', 'No source given');
   if (url in TEST_PATTERNS || url === 'resolve:') return null;
-  if (/^(device|audio):/.test(url)) return parseDevice(url) ? null : 'Ungültige Geräteangabe (device:<api>:<Name>[#audio=<Name>] oder audio:<api>:<Name>[#ch=<n>])';
+  if (/^(device|audio):/.test(url)) return parseDevice(url) ? null : bmsg('input.badDevice', 'Invalid device (device:<api>:<name>[#audio=<name>] or audio:<api>:<name>[#ch=<n>])');
   if (/^decklink:\d{1,2}$/.test(url)) return null;
   if (/^ndi:[^\n\r\0]{1,200}$/.test(url) && !url.slice(4).startsWith('-')) return null;
   if (/^folder:[\w .-]{1,80}$/.test(url)) return null;
-  if (url.startsWith('-')) return 'Ungültige Quelle';
-  if (!ALLOWED.test(url)) return 'Nur rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s)://, resolve: oder test:*';
+  if (url.startsWith('-')) return bmsg('input.invalid', 'Invalid source');
+  if (!ALLOWED.test(url)) return bmsg('input.scheme', 'Only rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s)://, resolve: or test:*');
   return null;
 }
 
@@ -225,16 +226,16 @@ async function probe(url, transport, device = {}) {
   if (dev?.kind === 'audio') {
     // audio device: open it for a moment and read rate/channels from the banner
     const ffmpeg = ffmpegCandidates()[0];
-    if (!ffmpeg) throw new Error('ffmpeg nicht gefunden');
+    if (!ffmpeg) throw new BridgeError('ffmpeg.missing', 'ffmpeg not found');
     const r = await run(ffmpeg, ['-hide_banner', ...deviceArgs(url), '-t', '0.3', '-f', 'null', '-'], 15000);
     const audio = r && r.code === 0 ? parseAudioBanner(r.err) : null;
     if (audio) return { width: 0, height: 0, fps: 0, audio };
-    throw new Error((r && lastProblem(r.err)) || 'Audiogerät nicht verfügbar');
+    throw (r && lastProblem(r.err)) ? new Error(lastProblem(r.err)) : new BridgeError('device.audioUnavailable', 'Audio device not available');
   }
   if (dev) {
     // devices: find a capture rate the device accepts, read size/format (and sound) from the banner
     const ffmpeg = ffmpegCandidates()[0];
-    if (!ffmpeg) throw new Error('ffmpeg nicht gefunden');
+    if (!ffmpeg) throw new BridgeError('ffmpeg.missing', 'ffmpeg not found');
     const key = url.split('#')[0];
     let last = '';
     const rates = device.rate ? [device.rate] : [deviceRates.get(key), ...DEVICE_RATES].filter(Boolean);
@@ -245,7 +246,7 @@ async function probe(url, transport, device = {}) {
       if (info) { deviceRates.set(key, rate); return { ...info, fps: /\//.test(rate) ? Number(rate.split('/')[0]) / Number(rate.split('/')[1]) : Number(rate), audio: dev.audio !== null ? info.audio : null }; }
       last = lastProblem(r.err.split('\n').filter((l) => !/output file/i.test(l)).join('\n'));
     }
-    throw new Error(last || 'Gerät nicht verfügbar');
+    throw last ? new Error(last) : new BridgeError('device.unavailable', 'Device not available');
   }
   if (url in TEST_PATTERNS) {
     return {
@@ -262,9 +263,10 @@ async function probe(url, transport, device = {}) {
       if (!r) continue;
       const info = parseFfmpegBanner(r.err);
       if (info) return info;
-      throw new Error(r.err.trim().split('\n').filter((l) => !/output file/i.test(l)).pop() || 'Quelle nicht erreichbar');
+      const line = r.err.trim().split('\n').filter((l) => !/output file/i.test(l)).pop();
+      throw line ? new Error(line) : new BridgeError('source.unreachable', 'Source not reachable');
     }
-    throw new Error('ffmpeg nicht gefunden');
+    throw new BridgeError('ffmpeg.missing', 'ffmpeg not found');
   }
   const FFPROBE = probes[0];
   const a = ['-v', 'error', '-analyzeduration', '1000000', '-probesize', '2000000', '-show_entries',
@@ -275,7 +277,7 @@ async function probe(url, transport, device = {}) {
   return new Promise((ok, fail) => {
     const p = spawn(FFPROBE, a, { stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = '';
-    const timer = setTimeout(() => { p.kill('SIGKILL'); fail(new Error('Zeitüberschreitung beim Öffnen der Quelle')); }, 15000);
+    const timer = setTimeout(() => { p.kill('SIGKILL'); fail(new BridgeError('source.timeout', 'Timed out opening the source')); }, 15000);
     p.stdout.on('data', (d) => (out += d));
     p.stderr.on('data', (d) => (err += d));
     p.on('error', (e) => { clearTimeout(timer); fail(e); });
@@ -286,7 +288,7 @@ async function probe(url, transport, device = {}) {
         const streams = json.streams ?? [];
         const s = streams.find((x) => x.codec_type === 'video');
         const au = streams.find((x) => x.codec_type === 'audio' && Number(x.channels) > 0);
-        if (!s && !au) throw new Error(err.trim() || `ffprobe beendet mit ${code}`);
+        if (!s && !au) throw err.trim() ? new Error(err.trim()) : new BridgeError('ffprobe.exit', `ffprobe exited with ${code}`, { code });
         const audio = au ? { codec: au.codec_name, sampleRate: Number(au.sample_rate), channels: Number(au.channels), layout: au.channel_layout ?? '' } : null;
         if (!s) return ok({ width: 0, height: 0, fps: 0, audio });
         const rate = (r) => { const [n, d] = String(r ?? '0/1').split('/').map(Number); return d ? n / d : 0; };
@@ -300,7 +302,7 @@ async function probe(url, transport, device = {}) {
           matrix: s.color_space ?? 'unknown', range: s.color_range ?? 'unknown', audio,
           ...(s.field_order && s.field_order !== 'unknown' ? { fieldOrder: s.field_order } : {}),
         });
-      } catch (e) { fail(new Error(err.trim().split('\n').pop() || e.message)); }
+      } catch (e) { fail(err.trim() ? new Error(err.trim().split('\n').pop()) : e); }
     });
   });
 }
@@ -330,7 +332,7 @@ export function decodeParams(info) {
 export function yuvParams(info, decodeMatrix, decodeRange) {
   const pf = String(info.pixFmt ?? '');
   if (/^(rgb|bgr|gbr|argb|abgr|0rgb|0bgr|x2rgb|x2bgr|pal8)/.test(pf)) {
-    return { yuv: false, note: `Quelle ist R′G′B′ (${pf}) – Y′CbCr-Pfad nicht möglich, 16 bit R′G′B′` };
+    return { yuv: false, ...field('note', bmsg('yuv.rgbSource', `Source is R′G′B′ (${pf}) – Y′CbCr path not possible, 16 bit R′G′B′`, { pixFmt: pf })) };
   }
   const bits = Number(/p(\d+)(le|be)?$/.exec(pf)?.[1] ?? /^(?:gray|y)(\d+)/.exec(pf)?.[1] ?? 8) || 8;
   const range = pf.startsWith('yuvj') ? 'full' : decodeRange;
@@ -558,11 +560,11 @@ async function startStream(ws, params) {
     if (!device.size && parseDeviceUrl(url)?.fmt === 'avfoundation') device.size = defaultMode(formats.modes) ?? undefined;
   }
   let info;
-  try { info = await probe(url, transport, device); } catch (e) { return fail(ws, e.message); }
+  try { info = await probe(url, transport, device); } catch (e) { return fail(ws, e); }
   if (ws.readyState !== ws.OPEN) return;
   const audioInfo = wantAudio && info.audio?.sampleRate && info.audio?.channels ? info.audio : null;
   const video = !!info.width && !(wantAudio && params.get('video') === '0');
-  if (!video && !audioInfo) return fail(ws, wantAudio ? 'Weder Bild noch Ton in dieser Quelle' : 'Kein Videostream in dieser Quelle');
+  if (!video && !audioInfo) return fail(ws, wantAudio ? bmsg('source.noPictureNoSound', 'Neither picture nor sound in this source') : bmsg('source.noVideo', 'No video stream in this source'));
   const { width, height } = video ? outputSize(info.width, info.height, maxWidth) : { width: 0, height: 0 };
   const bytesPerFrame = width * height * 4 * (depth / 8);
   const outDepth = h264 ? 8 : depth;
@@ -589,11 +591,11 @@ async function startStream(ws, params) {
 
   // own RTP reception (low-latency mode, server/rtsp.mjs): access units end at the RTP
   // marker bit instead of one frame later in ffmpeg's parser; ffmpeg's RTSP is the fallback
-  let own = null, ownNote = '';
+  let own = null, ownNote = null;
   if (params.get('rtp') === 'own' && video) {
-    if (!/^rtsp:\/\//i.test(url)) ownNote = 'RTP-Eigenempfang nur für rtsp:// – ffmpeg empfängt';
+    if (!/^rtsp:\/\//i.test(url)) ownNote = bmsg('rtp.ownRtspOnly', 'Own RTP reception only for rtsp:// – ffmpeg receives');
     else {
-      try { own = await startOwnRtp(url, { transport: transport === 'udp' ? 'udp' : 'tcp', width: info.width, height: info.height }); } catch (e) { ownNote = `RTP-Eigenempfang nicht möglich (${e.message}) – ffmpeg empfängt`; }
+      try { own = await startOwnRtp(url, { transport: transport === 'udp' ? 'udp' : 'tcp', width: info.width, height: info.height }); } catch (e) { ownNote = bmsg('rtp.ownFailed', `Own RTP reception not possible (${e.message}) – ffmpeg receives`, { reason: toMsg(e) }); }
       if (ws.readyState !== ws.OPEN) { own?.stop(); return; }
     }
   }
@@ -603,10 +605,10 @@ async function startStream(ws, params) {
   const msg = { type: 'info', ...videoInfo, decodeMatrix, sourceWidth: info.width, sourceHeight: info.height, sourceFps: info.fps, width, height, depth: outDepth, fps: video ? (fpsLimit || info.fps) : 0 };
   if (interlaced) Object.assign(msg, { interlaced: true });
   if (own) msg.rtp = { own: true, transport: own.info.transport, codec: own.info.codec };
-  else if (ownNote) msg.rtp = { own: false, note: ownNote };
+  else if (ownNote) msg.rtp = { own: false, ...field('note', ownNote) };
   if (h264 && video) Object.assign(msg, { transport: 'h264', range: 'tv' });
   else if (yp?.yuv) Object.assign(msg, { format: 'yuv', yuvRange: yp.range, bits: yp.bits });
-  else if (yp) Object.assign(msg, { format: 'rgb', note: yp.note });
+  else if (yp) Object.assign(msg, { format: 'rgb', note: yp.note, noteCode: yp.noteCode, noteParams: yp.noteParams });
   if (proto === 2) {
     Object.assign(msg, {
       proto: 2,
@@ -683,7 +685,7 @@ async function startStream(ws, params) {
     closed = true;
     packetizer?.flush();
     if (ws.readyState === ws.OPEN) {
-      ws.send(JSON.stringify({ type: code === 0 ? 'end' : 'error', message: text || `ffmpeg beendet (${code})` }));
+      ws.send(JSON.stringify({ type: code === 0 ? 'end' : 'error', ...toMsg(text || bmsg('ffmpeg.exit', `ffmpeg exited (${code})`, { code })) }));
       ws.close();
     }
   };
@@ -722,9 +724,9 @@ async function startStream(ws, params) {
     if (args.audio) {
       side = spawnOne(args.audio, false);
       side.stdout.on('data', onAudio);
-      side.on('close', (code) => { procs.delete(side); if (code && !closed) stderr += `\nTon: ffmpeg beendet (${code})`; });
+      side.on('close', (code) => { procs.delete(side); if (code && !closed) stderr += `\nSound: ffmpeg exited (${code})`; });
     }
-    main.on('error', (e) => fail(ws, `ffmpeg nicht startbar: ${e.message}`));
+    main.on('error', (e) => fail(ws, bmsg('ffmpeg.spawn', `ffmpeg cannot be started: ${e.message}`, { reason: e.message })));
     main.on('close', (code) => {
       procs.delete(main);
       // pipe:3 not usable (e.g. handle inheritance on Windows): retry with a second process
@@ -748,7 +750,7 @@ async function startStream(ws, params) {
     if (own) st.rtp = own.report();
     ws.send(JSON.stringify(st));
   }, 1000);
-  own?.on('error', (e) => { stderr = (stderr + `\nRTP-Eigenempfang: ${e.message}`).slice(-2000); });
+  own?.on('error', (e) => { stderr = (stderr + `\nOwn RTP reception: ${e.message}`).slice(-2000); });
   ws.on('close', () => { clearInterval(stats); clearInterval(ptsTimer); closed = true; own?.stop(); for (const p of procs) p.kill('SIGKILL'); });
 }
 
@@ -788,15 +790,15 @@ async function startResolve(ws, params) {
     if (ok) break;
     py = null;
   }
-  if (!py) return fail(ws, 'Python 3 nicht gefunden (für die Resolve-Anbindung nötig)');
+  if (!py) return fail(ws, bmsg('resolve.noPython', 'Python 3 not found (needed for the Resolve link)'));
   let sentInfo = false, busy = false, sent = 0, lastWait = '', stderr = '';
   py.stderr.on('data', (d) => { stderr = (stderr + d).slice(-1500); });
   const lines = createInterface({ input: py.stdout });
   lines.on('line', async (line) => {
     let msg;
     try { msg = JSON.parse(line); } catch { return; }
-    if (msg.error) return fail(ws, msg.error);
-    if (msg.wait) { if (msg.wait !== lastWait && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: 0, message: msg.wait })); lastWait = msg.wait; return; }
+    if (msg.error) return fail(ws, { message: msg.error, code: msg.code, params: msg.params });
+    if (msg.wait) { if (msg.wait !== lastWait && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: 0, ...toMsg({ message: msg.wait, code: msg.code }) })); lastWait = msg.wait; return; }
     if (busy || ws.readyState !== ws.OPEN || ws.bufferedAmount > 32 * 1024 * 1024) return;
     busy = true;
     try {
@@ -815,10 +817,10 @@ async function startResolve(ws, params) {
       ws.send(Buffer.from(out.data.buffer, out.data.byteOffset, out.data.byteLength), { binary: true });
       sent++;
     } catch (e) {
-      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: 0, message: e.message }));
+      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: 0, ...toMsg(e) }));
     } finally { busy = false; }
   });
-  py.on('close', (code) => { if (ws.readyState === ws.OPEN) fail(ws, stderr.trim().split('\n').pop() || `Resolve-Anbindung beendet (${code})`); rm(dir, { recursive: true, force: true }).catch(() => {}); });
+  py.on('close', (code) => { if (ws.readyState === ws.OPEN) fail(ws, stderr.trim().split('\n').pop() || bmsg('resolve.exit', `Resolve link ended (${code})`, { code })); rm(dir, { recursive: true, force: true }).catch(() => {}); });
   ws.on('close', () => { py.kill(); });
 }
 
@@ -906,9 +908,9 @@ export function defaultMode(modes) {
  */
 export async function deckLinkStatus() {
   const bin = helperPath('lz-decklink');
-  if (!bin) return { available: false, helper: false, devices: [], error: 'DeckLink-Helfer nicht gebaut (helpers/decklink, DeckLink SDK nötig)' };
+  if (!bin) return { available: false, helper: false, devices: [], ...field('error', bmsg('decklink.noHelper', 'DeckLink helper not built (helpers/decklink, DeckLink SDK needed)')) };
   const r = await helperList(bin);
-  return { available: !!r.ok, helper: true, devices: r.devices ?? [], error: r.ok ? undefined : r.error ?? 'Desktop Video nicht installiert' };
+  return { available: !!r.ok, helper: true, devices: r.devices ?? [], ...(r.ok ? {} : field('error', r.error ? { message: r.error, code: r.code } : bmsg('decklink.noDriver', 'Desktop Video not installed'))) };
 }
 
 /** Reference (genlock) status of one DeckLink device: `lz-decklink --reference <n>` (#72), cached 1 s. */
@@ -918,10 +920,13 @@ export async function deckLinkReference(index) {
   if (hit && Date.now() - hit.t < 1000) return hit.v;
   const bin = helperPath('lz-decklink');
   let v;
-  if (!bin) v = { ok: false, helper: false, error: 'DeckLink-Helfer nicht gebaut (helpers/decklink, DeckLink SDK nötig)' };
+  if (!bin) v = { ok: false, helper: false, ...field('error', bmsg('decklink.noHelper', 'DeckLink helper not built (helpers/decklink, DeckLink SDK needed)')) };
   else {
     const r = await run(bin, ['--reference', String(index)], 4000);
-    try { v = { helper: true, ...JSON.parse((r?.out ?? '').trim().split('\n').pop() ?? '') }; } catch { v = { ok: false, helper: true, error: r?.err?.trim().split('\n').pop() || 'Helfer lieferte keinen Referenzstatus' }; }
+    try {
+      const j = JSON.parse((r?.out ?? '').trim().split('\n').pop() ?? '');
+      v = { helper: true, ...j, ...(j.error ? field('error', { message: j.error, code: j.code, params: j.params }) : {}) };
+    } catch { v = { ok: false, helper: true, ...field('error', r?.err?.trim().split('\n').pop() || bmsg('decklink.noReference', 'Helper returned no reference status')) }; }
   }
   refCache.set(index, { t: Date.now(), v });
   return v;
@@ -929,9 +934,9 @@ export async function deckLinkReference(index) {
 
 function startDeckLink(ws, params, url) {
   const bin = helperPath('lz-decklink');
-  if (!bin) return fail(ws, 'DeckLink nicht verfügbar – Helfer nicht gebaut; Desktop Video und DeckLink SDK nötig (helpers/decklink/README.md)');
+  if (!bin) return fail(ws, bmsg('decklink.unavailable', 'DeckLink not available – helper not built; Desktop Video and the DeckLink SDK are needed (helpers/decklink/README.md)'));
   const ffmpeg = ffmpegCandidates()[0];
-  if (!ffmpeg) return fail(ws, 'ffmpeg nicht gefunden');
+  if (!ffmpeg) return fail(ws, bmsg('ffmpeg.missing', 'ffmpeg not found'));
   const index = url.slice('decklink:'.length);
   const pixel = params.get('pixel') === '8' ? '8' : '10';
   startHelperStream(ws, {
@@ -947,9 +952,9 @@ function startDeckLink(ws, params, url) {
  */
 export async function ndiStatus() {
   const bin = helperPath('lz-ndi');
-  if (!bin) return { available: false, helper: false, runtime: false, sources: [], error: 'NDI-Helfer nicht gebaut (npm run build:helpers)' };
+  if (!bin) return { available: false, helper: false, runtime: false, sources: [], ...field('error', bmsg('ndi.noHelper', 'NDI helper not built (npm run build:helpers)')) };
   const r = await helperList(bin, ['--wait', '1500']);
-  return { available: !!r.ok, helper: true, runtime: !!r.runtime, version: r.version, sources: r.sources ?? [], error: r.ok ? undefined : r.error };
+  return { available: !!r.ok, helper: true, runtime: !!r.runtime, version: r.version, sources: r.sources ?? [], ...(r.ok ? {} : field('error', { message: r.error ?? '', code: r.code })) };
 }
 
 /** Watch folders released with --watch-dir / LZS_WATCH_DIRS (server/folder.mjs). */
@@ -962,25 +967,26 @@ export function addWatchDir(dir) {
 }
 function startFolder(ws, params, url) {
   const root = resolveFolder(url, WATCH_ROOTS);
-  if (!root) return fail(ws, 'Ordner nicht freigegeben – Bridge mit --watch-dir <Ordner> starten');
+  if (!root) return fail(ws, bmsg('folder.notReleased', 'Folder not released – start the bridge with --watch-dir <folder>'));
   const ffmpeg = ffmpegCandidates()[0];
-  if (!ffmpeg) return fail(ws, 'ffmpeg nicht gefunden');
+  if (!ffmpeg) return fail(ws, bmsg('ffmpeg.missing', 'ffmpeg not found'));
   startFolderStream(ws, { root, params, ctx: { ffmpeg, outputSize, decodeParams, applyDecodeOverride, deviceOptions } });
 }
 
 function startNdi(ws, params, url) {
   const bin = helperPath('lz-ndi');
-  if (!bin) return fail(ws, 'NDI nicht verfügbar – Helfer nicht gebaut (npm run build:helpers)');
+  if (!bin) return fail(ws, bmsg('ndi.unavailable', 'NDI not available – helper not built (npm run build:helpers)'));
   const ffmpeg = ffmpegCandidates()[0];
-  if (!ffmpeg) return fail(ws, 'ffmpeg nicht gefunden');
+  if (!ffmpeg) return fail(ws, bmsg('ffmpeg.missing', 'ffmpeg not found'));
   startHelperStream(ws, {
     bin, args: ['--capture', url.slice('ndi:'.length)], label: 'NDI', params,
     ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions, now: clockNow },
   });
 }
 
-function fail(ws, message) {
-  if (ws.readyState === ws.OPEN) { ws.send(JSON.stringify({ type: 'error', message })); ws.close(); }
+/** Send an error (text, Error or message object, server/messages.mjs) and close. */
+function fail(ws, m) {
+  if (ws.readyState === ws.OPEN) { ws.send(JSON.stringify({ type: 'error', ...toMsg(m) })); ws.close(); }
 }
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.woff2': 'font/woff2' };
@@ -1014,7 +1020,7 @@ const server = createServer((req, res) => {
   if (path === '/api/devices/formats') {
     const url = new URL(req.url ?? '/', 'http://x').searchParams.get('url') ?? '';
     const json = (code, body) => { res.writeHead(code, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(body)); };
-    if (!parseDeviceUrl(url) || validateInput(url)) return json(400, { error: 'device:-URL erwartet' });
+    if (!parseDeviceUrl(url) || validateInput(url)) return json(400, field('error', bmsg('input.deviceUrl', 'device: URL expected')));
     deviceFormats(url).then((f) => json(200, { ...f, preferred: pickPixfmt(f.pixfmts), defaultSize: defaultMode(f.modes) }));
     return;
   }
@@ -1061,14 +1067,14 @@ const server = createServer((req, res) => {
   let file = normalize(join(DIST, decodeURIComponent(path)));
   if (!file.startsWith(DIST)) { res.writeHead(403); return res.end(); }
   if (!existsSync(file) || statSync(file).isDirectory()) file = join(DIST, 'index.html');
-  if (!existsSync(file)) { res.writeHead(500); return res.end('dist fehlt – erst `npm run build`'); }
+  if (!existsSync(file)) { res.writeHead(500); return res.end('dist missing – run `npm run build` first'); }
   res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
   createReadStream(file).pipe(res);
 });
 
 const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 wss.on('connection', (ws, req) => {
-  startStream(ws, new URL(req.url ?? '', 'http://x').searchParams).catch((e) => fail(ws, e.message));
+  startStream(ws, new URL(req.url ?? '', 'http://x').searchParams).catch((e) => fail(ws, e));
 });
 
 // ---- outputs: the UI sends JPEG frames of an output window; served as MJPEG and optionally pushed
@@ -1091,9 +1097,9 @@ outWss.on('connection', (ws, req) => {
   const target = q.get('target') ?? '';
   const out = outputs.get(name) ?? { frame: null, clients: new Set(), ff: null, target: '' };
   outputs.set(name, out);
-  const msg = (type, message) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type, message }));
+  const msg = (type, m) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type, ...toMsg(m) }));
   const fmt = target ? pushFormat(target) : null;
-  if (target && !fmt) msg('error', 'Push-Ziel nur rtmp(s)://, srt://, rtsp://, udp://');
+  if (target && !fmt) msg('error', bmsg('push.scheme', 'Push target only rtmp(s)://, srt://, rtsp://, udp://'));
   // srt:// needs an ffmpeg with libsrt (the shipped one has it); frames before the start are only kept as MJPEG
   if (fmt) ffmpegFor(target).then((ffmpeg) => {
     if (ws.readyState !== ws.OPEN) return;
@@ -1105,7 +1111,7 @@ outWss.on('connection', (ws, req) => {
       out.target = target;
       let err = '';
       out.ff.stderr.on('data', (d) => { err = (err + d).slice(-1000); });
-      out.ff.on('close', (code) => { if (code) msg('error', `Push beendet: ${err.trim().split('\n').pop() ?? code}`); out.ff = null; });
+      out.ff.on('close', (code) => { if (code) { const why = err.trim().split('\n').pop() || String(code); msg('error', bmsg('push.exit', `Push ended: ${why}`, { reason: why })); } out.ff = null; });
       out.ff.stdin.on('error', () => {});
     }
   });
@@ -1130,7 +1136,7 @@ outWss.on('connection', (ws, req) => {
 
 function serveMjpeg(name, res) {
   const out = outputs.get(name);
-  if (!out) { res.writeHead(404); return res.end('keine Ausgabe mit diesem Namen'); }
+  if (!out) { res.writeHead(404); return res.end('no output with this name'); }
   res.writeHead(200, { 'content-type': 'multipart/x-mixed-replace; boundary=frame', 'cache-control': 'no-cache', 'access-control-allow-origin': '*' });
   out.clients.add(res);
   res.on('close', () => out.clients.delete(res));
@@ -1222,10 +1228,10 @@ const accessProblem = (req) => controlAccess({
 /** Forward a validated command to the main window; resolves with its reply. */
 export function sendToApp(command, timeoutMs = 4000) {
   const app = [...appClients].pop();
-  if (!app) return Promise.resolve({ ok: false, status: 503, error: 'Kein LZ-Scopes-Hauptfenster verbunden' });
+  if (!app) return Promise.resolve({ ok: false, status: 503, error: 'No LZ Scopes main window connected' });
   const id = `c${++seq}`;
   return new Promise((ok) => {
-    const timer = setTimeout(() => { pending.delete(id); ok({ ok: false, status: 504, error: 'Hauptfenster antwortet nicht' }); }, timeoutMs);
+    const timer = setTimeout(() => { pending.delete(id); ok({ ok: false, status: 504, error: 'Main window does not answer' }); }, timeoutMs);
     pending.set(id, (reply) => { clearTimeout(timer); ok(reply); });
     app.send(JSON.stringify({ type: 'command', id, command }));
   });
@@ -1244,14 +1250,14 @@ function handleControlHttp(req, res, path) {
   if (problem) return send(problem.status, { ok: false, error: problem.error });
   if (path === '/api/control/commands') return send(200, COMMANDS);
   if (req.method === 'GET') return send(200, { ok: true, connected: appClients.size > 0, state: appState });
-  if (req.method !== 'POST') return send(405, { ok: false, error: 'GET oder POST' });
+  if (req.method !== 'POST') return send(405, { ok: false, error: 'GET or POST' });
   // JSON only: a foreign web page cannot send that without a CORS preflight, which we never allow
   if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) return send(415, { ok: false, error: 'Content-Type: application/json' });
   let body = '';
   req.on('data', (d) => { body += d; if (body.length > 64 * 1024) req.destroy(); });
   req.on('end', async () => {
     let raw;
-    try { raw = JSON.parse(body); } catch { return send(400, { ok: false, error: 'Kein gültiges JSON' }); }
+    try { raw = JSON.parse(body); } catch { return send(400, { ok: false, error: 'Invalid JSON' }); }
     const r = await runControl(raw);
     send(r.status, r.body);
   });
@@ -1280,7 +1286,7 @@ ctlWss.on('connection', (ws, req) => {
   ws.on('message', async (data, isBinary) => {
     if (isBinary) return;
     let raw;
-    try { raw = JSON.parse(String(data)); } catch { return ws.send(JSON.stringify({ type: 'result', ok: false, error: 'Kein gültiges JSON' })); }
+    try { raw = JSON.parse(String(data)); } catch { return ws.send(JSON.stringify({ type: 'result', ok: false, error: 'Invalid JSON' })); }
     const r = await runControl(raw);
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'result', id: raw?.id ?? null, ...r.body, state: undefined }));
   });
@@ -1325,21 +1331,21 @@ server.on('upgrade', (req, socket, head) => {
 function handleAllow(req, res) {
   if (!isLoopbackAddr(req.socket.remoteAddress)) { res.writeHead(403); return res.end(); }
   const q = new URL(req.url ?? '', 'http://x').searchParams;
-  if (req.method === 'GET') { res.writeHead(200, CONSENT_HEADERS); return res.end(consentPage(q.get('origin'), ORIGINS, newNonce())); }
+  if (req.method === 'GET') { res.writeHead(200, CONSENT_HEADERS); return res.end(consentPage(q.get('origin'), ORIGINS, newNonce(), consentLang(req.headers['accept-language']))); }
   if (req.method !== 'POST') { res.writeHead(405); return res.end(); }
   // the form must come from this very page: Origin = the bridge itself, plus its one-time nonce
   let own = '';
   try { own = new URL(req.headers.origin ?? '').host; } catch { /* missing */ }
-  if (own !== req.headers.host) { res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' }); return res.end('Nur über die Freigabe-Seite der Bridge'); }
+  if (own !== req.headers.host) { res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' }); return res.end('Only through the consent page of the bridge'); }
   let body = '';
   req.on('data', (d) => { body += d; if (body.length > 4096) req.destroy(); });
   req.on('end', () => {
     const f = new URLSearchParams(body);
-    if (!takeNonce(f.get('nonce') ?? '')) { res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' }); return res.end('Seite abgelaufen – bitte neu laden'); }
+    if (!takeNonce(f.get('nonce') ?? '')) { res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' }); return res.end('Page expired – please reload'); }
     const origin = f.get('origin') ?? '';
     if (f.get('action') === 'add') ORIGINS.add(origin); else if (f.get('action') === 'remove') ORIGINS.remove(origin);
     res.writeHead(200, CONSENT_HEADERS);
-    res.end(consentPage(f.get('action') === 'add' ? origin : null, ORIGINS, newNonce()));
+    res.end(consentPage(f.get('action') === 'add' ? origin : null, ORIGINS, newNonce(), consentLang(req.headers['accept-language'])));
   });
 }
 
@@ -1369,6 +1375,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const port = Number(arg('port', process.env.PORT ?? 4192)), host = arg('host', process.env.HOST ?? '127.0.0.1');
   const allowOrigins = args.flatMap((a, i) => (a === '--allow-origin' && args[i + 1] ? [args[i + 1]] : []));
   startBridge({ port, host, dev: DEV, configDir: arg('config-dir', process.env.LZS_CONFIG_DIR), allowOrigins }).then(({ port: p, bonjour }) => {
-    console.log(`lz-scopes bridge on http://${host}:${p}${DEV ? ' (dev)' : ''} · ffmpeg: ${ffmpegCandidates()[0] ?? 'nicht gefunden'}${bonjour ? ` · Bonjour: ${bonjour}` : ''}`);
+    console.log(`lz-scopes bridge on http://${host}:${p}${DEV ? ' (dev)' : ''} · ffmpeg: ${ffmpegCandidates()[0] ?? 'not found'}${bonjour ? ` · Bonjour: ${bonjour}` : ''}`);
   });
 }

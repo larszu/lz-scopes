@@ -157,8 +157,8 @@ describe('RTSP-Bausteine', () => {
     const t = parseSdp(sdp, 'rtsp://cam/live');
     expect(t).toMatchObject({ codec: 'h264', pt: 96, rate: 90000, control: 'rtsp://cam/live/trackID=1', session: 'rtsp://cam/live' });
     expect(t.params.map((b: Buffer) => b[0] & 0x1f)).toEqual([7, 8]);
-    expect(() => parseSdp(sdp.replace('packetization-mode=1', 'packetization-mode=2'), 'rtsp://cam/live')).toThrow(/Interleaved/);
-    expect(() => parseSdp('v=0\r\nm=video 0 RTP/AVP 26\r\na=rtpmap:26 JPEG/90000', 'rtsp://x')).toThrow(/Kein H.264/);
+    expect(() => parseSdp(sdp.replace('packetization-mode=1', 'packetization-mode=2'), 'rtsp://cam/live')).toThrow(/interleaved/);
+    expect(() => parseSdp('v=0\r\nm=video 0 RTP/AVP 26\r\na=rtpmap:26 JPEG/90000', 'rtsp://x')).toThrow(/No H.264/);
   });
   it('SDP: HEVC mit sprop-vps/sps/pps, DONL abgelehnt', () => {
     const sdp = 'v=0\r\nm=video 0 RTP/AVP 98\r\na=rtpmap:98 H265/90000\r\na=fmtp:98 sprop-vps=QAE=; sprop-sps=QgE=; sprop-pps=RAE=\r\na=control:rtsp://cam/v\r\n';

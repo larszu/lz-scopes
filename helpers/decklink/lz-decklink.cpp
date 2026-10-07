@@ -122,7 +122,7 @@ static std::vector<IDeckLink*> allDevices() {
 static int listDevices() {
   IDeckLinkIterator* it = createIterator();
   if (!it) {
-    printf("{\"ok\":false,\"error\":\"Blackmagic Desktop Video ist nicht installiert (DeckLink-Treiber fehlt)\"}\n");
+    printf("{\"ok\":false,\"code\":\"decklink.noDriver\",\"error\":\"Blackmagic Desktop Video is not installed (DeckLink driver missing)\"}\n");
     return 0;
   }
   it->Release();
@@ -176,7 +176,7 @@ class Capture : public IDeckLinkInputCallback {
     if (!frame) return S_OK;
     if (frame->GetFlags() & bmdFrameHasNoInputSource) {
       auto now = std::chrono::steady_clock::now();
-      if (now - lastNoSignal_ > std::chrono::seconds(1)) { writeText("STAT", "{\"message\":\"kein Eingangssignal\"}"); lastNoSignal_ = now; }
+      if (now - lastNoSignal_ > std::chrono::seconds(1)) { writeText("STAT", "{\"code\":\"decklink.noSignal\",\"message\":\"no input signal\"}"); lastNoSignal_ = now; }
       return S_OK;
     }
     const long w = frame->GetWidth(), h = frame->GetHeight(), row = frame->GetRowBytes();
@@ -280,7 +280,11 @@ class Capture : public IDeckLinkInputCallback {
   std::chrono::steady_clock::time_point lastNoSignal_{};
 };
 
-static int fatal(const std::string& msg) { writeText("ERR ", msg); return 2; }
+// ERR as JSON {code, message, params?}: the UI translates the code (server/messages.mjs); texts contain no quotes
+static int fatal(const char* code, const std::string& msg, const std::string& params = "") {
+  writeText("ERR ", std::string("{\"code\":\"") + code + "\",\"message\":\"" + msg + "\"" + (params.empty() ? "" : ",\"params\":" + params) + "}");
+  return 2;
+}
 
 // ---------------------------------------------------------------- --reference (#72)
 
@@ -325,10 +329,10 @@ static std::string modeJson(IDeckLink* d, int64_t mode) {
  */
 static int reference(int index) {
   IDeckLinkIterator* probe = createIterator();
-  if (!probe) { printf("{\"ok\":false,\"error\":\"Blackmagic Desktop Video ist nicht installiert (DeckLink-Treiber fehlt)\"}\n"); return 0; }
+  if (!probe) { printf("{\"ok\":false,\"code\":\"decklink.noDriver\",\"error\":\"Blackmagic Desktop Video is not installed (DeckLink driver missing)\"}\n"); return 0; }
   probe->Release();
   std::vector<IDeckLink*> list = allDevices();
-  if (index < 0 || index >= (int)list.size()) { printf("{\"ok\":false,\"error\":\"DeckLink-Gerät %d nicht vorhanden\"}\n", index); return 0; }
+  if (index < 0 || index >= (int)list.size()) { printf("{\"ok\":false,\"code\":\"decklink.noDevice\",\"error\":\"DeckLink device %d not present\",\"params\":{\"index\":%d}}\n", index, index); return 0; }
   IDeckLink* d = list[index];
   DLString dn = nullptr;
   d->GetDisplayName(&dn);
@@ -378,11 +382,11 @@ static int reference(int index) {
 
 static int capture(int index, bool tenBit) {
   std::vector<IDeckLink*> list = allDevices();
-  if (list.empty()) return fatal("Keine DeckLink-Geräte gefunden (Desktop Video installiert? Gerät angeschlossen?)");
-  if (index < 0 || index >= (int)list.size()) return fatal("DeckLink-Gerät " + std::to_string(index) + " nicht vorhanden");
+  if (list.empty()) return fatal("decklink.noDevices", "No DeckLink devices found (Desktop Video installed? Device connected?)");
+  if (index < 0 || index >= (int)list.size()) return fatal("decklink.noDevice", "DeckLink device " + std::to_string(index) + " not present", "{\"index\":" + std::to_string(index) + "}");
   IDeckLink* d = list[index];
   IDeckLinkInput* in = nullptr;
-  if (d->QueryInterface(IID_IDeckLinkInput, (void**)&in) != S_OK) return fatal("Gerät kann nicht aufnehmen");
+  if (d->QueryInterface(IID_IDeckLinkInput, (void**)&in) != S_OK) return fatal("decklink.noInput", "Device cannot capture");
   DLBool detect = false;
   IDeckLinkProfileAttributes* attr = nullptr;
   if (d->QueryInterface(IID_IDeckLinkProfileAttributes, (void**)&attr) == S_OK) { attr->GetFlag(BMDDeckLinkSupportsInputFormatDetection, &detect); attr->Release(); }
@@ -398,16 +402,16 @@ static int capture(int index, bool tenBit) {
     }
     modes->Release();
   }
-  if (!start) return fatal("Gerät meldet keine Videomodi");
+  if (!start) return fatal("decklink.noModes", "Device reports no video modes");
   const BMDPixelFormat pf = tenBit ? bmdFormat10BitYUV : bmdFormat8BitYUV;
   Capture cb(in, tenBit);
   in->SetCallback(&cb);
   if (in->EnableVideoInput(start->GetDisplayMode(), pf, detect ? bmdVideoInputEnableFormatDetection : bmdVideoInputFlagDefault) != S_OK)
-    return fatal("Videoeingang lässt sich nicht öffnen (von anderer Software belegt?)");
+    return fatal("decklink.inputBusy", "Video input cannot be opened (in use by other software?)");
   cb.setMode(start, pf);
   start->Release();
-  if (!detect) writeText("STAT", "{\"message\":\"Gerät ohne Formaterkennung – Modus fest auf 1080i50\"}");
-  if (in->StartStreams() != S_OK) return fatal("Aufnahme lässt sich nicht starten");
+  if (!detect) writeText("STAT", "{\"code\":\"decklink.noDetect\",\"message\":\"Device without format detection – mode fixed to 1080i50\"}");
+  if (in->StartStreams() != S_OK) return fatal("decklink.startFailed", "Capture cannot be started");
   // runs until the bridge closes stdout (writeRecord exits) or kills the process
   for (;;) std::this_thread::sleep_for(std::chrono::seconds(1));
 }

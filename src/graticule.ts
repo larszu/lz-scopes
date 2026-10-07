@@ -11,6 +11,7 @@ import { latencyLines, rtpLines } from './latency';
 import type { Source } from './sources';
 import { CUBE_SPACE_LABELS, SIGNAL_SPACES, cubeProject, cubeRotation, cubeWireframe, qFromChl, qFromHsv, qFromIctcp, qFromLab, qFromRgb, qFromXyz, qFromYcc, type CubeSettings } from './cube';
 import { t, type Key } from './i18n';
+import { bridgeText } from './i18n/bridgeMessage';
 
 export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats'
   | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock' | 'genlock'
@@ -567,7 +568,7 @@ export function statsLines(src: Source, displayFps: number): string[] {
     `${col('scope.stats.status')}${src.status}${src.message ? ` – ${src.message}` : ''}`,
     `${col('scope.stats.analysis')}${src.width}×${src.height}  ${src.yuv ? t('scope.stats.yuvPath', { range: src.yuv.full ? 'full' : 'narrow', bits: src.yuv.bits }) : `${src.depth} bit R′G′B′`}`,
   ];
-  if (info?.note) lines.push(`${col('scope.stats.note')}${info.note}`);
+  if (info?.note) lines.push(`${col('scope.stats.note')}${bridgeText(info, 'note')}`);
   if (info) lines.push(`${col('scope.stats.scan')}${info.interlaced ? t('scope.stats.interlaced') : t('scope.stats.progressive')}; ${t('scope.stats.wholeFrames')}`);
   if (info) {
     lines.push(`${col('scope.stats.source')}${info.sourceWidth}×${info.sourceHeight}  ${info.codec ?? ''} ${info.pixFmt ?? ''}`);

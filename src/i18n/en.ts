@@ -2,6 +2,7 @@
 // One file per area under en/, its German counterpart under de/ with the same name.
 // A new area: add en/<area>.ts and de/<area>.ts and one line in en.ts and de.ts.
 import common from './en/common';
+import bridge from './en/bridge';
 import bridgeui from './en/bridgeui';
 import chain from './en/chain';
 import color from './en/color';
@@ -23,6 +24,7 @@ import theme from './en/theme';
 
 export const en = {
   ...common,
+  ...bridge,
   ...bridgeui,
   ...chain,
   ...color,

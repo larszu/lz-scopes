@@ -3,7 +3,7 @@
   "id": "lz-scopes",
   "name": "LZ Scopes",
   "shortname": "lz-scopes",
-  "description": "Steuerung von LZ Scopes (Software-Scopes): Quellen, Layouts, Einfrieren, Testbilder, Ausgaben mit Overlay-Szenen, Streams, Transport; Feedbacks für Quelle, Freeze, Clipping und Y′ min/max",
+  "description": "Control of LZ Scopes (software scopes): sources, layouts, freeze, test patterns, outputs with overlay scenes, streams, transport; feedbacks for source, freeze, clipping and Y′ min/max",
   "version": "0.1.0",
   "license": "UNLICENSED",
   "repository": "https://github.com/larszu/lz-scopes",

@@ -7,12 +7,14 @@
 //   WS   /meter            ← { cmd: 'open', port?, displayType?, correction?: { name, text }, skipCal? }
 //                          ← { cmd: 'read' } | { cmd: 'key', key } | { cmd: 'close' }
 //                          → { type: 'status' | 'ready' | 'reading' | 'light' | 'error' | 'log' | 'closed', … }
+//                            status/error: { message, code?, params? } (server/messages.mjs)
 //                            'light' (ambient only): { xyz, lux?, cct?, duv?, spectrum?, cri?, tlci?, tm30? }
 
 import { spawn } from 'node:child_process';
 import { existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
+import { BridgeError, bmsg, toMsg } from './messages.mjs';
 
 const EXE = process.platform === 'win32' ? 'spotread.exe' : 'spotread';
 
@@ -35,8 +37,8 @@ export function parseSpotread(text) {
   const ev = [];
   const m = /Result is XYZ:\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/.exec(text);
   if (m) ev.push({ type: 'reading', xyz: [Number(m[1]), Number(m[2]), Number(m[3])] });
-  if (/Spot read failed/i.test(text)) ev.push({ type: 'error', message: text.trim().split('\n').find((l) => /failed/i.test(l)) ?? 'Messung fehlgeschlagen' });
-  if (/needs a calibration/i.test(text)) ev.push({ type: 'status', message: 'Messgerät braucht eine Kalibrierung – Anweisung im Protokoll folgen, dann „Taste senden“.' });
+  if (/Spot read failed/i.test(text)) ev.push({ type: 'error', ...toMsg(text.trim().split('\n').find((l) => /failed/i.test(l)) ?? bmsg('meter.failed', 'Reading failed')) });
+  if (/needs a calibration/i.test(text)) ev.push({ type: 'status', ...bmsg('meter.needsCal', 'The instrument needs a calibration – follow the instruction in the log, then “Send key”.') });
   if (/key to take a reading/i.test(text)) ev.push({ type: 'ready' });
   return ev;
 }
@@ -61,11 +63,11 @@ export function spotreadArgs({ port, displayType, correctionFile, skipCal, ambie
   const a = ambient ? ['-a', '-s'] : ['-e'];
   if (port !== undefined && port !== null && port !== '') {
     const p = Number(port);
-    if (!Number.isInteger(p) || p < 1 || p > 99) throw new Error('ungültiger Port');
+    if (!Number.isInteger(p) || p < 1 || p > 99) throw new BridgeError('meter.badPort', 'invalid port');
     a.push('-c', String(p));
   }
   if (displayType) {
-    if (!/^[A-Za-z0-9_]{1,3}$/.test(displayType)) throw new Error('ungültiger Displaytyp');
+    if (!/^[A-Za-z0-9_]{1,3}$/.test(displayType)) throw new BridgeError('meter.badDisplayType', 'invalid display type');
     a.push('-y', displayType);
   }
   if (correctionFile) a.push('-X', correctionFile);
@@ -78,10 +80,10 @@ export function writeCorrection(c) {
   if (!c) return null;
   const ext = /\.(ccmx|ccss)$/i.exec(String(c.name ?? ''))?.[1]?.toLowerCase();
   const text = String(c.text ?? '');
-  if (!ext || text.length > 2_000_000) throw new Error('Korrektur muss eine .ccmx- oder .ccss-Datei sein');
-  if (!text.trimStart().toUpperCase().startsWith(ext.toUpperCase())) throw new Error(`Datei beginnt nicht mit ${ext.toUpperCase()} (CGATS-Kopf)`);
+  if (!ext || text.length > 2_000_000) throw new BridgeError('meter.correctionType', 'The correction must be a .ccmx or .ccss file');
+  if (!text.trimStart().toUpperCase().startsWith(ext.toUpperCase())) throw new BridgeError('meter.correctionHead', `File does not start with ${ext.toUpperCase()} (CGATS header)`, { ext: ext.toUpperCase() });
   const dir = mkdtempSync(join(tmpdir(), 'lzs-meter-'));
-  const file = join(dir, `korrektur.${ext}`);
+  const file = join(dir, `correction.${ext}`);
   writeFileSync(file, text);
   return { file, dir };
 }
@@ -158,11 +160,11 @@ export function handleMeterSocket(ws) {
       if (msg.cmd === 'open') {
         cleanup();
         const path = findSpotread();
-        if (!path) return send({ type: 'error', message: 'ArgyllCMS nicht gefunden (spotread). Installieren oder LZS_ARGYLL_BIN setzen – oder Werte manuell eingeben.' });
+        if (!path) return send({ type: 'error', ...bmsg('meter.noArgyll', 'ArgyllCMS not found (spotread). Install it or set LZS_ARGYLL_BIN – or enter values by hand.') });
         corr = writeCorrection(msg.correction);
         const args = spotreadArgs({ port: msg.port, displayType: msg.displayType, correctionFile: corr?.file, skipCal: !!msg.skipCal, ambient: !!msg.ambient });
         acc = msg.ambient ? new LightAccumulator() : null;
-        send({ type: 'status', message: `Starte ${path} ${args.join(' ')}` });
+        send({ type: 'status', ...bmsg('meter.starting', `Starting ${path} ${args.join(' ')}`, { cmd: `${path} ${args.join(' ')}` }) });
         proc = spawn(path, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
         const onData = (d) => {
           const t = String(d);
@@ -177,13 +179,13 @@ export function handleMeterSocket(ws) {
         proc.on('error', (e) => send({ type: 'error', message: `spotread: ${e.message}` }));
         proc.on('close', (code) => { send({ type: 'closed', code }); proc = null; });
       } else if (msg.cmd === 'read') {
-        if (!proc) return send({ type: 'error', message: 'Messgerät nicht verbunden' });
+        if (!proc) return send({ type: 'error', ...bmsg('meter.notConnected', 'Instrument not connected') });
         proc.stdin.write(' ');
       } else if (msg.cmd === 'key') {
         // only single printable keys spotread documents (space, letters) – nothing else reaches stdin
         if (proc && /^[ A-Za-z]$/.test(String(msg.key))) proc.stdin.write(String(msg.key));
       } else if (msg.cmd === 'close') cleanup();
-    } catch (e) { send({ type: 'error', message: e.message }); }
+    } catch (e) { send({ type: 'error', ...toMsg(e) }); }
   });
   ws.on('close', cleanup);
 }

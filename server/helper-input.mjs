@@ -4,9 +4,9 @@
 //   4 × ASCII tag | uint32 LE payload length | payload
 //   INFO  JSON {width, height, fpsNum, fpsDen, pixel, matrix?, range?, transfer?, primaries?, name?, timecode?}
 //   FRAM  one picture in `pixel` layout, rows without padding (v210: 128-byte blocks per 48 px)
-//   STAT  JSON {message}         (status text, e.g. "kein Signal")
+//   STAT  JSON {message, code?, params?}   (status text, e.g. "no input signal"; code: server/messages.mjs)
 //   TIME  JSON {tc, df}          (optional, per frame: source timecode, e.g. DeckLink RP 188)
-//   ERR   UTF-8 text             (fatal; the helper exits afterwards)
+//   ERR   UTF-8 text, or JSON {message, code?, params?}   (fatal; the helper exits afterwards)
 //
 // The bridge feeds the frames into ffmpeg (rawvideo/v210 demuxer on stdin) and uses the
 // same scale step as for streams, so matrix/range handling is identical.
@@ -14,6 +14,7 @@
 import { spawn } from 'node:child_process';
 import { PhaseTracker } from './phase.mjs';
 import { FrameAssembler } from './frames.mjs';
+import { BridgeError, bmsg, toMsg } from './messages.mjs';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,7 +45,7 @@ export class HelperRecordParser {
     while (this.buf.length >= 8) {
       const tag = this.buf.toString('ascii', 0, 4);
       const len = this.buf.readUInt32LE(4);
-      if (!/^[A-Z ]{3,4}$/.test(tag) || len > this.max) throw new Error(`Helfer-Protokoll gestört (${JSON.stringify(tag)})`);
+      if (!/^[A-Z ]{3,4}$/.test(tag) || len > this.max) throw new BridgeError('helper.protocol', `Helper protocol broken (${JSON.stringify(tag)})`, { tag: JSON.stringify(tag) });
       if (this.buf.length < 8 + len) return;
       const payload = this.buf.subarray(8, 8 + len);
       this.buf = this.buf.subarray(8 + len);
@@ -61,12 +62,12 @@ export function helperRecord(tag, payload) {
   return Buffer.concat([head, body]);
 }
 
-/** Validated INFO record → ffmpeg input description, or an error text. */
+/** Validated INFO record → ffmpeg input description, or { error: message object }. */
 export function helperFormat(info) {
   const w = Number(info?.width), h = Number(info?.height);
   const px = HELPER_PIXELS[info?.pixel];
-  if (!px) return { error: `Unbekanntes Pixelformat vom Helfer: ${info?.pixel}` };
-  if (!(w >= 16 && w <= 8192 && h >= 16 && h <= 8192)) return { error: `Ungültige Bildgröße vom Helfer: ${w}×${h}` };
+  if (!px) return { error: bmsg('helper.pixel', `Unknown pixel format from the helper: ${info?.pixel}`, { pixel: String(info?.pixel) }) };
+  if (!(w >= 16 && w <= 8192 && h >= 16 && h <= 8192)) return { error: bmsg('helper.size', `Invalid picture size from the helper: ${w}×${h}`, { w, h }) };
   const num = Math.round(Number(info.fpsNum) || 0), den = Math.round(Number(info.fpsDen) || 1);
   const rate = num > 0 && den > 0 ? `${num}/${den}` : '25';
   return { width: w, height: h, rate, fps: num > 0 && den > 0 ? Math.round((num / den) * 1000) / 1000 : 0, bytes: px.bytes(w, h), input: [...px.args, '-video_size', `${w}x${h}`, '-framerate', rate, '-i', 'pipe:0'] };
@@ -98,9 +99,19 @@ export function helperList(bin, extra = [], timeoutMs = 8000) {
     p.on('close', () => {
       clearTimeout(timer);
       const line = out.split('\n').map((l) => l.trim()).filter(Boolean).pop();
-      try { ok(JSON.parse(line ?? '')); } catch { ok({ ok: false, error: err.trim().split('\n').pop() || 'Helfer lieferte keine Liste' }); }
+      try { ok(JSON.parse(line ?? '')); } catch { ok({ ok: false, ...(err.trim() ? { error: err.trim().split('\n').pop() } : { error: 'Helper returned no list', code: 'helper.noList' }) }); }
     });
   });
+}
+
+/** STAT/ERR payload: JSON {message, code?, params?} or plain text → message object. */
+export function helperText(payload) {
+  const text = payload.toString('utf8');
+  try {
+    const j = JSON.parse(text);
+    if (j && typeof j === 'object' && typeof j.message === 'string') return { message: j.message, ...(j.code ? { code: j.code } : {}), ...(j.params ? { params: j.params } : {}) };
+  } catch { /* plain text */ }
+  return { message: text };
 }
 
 /**
@@ -144,7 +155,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
     ff.stderr.on('data', (d) => { stderr = (stderr + d).slice(-1500); });
     ff.stdout.on('data', onOut);
     const self = ff;
-    ff.on('close', (code) => { if (self === ff && code && !closed) ctx.fail(ws, stderr.trim().split('\n').pop() || `ffmpeg beendet (${code})`); });
+    ff.on('close', (code) => { if (self === ff && code && !closed) ctx.fail(ws, stderr.trim().split('\n').pop() || bmsg('ffmpeg.exit', `ffmpeg exited (${code})`, { code })); });
     if (ws.readyState === ws.OPEN) {
       ws.send(JSON.stringify({
         type: 'info', width, height, depth, fps: fpsLimit || f.fps, sourceWidth: f.width, sourceHeight: f.height,
@@ -159,7 +170,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
     if (closed) return;
     if (tag === 'INFO') {
       let info;
-      try { info = JSON.parse(payload.toString('utf8')); } catch { return ctx.fail(ws, 'Helfer: INFO kein JSON'); }
+      try { info = JSON.parse(payload.toString('utf8')); } catch { return ctx.fail(ws, bmsg('helper.info', 'Helper: INFO is not JSON')); }
       startFf(info);
     } else if (tag === 'TIME') {
       let tcm;
@@ -169,25 +180,25 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
     } else if (tag === 'FRAM') {
       if (phase && ctx.now) { const n = ctx.now(); phase.add(n.seconds, n.ref); }
       if (!ff || !fmt) return;
-      if (payload.length !== fmt.bytes) { status = `Bildgröße passt nicht (${payload.length} statt ${fmt.bytes} Byte)`; return; }
+      if (payload.length !== fmt.bytes) { status = bmsg('helper.frameSize', `Picture size does not match (${payload.length} instead of ${fmt.bytes} bytes)`, { got: payload.length, want: fmt.bytes }); return; }
       // newest picture wins: skip when ffmpeg is still busy with the previous ones
       if (ff.stdin.writableLength > fmt.bytes * 2) { dropped++; return; }
       ff.stdin.write(Buffer.from(payload));
     } else if (tag === 'STAT') {
-      try { status = JSON.parse(payload.toString('utf8')).message ?? ''; } catch { status = payload.toString('utf8'); }
-      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped, message: status }));
+      status = helperText(payload);
+      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped, ...toMsg(status) }));
     } else if (tag === 'ERR') {
-      ctx.fail(ws, payload.toString('utf8'));
+      ctx.fail(ws, helperText(payload));
     }
   });
-  helper.stdout.on('data', (d) => { try { parser.push(d); } catch (e) { ctx.fail(ws, e.message); helper.kill('SIGKILL'); } });
+  helper.stdout.on('data', (d) => { try { parser.push(d); } catch (e) { ctx.fail(ws, e); helper.kill('SIGKILL'); } });
   helper.stderr.on('data', (d) => { stderr = (stderr + d).slice(-1500); });
-  helper.on('error', (e) => ctx.fail(ws, `${label}-Helfer nicht startbar: ${e.message}`));
+  helper.on('error', (e) => ctx.fail(ws, bmsg('helper.spawn', `${label} helper cannot be started: ${e.message}`, { label, reason: e.message })));
   helper.on('close', (code) => {
     const finish = () => {
       stopFf();
       if (!closed && ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify({ type: code === 0 ? 'end' : 'error', message: stderr.trim().split('\n').pop() || `${label}-Helfer beendet (${code})` }));
+        ws.send(JSON.stringify({ type: code === 0 ? 'end' : 'error', ...toMsg(stderr.trim().split('\n').pop() || bmsg('helper.exit', `${label} helper exited (${code})`, { label, code })) }));
         ws.close();
       }
     };
@@ -200,7 +211,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
     self.stdin.end();
   });
   const stats = setInterval(() => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped, ...(status ? { message: status } : {}), ...(phase?.report() ? { phase: phase.report() } : {}) }));
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped, ...(status ? toMsg(status) : {}), ...(phase?.report() ? { phase: phase.report() } : {}) }));
   }, 1000);
   ws.on('close', () => { closed = true; clearInterval(stats); stopFf(); helper.kill('SIGTERM'); });
 }

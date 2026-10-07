@@ -13,6 +13,7 @@ import { LatencyMeter, type RtpStats } from './latency';
 import { effectiveWidth, mergeLowLatency, type LowLatencyConfig } from './lowLatency';
 import { meanLuma } from './luma';
 import { t } from './i18n';
+import { bridgeMessage } from './i18n/bridgeMessage';
 
 export { meanLuma };
 
@@ -457,9 +458,9 @@ export class Source {
           this.latency.onBridgeStats(msg.stampAge);
           this.rtpStats = msg.rtp ?? null;
           this.phase = msg.phase ?? null;
-          if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', msg.message);
+          if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', bridgeMessage(msg));
         } else if (msg.type === 'error' || msg.type === 'end') {
-          this.set(msg.type === 'end' ? 'ended' : 'error', msg.message);
+          this.set(msg.type === 'end' ? 'ended' : 'error', bridgeMessage(msg));
         }
         return;
       }

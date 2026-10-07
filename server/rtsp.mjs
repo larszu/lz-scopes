@@ -11,6 +11,7 @@ import { createSocket } from 'node:dgram';
 import { EventEmitter } from 'node:events';
 import { connect } from 'node:net';
 import { MkvWriter } from './mkv.mjs';
+import { BridgeError, bmsg, field } from './messages.mjs';
 import { Depacketizer, ReorderBuffer, RtpClock, parseRtp } from './rtp.mjs';
 
 const md5 = (s) => createHash('md5').update(s).digest('hex');
@@ -62,15 +63,15 @@ export function parseSdp(sdp, base) {
       if (!codec) continue;
       const fmtp = Object.fromEntries((md.attrs.find((a) => a.startsWith(`fmtp:${pt} `))?.slice(`fmtp:${pt} `.length) ?? '')
         .split(';').map((x) => x.trim()).filter(Boolean).map((x) => { const i = x.indexOf('='); return [x.slice(0, i).toLowerCase(), x.slice(i + 1)]; }));
-      if (codec === 'h264' && Number(fmtp['packetization-mode'] ?? 0) === 2) throw new Error('H.264 im Interleaved-Modus (packetization-mode=2) nicht unterstützt');
-      if (codec === 'hevc' && Number(fmtp['sprop-max-don-diff'] ?? 0) > 0) throw new Error('HEVC mit DONL (sprop-max-don-diff > 0) nicht unterstützt');
+      if (codec === 'h264' && Number(fmtp['packetization-mode'] ?? 0) === 2) throw new BridgeError('rtsp.h264Interleaved', 'H.264 in interleaved mode (packetization-mode=2) not supported');
+      if (codec === 'hevc' && Number(fmtp['sprop-max-don-diff'] ?? 0) > 0) throw new BridgeError('rtsp.hevcDonl', 'HEVC with DONL (sprop-max-don-diff > 0) not supported');
       const b64 = codec === 'h264' ? (fmtp['sprop-parameter-sets'] ?? '').split(',') : ['sprop-vps', 'sprop-sps', 'sprop-pps'].flatMap((k) => (fmtp[k] ?? '').split(','));
       const params = b64.filter(Boolean).map((x) => Buffer.from(x, 'base64')).filter((b) => b.length);
       const ctl = md.attrs.find((a) => a.startsWith('control:'))?.slice(8).trim();
       return { codec, pt: Number(pt), rate: Number(rate) || 90000, params, control: ctl ? resolveUrl(ctl, root) : root, session: root };
     }
   }
-  throw new Error('Kein H.264-/HEVC-Videotrack im SDP');
+  throw new BridgeError('rtsp.noTrack', 'No H.264/HEVC video track in the SDP');
 }
 
 function resolveUrl(ctl, base) {
@@ -94,7 +95,7 @@ export class RtspStreamParser {
         continue;
       }
       const end = this.buf.indexOf('\r\n\r\n');
-      if (end < 0) { if (this.buf.length > 65536) throw new Error('RTSP: Kopf zu lang'); return; }
+      if (end < 0) { if (this.buf.length > 65536) throw new Error('RTSP: header too long'); return; }
       const head = this.buf.subarray(0, end).toString('latin1').split('\r\n');
       const headers = {};
       for (const l of head.slice(1)) { const i = l.indexOf(':'); if (i > 0) { const k = l.slice(0, i).trim().toLowerCase(), v = l.slice(i + 1).trim(); headers[k] = headers[k] ? `${headers[k]}, ${v}` : v; } }
@@ -124,7 +125,7 @@ async function udpPair() {
     try { a.close(); } catch { /* not bound */ }
     try { b.close(); } catch { /* not bound */ }
   }
-  throw new Error('Keine freien UDP-Ports');
+  throw new BridgeError('rtsp.noPorts', 'No free UDP ports');
 }
 
 /**
@@ -135,7 +136,7 @@ export class RtspClient extends EventEmitter {
   constructor(url, { transport = 'tcp', timeoutMs = 8000, reorderMs = 30 } = {}) {
     super();
     const u = new URL(url);
-    if (u.protocol !== 'rtsp:') throw new Error('Eigenempfang nur für rtsp:// (rtsps über ffmpeg)');
+    if (u.protocol !== 'rtsp:') throw new BridgeError('rtp.ownRtspOnly', 'Own RTP reception only for rtsp:// (rtsps through ffmpeg)');
     this.cred = u.username ? { user: decodeURIComponent(u.username), pass: decodeURIComponent(u.password) } : null;
     u.username = ''; u.password = '';
     this.url = u.toString();
@@ -153,15 +154,15 @@ export class RtspClient extends EventEmitter {
         if (this.session) h.Session = this.session;
         if (auth) h.Authorization = auth;
         const text = `${method} ${uri} RTSP/1.0\r\n${Object.entries(h).map(([k, v]) => `${k}: ${v}`).join('\r\n')}\r\n\r\n`;
-        const timer = setTimeout(() => { this.pending = null; reject(new Error(`RTSP ${method}: keine Antwort`)); }, this.timeoutMs);
+        const timer = setTimeout(() => { this.pending = null; reject(new BridgeError('rtsp.noAnswer', `RTSP ${method}: no answer`, { method })); }, this.timeoutMs);
         this.pending = (res) => {
           clearTimeout(timer); this.pending = null;
           if (res.status === 401 && this.cred && !auth) {
             this.challenge = pickChallenge(res.headers['www-authenticate'] ?? '');
-            if (!this.challenge) return reject(new Error('RTSP: Anmeldung verlangt, Verfahren unbekannt'));
+            if (!this.challenge) return reject(new BridgeError('rtsp.authUnknown', 'RTSP: authentication required, unknown method'));
             return send(authorization(this.challenge, this.cred, method, uri, ++this.nc));
           }
-          if (res.status !== 200) return reject(new Error(`RTSP ${method}: ${res.status}${res.status === 401 ? ' (Zugangsdaten?)' : ''}`));
+          if (res.status !== 200) return reject(res.status === 401 ? new BridgeError('rtsp.unauthorized', `RTSP ${method}: 401 (credentials?)`, { method }) : new Error(`RTSP ${method}: ${res.status}`));
           resolve(res);
         };
         this.sock.write(text);
@@ -174,7 +175,7 @@ export class RtspClient extends EventEmitter {
     this.sock = connect({ host: this.host, port: this.port });
     this.sock.setNoDelay(true);
     await new Promise((ok, fail) => {
-      const t = setTimeout(() => fail(new Error('RTSP: Verbindung zeitüberschritten')), this.timeoutMs);
+      const t = setTimeout(() => fail(new BridgeError('rtsp.timeout', 'RTSP: connection timed out')), this.timeoutMs);
       this.sock.once('connect', () => { clearTimeout(t); ok(); });
       this.sock.once('error', (e) => { clearTimeout(t); fail(e); });
     });
@@ -310,7 +311,8 @@ export class OwnRtp extends EventEmitter {
         const now = this.client.report();
         if (this.client.transport === 'udp' && udpTooLossy(prev, now)) {
           const lost = now.lost - prev.lost, got = now.packets - prev.packets;
-          this.toTcp(`UDP verlor ${Math.round((100 * lost) / (lost + got))} % der Pakete → TCP`);
+          const pct = Math.round((100 * lost) / (lost + got));
+          this.toTcp(bmsg('rtp.udpLoss', `UDP lost ${pct} % of the packets → TCP`, { pct }));
         }
         prev = now;
       }, 3000);
@@ -344,12 +346,12 @@ export class OwnRtp extends EventEmitter {
       this.emit('switch', why);
       clearInterval(this.watch);
     } catch (e) {
-      this.emit('error', new Error(`Wechsel auf TCP gescheitert: ${e.message}`));
+      this.emit('error', new BridgeError('rtp.tcpSwitchFailed', `Switch to TCP failed: ${e.message}`, { reason: e.message }));
     } finally { this.switching = false; }
   }
   end() { for (const e of this.ends ?? []) e(); }
   /** Counters for the stats message: those of the current session plus the switch note. */
-  report() { return { ...(this.client?.report() ?? {}), switched: this.switched }; }
+  report() { return { ...(this.client?.report() ?? {}), ...(this.switched ? field('switched', this.switched) : { switched: null }) }; }
   /** Feed one ffmpeg (again after a restart: new header, from the next key frame on). */
   attach(stdin) {
     this.sinks.clear();

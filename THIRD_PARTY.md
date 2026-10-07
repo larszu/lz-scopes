@@ -11,7 +11,7 @@ Die Komponenten unten behalten ihre eigenen Lizenzen.
 | [@mediapipe/tasks-vision](https://github.com/google-ai-edge/mediapipe) | 1.0.1 | Apache-2.0 | web + desktop | face auto-tracking; the WASM runtime is copied to `public/mediapipe` at build time (`scripts/copy-mediapipe.mjs`), not committed |
 | BlazeFace short-range model (`public/models/blaze_face_short_range.tflite`) | – | Apache-2.0 | web + desktop | Google MediaPipe model, used unchanged |
 | [ws](https://github.com/websockets/ws) | 8.22.0 | MIT | bridge (desktop / `npm start`) | WebSocket server |
-| [FFmpeg](https://ffmpeg.org/) (builds by [Martin Riedl](https://ffmpeg.martin-riedl.de/) for macOS, [BtbN](https://github.com/BtbN/FFmpeg-Builds) for Windows) | 9.0.2 | GPL-3.0-or-later (no nonfree parts) | desktop app only | see below |
+| [FFmpeg](https://ffmpeg.org/) with x264, x265, libsrt, mbedTLS, zlib (own build, [scripts/ffmpeg-build/](scripts/ffmpeg-build/)) | 9.0.2 | GPL-3.0-or-later (no nonfree parts) | desktop app only | see below |
 | [Public Sans](https://github.com/uswds/public-sans) via [@fontsource-variable/public-sans](https://fontsource.org/fonts/public-sans) | 5.3.0 | SIL OFL 1.1, text in [licenses/public-sans-OFL.txt](licenses/public-sans-OFL.txt) | web + desktop | UI typeface; `src/fonts/` holds the unchanged variable WOFF2 files (latin, latin-ext) so the desktop app works offline |
 | [Capacitor](https://github.com/ionic-team/capacitor) (@capacitor/core, /ios, /cli) | 8.5.2 | MIT, text in [licenses/capacitor-LICENSE.txt](licenses/capacitor-LICENSE.txt) | iOS/iPadOS app | native shell around the web build (`ios/`, docs/ios.md) |
 | [@capacitor-community/bluetooth-le](https://github.com/capacitor-community/bluetooth-le) | 8.3.0 | MIT, text in [licenses/capacitor-bluetooth-le-LICENSE.txt](licenses/capacitor-bluetooth-le-LICENSE.txt) | iOS/iPadOS app | CoreBluetooth for the Opple Light Master (`src/native/webBluetooth.ts`) |
@@ -38,19 +38,29 @@ The `licenses/` folder ships with the desktop app. The gamut distance `(max − 
 
 ## ffmpeg (desktop app)
 
-The desktop installers ship **ffmpeg and ffprobe** in `<resources>/ffmpeg/` and start them as separate processes (command line and pipes; not linked into the app). Builds, pinned by URL and SHA-256 in [scripts/ffmpeg-builds.json](scripts/ffmpeg-builds.json) and checked by `scripts/ffmpeg-fetch.mjs` (no `--enable-nonfree`, libsrt/x264/x265 present):
+The desktop installers ship **ffmpeg and ffprobe** in `<resources>/ffmpeg/` and start them as separate processes (command line and pipes; not linked into the app). They are LZ Scopes' **own minimal build**: [scripts/ffmpeg-build/build.sh](scripts/ffmpeg-build/build.sh) compiles FFmpeg statically with exactly these libraries. Every source archive is pinned by SHA-256 (x264 by its git commit) in [scripts/ffmpeg-build/sources.txt](scripts/ffmpeg-build/sources.txt):
 
-| Platform | Build | Licence |
+| Component | Version | Licence |
 |---|---|---|
-| macOS (universal = arm64 + x64 joined with `lipo`) | FFmpeg 9.0.2, static, [ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de/), build script [git.martin-riedl.de/ffmpeg/build-script](https://git.martin-riedl.de/ffmpeg/build-script) commit `6a611e1` | GPL-3.0-or-later |
-| Windows x64 | FFmpeg n9.0.2-17-g2a571b6068, win64-gpl-shared, [BtbN/FFmpeg-Builds autobuild-2026-09-30-13-08](https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-30-13-08), scripts commit `6c9aec5` | GPL-3.0-or-later |
+| FFmpeg | 9.0.2 (`--enable-gpl --enable-version3`, no `--enable-nonfree`) | GPL-3.0-or-later as configured (code base LGPL-2.1-or-later) |
+| x264 | stable branch, commit b35605a | GPL-2.0-or-later |
+| x265 | 4.2 (10 bit) | GPL-2.0-or-later |
+| libsrt | 1.5.7 | MPL-2.0 |
+| mbedTLS | 3.6.7 | Apache-2.0 |
+| zlib | 1.3.2 | Zlib |
+| Windows only: mingw-w64 winpthreads, GCC runtime (static) | Ubuntu 24.04 toolchain | MIT; GCC Runtime Library Exception |
 
-Both contain GPL libraries (x264, x265) and **libsrt** (MPL-2.0); the macOS build links OpenSSL 3 (Apache-2.0). The full list of libraries and versions is in the build scripts and in `ffmpeg -version` / `versions.txt` of the builds.
+`.github/workflows/ffmpeg-build.yml` builds the following targets:
+- macOS arm64 and macOS x64; `scripts/ffmpeg-fetch.mjs` joins them into a universal binary with `lipo`.
+- Windows x64.
+- Linux x64, for the tests only.
 
-- **Licence texts** (in the app under `ffmpeg/licenses/`, here in [licenses/ffmpeg/](licenses/ffmpeg/)): GPL-3.0, GPL-2.0, LGPL-3.0, LGPL-2.1, FFmpeg `LICENSE.md`, MPL-2.0 (libsrt), Apache-2.0 (OpenSSL).
-- **Source code:** every GitHub release of LZ Scopes carries the corresponding source as assets: `ffmpeg-9.0.2.tar.xz`, `ffmpeg-n9.0.2-17-g2a571b6068.tar.gz`, `BtbN-FFmpeg-Builds-6c9aec5.tar.gz`, `martin-riedl-build-script-6a611e1.tar.gz` (the scripts name every library with version or commit and its download URL). FFmpeg itself: <https://ffmpeg.org/download.html>, licence notes <https://ffmpeg.org/legal.html>. For questions or a copy of the sources, open an issue at <https://github.com/larszu/lz-scopes/issues>.
+It tests each build on its own OS: licence, SRT, and 10-bit HEVC/v210 over TCP and SRT. Then it publishes the zips together with **every source archive and the build script** as the pre-release [ffmpeg-9.0.2-lzs1](https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs1). [scripts/ffmpeg-builds.json](scripts/ffmpeg-builds.json) pins those zips by SHA-256. `scripts/ffmpeg-fetch.mjs` rejects any binary built with `--enable-nonfree` or lacking libsrt, x264 or x265.
+
+- **Licence texts** (in the app under `ffmpeg/licenses/`, here in [licenses/ffmpeg/](licenses/ffmpeg/)): GPL-3.0, GPL-2.0, LGPL-3.0, LGPL-2.1, FFmpeg `LICENSE.md`, MPL-2.0 (libsrt), Apache-2.0 (mbedTLS), MIT (mingw-w64 winpthreads).
+- **Source code (GPLv3 §6d):** every GitHub release of LZ Scopes carries all source archives above, plus `build.sh` and `sources.txt`. The same files are attached to [ffmpeg-9.0.2-lzs1](https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs1). FFmpeg: <https://ffmpeg.org/download.html>, <https://ffmpeg.org/legal.html>. For questions, open an issue at <https://github.com/larszu/lz-scopes/issues>.
 - The web build contains no ffmpeg. `npm start` uses the fetched build (`npm run ffmpeg:fetch`), otherwise `$FFMPEG` or an ffmpeg from the `PATH`.
-- Research and duties: [docs/research/ffmpeg-lizenz.md](docs/research/ffmpeg-lizenz.md). Up to 0.1.0 the app used `ffmpeg-static`, whose macOS arm64 binary is built with `--enable-nonfree` and is not redistributable.
+- Research and duties: [docs/research/ffmpeg-lizenz.md](docs/research/ffmpeg-lizenz.md). Up to 0.1.0 the app used `ffmpeg-static`, whose macOS arm64 binary is built with `--enable-nonfree` and is not redistributable; 1.0.0 to 1.3.0 shipped third-party GPL builds (Martin Riedl for macOS, BtbN for Windows).
 
 ## Capture helpers (optional, built locally)
 

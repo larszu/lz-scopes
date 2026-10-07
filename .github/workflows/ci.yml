@@ -84,3 +84,17 @@ jobs:
       - run: npm ci
       - run: node scripts/ffmpeg-fetch.mjs ${{ matrix.ffmpeg }}
       - run: npx vitest run test/ffmpeg.test.ts test/out10.test.ts
+      # the helpers the installers ship (DeckLink, NDI), compiled as release.yml does: a
+      # Windows-only compile error otherwise shows up only at release time
+      - name: DeckLink SDK include files
+        run: node scripts/decklink-sdk-fetch.mjs
+      - name: MSVC (Windows helpers)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Helpers (DeckLink, NDI) build and start without driver
+        shell: bash
+        run: |
+          set -eu
+          node scripts/build-helpers.mjs decklink ndi
+          exe=""; if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
+          for h in lz-decklink lz-ndi; do "helpers/bin/$h$exe" --list || true; done

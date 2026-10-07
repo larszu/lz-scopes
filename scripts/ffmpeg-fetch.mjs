@@ -126,6 +126,7 @@ export async function fetchFfmpeg(target = hostTarget()) {
 /** All source archives of MANIFEST.sources into vendor/ffmpeg/sources/ (for the release). */
 export async function fetchSources() {
   const out = join(VENDOR, 'sources');
+  rmSync(out, { recursive: true, force: true }); // no stale archives of an earlier build in the release
   mkdirSync(out, { recursive: true });
   for (const s of MANIFEST.sources.files) {
     const dest = join(out, s.name);

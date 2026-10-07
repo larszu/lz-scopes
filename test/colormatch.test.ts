@@ -5,6 +5,9 @@ import {
 } from '../src/match/core';
 import { ycbcr } from '../src/color';
 import type { Space } from '../src/deltae';
+import { setLang } from '../src/i18n';
+
+setLang('de'); // the expectations below are the German texts
 
 const SDR: Space = { transfer: 'sdr', gamut: '709', hlgLw: 1000 };
 const PQ: Space = { transfer: 'pq', gamut: '2020', hlgLw: 1000 };

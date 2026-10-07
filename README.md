@@ -171,7 +171,7 @@ Commands go through [lz-camera-bridge](https://github.com/larszu/lz-camera-bridg
 - **UI**: plain TypeScript, [dockview](https://github.com/mathuo/dockview) for the docking layout, Vite for the build, Electron for the desktop shell, Capacitor for iPhone/iPad (`src/native/` only runs there).
 - **Web build**: asset paths are relative, so it runs at `/` and under `/lz-scopes/`.
 
-Details: [docs/control-api.md](docs/control-api.md) (control API), [docs/frame-protocol.md](docs/frame-protocol.md) (frame protocol), [docs/cable-planner-integration.md](docs/cable-planner-integration.md) (use inside cable-planner), [docs/research](docs/research) (standards and market research), [docs/PUBLISHING.md](docs/PUBLISHING.md) (going public).
+Details: [docs/control-api.md](docs/control-api.md) (control API), [docs/frame-protocol.md](docs/frame-protocol.md) (frame protocol), [docs/cable-planner-integration.md](docs/cable-planner-integration.md) (use inside cable-planner), each also in German as `*.de.md`; [docs/research](docs/research) (standards and market research, German), [docs/PUBLISHING.md](docs/PUBLISHING.md) (going public, internal notes in German).
 
 Embedding:
 

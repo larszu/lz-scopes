@@ -67,6 +67,8 @@ Installer im [neuesten Release](https://github.com/larszu/lz-scopes/releases/lat
 
 **Menü und Einstellungen.** Die Desktop-App hat eine native Menüleiste (macOS: in der Systemleiste, App-Menü zuerst; Windows: im Fenster): *Datei, Bearbeiten, Ansicht, Quellen, Scopes, Ausgabe, Fenster, Hilfe*. Im Browser stehen dieselben Menüs links oben in der Kopfleiste (unter 900 px hinter ☰). Alle globalen Einstellungen liegen in einem Fenster, *Einstellungen …* (`Cmd+,` / `Strg+,` oder ⚙ rechts oben): Oberfläche, Display, Scopes, Messpunkt/CST, Latenz, Uhr/Timecode, Bridge/ffmpeg, Audio, Tastatur, Über/Lizenzen. Das ⚙ im Panel-Kopf enthält nur die Optionen dieses Panels. *Hilfe* verlinkt die Anleitungen und zeigt die Tastenkürzel. Begründung: [docs/research/menue.md](docs/research/menue.md).
 
+**Sprache.** Deutsch und Englisch. Die App folgt der Systemsprache (alles außer Deutsch zeigt Englisch); *Einstellungen → Oberfläche → Sprache* legt sie fest.
+
 Tasten: `Cmd+,` / `Strg+,` Einstellungen, `1`–`6` Layout, `C` Messpunkt (Signal / nach CST / nach LUT), `Leertaste` Einfrieren bzw. Wiedergabe, `←` / `→` ein Bild, `Umschalt+←/→` eine Sekunde, `J` `K` `L` Shuttle, `Pos1` / `Ende`, `F` Vollbild, `S` PNG, `B` Seitenleiste, `Esc` Solo beenden bzw. Messpunkt löschen, `E` Overlay im Ausgabefenster bearbeiten. Vollständig: *Hilfe → Tastenkürzel*.
 
 ## Aus dem Quelltext
@@ -279,6 +281,7 @@ Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in
 npm test        # Farbmathematik (PQ, HLG, Matrizen, XYZ), Statistik, Bridge-Eingabeprüfung, Steuerbefehle, Overlay-Szenen
                 # Audio: K-Filter, Tech 3341/3342 bei 44,1 und 48 kHz, Generator, Bridge-Protokoll 2
 npm run typecheck
+npm run lang:check  # deutsch wirkende Texte außerhalb von src/i18n (UI-Texte nur über t(), src/i18n)
 npm run test:e2e  # Desktop-App per Playwright: Waveform-Pixel, RTSP über mediamtx, Ausgabefenster/MJPEG, Layouts, CST/LUT-Messpunkte
 npm --prefix companion ci && npm run companion:test && npm run companion:build   # Companion-Modul
 ```

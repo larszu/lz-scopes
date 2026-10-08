@@ -7,7 +7,7 @@ const year = new Date().getFullYear()
 // ffmpeg + ffprobe (scripts/ffmpeg-builds.json, fetched by scripts/ffmpeg-fetch.mjs) go to
 // <resources>/ffmpeg/ outside the asar archive, with their licences and the source offer
 // (licenses/ffmpeg/). server/ffmpeg.mjs finds them there.
-const ffmpegDir = { mac: 'vendor/ffmpeg/darwin-universal', win: 'vendor/ffmpeg/win32-x64' }
+const ffmpegDir = { mac: 'vendor/ffmpeg/darwin-universal', win: 'vendor/ffmpeg/win32-x64', linux: 'vendor/ffmpeg/linux-x64' }
 const ffmpegResources = (os, filter) => [
   { from: ffmpegDir[os], to: 'ffmpeg', filter },
   { from: 'licenses/ffmpeg', to: 'ffmpeg/licenses' },
@@ -26,13 +26,16 @@ export default {
   // The packaged package.json must NOT say `type: module` (cable-planner v0.1.1
   // crashed on exactly that: the @electron/universal entry shim is CommonJS).
   // `.mjs` files (server/) stay ESM by extension, electron/main.cjs is CommonJS.
-  extraMetadata: { type: 'commonjs', main: 'electron/main.cjs' },
+  // desktopName: Electron's Wayland app_id / X11 WM_CLASS, matched to the Linux .desktop file
+  extraMetadata: { type: 'commonjs', main: 'electron/main.cjs', desktopName: 'lz-scopes.desktop' },
   // The Resolve helper (run by Python) and the native capture helpers (helpers/bin, built by
   // scripts/build-helpers.mjs) must live outside the asar archive; ffmpeg is an extraResource.
   asarUnpack: ['server/resolve_helper.py', 'helpers/bin/**'],
   // no installer without the redistributable ffmpeg (a missing folder would be skipped silently)
   beforePack: async (ctx) => {
-    const os = ctx.electronPlatformName === 'darwin' ? 'mac' : ctx.electronPlatformName === 'win32' ? 'win' : null
+    const os = { darwin: 'mac', win32: 'win', linux: 'linux' }[ctx.electronPlatformName] ?? null
+    // Linux: only x64 has an ffmpeg build (scripts/ffmpeg-builds.json); arm64 would ship an x64 binary
+    if (os === 'linux' && ctx.arch !== 1) throw new Error('Linux: only x64 is built (no linux-arm64 ffmpeg yet)')
     if (os && !existsSync(`${ffmpegDir[os]}/BUILD.json`)) throw new Error(`${ffmpegDir[os]} missing – node scripts/ffmpeg-fetch.mjs ${ffmpegDir[os].split('/').pop()}`)
   },
   directories: { buildResources: 'build', output: 'release' },
@@ -86,6 +89,33 @@ export default {
     shortcutName: 'LZ Scopes',
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
+  },
+  // Linux (AppImage + deb, x64). File names without spaces: GitHub turns spaces in asset names
+  // into dots, while latest-linux.yml keeps the electron-builder name; the AppImage updater
+  // (electron/updater.cjs) needs both to match. arm64: no linux-arm64 ffmpeg build yet.
+  linux: {
+    target: [
+      { target: 'AppImage', arch: 'x64' },
+      { target: 'deb', arch: 'x64' },
+    ],
+    artifactName: 'lz-scopes-${version}-${arch}.${ext}',
+    executableName: 'lz-scopes',
+    syncDesktopName: true,
+    icon: 'build/icon.png',
+    // freedesktop menu: main category AudioVideo plus the additional category Video
+    category: 'AudioVideo;Video',
+    maintainer: 'Lars Zumpe <209382770+larszu@users.noreply.github.com>',
+    vendor: 'Lars Zumpe',
+    synopsis: 'Waveform, vectorscope, histogram and audio scopes',
+    // also the Comment of the .desktop file
+    description: 'Waveform, vectorscope, histogram and audio scopes for cameras, capture cards, screens and streams',
+    desktop: { entry: { Name: 'LZ Scopes', GenericName: 'Video scopes', 'GenericName[de]': 'Video-Scopes', 'Comment[de]': 'Waveform, Vektorskop, Histogramm und Audio-Scopes für Kameras, Capture-Karten, Bildschirme und Streams', Keywords: 'waveform;vectorscope;scope;video;colour;color;loudness;' } },
+    extraResources: ffmpegResources('linux', ['ffmpeg', 'ffprobe', 'BUILD.json']),
+  },
+  deb: {
+    // electron-builder's defaults (GTK, NSS, libasound …) plus the v4l2 tools for format listing
+    recommends: ['v4l-utils'],
+    packageCategory: 'video',
   },
   portable: { artifactName: '${productName}-${version}-portable.${ext}' },
 }

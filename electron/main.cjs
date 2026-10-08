@@ -8,6 +8,7 @@ const { setupDisplayProfiles } = require('./displayProfile.cjs');
 const { setAppMenu } = require('./menu.cjs');
 const { text, setLang } = require('./i18n.cjs');
 const { registerScheme, setupTestVideos } = require('./testVideos.cjs');
+const { setupUpdater } = require('./updater.cjs');
 
 // test videos (#52) are played over lzs-media://; schemes must be registered before ready
 registerScheme();
@@ -21,6 +22,16 @@ if (process.env.LZS_LANG) app.commandLine.appendSwitch('lang', process.env.LZS_L
 // LZS_HIDDEN=1: main window never shown, no Dock icon, no focus taken (automated checks
 // that need no pixels, e.g. the native menu in e2e/ui-audit.spec.ts).
 const HIDDEN = process.env.LZS_HIDDEN === '1';
+// Linux/Wayland: screen and window capture through the xdg-desktop-portal (PipeWire). Chromium
+// enables it by default on current versions; the switch keeps it on for older ones and is a
+// no-op under X11 (docs/research/linux.md).
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer');
+  // Web Bluetooth (Opple) is "experimental" on Linux in Chromium (runtime_enabled_features.json5,
+  // WebBluetoothCG implementation-status.md: partial, BlueZ 5.41+); enable only that feature.
+  // Untested on Linux.
+  app.commandLine.appendSwitch('enable-blink-features', 'WebBluetooth');
+}
 ipcMain.on('lzs:locale', (e) => { e.returnValue = app.getLocale(); });
 
 let mainWindow = null;
@@ -136,6 +147,8 @@ async function createWindow() {
   });
   mainWindow.webContents.on('will-navigate', (e, url) => { if (!url.startsWith(origin)) { e.preventDefault(); shell.openExternal(url); } });
   await mainWindow.loadURL(origin);
+  // Linux AppImage only: update in the background from the GitHub release (latest-linux.yml)
+  setupUpdater();
 }
 
 app.on('second-instance', () => { if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); } });

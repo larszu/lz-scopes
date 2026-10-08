@@ -7,19 +7,26 @@ const v120 = ['BtbN-FFmpeg-Builds-6c9aec5.tar.gz', 'ffmpeg-9.0.2.tar.xz', 'ffmpe
   'LZ.Scopes-1.2.0-portable.exe', 'LZ.Scopes-1.2.0-universal.dmg', 'LZ.Scopes-1.2.0-universal.dmg.blockmap', 'LZ.Scopes-1.2.0-universal.zip',
   'LZ.Scopes-1.2.0-universal.zip.blockmap', 'LZ.Scopes-1.2.0-x64.exe', 'LZ.Scopes-1.2.0-x64.exe.blockmap', 'martin-riedl-build-script-6a611e1.tar.gz'];
 
+// Linux assets as electron-builder names them (linux.artifactName lz-scopes-${version}-${arch}.${ext}:
+// arch x86_64 for the AppImage, amd64 for the deb)
+const linux = ['lz-scopes-1.6.0-x86_64.AppImage', 'lz-scopes-1.6.0-amd64.deb', 'latest-linux.yml'];
+
 describe('release completeness (#51)', () => {
   const sources = { sources: { files: [{ name: 'ffmpeg-9.0.2.tar.xz' }, { name: 'BtbN-FFmpeg-Builds-6c9aec5.tar.gz' }] } };
   it('a complete release passes', () => {
-    expect(missingAssets(v120, requiredAssets(sources))).toEqual([]);
+    expect(missingAssets([...v120, ...linux], requiredAssets(sources))).toEqual([]);
   });
   it('v1.1.0 (no assets at all) and a release without the Windows installers fail', () => {
-    expect(missingAssets([], requiredAssets(sources)).length).toBe(8);
-    expect(missingAssets(v120.filter((n) => !n.endsWith('.exe')), requiredAssets(sources))).toEqual(['Windows-Installer (NSIS)', 'Windows portable']);
+    expect(missingAssets([], requiredAssets(sources)).length).toBe(11);
+    expect(missingAssets([...v120, ...linux].filter((n) => !n.endsWith('.exe')), requiredAssets(sources))).toEqual(['Windows-Installer (NSIS)', 'Windows portable']);
   });
   it('every ffmpeg source archive of the manifest is required', () => {
     const req = requiredAssets();
     expect(req.length).toBeGreaterThan(6);
-    expect(missingAssets(v120.filter((n) => n !== 'ffmpeg-9.0.2.tar.xz'), requiredAssets(sources))).toEqual(['Quelltext ffmpeg-9.0.2.tar.xz']);
+    expect(missingAssets([...v120, ...linux].filter((n) => n !== 'ffmpeg-9.0.2.tar.xz'), requiredAssets(sources))).toEqual(['Quelltext ffmpeg-9.0.2.tar.xz']);
+  });
+  it('a release without the Linux build (v1.5.0 and earlier) is incomplete', () => {
+    expect(missingAssets(v120, requiredAssets(sources))).toEqual(['Linux AppImage (x64)', 'Linux deb (amd64)', 'Update-Feed Linux latest-linux.yml']);
   });
 });
 

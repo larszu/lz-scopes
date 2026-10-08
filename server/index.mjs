@@ -869,13 +869,32 @@ export function parseAlsaPcm(text) {
   return out;
 }
 
+/** Input devices (demuxers) of an ffmpeg from `ffmpeg -devices` (` D  alsa  ALSA audio input`). */
+export function parseInputDevices(text) {
+  const out = new Set();
+  for (const l of String(text).split('\n')) {
+    const m = /^\s*D[\s.E]*\s+([\w,]+)\s/.exec(l);
+    if (m) for (const n of m[1].split(',')) out.add(n);
+  }
+  return out;
+}
+const indevCache = new Map();
+/** What this ffmpeg can open (the shipped Linux build has v4l2 but no ALSA, docs/research/linux.md). */
+async function inputDevices(ffmpeg) {
+  if (!indevCache.has(ffmpeg)) indevCache.set(ffmpeg, run(ffmpeg, ['-hide_banner', '-devices'], 10000).then((r) => parseInputDevices(r?.out ?? '')));
+  return indevCache.get(ffmpeg);
+}
+
 async function listDevices() {
   const ffmpeg = ffmpegCandidates()[0];
   if (!ffmpeg) return [];
   if (process.platform === 'linux') {
     const { readdir, readFile: rf } = await import('node:fs/promises');
-    const video = (await readdir('/dev').catch(() => [])).filter((f) => /^video\d+$/.test(f)).map((f) => ({ name: f, url: `device:v4l2:/dev/${f}`, kind: 'video' }));
-    return [...video, ...parseAlsaPcm(await rf('/proc/asound/pcm', 'utf8').catch(() => ''))];
+    const can = await inputDevices(ffmpeg);
+    // only what this ffmpeg can open: no ALSA entries for a build without ALSA (the UI must not offer them)
+    const video = can.has('v4l2') ? (await readdir('/dev').catch(() => [])).filter((f) => /^video\d+$/.test(f)).map((f) => ({ name: f, url: `device:v4l2:/dev/${f}`, kind: 'video' })) : [];
+    const audio = can.has('alsa') ? parseAlsaPcm(await rf('/proc/asound/pcm', 'utf8').catch(() => '')) : [];
+    return [...video, ...audio];
   }
   const fmt = process.platform === 'win32' ? 'dshow' : 'avfoundation';
   const r = await run(ffmpeg, ['-hide_banner', '-f', fmt, '-list_devices', 'true', '-i', fmt === 'dshow' ? 'dummy' : ''], 10000);

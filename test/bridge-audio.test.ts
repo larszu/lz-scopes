@@ -74,6 +74,16 @@ describe('bridge: PTS and local audio devices (#24)', () => {
       { name: 'ALC892 Analog (hw:0,0)', url: 'audio:alsa:hw:0,0', kind: 'audio' },
     ]);
   });
+  it('reads the input devices of an ffmpeg (-devices): ALSA only offered when the build has it', async () => {
+    // @ts-expect-error plain JS module
+    const { parseInputDevices } = await import('../server/index.mjs');
+    // layout of `ffmpeg -hide_banner -devices` (9.0.2, stdout); the shipped Linux build lists fbdev and v4l2, no alsa
+    const out = 'Devices:\n D. = Demuxing supported\n .E = Muxing supported\n ---\n DE fbdev           Linux framebuffer\n D  lavfi           Libavfilter virtual input device\n DE video4linux2,v4l2 Video4Linux2 output device\n  E audiotoolbox    AudioToolbox output device\n';
+    const d = parseInputDevices(out);
+    expect([...d].sort()).toEqual(['fbdev', 'lavfi', 'v4l2', 'video4linux2']);
+    expect(d.has('alsa')).toBe(false);
+    expect(parseInputDevices(' D  alsa            ALSA audio input\n').has('alsa')).toBe(true);
+  });
   it('protocol 2 with PTS: showinfo on the picture, ashowinfo on the sound, info log level', async () => {
     // @ts-expect-error plain JS module
     const { ffmpegArgs } = await import('../server/index.mjs');

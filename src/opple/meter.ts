@@ -38,11 +38,15 @@ export const REQUEST_OPTIONS = {
   optionalServices: [NUS_SERVICE],
 };
 
+/** Linux desktop (not Android): Chromium's Web Bluetooth is only partial there. */
+const onLinux = () => typeof navigator !== 'undefined' && /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
+
+/** ok: usable; reason: why not, or (ok on Linux) a note that it is only partial there. */
 export function bluetoothSupport(): { ok: boolean; reason: string } {
-  if (typeof navigator === 'undefined' || !bluetooth()) return { ok: false, reason: t('opple.m.noWebBluetooth') };
+  if (typeof navigator === 'undefined' || !bluetooth()) return { ok: false, reason: t(onLinux() ? 'opple.m.linuxNoBluetooth' : 'opple.m.noWebBluetooth') };
   // the iOS app maps navigator.bluetooth onto CoreBluetooth (src/native/webBluetooth.ts); no secure-context rule there
   if (typeof window !== 'undefined' && window.isSecureContext === false && !(bluetooth() as { native?: boolean }).native) return { ok: false, reason: t('opple.m.needsHttps') };
-  return { ok: true, reason: '' };
+  return { ok: true, reason: onLinux() ? t('opple.m.linuxPartial') : '' };
 }
 
 /**

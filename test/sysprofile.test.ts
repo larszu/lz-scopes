@@ -55,3 +55,37 @@ describe('ProfileSwitcher', () => {
     await expect(sw.set(7, '/nope.icc')).rejects.toThrow();
   });
 });
+
+// colormgr output as colord's client/cd-util.c prints it (cd_util_print_field: label, colon,
+// padding to column 15; the profile file name on an unlabelled line below `Profile n:`).
+describe('Linux colord (colormgr) parsing', () => {
+  const { parseColordDevices, parseObjectPath } = require('../electron/displayProfile.cjs');
+  const out = [
+    'Object Path:   /org/freedesktop/ColorManager/devices/xrandr_Dell_Inc__DELL_U2415_ABC_lars_1000',
+    'Owner:         lars',
+    'Kind:          display',
+    'Model:         DELL U2415',
+    'Vendor:        Dell Inc.',
+    'Device ID:     xrandr-Dell Inc.-DELL U2415-ABC',
+    'Profile 1:     icc-0123abcd',
+    '               /home/lars/.local/share/icc/rec709.icc',
+    'Profile 2:     icc-4567ef01',
+    '               /var/lib/colord/icc/edid-1.icc',
+    'Metadata:      XRANDR_name=DP-1',
+    '',
+    'Object Path:   /org/freedesktop/ColorManager/devices/xrandr_eDP_1_lars_1000',
+    'Model:         eDP-1',
+    'Device ID:     xrandr-eDP-1',
+    '',
+  ].join('\n');
+  it('reads displays, default profile (Profile 1) and the output name', () => {
+    expect(parseColordDevices(out)).toEqual([
+      { id: 'xrandr-Dell Inc.-DELL U2415-ABC', name: 'DP-1 – Dell Inc. DELL U2415', current: '/home/lars/.local/share/icc/rec709.icc', custom: '/home/lars/.local/share/icc/rec709.icc', profileId: 'icc-0123abcd' },
+      { id: 'xrandr-eDP-1', name: 'eDP-1', current: null, custom: null, profileId: null },
+    ]);
+  });
+  it('object path of an imported or found profile', () => {
+    expect(parseObjectPath('Object Path:   /org/freedesktop/ColorManager/profiles/icc_0123\nFilename:      /x.icc\n')).toBe('/org/freedesktop/ColorManager/profiles/icc_0123');
+    expect(parseObjectPath('')).toBe(null);
+  });
+});

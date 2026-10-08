@@ -29,7 +29,7 @@
       ]
     },
     "linux-x64": {
-      "_doc": "not shipped (no Linux app); CI and local tests only",
+      "_doc": "shipped in the Linux app (AppImage, deb); dynamically linked against glibc 2.38+ and libstdc++ (Ubuntu 24.04, Debian 13, Fedora 39 or later); input devices: v4l2, no ALSA (built with --disable-autodetect)",
       "version": "9.0.2-lzs1",
       "provider": "LZ Scopes own build (static, GPLv3): FFmpeg + x264 + x265 10 bit + libsrt + mbedTLS + zlib",
       "page": "https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs1",

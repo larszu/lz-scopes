@@ -1,7 +1,7 @@
 name: Release
 
-# Tag v* → Windows (NSIS + portable) and macOS (universal dmg + zip) plus the ffmpeg
-# sources, attached directly to the GitHub release.
+# Tag v* → Windows (NSIS + portable), macOS (universal dmg + zip) and Linux (AppImage + deb,
+# x64) plus the ffmpeg sources, attached directly to the GitHub release.
 #
 # The release is created as a DRAFT first and published only when every asset is there
 # (job `publish`, scripts/release-check.mjs), so a release without installers is never
@@ -65,6 +65,9 @@ jobs:
           - os: macos-latest
             build_args: --mac --universal
             ffmpeg: darwin-universal
+          - os: ubuntu-latest
+            build_args: --linux
+            ffmpeg: linux-x64
     runs-on: ${{ matrix.os }}
     env:
       # the ffmpeg tests must not be skipped here (test/shippedFfmpeg.ts)
@@ -91,6 +94,10 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
       # DeckLink loads the user's Desktop Video driver, NDI the user's NDI runtime; nothing of either is shipped
+      # the bridge tests need mediamtx on no OS; Linux additionally smoke-starts the packaged app under Xvfb
+      - name: Xvfb (Linux smoke start)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q xvfb
       - name: Helpers (DeckLink, NDI; macOS universal)
         run: node scripts/build-helpers.mjs decklink ndi
       - name: Helpers built and runnable without driver
@@ -118,6 +125,12 @@ jobs:
             dir="$res/ffmpeg"; lipo -archs "$dir/ffmpeg"; exe="$dir/ffmpeg"
             lipo -archs "$res/app.asar.unpacked/helpers/bin/lz-decklink"
             test -f "$res/app.asar.unpacked/helpers/bin/lz-ndi"
+          elif [ "$RUNNER_OS" = Linux ]; then
+            res="release/linux-unpacked/resources"
+            dir="$res/ffmpeg"; exe="$dir/ffmpeg"
+            test -x "$res/app.asar.unpacked/helpers/bin/lz-decklink"
+            test -x "$res/app.asar.unpacked/helpers/bin/lz-ndi"
+            ls release/*.AppImage release/*.deb release/latest-linux.yml
           else
             res="release/win-unpacked/resources"
             dir="$res/ffmpeg"; exe="$dir/ffmpeg.exe"
@@ -129,6 +142,12 @@ jobs:
           if "$exe" -hide_banner -version | grep -q -- --enable-nonfree; then echo "nonfree ffmpeg im Paket"; exit 1; fi
           "$exe" -hide_banner -protocols | grep -qw srt
           echo "Paket: ffmpeg weitergebbar (kein nonfree) mit SRT, DeckLink- und NDI-Helfer enthalten"
+      - name: Smoke start of the AppImage (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x release/*.AppImage
+          # no FUSE on the runner; Ubuntu 24.04 blocks the unprivileged user-namespace sandbox of AppImages (see README)
+          bash scripts/linux-smoke.sh "$(ls release/*.AppImage)" --appimage-extract-and-run --no-sandbox
       - name: Attach to the draft (with retries)
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
@@ -137,7 +156,7 @@ jobs:
         run: |
           set -u
           shopt -s nullglob
-          files=(release/*.exe release/*.dmg release/*.zip release/*.blockmap release/latest*.yml)
+          files=(release/*.exe release/*.dmg release/*.zip release/*.AppImage release/*.deb release/*.blockmap release/latest*.yml)
           printf '%s\n' "${files[@]}"
           for i in 1 2 3 4 5; do
             gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber && exit 0

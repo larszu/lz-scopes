@@ -129,6 +129,8 @@ export default {
   'opple.sc.outOfGamut': 'Outside the display gamut ({space}): hatched, the clipped colour is shown',
   'opple.sc.swatchInfo': 'Display {space} · brightness normalised · no white balance (display white = D65)',
   'opple.sc.swatchFoot': 'Only correct with a calibrated display and active colour management · filter sensor: trend measurement',
+  'opple.m.linuxPartial': 'Linux: Web Bluetooth in Chromium is only partly implemented (needs BlueZ 5.41 or later); the Light Master on Linux is untested.',
+  'opple.m.linuxNoBluetooth': 'No Web Bluetooth here. On Linux Chromium implements it only partly: it needs BlueZ 5.41 or later and a Bluetooth adapter; in Chrome the flag enable-experimental-web-platform-features.',
   'opple.m.noWebBluetooth': 'This browser has no Web Bluetooth (use Chrome/Edge or the desktop app; Safari and Firefox cannot do it).',
   'opple.m.needsHttps': 'Web Bluetooth needs https or localhost.',
   'opple.m.noWritable': 'No writable characteristic on the device',

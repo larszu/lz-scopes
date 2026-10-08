@@ -17,6 +17,7 @@ Die Komponenten unten behalten ihre eigenen Lizenzen.
 | [@capacitor-community/bluetooth-le](https://github.com/capacitor-community/bluetooth-le) | 8.3.0 | MIT, text in [licenses/capacitor-bluetooth-le-LICENSE.txt](licenses/capacitor-bluetooth-le-LICENSE.txt) | iOS/iPadOS app | CoreBluetooth for the Opple Light Master (`src/native/webBluetooth.ts`) |
 | [bonjour-service](https://github.com/onlxltd/bonjour-service) with multicast-dns, dns-packet, thunky, @leichtgewicht/ip-codec, fast-deep-equal | 1.4.4 | MIT, text in [licenses/bonjour-service-LICENSE.txt](licenses/bonjour-service-LICENSE.txt) (dependencies: MIT, notices in their packages) | bridge (desktop / `npm start`) | announces `_lz-scopes._tcp` for the iOS app (`server/bonjour.mjs`) |
 | [Electron](https://www.electronjs.org/) | 44.4.5 | MIT | desktop app | Chromium and Node.js inside it carry their own notices (`LICENSES.chromium.html` in the app bundle) |
+| [electron-updater](https://github.com/electron-userland/electron-builder) with builder-util-runtime, debug, ms, fs-extra, jsonfile, universalify, js-yaml, lazy-val, lodash.escaperegexp, lodash.isequal, tiny-typed-emitter (MIT), graceful-fs, semver (ISC), sax (BlueOak-1.0.0), argparse (Python-2.0) | 6.8.9 | MIT, text in [licenses/electron-updater-LICENSE.txt](licenses/electron-updater-LICENSE.txt) (dependencies: notices in their packages) | Linux AppImage | background update from the GitHub release feed `latest-linux.yml` (`electron/updater.cjs`) |
 
 ## Ported formulas and constants
 
@@ -49,11 +50,12 @@ The desktop installers ship **ffmpeg and ffprobe** in `<resources>/ffmpeg/` and 
 | mbedTLS | 3.6.7 | Apache-2.0 |
 | zlib | 1.3.2 | Zlib |
 | Windows only: mingw-w64 winpthreads, GCC runtime (static) | Ubuntu 24.04 toolchain | MIT; GCC Runtime Library Exception |
+| Linux: glibc, libstdc++, libgcc_s (system libraries, dynamically linked, not shipped) | glibc 2.38+, GCC 13 runtime | LGPL-2.1-or-later; GCC Runtime Library Exception |
 
 `.github/workflows/ffmpeg-build.yml` builds the following targets:
 - macOS arm64 and macOS x64; `scripts/ffmpeg-fetch.mjs` joins them into a universal binary with `lipo`.
 - Windows x64.
-- Linux x64, for the tests only.
+- Linux x64, shipped in the Linux app (AppImage, deb). It links the system's glibc 2.38+ and libstdc++ (GCC 13) dynamically, so it needs Ubuntu 24.04, Debian 13, Fedora 39 or later. Input devices: v4l2; no ALSA (the build disables autodetected libraries).
 
 It tests each build on its own OS: licence, SRT, and 10-bit HEVC/v210 over TCP and SRT. Then it publishes the zips together with **every source archive and the build script** as the pre-release [ffmpeg-9.0.2-lzs1](https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs1). [scripts/ffmpeg-builds.json](scripts/ffmpeg-builds.json) pins those zips by SHA-256. `scripts/ffmpeg-fetch.mjs` rejects any binary built with `--enable-nonfree` or lacking libsrt, x264 or x265.
 
@@ -64,8 +66,8 @@ It tests each build on its own OS: licence, SRT, and 10-bit HEVC/v210 over TCP a
 
 ## Capture helpers (optional, built locally)
 
-- **DeckLink helper** (`helpers/decklink/`, shipped in the desktop app for macOS and Windows): own code, compiled against the include files of the DeckLink SDK 12.0 (headers, IDL, `DeckLinkAPIDispatch.cpp`). They are not in this repository; CI fetches them from the copy in the OBS Studio repository at a fixed commit, every file checked by its git blob hash ([scripts/decklink-sdk.json](scripts/decklink-sdk.json), `npm run decklink:fetch`). The include files carry Blackmagic Design's own permissive licence ([licenses/decklink-sdk-headers.txt](licenses/decklink-sdk-headers.txt)); the [DeckLink SDK EULA](https://www.blackmagicdesign.com/EULA/DeckLinkSDK) exempts `/Mac/Include`, `/Win/Include` and `/Linux/Include` from its clauses 1, 4.3, 4.4, 5, 7 and 8 (§0.1) and permits creating software compatible with Blackmagic products (§1.2). The driver (Blackmagic Desktop Video) is installed by the user and not shipped. Designation per EULA §6.2: "LZ Scopes compatible with Blackmagic Design DeckLink". DeckLink is a trademark of Blackmagic Design Pty. Ltd. ffmpeg's own DeckLink device is `nonfree` and is not used.
-- **NDI® helper** (`helpers/ndi/`): own code; `ndi-min.h` takes over type and function declarations from the NDI SDK 6.3 headers, which are MIT-licensed file by file (text in [licenses/ndi-sdk-headers-MIT.txt](licenses/ndi-sdk-headers-MIT.txt)). The NDI runtime is **not** shipped; the helper loads the one the user installed. NDI® is a registered trademark of Vizrt NDI AB (<https://ndi.video/>).
+- **DeckLink helper** (`helpers/decklink/`, shipped in the desktop app for macOS, Windows and Linux): own code, compiled against the include files of the DeckLink SDK 12.0 (headers, IDL, `DeckLinkAPIDispatch.cpp`). They are not in this repository; CI fetches them from the copy in the OBS Studio repository at a fixed commit, every file checked by its git blob hash ([scripts/decklink-sdk.json](scripts/decklink-sdk.json), `npm run decklink:fetch`). The include files carry Blackmagic Design's own permissive licence ([licenses/decklink-sdk-headers.txt](licenses/decklink-sdk-headers.txt)); the [DeckLink SDK EULA](https://www.blackmagicdesign.com/EULA/DeckLinkSDK) exempts `/Mac/Include`, `/Win/Include` and `/Linux/Include` from its clauses 1, 4.3, 4.4, 5, 7 and 8 (§0.1) and permits creating software compatible with Blackmagic products (§1.2). The driver (Blackmagic Desktop Video) is installed by the user and not shipped. Designation per EULA §6.2: "LZ Scopes compatible with Blackmagic Design DeckLink". DeckLink is a trademark of Blackmagic Design Pty. Ltd. ffmpeg's own DeckLink device is `nonfree` and is not used.
+- **NDI® helper** (`helpers/ndi/`, shipped for macOS, Windows and Linux; on Linux it loads `libndi.so.6`): own code; `ndi-min.h` takes over type and function declarations from the NDI SDK 6.3 headers, which are MIT-licensed file by file (text in [licenses/ndi-sdk-headers-MIT.txt](licenses/ndi-sdk-headers-MIT.txt)). The NDI runtime is **not** shipped; the helper loads the one the user installed. NDI® is a registered trademark of Vizrt NDI AB (<https://ndi.video/>).
 
 ## ArgyllCMS (optional, not shipped)
 

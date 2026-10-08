@@ -29,7 +29,7 @@ jobs:
           node-version: '24'
           cache: 'npm'
       - run: npm ci
-      # same builder as the Windows app (BtbN, GPLv3, libsrt); Linux is not shipped
+      # the own build the Linux app ships (scripts/ffmpeg-builds.json, linux-x64)
       - run: node scripts/ffmpeg-fetch.mjs linux-x64
       - run: npx tsc --noEmit
       - run: npx tsc -p e2e --noEmit
@@ -101,3 +101,48 @@ jobs:
           node scripts/build-helpers.mjs decklink ndi
           exe=""; if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
           for h in lz-decklink lz-ndi; do "helpers/bin/$h$exe" --list || true; done
+
+  # The Linux app as release.yml packages it (AppImage + deb, x64), started under Xvfb: bridge
+  # up with the SHIPPED ffmpeg, UI served (scripts/linux-smoke.sh). The deb is installed with apt
+  # (AppArmor profile, /opt) and started like a user would.
+  linux-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: sudo apt-get update -q && sudo apt-get install -y -q xvfb
+      - run: node scripts/ffmpeg-fetch.mjs linux-x64
+      - run: npm run build
+      - run: node scripts/decklink-sdk-fetch.mjs
+      - name: Helpers (DeckLink, NDI) build and start without driver
+        run: |
+          node scripts/build-helpers.mjs decklink ndi
+          for h in lz-decklink lz-ndi; do "helpers/bin/$h" --list || true; done
+      - name: Package (AppImage, deb)
+        run: node node_modules/electron-builder/cli.js --config electron-builder.js --linux --publish never
+      - name: Package contents
+        run: |
+          set -eu
+          ls -lh release/
+          res=release/linux-unpacked/resources
+          test -x "$res/ffmpeg/ffmpeg"; test -x "$res/ffmpeg/ffprobe"; ls "$res/ffmpeg/licenses"
+          test -x "$res/app.asar.unpacked/helpers/bin/lz-decklink"; test -x "$res/app.asar.unpacked/helpers/bin/lz-ndi"
+          test -f release/latest-linux.yml && cat release/latest-linux.yml
+          ls release/*.AppImage release/*.deb
+          dpkg-deb --info release/*.deb
+          grep -E '^(Categories|Name|Exec)=' release/linux-unpacked/*.desktop 2>/dev/null || dpkg-deb --fsys-tarfile release/*.deb | tar -xO --wildcards '*.desktop'
+          # packaging trap: the packaged package.json must not say "type": "module"
+          node -e "const p=JSON.parse(require('@electron/asar').extractFile('release/linux-unpacked/resources/app.asar','package.json'));console.log(p.type,p.main);if(p.type!=='commonjs')process.exit(1)"
+      - name: Smoke start AppImage
+        run: |
+          chmod +x release/*.AppImage
+          bash scripts/linux-smoke.sh "$(ls release/*.AppImage)" --appimage-extract-and-run --no-sandbox
+      - name: Smoke start deb (installed, with the sandbox)
+        run: |
+          sudo apt-get install -y -q "./$(ls release/*.deb)"
+          bash scripts/linux-smoke.sh lz-scopes

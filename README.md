@@ -9,12 +9,12 @@
 
 <p align="center">
   <b>Software waveform monitor, vectorscope, histogram and CIE diagram, including RTSP streams.</b><br />
-  Measure camera, screen, file, network stream or a built-in test pattern. In the browser or as a desktop app for macOS and Windows.
+  Measure camera, screen, file, network stream or a built-in test pattern. In the browser or as a desktop app for macOS, Windows and Linux.
 </p>
 
 <p align="center">
   <a href="https://github.com/larszu/lz-scopes/releases/latest">
-    <img src="https://img.shields.io/badge/Download-macOS%20%26%20Windows-1D324F?style=for-the-badge&logo=github&logoColor=white" alt="Download LZ Scopes for macOS and Windows" height="40" />
+    <img src="https://img.shields.io/badge/Download-macOS%20%7C%20Windows%20%7C%20Linux-1D324F?style=for-the-badge&logo=github&logoColor=white" alt="Download LZ Scopes for macOS, Windows and Linux" height="40" />
   </a>
   &nbsp;
   <a href="https://larszu.github.io/lz-scopes/">
@@ -40,7 +40,7 @@
 ## Why LZ Scopes
 
 - **Real scopes, in software.** Waveform (luma, RGB overlay, RGB / YRGB / YCbCr parade), vectorscope, Tektronix-style diamond (R′G′B′ gamut), CIE 1931 xy or 1976 u′v′, histogram, false colour (ARRI-style, RED video mode, Sony SDR / S-Log3 palettes), zebra, gamut warning and numeric readout with MaxCLL / MaxFALL for PQ.
-- **Streams, not just files.** RTSP, RTMP, SRT, UDP, RTP, HLS and HTTP via an ffmpeg bridge; capture cards through the bridge (`device:`, explicit mode, raw 10-bit formats and decode matrix, also on remote bridges); DeckLink input through a native helper, compatible with Blackmagic Design DeckLink, shipped in the desktop app for macOS and Windows and active only when the Desktop Video driver is installed (`decklink:`, see [helpers/decklink](helpers/decklink/README.md), untested with hardware); NDI® sources through a helper that loads the user-installed NDI runtime (`ndi:`, [ndi.video](https://ndi.video/), 8-bit UYVY or 16-bit P216, tested only in loopback); watch folders on the bridge machine (`folder:`, newest 16-bit TIFF / DPX / EXR still, only folders released with `--watch-dir` or, in the desktop app, by dialog); DaVinci Resolve in 16 bit through its scripting API while paused and as a cropped live window capture (8 bit) while the timeline plays (a running Resolve is detected and offered in the source list); camera / USB capture with device picker, screen or window with crop, watch folder, video and image files directly in the browser.
+- **Streams, not just files.** RTSP, RTMP, SRT, UDP, RTP, HLS and HTTP via an ffmpeg bridge; capture cards through the bridge (`device:`, explicit mode, raw 10-bit formats and decode matrix, also on remote bridges); DeckLink input through a native helper, compatible with Blackmagic Design DeckLink, shipped in the desktop app for macOS, Windows and Linux and active only when the Desktop Video driver is installed (`decklink:`, see [helpers/decklink](helpers/decklink/README.md), untested with hardware); NDI® sources through a helper that loads the user-installed NDI runtime (`ndi:`, [ndi.video](https://ndi.video/), 8-bit UYVY or 16-bit P216, tested only in loopback); watch folders on the bridge machine (`folder:`, newest 16-bit TIFF / DPX / EXR still, only folders released with `--watch-dir` or, in the desktop app, by dialog); DaVinci Resolve in 16 bit through its scripting API while paused and as a cropped live window capture (8 bit) while the timeline plays (a running Resolve is detected and offered in the source list); camera / USB capture with device picker, screen or window with crop, watch folder, video and image files directly in the browser.
 - **Manual for the inputs** (Resolve, window capture, folders, clean feed, capture cards): [docs/manual/inputs.md](docs/manual/inputs.md), in the app under **Hilfe → Inputs manual**.
 - **HDR aware.** The picture view down-maps HDR and log for SDR screens after BT.2408 (hybrid-linear, highlights through the BT.2390 EETF, reference white ≈ 93 %) or BT.2446 Method A. 8 or 16 bit analysis, PQ and HLG (display peak Lw 500-10 000 cd/m², system gamma applied to luminance per BT.2100, EBU R 167 presets), BT.709 / 2020 / 601 with 525- and 625-line primaries, waveform scale in cd/m² with BT.2408 reference marks (75 % HLG, 58 % PQ, 38 % grey card) and optional EBU R 103 limits (-5 / 105 %).
 - **Camera log.** ARRI LogC3 / LogC4, Sony S-Log3, Panasonic V-Log, Blackmagic Film Gen 5, Canon Log 2 / 3, RED Log3G10, Fujifilm F-Log2, DJI D-Log, Nikon N-Log and Apple Log with their camera gamuts (Bradford-adapted where the white differs). Log acts on the scene-referred waveform scale (reflectance, 18 % grey), the CIE diagram, the picture view and the vectorscope targets.
@@ -86,8 +86,15 @@ Get the installer from the [latest release](https://github.com/larszu/lz-scopes/
 |---|---|
 | macOS (Apple Silicon and Intel) | `LZ Scopes-<version>-universal.dmg` or `.zip` |
 | Windows 10/11 (x64) | `LZ Scopes-<version>-x64.exe` (installer) or `-portable.exe` |
+| Linux x64 (Ubuntu 24.04, Debian 13, Fedora 39 or later) | `lz-scopes-<version>-amd64.deb` or `lz-scopes-<version>-x86_64.AppImage` |
 
 The desktop app contains the bridge and a redistributable ffmpeg 9.0.2 (GPLv3, with SRT; licences and source: [THIRD_PARTY.md](THIRD_PARTY.md)), so RTSP, SRT and other network sources work right away without a system ffmpeg. The *Bridge* section shows which ffmpeg runs. macOS builds are ad-hoc signed: on first start, right-click and choose *Open*.
+
+**Linux** (x64; glibc 2.38 or later, because of the shipped ffmpeg; arm64 such as Raspberry Pi 5 or Jetson is not built yet):
+- **deb** (recommended): `sudo apt install ./lz-scopes-<version>-amd64.deb`. It installs to `/opt/LZ Scopes`, adds a menu entry (*Sound & Video*) and an AppArmor profile so the Chromium sandbox works on Ubuntu 24.04. Updates: install the newer deb.
+- **AppImage**: `chmod +x lz-scopes-<version>-x86_64.AppImage`, then start it. It needs FUSE 2 (`sudo apt install libfuse2t64` on Ubuntu 24.04) or `--appimage-extract-and-run`. If it stops with "No usable sandbox" (Ubuntu 24.04 blocks the sandbox of AppImages), use the deb or start it with `--no-sandbox`. The AppImage updates itself in the background from the GitHub release and installs the update when you quit.
+- **Capture devices**: your user must be in the groups `video` (V4L2 cameras and capture cards) and `audio`: `sudo usermod -aG video,audio $USER`, then log in again. Devices that create their nodes without these groups need a udev rule, e.g. `/etc/udev/rules.d/70-lz-scopes.rules` with `SUBSYSTEM=="video4linux", GROUP="video", MODE="0660"`, then `sudo udevadm control --reload && sudo udevadm trigger`. DeckLink needs Blackmagic Desktop Video for Linux (brings its own rules), NDI the NDI runtime (`libndi.so.6`).
+- **What works differently on Linux**: video devices via V4L2 through the bridge; sound comes through Chromium (PulseAudio/PipeWire, at most 2 channels): the shipped ffmpeg has no ALSA, so the bridge offers no ALSA devices. Screen capture under Wayland goes through the system's portal dialog. The Opple light meter (Web Bluetooth) works on Linux only partly (BlueZ 5.41+). Switching the display profile uses colord (`colormgr`) and works only on desktops that apply colord profiles (GNOME; X11 with xiccd), not on KDE Plasma 6. Untested on real hardware: all of these devices, the Opple, the colord switch, Wayland capture and the AppImage self-update. CI builds both packages and starts them. Details: [docs/research/linux.md](docs/research/linux.md).
 
 **Web edition:** <https://larszu.github.io/lz-scopes/>. Test patterns, camera, screen and files work there. RTSP, SRT and other network streams need the desktop app or `npm start`, because a browser cannot open them.
 
@@ -122,12 +129,12 @@ npm test                     # colour maths, statistics, bridge input validation
 npm run test:e2e             # desktop app via Playwright: waveform pixels, RTSP and SRT (mediamtx), outputs/MJPEG, 10-bit/SRT push, layouts, CST/LUT stages
 npm run typecheck
 npm run lang:check           # German-looking strings outside src/i18n (UI texts go through t(), src/i18n)
-npm run dist:mac             # or dist:win: desktop app with bridge and ffmpeg
+npm run dist:mac             # or dist:win, dist:linux: desktop app with bridge and ffmpeg
 ```
 
-CI (`ci.yml`) runs types, unit tests, build and the E2E tests on every PR and push to main, and tests the shipped ffmpeg builds on macOS and Windows (licence, SRT, 10-bit push). The RTSP/SRT receive tests are skipped without `mediamtx`.
+CI (`ci.yml`) runs types, unit tests, build and the E2E tests (Electron under Xvfb) on every PR and push to main, tests the shipped ffmpeg builds on macOS and Windows (licence, SRT, 10-bit push), and packages the Linux app and starts the AppImage and the installed deb (`scripts/linux-smoke.sh`). The RTSP/SRT receive tests are skipped without `mediamtx`.
 
-Release: push a tag `v*`; `release.yml` builds Windows and macOS, checks the ffmpeg inside the packages and attaches the installers and the ffmpeg source archives to the release. `workflow_dispatch` is a dry run.
+Release: push a tag `v*`; `release.yml` builds Windows, macOS and Linux, checks the ffmpeg inside the packages and attaches the installers and the ffmpeg source archives to the release. `workflow_dispatch` is a dry run.
 
 ## Audio
 

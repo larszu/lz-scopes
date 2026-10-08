@@ -6,7 +6,7 @@
 #     darwin-arm64   on an Apple Silicon Mac (macos-latest)
 #     darwin-x64     on an Intel Mac (macos-15-intel)
 #     win32-x64      on Linux with mingw-w64 (cross)
-#     linux-x64      on Linux (CI tests only, not shipped)
+#     linux-x64      on Linux (Linux app, x64; glibc of the build host)
 #
 # Needs: curl, tar, make, cmake, nasm (x86), pkg-config; mingw-w64 for win32-x64.
 # Result: <out>/ffmpeg-<version>-<target>.zip with ffmpeg, ffprobe, BUILD-INFO.txt.

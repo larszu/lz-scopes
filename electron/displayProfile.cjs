@@ -3,6 +3,9 @@
 // macOS:   ColorSync device API through the small Swift helper helpers/bin/lzs-colorsync
 //          (built by scripts/build-helpers.mjs). Checked on the test Mac with set + reset.
 // Windows: mscms ColorProfile*DisplayDefault* via PowerShell + inline C# – UNTESTED.
+// Linux:   colord through its command-line client colormgr – UNTESTED. Takes effect only where the
+//          desktop applies colord's default profile (GNOME/mutter; X11 desktops with xiccd), not
+//          on KDE Plasma 6 (own colour management). docs/research/linux.md
 // DDC/CI:  VCP 0x14 (colour preset) / 0x10 (brightness): Windows dxva2 (untested), Linux ddcutil,
 //          macOS m1ddc (brightness only), each only when present.
 //
@@ -16,6 +19,8 @@ const path = require('node:path');
 const PROFILE_DIRS = {
   darwin: ['/System/Library/ColorSync/Profiles', '/Library/ColorSync/Profiles', path.join(os.homedir(), 'Library/ColorSync/Profiles')],
   win32: [path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'spool', 'drivers', 'color')],
+  // XDG locations colord reads (/usr/share/color/icc, ~/.local/share/icc) and its own store
+  linux: ['/usr/share/color/icc', '/usr/local/share/color/icc', path.join(os.homedir(), '.local/share/icc'), '/var/lib/colord/icc'],
 };
 
 function helperPath(env = process.env) {
@@ -114,6 +119,68 @@ function winPs(expr) {
 }
 const psStr = (s) => `'${String(s).replace(/'/g, "''")}'`;
 
+// ---------------------------------------------------------------- Linux: colord (untested)
+
+// colormgr prints `Label:   value` lines (labels translated, so LANG=C), one block per object,
+// blocks separated by a blank line; a profile line `Profile n: <id>` is followed by an unlabelled
+// line with its file name (colord client/cd-util.c, cd_util_show_device). Profile 1 is the default.
+/** Displays from `colormgr get-devices-by-kind display`. */
+function parseColordDevices(out) {
+  const list = [];
+  for (const block of String(out).split(/\n\s*\n/)) {
+    const d = { id: null, model: '', vendor: '', output: '', profiles: [] };
+    let lastProfile = null;
+    for (const line of block.split('\n')) {
+      const m = /^([A-Za-z][A-Za-z ]*?\d*):\s+(.*)$/.exec(line);
+      if (!m) { if (lastProfile && line.trim()) { lastProfile.file = line.trim(); lastProfile = null; } continue; }
+      const [, key, val] = m;
+      if (key === 'Device ID') d.id = val.trim();
+      else if (key === 'Model') d.model = val.trim();
+      else if (key === 'Vendor') d.vendor = val.trim();
+      else if (key === 'Metadata' && val.startsWith('XRANDR_name=')) d.output = val.slice(12).trim();
+      else if (/^Profile \d+$/.test(key)) { lastProfile = { id: val.trim(), file: null }; d.profiles.push(lastProfile); }
+    }
+    if (!d.id) continue;
+    const name = [d.output, [d.vendor, d.model].filter(Boolean).join(' ')].filter(Boolean).join(' – ') || d.id;
+    const def = d.profiles[0] ?? null;
+    list.push({ id: d.id, name, current: def?.file ?? null, custom: def?.file ?? null, profileId: def?.id ?? null });
+  }
+  return list;
+}
+/** `Object Path:` of a colormgr profile block. */
+const parseObjectPath = (out) => (/^Object Path:\s+(\S+)/m.exec(String(out)) || [])[1] || null;
+
+const CM_ENV = () => ({ ...process.env, LANG: 'C', LC_ALL: 'C' });
+const cm = (args) => run(which('colormgr') || 'colormgr', args, { env: CM_ENV() });
+const cmSync = (args) => String(execFileSync(which('colormgr') || 'colormgr', args, { env: CM_ENV(), timeout: 10000 }));
+
+/** colord profile object for an ICC file: already known (find-profile-by-filename) or imported. */
+async function colordProfile(file) {
+  const found = await cm(['find-profile-by-filename', file]).catch(() => '');
+  return parseObjectPath(found) || parseObjectPath(await cm(['import-profile', file]));
+}
+async function colordSet(id, file) {
+  const prof = await colordProfile(file);
+  if (!prof) throw coded('profileNotFound', 'profile not found');
+  await cm(['device-add-profile', String(id), prof]).catch(() => {}); // fails when already attached
+  await cm(['device-make-profile-default', String(id), prof]);
+}
+/** No previous profile: detach the default one we made (colord then applies none). */
+async function colordReset(id) {
+  const d = parseColordDevices(await cm(['get-devices-by-kind', 'display'])).find((x) => x.id === String(id));
+  if (d?.profileId) await cm(['device-remove-profile', String(id), d.profileId]);
+}
+function colordRestoreSync(id, prev) {
+  if (prev) {
+    const prof = parseObjectPath(cmSync(['find-profile-by-filename', prev]));
+    if (prof) { cmSync(['device-make-profile-default', String(id), prof]); return true; }
+    return false;
+  }
+  const d = parseColordDevices(cmSync(['get-devices-by-kind', 'display'])).find((x) => x.id === String(id));
+  if (d?.profileId) cmSync(['device-remove-profile', String(id), d.profileId]);
+  return true;
+}
+
 // ---------------------------------------------------------------- platform layer
 
 // Errors that reach the UI carry a code; the renderer (src/sysprofile.ts) shows them in the UI
@@ -124,20 +191,24 @@ const platform = {
   async list() {
     if (process.platform === 'darwin') { const h = helperPath(); if (!h) throw coded('helperMissing', 'helper lzs-colorsync missing'); return JSON.parse(await run(h, ['list'])); }
     if (process.platform === 'win32') return JSON.parse(await winPs('[LzsDisp]::List()'));
+    if (process.platform === 'linux' && which('colormgr')) return parseColordDevices(await cm(['get-devices-by-kind', 'display']));
     throw coded('unsupported', 'not supported');
   },
   async set(id, profile) {
     if (process.platform === 'darwin') return run(helperPath(), ['set', String(id), profile]);
     if (process.platform === 'win32') return winPs(`[LzsDisp]::Set(${psStr(id)}, ${psStr(path.basename(profile))})`);
+    if (process.platform === 'linux' && which('colormgr')) return colordSet(id, profile);
     throw coded('unsupported', 'not supported');
   },
   async reset(id) {
     if (process.platform === 'darwin') return run(helperPath(), ['reset', String(id)]);
+    if (process.platform === 'linux' && which('colormgr')) return colordReset(id);
     throw coded('unsupported', 'not supported');
   },
   restoreSync(id, prev) {
     // true = restored now. Windows: synchronous PowerShell on quit is too slow; the backup
     // stays and is restored on the next start.
+    if (process.platform === 'linux') return which('colormgr') ? colordRestoreSync(id, prev) : false;
     if (process.platform !== 'darwin') return false;
     const h = helperPath();
     if (!h) return false;
@@ -157,7 +228,12 @@ function support() {
     return { platform: 'darwin', profiles: !!h, tested: true, reason: h ? '' : 'helper lzs-colorsync missing (npm run build:helpers)', reasonCode: h ? '' : 'helperBuild', ddc };
   }
   if (process.platform === 'win32') return { platform: 'win32', profiles: true, tested: false, reason: 'unverified; needs Windows 10 build 20348 or later', reasonCode: 'windows', ddc };
-  return { platform: process.platform, profiles: false, tested: false, reason: 'profile switching only on macOS and Windows', reasonCode: 'platform', ddc };
+  if (process.platform === 'linux') {
+    return which('colormgr')
+      ? { platform: 'linux', profiles: true, tested: false, reason: 'unverified; colord, takes effect only where the desktop applies colord profiles (GNOME; X11 with xiccd), not on KDE Plasma 6', reasonCode: 'linux', ddc }
+      : { platform: 'linux', profiles: false, tested: false, reason: 'colord (colormgr) not installed', reasonCode: 'linuxNoColord', ddc };
+  }
+  return { platform: process.platform, profiles: false, tested: false, reason: 'profile switching only on macOS, Windows and Linux (colord)', reasonCode: 'platform', ddc };
 }
 
 function listProfiles() {
@@ -248,4 +324,4 @@ function setupDisplayProfiles(ipcMain, app) {
   return sw;
 }
 
-module.exports = { setupDisplayProfiles, ProfileSwitcher, listProfiles, support, helperPath, platform };
+module.exports = { setupDisplayProfiles, ProfileSwitcher, listProfiles, support, helperPath, platform, parseColordDevices, parseObjectPath };

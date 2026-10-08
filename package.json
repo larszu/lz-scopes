@@ -18,6 +18,7 @@
     "decklink:fetch": "node scripts/decklink-sdk-fetch.mjs",
     "dist:mac": "npm run build && node scripts/ffmpeg-fetch.mjs darwin-universal && node scripts/decklink-sdk-fetch.mjs && node scripts/build-helpers.mjs colorsync ndi decklink && electron-builder --config electron-builder.js --mac --universal --publish never",
     "dist:win": "npm run build && node scripts/ffmpeg-fetch.mjs win32-x64 && electron-builder --config electron-builder.js --win --publish never",
+    "dist:linux": "npm run build && node scripts/ffmpeg-fetch.mjs linux-x64 && node scripts/decklink-sdk-fetch.mjs && node scripts/build-helpers.mjs ndi decklink && electron-builder --config electron-builder.js --linux --publish never",
     "predev": "node scripts/copy-mediapipe.mjs",
     "prebuild": "node scripts/copy-mediapipe.mjs",
     "companion:test": "npm --prefix companion test",
@@ -32,6 +33,7 @@
     "@mediapipe/tasks-vision": "^1.0.1",
     "bonjour-service": "^1.4.4",
     "dockview-core": "^8.3.1",
+    "electron-updater": "^6.8.9",
     "ws": "^8.22.0"
   },
   "devDependencies": {
@@ -50,5 +52,7 @@
     "vitest": "^5.0.2"
   },
   "main": "electron/main.cjs",
-  "author": "Lars Zumpe"
+  "author": "Lars Zumpe",
+  "homepage": "https://github.com/larszu/lz-scopes",
+  "license": "SEE LICENSE IN LICENSE"
 }

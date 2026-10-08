@@ -9,12 +9,12 @@
 
 <p align="center">
   <b>Software-Messtechnik im Browser: Waveform, Parade, Vectorscope, Histogramm, CIE-Diagramm, Falschfarben und Messwerte, auch für RTSP-Streams.</b><br />
-  Für macOS und Windows als Desktop-App oder direkt im Browser.
+  Für macOS, Windows und Linux als Desktop-App oder direkt im Browser.
 </p>
 
 <p align="center">
   <a href="https://github.com/larszu/lz-scopes/releases/latest">
-    <img src="https://img.shields.io/badge/Download-macOS%20%26%20Windows-1D324F?style=for-the-badge&logo=github&logoColor=white" alt="LZ Scopes für macOS und Windows herunterladen" height="40" />
+    <img src="https://img.shields.io/badge/Download-macOS%20%7C%20Windows%20%7C%20Linux-1D324F?style=for-the-badge&logo=github&logoColor=white" alt="LZ Scopes für macOS, Windows und Linux herunterladen" height="40" />
   </a>
   &nbsp;
   <a href="https://larszu.github.io/lz-scopes/">
@@ -51,7 +51,13 @@ Vorbilder: VMA Scope, Nobe OmniScope, HDRScopes, LiveScopes.tv, openrv-web.
 
 ## Download und Installation
 
-Installer im [neuesten Release](https://github.com/larszu/lz-scopes/releases/latest): macOS als Universal-`.dmg`/`.zip` (Apple Silicon und Intel), Windows als Installer und portable `.exe`. Die Desktop-App bringt Bridge und ein weitergebbares ffmpeg 9.0.2 mit (GPLv3, mit SRT; Lizenzen und Quelltext: [THIRD_PARTY.md](THIRD_PARTY.md)), RTSP, SRT und andere Netzwerkquellen funktionieren sofort, ohne System-ffmpeg. Welches ffmpeg läuft, steht unter *Bridge*. Die macOS-Builds sind ad-hoc signiert: beim ersten Start Rechtsklick, *Öffnen*.
+Installer im [neuesten Release](https://github.com/larszu/lz-scopes/releases/latest): macOS als Universal-`.dmg`/`.zip` (Apple Silicon und Intel), Windows als Installer und portable `.exe`, Linux x64 als `.deb` und `.AppImage`. Die Desktop-App bringt Bridge und ein weitergebbares ffmpeg 9.0.2 mit (GPLv3, mit SRT; Lizenzen und Quelltext: [THIRD_PARTY.md](THIRD_PARTY.md)), RTSP, SRT und andere Netzwerkquellen funktionieren sofort, ohne System-ffmpeg. Welches ffmpeg läuft, steht unter *Bridge*. Die macOS-Builds sind ad-hoc signiert: beim ersten Start Rechtsklick, *Öffnen*.
+
+**Linux** (x64; glibc 2.38 oder neuer wegen des mitgelieferten ffmpeg, also Ubuntu 24.04, Debian 13, Fedora 39 oder neuer; arm64 wie Raspberry Pi 5 oder Jetson wird noch nicht gebaut):
+- **deb** (empfohlen): `sudo apt install ./lz-scopes-<version>-amd64.deb`. Installiert nach `/opt/LZ Scopes`, legt einen Menüeintrag (*Multimedia*) und ein AppArmor-Profil an, damit die Chromium-Sandbox unter Ubuntu 24.04 läuft. Updates: neueres deb installieren.
+- **AppImage**: `chmod +x lz-scopes-<version>-x86_64.AppImage`, dann starten. Braucht FUSE 2 (`sudo apt install libfuse2t64` unter Ubuntu 24.04) oder `--appimage-extract-and-run`. Bricht es mit „No usable sandbox“ ab (Ubuntu 24.04 sperrt die Sandbox von AppImages), das deb nehmen oder mit `--no-sandbox` starten. Das AppImage aktualisiert sich im Hintergrund aus dem GitHub-Release und installiert das Update beim Beenden.
+- **Capture-Geräte**: Der Benutzer muss in den Gruppen `video` (V4L2-Kameras und Capture-Karten) und `audio` sein: `sudo usermod -aG video,audio $USER`, danach neu anmelden. Geräte, deren Knoten nicht diesen Gruppen gehören, brauchen eine udev-Regel, z. B. `/etc/udev/rules.d/70-lz-scopes.rules` mit `SUBSYSTEM=="video4linux", GROUP="video", MODE="0660"`, dann `sudo udevadm control --reload && sudo udevadm trigger`. DeckLink braucht Blackmagic Desktop Video für Linux (bringt eigene Regeln mit), NDI die NDI-Runtime (`libndi.so.6`).
+- **Was unter Linux anders ist**: Videogeräte über V4L2 durch die Bridge; Ton kommt über Chromium (PulseAudio/PipeWire, höchstens 2 Kanäle): Das mitgelieferte ffmpeg hat kein ALSA, die Bridge bietet deshalb keine ALSA-Geräte an. Bildschirmaufnahme unter Wayland läuft über den Portal-Dialog des Systems. Der Opple-Belichtungsmesser (Web Bluetooth) geht unter Linux nur teilweise (BlueZ 5.41+). Das Display-Profil schaltet über colord (`colormgr`) und wirkt nur auf Desktops, die colord-Profile anwenden (GNOME; X11 mit xiccd), nicht unter KDE Plasma 6. Auf echter Hardware ungeprüft: alle diese Geräte, der Opple, der colord-Wechsel, Wayland-Aufnahme und das Selbst-Update des AppImage. Die CI baut beide Pakete und startet sie. Einzelheiten: [docs/research/linux.md](docs/research/linux.md).
 
 **Web-Fassung:** <https://larszu.github.io/lz-scopes/>. Dort gehen Testbilder, Kamera, Bildschirm und Dateien. RTSP, SRT und andere Netzwerkstreams brauchen die Desktop-App oder `npm start`, weil ein Browser sie nicht öffnen kann.
 
@@ -282,7 +288,7 @@ Konfiguration: `--port`/`PORT` (4192; nicht 4190 – steht auf der Sperrliste de
 
 ## Desktop-App
 
-`npm run dist:mac` bzw. `npm run dist:win` baut die App mit eingebetteter Bridge und mitgeliefertem ffmpeg (Mac: Universal). Release: Tag `v*` → `release.yml` baut Windows und macOS, prüft das ffmpeg im Paket und hängt Installer und ffmpeg-Quelltext ans Release; `workflow_dispatch` ist ein Probelauf. Das mitgelieferte ffmpeg ist GPLv3 ohne nonfree-Teile, siehe [THIRD_PARTY.md](THIRD_PARTY.md) und [docs/research/ffmpeg-lizenz.md](docs/research/ffmpeg-lizenz.md).
+`npm run dist:mac`, `npm run dist:win` bzw. `npm run dist:linux` baut die App mit eingebetteter Bridge und mitgeliefertem ffmpeg (Mac: Universal). Release: Tag `v*` → `release.yml` baut Windows, macOS und Linux (AppImage, deb), prüft das ffmpeg im Paket und hängt Installer und ffmpeg-Quelltext ans Release; `workflow_dispatch` ist ein Probelauf. Das mitgelieferte ffmpeg ist GPLv3 ohne nonfree-Teile, siehe [THIRD_PARTY.md](THIRD_PARTY.md) und [docs/research/ffmpeg-lizenz.md](docs/research/ffmpeg-lizenz.md).
 
 ## Offene Punkte
 
@@ -308,7 +314,7 @@ npm run test:e2e  # Desktop-App per Playwright: Waveform-Pixel, RTSP über media
 npm --prefix companion ci && npm run companion:test && npm run companion:build   # Companion-Modul
 ```
 
-Die CI (`ci.yml`) prüft bei jedem PR und Push auf main Typen, Unit-Tests, Build und E2E und testet die mitgelieferten ffmpeg-Builds auf macOS und Windows (Lizenz, SRT, 10-bit-Push); die RTSP-/SRT-Empfangstests werden ohne `mediamtx` übersprungen.
+Die CI (`ci.yml`) prüft bei jedem PR und Push auf main Typen, Unit-Tests, Build und E2E (Electron unter Xvfb), testet die mitgelieferten ffmpeg-Builds auf macOS und Windows (Lizenz, SRT, 10-bit-Push) und baut die Linux-App und startet AppImage und installiertes deb (`scripts/linux-smoke.sh`); die RTSP-/SRT-Empfangstests werden ohne `mediamtx` übersprungen.
 
 Zum Ausprobieren mit echtem RTSP: `brew install mediamtx`, dann `mediamtx` starten und z. B. `ffmpeg -re -f lavfi -i testsrc2=size=1920x1080:rate=25 -c:v libx264 -f rtsp rtsp://127.0.0.1:8554/test` veröffentlichen.
 

@@ -105,7 +105,7 @@ export function mountOpple(root: HTMLElement, hooks: { openScopes?: () => void; 
       ].filter((b): b is HTMLButtonElement => !!b),
     );
     const msg = s.message || act?.message || '';
-    status.textContent = msg || (sup.ok ? (anyConnected ? '' : NO_PAIRING_HINT) : sup.reason);
+    status.textContent = msg || (sup.ok ? (anyConnected ? '' : [NO_PAIRING_HINT, sup.reason].filter(Boolean).join(' ')) : sup.reason);
     status.classList.toggle('bad', act?.state === 'error' || !!s.message);
     renderPoints();
   }

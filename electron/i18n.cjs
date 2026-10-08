@@ -27,6 +27,8 @@ const TEXT = {
     zipMethod: (m) => `ZIP method ${m} is not supported`,
     zipSize: (n, want) => `unpacked ${n} instead of ${want} bytes`,
     zipCrc: 'CRC-32 does not match',
+    updateReady: (v) => `LZ Scopes ${v} downloaded`,
+    updateReadyBody: 'The update is installed when you quit the app.',
   },
   de: {
     about: (n) => `Über ${n}`,
@@ -49,6 +51,8 @@ const TEXT = {
     zipMethod: (m) => `ZIP-Methode ${m} nicht unterstützt`,
     zipSize: (n, want) => `entpackt ${n} statt ${want} Bytes`,
     zipCrc: 'CRC-32 stimmt nicht',
+    updateReady: (v) => `LZ Scopes ${v} geladen`,
+    updateReadyBody: 'Das Update wird beim Beenden der App installiert.',
   },
 };
 

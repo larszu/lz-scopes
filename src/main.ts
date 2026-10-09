@@ -1027,8 +1027,11 @@ function panelSettings(p: PanelState): Node[] {
     if (s) {
       row(t('panel.faces'), select(s.faceMode, [['off', t('panel.offCap')], ['detect', t('panel.facesDetect')], ['all', t('panel.facesAll')]], (v) => {
         s.faceMode = v as Source['faceMode'];
-        if (s.faceMode === 'off') { s.faces = []; s.faceSel.clear(); }
+        if (s.faceMode === 'off') { s.faces = []; s.faceSel.clear(); } else { faceLoadError = ''; if (faceMod) faceMod.faceStatus.error = ''; }
         refreshHeads();      }, t('panel.facesTitle')));
+      const fe = faceLoadError || faceMod?.faceStatus.error;
+      if (fe) row('', h('p', { class: 'hint warn', role: 'alert' }, t('panel.facesFailed', { error: fe })));
+      else if (s.faceTrack && faceMod?.faceStatus.delegate === 'CPU') row('', h('p', { class: 'hint' }, t('panel.facesCpu')));
     }
   }
   if (p.scope === 'stats') {
@@ -1090,9 +1093,20 @@ function roiChip(p: PanelState): Node | string {
 }
 
 // face tracking (MediaPipe is only loaded once someone switches it on)
+let faceLoadError = '';
+let faceMod: typeof import('./face') | null = null;
+let faceTick = 0;
 setInterval(() => {
   if (!sources.some((s) => s.faceTrack)) return;
-  import('./face').then((m) => m.trackFaces(sources, refreshHeads));
+  // on the CPU (GPU delegate refused) detection costs more main-thread time: 5 instead of 10 per second
+  if (faceMod?.faceStatus.delegate === 'CPU' && faceTick++ % 2) return;
+  import('./face').then((m) => { faceMod = m; return m.trackFaces(sources, refreshHeads); }).catch((e) => {
+    // the MediaPipe module or its WASM did not load (offline browser, blocked file …)
+    console.warn('face tracking: module not loaded', e);
+    faceLoadError = (e as Error).message || String(e);
+    for (const s of sources) s.faceMode = 'off';
+    refreshHeads();
+  });
 }, 100);
 
 function toggleSolo(idx: number) {

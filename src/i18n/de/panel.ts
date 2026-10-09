@@ -160,4 +160,6 @@ export default {
   'panel.draw.castTowards': 'Richtung {hue}',
   'panel.draw.castNeutral': ' (neutral)',
   'panel.draw.justOutside': 'knapp außerhalb {gamut} (≤ 5 %)',
+  'panel.facesFailed': 'Gesichtserkennung angehalten: {error}. Hilfe → Feedback senden schickt die Details mit.',
+  'panel.facesCpu': 'Gesichtserkennung läuft auf dem Prozessor (die Grafikkarte hat abgelehnt) – funktioniert, etwas langsamer.',
 } satisfies Translation<typeof en>;

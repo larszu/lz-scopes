@@ -157,3 +157,14 @@ dialog.modal-xl { width: min(1180px, 96vw); }
 .tab.on { background: var(--sel-bg); color: var(--text); }
 .tabs-v .tab.on { border-left-color: var(--sel-line); }
 .tabs-h .tab.on { border-bottom-color: var(--sel-line); }
+
+/* feedback dialog (src/feedback/dialog.ts): the report preview is exactly what is sent */
+.feedback .feedback-text { width: 100%; min-height: 4.5em; resize: vertical; field-sizing: content; }
+.feedback .feedback-section { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--sp-2); margin-bottom: var(--sp-1); }
+.feedback .feedback-section .hint { margin: 0; }
+.feedback .feedback-report {
+  max-height: 260px; overflow: auto; margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3);
+  background: var(--field); border: 1px solid var(--line-1); white-space: pre-wrap; overflow-wrap: anywhere;
+  font-size: var(--fs-sm); line-height: 1.45; color: var(--text-soft);
+}
+.feedback .modal-foot { flex-wrap: wrap; }

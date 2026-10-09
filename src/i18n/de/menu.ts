@@ -59,7 +59,6 @@ export default {
   'menu.front': 'Alle nach vorne bringen',
   'menu.help': 'Hilfe',
   'menu.keys': 'Tastenkürzel',
-  'menu.issues': 'Fehler melden …',
   'menu.licenses': 'Lizenzen Dritter',
   'menu.about': 'Über LZ Scopes',
   'menu.guide.readme': 'Anleitung (README)',

@@ -207,6 +207,10 @@ view.setSource(src);
 - No AJA input. NDI only with the NDI runtime installed, no sound, untested with real network sources. DeckLink only through our own helper (ffmpeg's own DeckLink device is "nonfree" and cannot be redistributed); it ships with the desktop app but has never run with hardware, and the Windows helper has only been compiled. Audio from the browser is limited to 2 channels (more only through the bridge). Not tested yet: multichannel interfaces and Dante on real hardware, the bridge on Windows, the A/V offset against a real camera.
 - Browser sources (camera, file) are always 8 bit and pass through the browser's colour management.
 
+## Feedback
+
+**Help → Send Feedback …** opens a report with your description, system (OS and version, processor, memory), graphics and screens, performance (display fps; per source resolution, fps, dropped frames) and the latest warnings. Each part can be left out; the text shown is exactly what is sent. Never included: pictures, source names and addresses, file paths, user and computer names; addresses, IPs and e-mail addresses in messages are replaced. Send by e-mail to scopes@zumpelars.de (private) or as a GitHub issue (public).
+
 ## Author
 
 Built and maintained by **Lars Zumpe**, Lars Zumpe Medienproduktion. Scopes can also be used inside [LZ Cable Planner](https://github.com/larszu/cable-planner).

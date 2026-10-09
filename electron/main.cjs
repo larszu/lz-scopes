@@ -73,6 +73,27 @@ async function createWindow() {
   setupTestVideos(() => mainWindow);
   // System display profile / monitor mode (#17): restored on quit and after a crash.
   setupDisplayProfiles(ipcMain, app);
+  // feedback report: hardware, OS and GPU – no host name, user name or paths
+  ipcMain.handle('lzs:sysinfo', async () => {
+    const os = require('node:os');
+    const cpus = os.cpus();
+    let gpu = null;
+    try {
+      const g = await app.getGPUInfo('basic');
+      const dev = g?.gpuDevice?.find((d) => d.active) ?? g?.gpuDevice?.[0];
+      if (dev) gpu = { vendorId: dev.vendorId, deviceId: dev.deviceId, driver: dev.driverVersion ?? null };
+    } catch { /* not available */ }
+    return {
+      // macOS 26.0 / Windows 11 Pro 10.0.26100 / Linux 6.8 (Ubuntu …): readable, without the kernel build string
+      os: process.platform === 'darwin' ? `macOS ${process.getSystemVersion()}`
+        : process.platform === 'win32' ? `${os.version()} ${process.getSystemVersion()}`
+          : `Linux ${os.release()} (${os.version()})`,
+      arch: os.arch(), cpu: cpus[0]?.model?.trim() ?? '', cores: cpus.length, ramGb: Math.round(os.totalmem() / 2 ** 30),
+      runtime: `Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · Node ${process.versions.node}`,
+      gpu, gpuFeatures: app.getGPUFeatureStatus(),
+      screens: screen.getAllDisplays().map((d) => ({ width: d.size.width, height: d.size.height, scale: d.scaleFactor, hz: d.displayFrequency ?? 0, primary: d.id === screen.getPrimaryDisplay().id })),
+    };
+  });
   ipcMain.handle('lzs:displays', () => screen.getAllDisplays().map((d) => ({
     id: d.id, label: d.label, bounds: d.bounds, primary: d.id === screen.getPrimaryDisplay().id,
   })));
@@ -142,7 +163,7 @@ async function createWindow() {
         },
       };
     }
-    if (/^https?:\/\//.test(url)) shell.openExternal(url);
+    if (/^(https?:\/\/|mailto:)/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
   mainWindow.webContents.on('will-navigate', (e, url) => { if (!url.startsWith(origin)) { e.preventDefault(); shell.openExternal(url); } });

@@ -33,6 +33,7 @@ import sysprofile from './de/sysprofile';
 import opple from './de/opple';
 import led from './de/led';
 import calib from './de/calib';
+import feedback from './de/feedback';
 import type { Key } from './en';
 import type { Msg } from './types';
 
@@ -66,4 +67,5 @@ export const de: Record<Key, Msg> = {
   ...opple,
   ...led,
   ...calib,
+  ...feedback,
 };

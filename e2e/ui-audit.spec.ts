@@ -250,6 +250,8 @@ for (const lang of ['de', 'en'] as const) {
         const help = '.panel .help-trigger >> visible=true';
         if (await page.locator(help).count()) {
           await page.locator(help).first().click(); await settles(page, '.popover.scopehelp:popover-open', true);
+          // placement happens in the toggle event, a moment after opening (same wait as the ⚙ pass)
+          await page.waitForTimeout(400);
           await geometry(page, '.popover.scopehelp:popover-open', 'popover ?', f);
           await truncation(page, '.popover.scopehelp:popover-open', 'popover ?', f);
           await targets(page, '.popover.scopehelp:popover-open', 'popover ?', touch, f);

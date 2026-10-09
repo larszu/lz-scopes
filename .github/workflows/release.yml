@@ -107,6 +107,14 @@ jobs:
           exe=""; if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
           ls -la helpers/bin
           for h in lz-decklink lz-ndi; do test -f "helpers/bin/$h$exe"; echo "$h:"; "helpers/bin/$h$exe" --list || true; done
+      # the camera bridge built into the desktop app (scripts/build-camera-bridge.mjs); same tag as scripts/camera-bridge.json
+      - uses: actions/checkout@v5
+        with:
+          repository: larszu/lz-camera-bridge
+          ref: v2.2.0
+          path: vendor/lz-camera-bridge
+          sparse-checkout: packages/bridge
+      - run: node scripts/build-camera-bridge.mjs --required
       - name: Package
         # bash on every OS: pwsh swallowed electron-builder's exit code in cable-planner v0.2.35
         shell: bash

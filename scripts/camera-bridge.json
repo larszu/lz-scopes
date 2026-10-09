@@ -1,0 +1,5 @@
+{
+  "repo": "larszu/lz-camera-bridge",
+  "ref": "v2.2.0",
+  "entry": "packages/bridge/src/BridgeServer.ts"
+}

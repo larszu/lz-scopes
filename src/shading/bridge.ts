@@ -23,6 +23,11 @@ const FIELDS_OF_STATE: PaintField[] = ['blackR', 'blackG', 'blackB', 'masterBlac
 
 export class CameraBridgeLink {
   cameras: BridgeCamera[] = [];
+  /** full camera configs as the bridge holds them (camera dialog, src/shading/cameras.ts) */
+  configs = new Map<number, Record<string, unknown>>();
+  /** last error the bridge reported for a camera (connect failed …) */
+  cameraErrors = new Map<number, string>();
+  private listeners = new Set<() => void>();
   states = new Map<number, CameraPaintState>();
   status: 'off' | 'connecting' | 'open' | 'closed' = 'off';
   lastError = '';
@@ -31,7 +36,18 @@ export class CameraBridgeLink {
   private wanted = false;
   private delay = 2000;
 
-  constructor(private url: () => string, private onChange: () => void) {}
+  constructor(private url: () => string, private changed: () => void) {}
+
+  private onChange() { this.changed(); for (const f of this.listeners) f(); }
+  /** extra listener (the camera dialog); returns the unsubscribe */
+  subscribe(f: () => void) { this.listeners.add(f); return () => { this.listeners.delete(f); }; }
+
+  /** Any bridge command (camera setup); false while not connected. */
+  request(msg: Record<string, unknown>): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify(msg));
+    return true;
+  }
 
   connect() {
     this.wanted = true;
@@ -69,9 +85,12 @@ export class CameraBridgeLink {
   /** Message from the bridge (exported for tests through `receive`). */
   receive(m: Record<string, unknown>) {
     if (m.type === 'cameras' && Array.isArray(m.cameras)) {
+      this.configs.clear();
       this.cameras = (m.cameras as Record<string, unknown>[]).map((c) => {
         const cfg = (c.config ?? {}) as Record<string, unknown>;
         const n = Number(c.cameraNumber);
+        this.configs.set(n, cfg);
+        if (c.connected) this.cameraErrors.delete(n);
         // the label only, never host or credentials
         return { cameraNumber: n, label: String(cfg.label ?? cfg.name ?? T.camN(n)), mode: capsKey(String(cfg.connectionMode ?? ''), cfg.cgiFamily ? String(cfg.cgiFamily) : undefined), connected: !!c.connected };
       });
@@ -83,6 +102,7 @@ export class CameraBridgeLink {
       this.states.set(n, { paint, origins: { ...prev.origins, ...((m.origins ?? {}) as CameraPaintState['origins']) } });
     } else if (m.type === 'error') {
       this.lastError = String(m.message ?? T.error);
+      if (typeof m.cameraNumber === 'number') this.cameraErrors.set(m.cameraNumber, this.lastError);
     } else return;
     this.onChange();
   }

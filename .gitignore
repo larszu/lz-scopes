@@ -9,3 +9,6 @@ helpers/bin
 vendor/ffmpeg
 vendor/decklink-sdk
 helpers/decklink/win-gen
+vendor/lz-camera-bridge
+electron/camera-bridge.cjs
+electron/camera-bridge.json

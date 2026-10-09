@@ -254,7 +254,11 @@ Panel-Typ **Referenz / Genlock**: Haustakt am Referenzeingang einer DeckLink. Es
 - **Luma-Waveform:** Schatten = Master Black, Mitten = Master Gamma, Lichter = White.
 - **Vectorscope:** radial = Sättigung, drehen = Hue (nur im Simulator).
 
-Die Kommandos gehen über [lz-camera-bridge](https://github.com/larszu/lz-camera-bridge), in deren Vokabular.
+**Kamera verbinden.** Die Kommandos gehen über [lz-camera-bridge](https://github.com/larszu/lz-camera-bridge), in deren Vokabular.
+- In der Desktop-App ist die Kamera-Bridge eingebaut (`ws://localhost:9700`). Sie startet, sobald Touch Shading oder **Scopes → Kameras …** geöffnet wird, und beim App-Start, wenn schon Kameras angelegt sind. Läuft auf Port 9700 bereits eine LZ Camera Bridge, wird diese benutzt.
+- **Scopes → Kameras …** legt Kameras an: Protokoll (HTTP-CGI für Sony SRG/BRC und Vissonic/PTZOptics, VISCA over IP, VISCA seriell, Panasonic AW, BirdDog, JVC, Blackmagic, Canon CCAPI, Lumix, Z CAM, CCU über TCP/seriell, Demo-Kamera) und Adresse. Der Dialog zeigt je Kamera den Verbindungsstatus und, welche Regler Touch Shading für das Protokoll hat; „Diese shaden“ setzt sie als Ziel.
+- Sony über USB oder WLAN (PTP), Gimbals, das B4-Objektiv und USB-Bedienpulte brauchen die eigene LZ-Camera-Bridge-App; dort angelegte Kameras erscheinen auch hier.
+- Im Browser (GitHub Pages) zeigt die Leiste die Schritte: LZ Camera Bridge installieren, Kamera anlegen, Adresse prüfen. Die Bridge ist im Netzwerk erreichbar (Tablets, Companion); beim ersten Start kann die Firewall fragen.
 - Ohne Haken bei *Shading aktiv* und ohne gewähltes Ziel bewegt sich nichts.
 - Jede Änderung ist in der Schrittweite begrenzt.
 - **■ Ausgangswerte** (Esc) stellt die Werte vom Sitzungsbeginn wieder her.

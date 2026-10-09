@@ -1,7 +1,7 @@
 // All visible texts of Touch Shading, as one object over src/i18n (keys `shading.*` in
 // src/i18n/{en,de}/shading.ts). Call sites use T.menu, T.restored(n) …; the language is the
 // UI language (Settings → Interface).
-import { t } from '../i18n';
+import { t, type Key } from '../i18n';
 
 export const T = {
   get menu() { return t('shading.menu'); },
@@ -42,4 +42,17 @@ export const T = {
   camN: (n: number) => t('shading.camN', { n }),
   get unreachable() { return t('shading.unreachable'); },
   get error() { return t('shading.error'); },
+  get setupTitle() { return t('shading.setup.title'); },
+  get setupStep1() { return t('shading.setup.step1'); },
+  get setupDownload() { return t('shading.setup.download'); },
+  get setupStep2() { return t('shading.setup.step2'); },
+  get setupStep3() { return t('shading.setup.step3'); },
+  get setupStep4() { return t('shading.setup.step4'); },
+  get setupSim() { return t('shading.setup.sim'); },
+  get setupNoCameras() { return t('shading.setup.noCameras'); },
+  get setupStep1Desktop() { return t('shading.setup.step1Desktop'); },
+  get setupStep2App() { return t('shading.setup.step2App'); },
+  get camMenu() { return t('shading.cam.menu'); },
+  get camMenuTitle() { return t('shading.cam.menuTitle'); },
+  bridgeState: (state: string, p: { port: number; version: string; message: string }) => t(`shading.setup.bridge.${state}` as Key, p),
 };

@@ -13,7 +13,14 @@ import {
 } from './model';
 import { ShadingSim, SIM_URL } from './sim';
 import { T } from './text';
-import { button, checkbox, disclosure, h, hint, iconButton, restoreFocus, row, select, textInput } from '../ui';
+import { button, checkbox, disclosure, h, hint, iconButton, link, restoreFocus, row, select, textInput } from '../ui';
+
+const BRIDGE_DOWNLOAD = 'https://github.com/larszu/lz-camera-bridge/releases';
+
+/** Built-in camera bridge of the desktop app (electron/cameraBridge.cjs); undefined in the browser. */
+interface DesktopBridge { status(): Promise<BuiltInStatus>; start(): Promise<BuiltInStatus> }
+export interface BuiltInStatus { state: 'off' | 'running' | 'external' | 'missing' | 'busy' | 'failed'; port: number; version: string; message?: string }
+const desktopBridge = (): DesktopBridge | undefined => (window as unknown as { lzsDesktop?: { cameraBridge?: DesktopBridge } }).lzsDesktop?.cameraBridge;
 
 const STORE = 'lz-scopes.shading';
 type Target = 'sim' | number;
@@ -89,10 +96,39 @@ export class ShadingControl {
 
   private opener: Element | null = null;
 
+  /** status of the built-in camera bridge (desktop app), null in the browser */
+  builtIn: BuiltInStatus | null = null;
+
+  /** Desktop app: start the built-in camera bridge (once), then connect to it. */
+  async ensureBridge() {
+    const d = desktopBridge();
+    if (d) {
+      this.builtIn ??= { state: 'off', port: 9700, version: '' };
+      this.render();
+      try { this.builtIn = await d.start(); } catch (e) { this.builtIn = { state: 'failed', port: 9700, version: '', message: (e as Error).message }; }
+    }
+    this.link.connect();
+    this.render();
+  }
+
+  /** Scopes → Cameras …, and the button in the bar */
+  async openCameras() {
+    await this.ensureBridge();
+    const { openCameraDialog } = await import('./cameras');
+    openCameraDialog(this.link, (n) => { if (!this.open) this.toggleBar(true); void this.setTarget(n); });
+  }
+
+  private builtInText() {
+    const s = this.builtIn;
+    if (!s) return '';
+    const p = { port: s.port, version: s.version, message: s.message ?? '' };
+    return T.bridgeState(s.state, p);
+  }
+
   toggleBar(force?: boolean) {
     const was = this.open;
     this.open = force ?? !this.open;
-    if (this.open) this.link.connect();
+    if (this.open) void this.ensureBridge();
     this.render();
     // focus into the bar when it opens, back to where it came from when it closes
     if (this.open && !was) { this.opener = document.activeElement; this.bar.querySelector<HTMLElement>('input, select, button')?.focus(); }
@@ -406,17 +442,33 @@ export class ShadingControl {
       [['', T.chooseTarget], ['sim', T.simOption], ...cams.map((c) => [String(c.cameraNumber), T.camOption(c.cameraNumber, c.label, c.connected, c.mode)] as [string, string])],
       (v) => { void this.setTarget(v === '' ? null : v === 'sim' ? 'sim' : Number(v)); }, T.targetTitle, { 'data-shading-target': '' });
     const url = textInput(this.bridgeUrl, (v) => { this.bridgeUrl = v.trim(); this.persist(); this.link.disconnect(); this.link.connect(); }, { title: T.urlTitle, attrs: { class: 'shading-url' } });
-    const linkTxt = this.link.status === 'open' ? T.linkOpen(cams.length) : this.link.status === 'connecting' ? T.linkConnecting : T.linkClosed;
+    const linkTxt = this.link.status === 'open' ? (cams.length ? T.linkOpen(cams.length) : T.setupNoCameras) : this.link.status === 'connecting' ? T.linkConnecting : T.linkClosed;
     this.valuesEl = h('div', { class: 'shading-values' });
+    // no camera reachable yet: the way there, step by step, instead of an empty target list
+    const ready = this.link.status === 'open' && cams.length > 0;
+    const setup = !ready && this.target !== 'sim' ? h('div', { class: 'shading-setup', 'data-shading-setup': '' },
+      h('strong', {}, T.setupTitle),
+      h('ol', {},
+        this.builtIn
+          ? h('li', {}, T.setupStep1Desktop, h('div', { class: `shading-link ${this.builtIn.state === 'running' || this.builtIn.state === 'external' ? 'open' : ''}`, role: 'status' }, this.builtInText()))
+          : h('li', {}, T.setupStep1, ' ', link(BRIDGE_DOWNLOAD, T.setupDownload)),
+        h('li', {}, T.setupStep2App, ' ', button(T.camMenu, () => { void this.openCameras(); }, { small: true, disabled: this.link.status !== 'open', attrs: { 'data-shading-cameras': '' } })),
+        // the address only matters for a bridge elsewhere; the built-in one is found on its own
+        this.builtIn?.state === 'running' || this.builtIn?.state === 'external'
+          ? null
+          : h('li', {}, T.setupStep3, h('div', { class: 'shading-setup-url' }, url, h('span', { class: `shading-link ${this.link.status}`, role: 'status' }, linkTxt))),
+        h('li', {}, T.setupStep4)),
+      button(T.setupSim, () => { void this.setTarget('sim'); }, { attrs: { class: 'btn', 'data-shading-sim': '' } })) : null;
     const arm = checkbox(this.active, h('span', {}, T.active), (on) => (on ? this.activate() : this.deactivate()), '', { 'data-shading-active': '' });
     arm.classList.add('shading-arm');
     b.replaceChildren(
       arm,
       targetSel,
+      ...(ready ? [button(T.camMenu, () => { void this.openCameras(); }, { title: T.camMenuTitle, attrs: { class: 'btn', 'data-shading-cameras': '' } })] : []),
       button(T.undo, () => this.undo(), { title: T.undoTitle, disabled: !this.undoStack.length || !this.active, attrs: { class: 'btn shading-undo' } }),
       button(T.stop, () => this.emergencyStop(), { title: T.stopTitle, attrs: { class: 'btn shading-stop', 'data-shading-stop': '' } }),
       this.valuesEl,
-      disclosure('Bridge', [row(url), h('div', { class: 'hint' }, linkTxt), hint(T.help(LIMITS.step, LIMITS.span))], { cls: 'shading-more' }),
+      ...(setup ? [setup] : [disclosure('Bridge', [row(url), h('div', { class: 'hint' }, linkTxt), hint(T.help(LIMITS.step, LIMITS.span))], { cls: 'shading-more' })]),
       h('span', { class: 'shading-msg', 'data-shading-msg': '', role: 'status' }, this.message),
       iconButton('⇅', T.moveBar, () => { this.atTop = !this.atTop; this.persist(); this.render(); }),
       iconButton('✕', T.close, () => { if (this.active) this.deactivate(); this.toggleBar(false); }),

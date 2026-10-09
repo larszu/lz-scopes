@@ -14,7 +14,7 @@ export interface SourceInfo {
 export interface FeedbackData {
   app: { version: string; platform: string; lang: string };
   system: { os: string; arch?: string; cpu?: string; cores?: number; ramGb?: number; runtime?: string };
-  display: { gpu?: string; gpuFeatures?: string; screens: string[] };
+  display: { gpu?: string; gpuFeatures?: string; advice?: string; screens: string[] };
   performance: { displayFps: number; panels: string[]; sources: SourceInfo[]; ffmpeg?: string; bridge: boolean };
   log: string[];
 }
@@ -49,7 +49,7 @@ export function buildReport(d: FeedbackData, o: { sections: ReadonlySet<Section>
     ]));
   }
   if (on('display')) {
-    out.push('', block(o.titles.display, [kv('GPU', d.display.gpu), kv('GPU features', d.display.gpuFeatures), ...d.display.screens.map((x, i) => `Screen ${i + 1}: ${x}`)]));
+    out.push('', block(o.titles.display, [kv('GPU', d.display.gpu), kv('GPU features', d.display.gpuFeatures), kv('Advice', d.display.advice), ...d.display.screens.map((x, i) => `Screen ${i + 1}: ${x}`)]));
   }
   if (on('performance')) {
     const p = d.performance;

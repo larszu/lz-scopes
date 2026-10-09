@@ -131,6 +131,8 @@ export function bridgeInputParams(url: string, set: SourceSettings): Record<stri
  */
 export interface ResolveRoute { route: 'still' | 'window' | 'none'; why?: 'remote' | 'browser' | 'noWindow' | 'noViewer' | 'denied' | 'starting'; playing: boolean }
 
+/** Element sources (camera, capture, files): CPU readbacks per second at most (cpuFrame; debug switch cpuFrameHz). */
+export const CPU_FRAME_HZ = 15;
 export const DEFAULT_SETTINGS: SourceSettings = { transfer: 'auto', colorspace: 'auto', gamut: 'auto', hlgLw: 1000, width: 960, fps: 0, depth: 8, transport: 'tcp', audio: true };
 
 let nextId = 1;
@@ -159,6 +161,8 @@ export class Source {
   pattern = { id: 'smpte75', width: 1920, height: 1080, label: '' };
   frameSeq = 0;
   fps = 0;
+  /** frame rate the camera/capture track promises (getSettings), 0 = unknown */
+  nominalFps = 0;
   dropped = 0;
   frozen = false;
   stats: Stats | null = null;
@@ -180,37 +184,50 @@ export class Source {
   monitorError = '';
   private lastFrame: { px: ArrayLike<number>; w: number; h: number; step: number; scale: number; roi: [number, number, number, number][] | null; decode: Decode } | null = null;
   private r103Cache = new Map<string, { key: string; at: number; res: R103Result }>();
-  private cpuCache: { seq: string; f: { px: ArrayLike<number>; w: number; h: number; decode: Decode } | null } = { seq: '', f: null };
+  private cpuCache: { seq: string; at: number; f: { px: ArrayLike<number>; w: number; h: number; decode: Decode } | null } = { seq: '', at: -Infinity, f: null };
   private cpuCanvas: HTMLCanvasElement | null = null;
-  /** The current frame on the CPU: raw data, or a readback of the element (at most 960 px wide), once per frame. */
+  /** counts real CPU frames (readbacks or new raw data); caches below key on it */
+  private cpuSeq = 0;
+  /**
+   * The current frame on the CPU: raw data, or a readback of the element (at most 960 px wide).
+   * The element readback waits for the GPU (drawImage + getImageData), which is expensive under
+   * ANGLE/D3D11 (docs/research/windows-und-ndi.md); it runs at most CPU_FRAME_HZ times a second.
+   */
   cpuFrame() {
-    const seq = `${this.frameSeq}:${this.width}x${this.height}`;
+    const size = `${this.width}x${this.height}`;
+    const seq = `${this.frameSeq}:${size}`;
     if (this.cpuCache.seq === seq) return this.cpuCache.f;
+    const element = !this.data && !!this.element && !!this.width;
+    const hz = Number(debugFlags().cpuFrameHz) || CPU_FRAME_HZ;
+    const now = performance.now();
+    if (element && this.cpuCache.f && this.cpuCache.seq.endsWith(`:${size}`) && now - this.cpuCache.at < 1000 / hz) return this.cpuCache.f;
     let f: { px: ArrayLike<number>; w: number; h: number; decode: Decode } | null = null;
     if (this.data) f = { px: this.data, w: this.width, h: this.height, decode: this.decoder() };
-    else if (this.element && this.width) {
+    else if (element) {
       const w = Math.min(960, this.width), h = Math.max(1, Math.round((this.height * w) / this.width));
       this.cpuCanvas ??= document.createElement('canvas');
       const c = this.cpuCanvas; if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
       const ctx = c.getContext('2d', { willReadFrequently: true })!;
-      try { ctx.drawImage(this.element, 0, 0, w, h); f = { px: ctx.getImageData(0, 0, w, h).data, w, h, decode: rgbDecoder(255) }; } catch { f = null; }
+      try { ctx.drawImage(this.element!, 0, 0, w, h); f = { px: ctx.getImageData(0, 0, w, h).data, w, h, decode: rgbDecoder(255) }; } catch { f = null; }
     }
-    this.cpuCache = { seq, f };
+    this.cpuSeq++;
+    this.cpuCache = { seq, at: now, f };
     return f;
   }
   private extremes: { seq: string; v: LineExtremes | null } = { seq: '', v: null };
   /** Min/max Y′ per picture line (minmax.ts), once per frame. */
   lineExtremes(): LineExtremes | null {
-    const seq = `${this.frameSeq}:${this.colorspace}`;
-    if (this.extremes.seq !== seq) { const f = this.cpuFrame(); this.extremes = { seq, v: f ? lineExtremes(f.px, f.w, f.h, f.decode, this.colorspace) : null }; }
+    const f = this.cpuFrame();
+    const seq = `${this.cpuSeq}:${this.colorspace}`;
+    if (this.extremes.seq !== seq) this.extremes = { seq, v: f ? lineExtremes(f.px, f.w, f.h, f.decode, this.colorspace) : null };
     return this.extremes.v;
   }
   private neutral: { key: string; v: NeutralCast | null } = { key: '', v: null };
   /** Mean cast of the near-neutral pixels (minmax.ts), once per frame and setting. */
   neutralCast(threshold: number, lo: number, hi: number): NeutralCast | null {
-    const key = `${this.frameSeq}:${this.colorspace}:${threshold}:${lo}:${hi}`;
+    const f = this.cpuFrame();
+    const key = `${this.cpuSeq}:${this.colorspace}:${threshold}:${lo}:${hi}`;
     if (this.neutral.key !== key) {
-      const f = this.cpuFrame();
       this.neutral = { key, v: f ? neutralCast(f.px, f.w, f.h, Math.max(1, Math.round(Math.sqrt((f.w * f.h) / 60000))), f.decode, this.colorspace, threshold, lo, hi) : null };
     }
     return this.neutral.v;
@@ -657,6 +674,7 @@ export class Source {
       this.attachVideo(v);
       const track = this.media.getVideoTracks()[0];
       this.deviceId = track.getSettings().deviceId ?? deviceId ?? '';
+      this.nominalFps = Math.round(track.getSettings().frameRate ?? 0);
       track.addEventListener('ended', () => this.set('ended', t('source.status.captureEnded')));
       this.set('live', `${v.videoWidth}×${v.videoHeight} ${track.label}`);
     } catch (e) {

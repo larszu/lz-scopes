@@ -30,4 +30,10 @@ export default {
   'feedback.sentHint': 'The full report is also on the clipboard – paste it if your mail program shortens it.',
   'feedback.cut': '[Report shortened – full text on the clipboard]',
   'feedback.subject': 'LZ Scopes feedback',
+  'feedback.gpu.chip': 'Slow graphics',
+  'feedback.gpu.title': 'Graphics slow down the scopes',
+  'feedback.gpu.integrated': 'LZ Scopes draws on the graphics built into the processor ({active}), although a {other} graphics card is present. That can halve the frame rate.',
+  'feedback.gpu.integratedFix': 'Windows Settings → System → Display → Graphics → LZ Scopes → Options → “High performance”, then restart the app. With NVIDIA also: NVIDIA Control Panel → Manage 3D settings → Program settings.',
+  'feedback.gpu.software': 'LZ Scopes draws without graphics acceleration (software rendering). The scopes then run much slower.',
+  'feedback.gpu.softwareFix': 'Update the graphics driver and restart the app. Help → Send Feedback lists the affected features under “Graphics and screens”.',
 } satisfies Messages;

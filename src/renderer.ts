@@ -410,9 +410,12 @@ export class Renderer {
   /**
    * `deep`: ask for a RGBA16F drawing buffer (output windows). drawingBufferStorage needs
    * alpha: true (WebGL spec), so endFrame() then sets alpha back to 1 everywhere.
+   * `preserve: false` when every drawn region is copied out in the same task (main view):
+   * a kept drawing buffer costs an extra copy per frame, under ANGLE/D3D11 two
+   * (docs/research/windows-und-ndi.md). Shown or later-read canvases keep it.
    */
-  constructor(readonly canvas: HTMLCanvasElement, private readonly opts: { deep?: boolean } = {}) {
-    const gl = canvas.getContext('webgl2', { antialias: false, alpha: !!opts.deep, preserveDrawingBuffer: true, premultipliedAlpha: false });
+  constructor(readonly canvas: HTMLCanvasElement, private readonly opts: { deep?: boolean; preserve?: boolean } = {}) {
+    const gl = canvas.getContext('webgl2', { antialias: false, alpha: !!opts.deep, preserveDrawingBuffer: opts.preserve ?? true, premultipliedAlpha: false });
     if (!gl) throw new Error(t('render.noWebgl2'));
     // The scopes accumulate into RGBA16F (texture below). EXT_color_buffer_float covers that; iOS
     // GPUs may offer only EXT_color_buffer_half_float, which the WebGL registry allows in WebGL 2

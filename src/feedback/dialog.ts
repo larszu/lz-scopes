@@ -4,6 +4,7 @@
 import { button, checkbox, download, field, h, hint, kicker, openModal } from '../ui';
 import { lang, t } from '../i18n';
 import { logLines } from './log';
+import { gpuAdvice, type GpuDevice } from './gpuAdvice';
 import { SECTIONS, buildReport, fitForUrl, type FeedbackData, type Section, type SourceInfo } from './report';
 
 export const FEEDBACK_MAIL = 'scopes@zumpelars.de';
@@ -20,7 +21,9 @@ export interface FeedbackHost {
 
 interface SysInfo {
   os: string; arch: string; cpu: string; cores: number; ramGb: number; runtime: string;
+  platform: string;
   gpu: { vendorId: number; deviceId: number; driver: string | null } | null;
+  gpus: GpuDevice[];
   gpuFeatures: Record<string, string>;
   screens: { width: number; height: number; scale: number; hz: number; primary: boolean }[];
 }
@@ -37,9 +40,27 @@ function webglRenderer(): string {
   } catch { return ''; }
 }
 
+/** The desktop app's system snapshot (main process); null in the browser. */
+export const desktopSysInfo = (): Promise<SysInfo | null> => desktop()?.sysinfo?.().catch(() => null) ?? Promise.resolve(null);
+
+function adviceText(sys: SysInfo | null): string {
+  const a = sys && gpuAdvice({ platform: sys.platform, gpus: sys.gpus ?? [], gpuFeatures: sys.gpuFeatures ?? {} });
+  return !a ? '' : a.kind === 'software' ? 'software rendering' : `runs on ${a.active}, ${a.other} present`;
+}
+
+/** Header chip when the GPU slows the scopes down (Windows iGPU, software rendering). */
+export async function checkGpu(show: (title: string, body: string[]) => void) {
+  const sys = await desktopSysInfo();
+  const a = sys && gpuAdvice({ platform: sys.platform, gpus: sys.gpus ?? [], gpuFeatures: sys.gpuFeatures ?? {} });
+  if (!a) return;
+  show(t('feedback.gpu.title'), a.kind === 'software'
+    ? [t('feedback.gpu.software'), t('feedback.gpu.softwareFix')]
+    : [t('feedback.gpu.integrated', { active: a.active, other: a.other }), t('feedback.gpu.integratedFix')]);
+}
+
 async function collect(host: FeedbackHost): Promise<FeedbackData> {
   const d = desktop();
-  const sys = d?.sysinfo ? await d.sysinfo().catch(() => null) : null;
+  const sys = await desktopSysInfo();
   const nav = navigator as Navigator & { deviceMemory?: number; userAgentData?: { getHighEntropyValues: (k: string[]) => Promise<Record<string, string>> } };
   let os = sys?.os ?? '';
   if (!os) {
@@ -58,7 +79,7 @@ async function collect(host: FeedbackHost): Promise<FeedbackData> {
       os: os || navigator.userAgent, arch: sys?.arch, cpu: sys?.cpu, cores: sys?.cores ?? navigator.hardwareConcurrency,
       ramGb: sys?.ramGb ?? nav.deviceMemory, runtime: sys?.runtime ?? (os ? navigator.userAgent : ''),
     },
-    display: { gpu: webglRenderer() + gpuIds, gpuFeatures: feats, screens },
+    display: { gpu: webglRenderer() + gpuIds, gpuFeatures: feats, advice: adviceText(sys), screens },
     performance: { displayFps: host.displayFps(), panels: host.panels(), sources: host.sources(), ffmpeg: bridge || '', bridge: bridge !== false },
     log: logLines(),
   };

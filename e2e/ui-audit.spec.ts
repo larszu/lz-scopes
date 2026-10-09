@@ -136,6 +136,14 @@ async function contrast(page: Page, scope: string, where: string, f: Finding[]) 
 }
 
 const isOpen = (page: Page, sel: string) => page.evaluate((sel) => [...document.querySelectorAll(sel)].some((e) => e.getClientRects().length > 0), sel);
+/** Waits until the overlay is open (or closed) – closing animations (--dur-2) outlast a fixed pause on slow runners. */
+const settles = async (page: Page, sel: string, open: boolean, ms = 2000) => {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { if (await isOpen(page, sel) === open) return true; await page.waitForTimeout(50); }
+  return false;
+};
+/** After opening: let the open animation finish before the next action (sheets ignore clicks while they slide in). */
+const OPENED_MS = 300;
 const focusIs = (page: Page, sel: string) => page.evaluate((sel) => !!document.activeElement?.matches(sel), sel);
 
 /** A point outside every overlay that triggers nothing: the brand area of the header. */
@@ -153,23 +161,24 @@ const outsideClick = async (page: Page, overlay = '') => {
 /** The same opening/closing logic for an overlay: trigger toggles, Esc and outside click close, focus returns. */
 async function behaviour(page: Page, trigger: string, overlay: string, where: string, f: Finding[], o: { toggle?: boolean; outside?: boolean } = {}) {
   const t = page.locator(trigger).first();
-  await t.click(); await page.waitForTimeout(150);
-  if (!await isOpen(page, overlay)) { f.push({ check: 'open', where, detail: `${trigger} öffnet ${overlay} nicht` }); return; }
+  await t.click();
+  if (!await settles(page, overlay, true)) { f.push({ check: 'open', where, detail: `${trigger} öffnet ${overlay} nicht` }); return; }
+  await page.waitForTimeout(OPENED_MS);
   if (o.toggle !== false) {
-    await t.click({ force: true }); await page.waitForTimeout(150);
-    if (await isOpen(page, overlay)) { f.push({ check: 'trigger-toggle', where, detail: 'erneuter Klick auf den Auslöser schließt nicht' }); await page.keyboard.press('Escape'); }
+    await t.click({ force: true });
+    if (!await settles(page, overlay, false)) { f.push({ check: 'trigger-toggle', where, detail: 'erneuter Klick auf den Auslöser schließt nicht' }); await page.keyboard.press('Escape'); }
   }
-  else { await page.keyboard.press('Escape'); await page.waitForTimeout(150); }
+  else { await page.keyboard.press('Escape'); await settles(page, overlay, false); }
   if (o.outside !== false) {
-    await t.click(); await page.waitForTimeout(150);
-    await outsideClick(page, overlay); await page.waitForTimeout(150);
-    if (await isOpen(page, overlay)) { f.push({ check: 'outside-click', where, detail: 'Klick außerhalb schließt nicht' }); await page.keyboard.press('Escape'); }
+    await t.click(); await settles(page, overlay, true); await page.waitForTimeout(OPENED_MS);
+    await outsideClick(page, overlay);
+    if (!await settles(page, overlay, false)) { f.push({ check: 'outside-click', where, detail: 'Klick außerhalb schließt nicht' }); await page.keyboard.press('Escape'); }
   }
   // keyboard: focus the trigger, Enter opens, Esc closes and the focus is back on the trigger
-  await t.focus(); await page.keyboard.press('Enter'); await page.waitForTimeout(150);
-  if (!await isOpen(page, overlay)) { f.push({ check: 'keyboard-open', where, detail: 'Enter auf dem Auslöser öffnet nicht' }); return; }
-  await page.keyboard.press('Escape'); await page.waitForTimeout(150);
-  if (await isOpen(page, overlay)) { f.push({ check: 'esc', where, detail: 'Esc schließt nicht' }); await outsideClick(page); }
+  await t.focus(); await page.keyboard.press('Enter');
+  if (!await settles(page, overlay, true)) { f.push({ check: 'keyboard-open', where, detail: 'Enter auf dem Auslöser öffnet nicht' }); return; }
+  await page.waitForTimeout(OPENED_MS); await page.keyboard.press('Escape');
+  if (!await settles(page, overlay, false)) { f.push({ check: 'esc', where, detail: 'Esc schließt nicht' }); await outsideClick(page); }
   else if (!await t.evaluate((e) => e === document.activeElement)) f.push({ check: 'focus-return', where, detail: `Fokus nach Esc auf ${await page.evaluate(() => document.activeElement?.tagName + '.' + document.activeElement?.className)}` });
 }
 

@@ -174,3 +174,10 @@ dialog.modal-xl { width: min(1180px, 96vw); }
 .row.opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr)); }
 .row.opts > select { min-width: 0; }
 .row.stack > select { flex-basis: 100%; }
+/* scope help cards (src/help/scopeHelp.ts) */
+.popover.scopehelp:not(.sheet) { max-width: min(380px, calc(100vw - 16px)); }
+.scopehelp .help-one { color: var(--text); font-weight: 600; margin: 0 0 var(--sp-2); }
+.scopehelp p { margin: 0 0 var(--sp-2); line-height: 1.45; }
+.scopehelp .help-list { margin: 0 0 var(--sp-2); padding-left: 1.1em; line-height: 1.45; }
+.scopehelp .help-try { border-top: 1px solid var(--line-1); padding-top: var(--sp-2); margin-top: var(--sp-2); }
+.scopehelp .help-pitfall { border-top: 1px solid var(--line-1); padding-top: var(--sp-2); margin-top: var(--sp-2); color: var(--text-soft); }

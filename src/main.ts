@@ -62,6 +62,7 @@ import { ShadingControl, SIM_URL } from './shading/ui';
 import { T as SHADING_T } from './shading/text';
 import { installFeedbackLog } from './feedback/log';
 import { checkGpu, openFeedback } from './feedback/dialog';
+import { hasHelp, helpCard, helpOn, setHelpOn } from './help/scopeHelp';
 
 installFeedbackLog();
 declare const __APP_VERSION__: string | undefined;
@@ -800,6 +801,8 @@ interface PanelView {
   idx: number; el: HTMLElement; head: HTMLElement; body: HTMLElement; blit: HTMLCanvasElement; overlay: HTMLCanvasElement; zoom: HTMLButtonElement;
   /** the ⚙ popover; kept across head refreshes so an open popover stays open */
   pop?: PopoverEl; popScope?: ScopeType;
+  /** the ? help card (src/help/scopeHelp.ts), when the scope help is switched on */
+  help?: PopoverEl; helpScope?: ScopeType;
 }
 const views = new Map<number, PanelView>();
 /** Views of the panels currently in the dock. */
@@ -864,6 +867,13 @@ function fillHead(v: PanelView) {
     v.pop = popover({ label: '⚙', title: t('panel.settingsOf', { scope: SCOPE_LABELS[p.scope] }), heading: SCOPE_LABELS[p.scope], align: 'end', cls: 'psettings', content: () => panelSettings(state.panels[idx]) });
     v.popScope = p.scope;
     opts.append(v.pop);
+  }
+  const wantHelp = helpOn() && hasHelp(p.scope);
+  if (v.help && (!wantHelp || v.helpScope !== p.scope)) { v.help.remove(); v.help = undefined; }
+  if (wantHelp && !v.help) {
+    v.help = popover({ label: '?', title: t('help.open', { scope: SCOPE_LABELS[p.scope] }), heading: SCOPE_LABELS[p.scope], align: 'end', cls: 'scopehelp', content: () => helpCard(state.panels[idx].scope, Object.keys(SCOPE_LABELS)) });
+    v.helpScope = p.scope;
+    opts.insertBefore(v.help, v.pop ?? null);
   }
 }
 
@@ -2081,6 +2091,7 @@ const menuState = (): MenuState => ({
   stage: state.stage ?? 'signal', stages: STAGES.map((st) => [st, STAGE_LABELS[st]]),
   scopes: (Object.entries(SCOPE_LABELS) as [string, string][]),
   hasPattern: sources.some((x) => x.kind === 'pattern'),
+  help: helpOn(),
 });
 const menuActions: MenuActions = {
   manual: (lang) => openManual(lang),
@@ -2103,6 +2114,7 @@ const menuActions: MenuActions = {
   outputPattern: () => { const p = sources.find((x) => x.kind === 'pattern'); if (p) openOutput(p.pattern); },
   led: () => openLed(),
   calibration: () => openCalibrationDialog(),
+  help: () => { setHelpOn(!helpOn()); for (const v of views.values()) fillHead(v); refreshMenu(); },
   feedback: () => openFeedback({
     version: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '',
     displayFps: () => displayFps,

@@ -87,3 +87,19 @@ test('Feedback senden: Bericht zeigt genau die gewählten Daten', async () => {
   await dlg.locator('.modal-head button.icon').click();
   await expect(dlg).toHaveCount(0);
 });
+
+test('Scope-Hilfe: „?“ im Panelkopf öffnet die Karte, Menü schaltet sie aus und an', async () => {
+  const q = a.page.locator('.panel button[title^="Was ist"]');
+  await expect(q.first()).toBeVisible();
+  await q.first().click();
+  const card = a.page.locator('.popover.scopehelp:popover-open');
+  await expect(card).toContainText('Ausprobieren');
+  await card.getByRole('checkbox', { name: 'Ausprobiert' }).check();
+  await expect(card).toContainText(/1 von \d+ Aufgaben ausprobiert/);
+  await a.page.keyboard.press('Escape');
+  await menuClick(a, 'help:toggle');
+  await expect(q).toHaveCount(0);
+  await expect.poll(() => checked('help:toggle')).toBe(false);
+  await menuClick(a, 'help:toggle');
+  await expect(q.first()).toBeVisible();
+});

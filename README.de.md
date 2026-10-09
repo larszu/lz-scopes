@@ -291,6 +291,10 @@ Konfiguration: `--port`/`PORT` (4192; nicht 4190 – steht auf der Sperrliste de
 
 `npm run dist:mac`, `npm run dist:win` bzw. `npm run dist:linux` baut die App mit eingebetteter Bridge und mitgeliefertem ffmpeg (Mac: Universal). Release: Tag `v*` → `release.yml` baut Windows, macOS und Linux (AppImage, deb), prüft das ffmpeg im Paket und hängt Installer und ffmpeg-Quelltext ans Release; `workflow_dispatch` ist ein Probelauf. Das mitgelieferte ffmpeg ist GPLv3 ohne nonfree-Teile, siehe [THIRD_PARTY.md](THIRD_PARTY.md) und [docs/research/ffmpeg-lizenz.md](docs/research/ffmpeg-lizenz.md).
 
+## Scope-Hilfe
+
+**Hilfe → Scope-Hilfe einblenden** setzt ein „?“ in jeden Panelkopf. Es öffnet eine kurze Karte: was der Scope zeigt, wofür man ihn beim Shading, Matching oder bei der Legalitätsprüfung braucht, wie man ihn liest, eine kleine Aufgabe mit dem eingebauten Testbild samt Erfolgskriterium zum Abhaken und ein typischer Fehler. Die Texte sind gegen BT.709/BT.2100/BT.1886, EBU R 103/R 128, ITU-R BS.1770 und Tektronix-, Sony- und BBC-Unterlagen geprüft, die Aussagen über die App gegen den Code; Quellen und Widersprüche zwischen den Quellen stehen in [docs/research/scope-hilfe.md](docs/research/scope-hilfe.md). Ausschalten über denselben Menüpunkt.
+
 ## Feedback
 
 **Hilfe → Feedback senden …** öffnet einen Bericht mit Beschreibung, System (Betriebssystem und Version, Prozessor, Arbeitsspeicher), Grafik und Bildschirmen, Leistung (Anzeige-fps, je Quelle Auflösung, fps, verworfene Bilder) und den letzten Warnungen. Jeder Teil lässt sich abwählen; der angezeigte Text ist genau das, was gesendet wird. Nie enthalten: Bilder, Quellennamen und -adressen, Dateipfade, Benutzer- und Rechnernamen; Adressen, IPs und E-Mail-Adressen in Meldungen werden ersetzt. Senden per E-Mail an scopes@zumpelars.de (privat) oder als GitHub-Issue (öffentlich).

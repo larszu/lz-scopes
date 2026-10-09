@@ -27,6 +27,7 @@ import opple from './en/opple';
 import led from './en/led';
 import calib from './en/calib';
 import feedback from './en/feedback';
+import help from './en/help';
 
 
 import tools from './en/tools';
@@ -65,6 +66,7 @@ export const en = {
   ...led,
   ...calib,
   ...feedback,
+  ...help,
 };
 
 export type Key = keyof typeof en;

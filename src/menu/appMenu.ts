@@ -26,6 +26,8 @@ export interface MenuState {
   scopes: [id: string, label: string][];
   /** pattern source present (Ausgabe → Testbild ausgeben) */
   hasPattern: boolean;
+  /** scope help cards ("?" in the panel heads) shown */
+  help?: boolean;
   /** extra menu items registered by other modules, by top menu id */
   extra?: Record<string, MenuItem[]>;
 }
@@ -54,6 +56,8 @@ export interface MenuActions {
   calibration: () => void;
   /** Help → Send Feedback … (src/feedback) */
   feedback?: () => void;
+  /** Help → Show scope help (src/help) */
+  help?: () => void;
   /** commands added by other modules (registerMenuCommand) */
   other?: (id: string) => boolean;
 }
@@ -163,6 +167,7 @@ export function buildMenu(s: MenuState): TopMenu[] {
     },
     {
       id: 'help', label: t('menu.help'), items: [
+        { id: 'help:toggle', label: t('help.menu'), type: 'checkbox', checked: !!s.help },
         { id: 'settings:keys', label: t('menu.keys') },
         sep(),
         { id: `manual:${lang()}`, label: t('menu.manual') },
@@ -208,6 +213,7 @@ export function dispatch(id: string, a: MenuActions) {
     case 'led': return a.led();
     case 'calibration': return a.calibration();
     case 'feedback': return a.feedback?.();
+    case 'help': return a.help?.();
     case 'open': { const u = URLS[arg]; if (u) window.open(u, '_blank', 'noopener'); return; }
     case 'manual': return a.manual?.(arg === 'en' ? 'en' : 'de');
   }

@@ -159,4 +159,6 @@ export default {
   'panel.draw.castTowards': 'towards {hue}',
   'panel.draw.castNeutral': ' (neutral)',
   'panel.draw.justOutside': 'just outside {gamut} (≤ 5 %)',
+  'panel.facesFailed': 'Face detection stopped: {error}. Help → Send Feedback includes the details.',
+  'panel.facesCpu': 'Face detection runs on the processor (the graphics card refused) – works, a little slower.',
 } as const satisfies Messages;

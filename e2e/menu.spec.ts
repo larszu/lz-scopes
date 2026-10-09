@@ -68,3 +68,22 @@ test('Menübefehle und Häkchen folgen dem Zustand', async () => {
   await expect(page.locator('#outbody')).toContainText('Ausgabe öffnen');
   await page.keyboard.press('Escape');
 });
+
+test('Feedback senden: Bericht zeigt genau die gewählten Daten', async () => {
+  await menuClick(a, 'feedback');
+  const dlg = a.page.locator('dialog#feedback');
+  await expect(dlg).toBeVisible();
+  const report = dlg.locator('.feedback-report');
+  // desktop: OS, CPU and screens from the main process
+  await expect(report).toContainText('## System', { timeout: 30_000 });
+  await expect(report).toContainText(/OS: \S+/);
+  await expect(report).toContainText(/Screen 1: \d+×\d+/);
+  await dlg.locator('textarea').fill('Test 1 2 3');
+  await expect(report).toContainText(/^Test 1 2 3/);
+  await a.page.screenshot({ path: test.info().outputPath('feedback.png') });
+  await dlg.getByRole('checkbox', { name: 'System' }).uncheck();
+  await expect(report).not.toContainText('## System');
+  await expect(report).toContainText('## Leistung');
+  await dlg.locator('.modal-head button.icon').click();
+  await expect(dlg).toHaveCount(0);
+});

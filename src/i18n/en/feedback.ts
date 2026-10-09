@@ -1,0 +1,33 @@
+// English source texts: feedback dialog (Help → Send Feedback …).
+import type { Messages } from '../types';
+
+export default {
+  'feedback.menu': 'Send Feedback …',
+  'feedback.title': 'Send feedback',
+  'feedback.intro': 'Describe what happened. The report below is exactly what will be sent – nothing goes anywhere until you press a send button.',
+  'feedback.description': 'What happened?',
+  'feedback.placeholder': 'e.g. NDI camera shows only 2 fps; error message “…”',
+  'feedback.include': 'Include',
+  'feedback.section.system': 'System',
+  'feedback.section.systemHint': 'operating system and version, processor, memory, app runtime',
+  'feedback.section.display': 'Graphics and screens',
+  'feedback.section.displayHint': 'graphics card and driver, GPU acceleration, resolution and refresh rate of the screens',
+  'feedback.section.performance': 'Performance',
+  'feedback.section.performanceHint': 'display fps, open scopes, per source: type, resolution, fps, dropped frames, computing time',
+  'feedback.section.log': 'Log',
+  'feedback.section.logHint': 'the last warnings and errors of this session',
+  'feedback.never': 'Never included: pictures, source names and addresses, file paths, user and computer names. Addresses, IPs and e-mail addresses in messages are replaced by placeholders.',
+  'feedback.preview': 'Report',
+  'feedback.collecting': 'collecting …',
+  'feedback.mail': 'Send by e-mail',
+  'feedback.mailTitle': 'Opens your mail program with the report to {to}',
+  'feedback.github': 'Open as GitHub issue',
+  'feedback.githubTitle': 'Public: visible to everyone, needs a GitHub account',
+  'feedback.githubWarn': 'GitHub issues are public. Use e-mail if the report should stay private.',
+  'feedback.copy': 'Copy',
+  'feedback.save': 'Save as file',
+  'feedback.copied': 'Report copied.',
+  'feedback.sentHint': 'The full report is also on the clipboard – paste it if your mail program shortens it.',
+  'feedback.cut': '[Report shortened – full text on the clipboard]',
+  'feedback.subject': 'LZ Scopes feedback',
+} satisfies Messages;

@@ -58,7 +58,6 @@ export default {
   'menu.front': 'Bring All to Front',
   'menu.help': 'Help',
   'menu.keys': 'Keyboard Shortcuts',
-  'menu.issues': 'Report an Issue …',
   'menu.licenses': 'Third-Party Licences',
   'menu.about': 'About LZ Scopes',
   'menu.guide.readme': 'Guide (README)',

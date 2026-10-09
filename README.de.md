@@ -290,6 +290,10 @@ Konfiguration: `--port`/`PORT` (4192; nicht 4190 – steht auf der Sperrliste de
 
 `npm run dist:mac`, `npm run dist:win` bzw. `npm run dist:linux` baut die App mit eingebetteter Bridge und mitgeliefertem ffmpeg (Mac: Universal). Release: Tag `v*` → `release.yml` baut Windows, macOS und Linux (AppImage, deb), prüft das ffmpeg im Paket und hängt Installer und ffmpeg-Quelltext ans Release; `workflow_dispatch` ist ein Probelauf. Das mitgelieferte ffmpeg ist GPLv3 ohne nonfree-Teile, siehe [THIRD_PARTY.md](THIRD_PARTY.md) und [docs/research/ffmpeg-lizenz.md](docs/research/ffmpeg-lizenz.md).
 
+## Feedback
+
+**Hilfe → Feedback senden …** öffnet einen Bericht mit Beschreibung, System (Betriebssystem und Version, Prozessor, Arbeitsspeicher), Grafik und Bildschirmen, Leistung (Anzeige-fps, je Quelle Auflösung, fps, verworfene Bilder) und den letzten Warnungen. Jeder Teil lässt sich abwählen; der angezeigte Text ist genau das, was gesendet wird. Nie enthalten: Bilder, Quellennamen und -adressen, Dateipfade, Benutzer- und Rechnernamen; Adressen, IPs und E-Mail-Adressen in Meldungen werden ersetzt. Senden per E-Mail (privat) oder als GitHub-Issue (öffentlich).
+
 ## Offene Punkte
 
 Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in [docs/research](docs/research). Zum Online-Stellen: [docs/PUBLISHING.md](docs/PUBLISHING.md).

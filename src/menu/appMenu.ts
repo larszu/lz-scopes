@@ -52,6 +52,8 @@ export interface MenuActions {
   outputPattern: () => void;
   led: () => void;
   calibration: () => void;
+  /** Help → Send Feedback … (src/feedback) */
+  feedback?: () => void;
   /** commands added by other modules (registerMenuCommand) */
   other?: (id: string) => boolean;
 }
@@ -167,7 +169,7 @@ export function buildMenu(s: MenuState): TopMenu[] {
         { id: `manual:${lang() === 'de' ? 'en' : 'de'}`, label: lang() === 'de' ? 'Inputs manual (English)' : 'Anleitung Eingänge (Deutsch)' }, // lang-ok: the other language, named in that language
         ...GUIDES.map((g): MenuItem => ({ id: `open:${g.id}`, label: g.label })),
         sep(),
-        { id: 'open:issues', label: t('menu.issues') },
+        { id: 'feedback', label: t('feedback.menu') },
         { id: 'open:licenses', label: t('menu.licenses') },
         ...extras('help'),
         sep(),
@@ -205,6 +207,7 @@ export function dispatch(id: string, a: MenuActions) {
     case 'output': return has ? a.outputPattern() : a.output();
     case 'led': return a.led();
     case 'calibration': return a.calibration();
+    case 'feedback': return a.feedback?.();
     case 'open': { const u = URLS[arg]; if (u) window.open(u, '_blank', 'noopener'); return; }
     case 'manual': return a.manual?.(arg === 'en' ? 'en' : 'de');
   }

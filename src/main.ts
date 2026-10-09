@@ -60,6 +60,11 @@ import { aboutSection, keysSection } from './menu/pages';
 import { LANG_NAMES, LANGS, lang, langPref, num, setLangPref, systemLang, t, type LangPref } from './i18n';
 import { ShadingControl, SIM_URL } from './shading/ui';
 import { T as SHADING_T } from './shading/text';
+import { installFeedbackLog } from './feedback/log';
+import { openFeedback } from './feedback/dialog';
+
+installFeedbackLog();
+declare const __APP_VERSION__: string | undefined;
 
 // ---------------------------------------------------------------- state
 
@@ -2068,6 +2073,20 @@ const menuActions: MenuActions = {
   outputPattern: () => { const p = sources.find((x) => x.kind === 'pattern'); if (p) openOutput(p.pattern); },
   led: () => openLed(),
   calibration: () => openCalibrationDialog(),
+  feedback: () => openFeedback({
+    version: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '',
+    displayFps: () => displayFps,
+    panels: () => dock.openIdx().map((i) => state.panels[i].scope),
+    // no names or URLs: they can hold addresses and credentials; the codec text of NDI/DeckLink carries the device name
+    sources: () => sources.map((s) => ({
+      kind: s.kind, status: s.status, width: s.width, height: s.height, depth: s.depth, fps: s.fps, dropped: s.dropped,
+      codec: s.info?.codec?.split(' · ')[0], pixFmt: s.info?.pixFmt,
+      sourceSize: s.info?.sourceWidth ? `${s.info.sourceWidth}×${s.info.sourceHeight}` : undefined,
+      stats: s.ready ? `${s.statsPerf.path} ${s.statsPerf.ms.toFixed(2)} ms` : undefined,
+      message: s.status === 'error' ? s.message : undefined,
+    })),
+    bridge: async () => { await refreshFfmpegInfo(); return bridgeHealth ? (bridgeHealth.ffmpeg ? `${bridgeHealth.ffmpeg.version ?? '?'} · ${bridgeHealth.ffmpeg.origin}` : '') : false; },
+  }),
 };
 mountMenu($('#menubar'), menuState, menuActions);
 requestAnimationFrame(frame);

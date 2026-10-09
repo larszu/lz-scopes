@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('lzsDesktop', {
   /** app.getLocale() (#94): the UI language when the user has not chosen one. */
   locale: (() => { try { return String(ipcRenderer.sendSync('lzs:locale') || ''); } catch { return ''; } })(),
   displays: () => ipcRenderer.invoke('lzs:displays'),
+  /** Feedback report: OS, CPU, RAM, GPU, screens (no host or user name). */
+  sysinfo: () => ipcRenderer.invoke('lzs:sysinfo'),
   /** Windows and screens for capture (Resolve, Lightroom, Capture One …) with thumbnails. */
   captureSources: () => ipcRenderer.invoke('lzs:capture-sources'),
   /** System display profile and DDC/CI (#17); every call returns { ok, value | error }. */

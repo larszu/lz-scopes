@@ -26,6 +26,7 @@ import sysprofile from './en/sysprofile';
 import opple from './en/opple';
 import led from './en/led';
 import calib from './en/calib';
+import feedback from './en/feedback';
 
 
 import tools from './en/tools';
@@ -63,6 +64,7 @@ export const en = {
   ...opple,
   ...led,
   ...calib,
+  ...feedback,
 };
 
 export type Key = keyof typeof en;

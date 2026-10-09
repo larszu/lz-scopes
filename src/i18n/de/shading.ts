@@ -81,7 +81,7 @@ export default {
   'shading.cam.cap.masterGamma': 'Master Gamma',
   'shading.cam.cap.saturation': 'Sättigung',
   'shading.cam.mode.http-cgi': 'HTTP-CGI (Sony SRG/BRC, Vissonic, PTZOptics)',
-  'shading.cam.mode.visca': 'VISCA over IP (Sony, PTZOptics, Marshall, AVer)',
+  'shading.cam.mode.visca': 'VISCA über IP (Sony, PTZOptics, Marshall, AVer)',
   'shading.cam.mode.visca-serial': 'VISCA seriell (RS-232/422)',
   'shading.cam.mode.panasonic-ptz': 'Panasonic AW (PTZ)',
   'shading.cam.mode.birddog': 'BirdDog',

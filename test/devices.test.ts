@@ -97,6 +97,19 @@ describe('helper protocol (DeckLink/NDI helpers)', () => {
     expect(got).toEqual([['INFO', 11], ['FRAM', 1000], ['ERR', 1]]);
     expect(() => new HelperRecordParser(() => {}).push(Buffer.from('garbage-bytes'))).toThrow();
   });
+  it('a 1080p frame in 4 KB pipe chunks (Windows) stays linear, bytes intact', () => {
+    const frame = Buffer.alloc(1920 * 1080 * 2);
+    for (let i = 0; i < frame.length; i++) frame[i] = i % 251;
+    const rec = helperRecord('FRAM', frame), all = Buffer.concat([rec, rec, helperRecord('STAT', 'ok')]);
+    const got: Buffer[] = [];
+    const p = new HelperRecordParser((t: string, b: Buffer) => { if (t === 'FRAM') got.push(Buffer.from(b)); });
+    const t0 = performance.now();
+    for (let i = 0; i < all.length; i += 4096) p.push(all.subarray(i, i + 4096));
+    expect(got.length).toBe(2);
+    expect(got.every((g) => g.equals(frame))).toBe(true);
+    // the old per-chunk concat needed ~100 ms per frame here; linear is well under 20
+    expect(performance.now() - t0).toBeLessThan(80);
+  });
   it('frame sizes: v210 rows are padded to 48 px = 128 bytes', () => {
     // 1280 px → 27 blocks × 128 = 3456 bytes per row (checked against ffmpeg's v210 encoder output)
     expect(helperFormat({ width: 1280, height: 720, pixel: 'v210', fpsNum: 50, fpsDen: 1 }).bytes).toBe(3456 * 720);

@@ -32,6 +32,11 @@ export default {
   // scripts/build-helpers.mjs) must live outside the asar archive; ffmpeg is an extraResource.
   // serialport (the built-in camera bridge, electron/camera-bridge.cjs): native N-API module,
   // loadable only from a real path outside the archive
+  // no per-arch rebuild of native modules: serialport ships N-API prebuilds for every platform and
+  // arch (ABI-stable across Node and Electron). A rebuild made the x64 and arm64 halves of the
+  // universal Mac app differ, @electron/universal then kept two archives and app.asar.unpacked
+  // (helpers, serialport) vanished (release v1.9.0, first run).
+  npmRebuild: false,
   asarUnpack: ['server/resolve_helper.py', 'helpers/bin/**', '**/node_modules/serialport/**', '**/node_modules/@serialport/**', '**/*.node'],
   // no installer without the redistributable ffmpeg (a missing folder would be skipped silently)
   beforePack: async (ctx) => {

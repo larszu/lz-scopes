@@ -117,9 +117,9 @@ Devices without a free ffmpeg path (DeckLink, NDI) run through a separate helper
 | 4 | uint32 LE | length n of the payload |
 | 8 | n bytes | payload |
 
-- `INFO` (JSON, before the first frame and on every format change): `{"width":1920,"height":1080,"fpsNum":50,"fpsDen":1,"pixel":"v210","matrix":"bt709","range":"tv","transfer":"unknown","primaries":"unknown","name":"1080i50","timecode":"10:00:00:00"}`
+- `INFO` (JSON, before the first frame and on every format change): `{"width":1920,"height":1080,"fpsNum":50,"fpsDen":1,"pixel":"v210","matrix":"bt709","range":"tv","transfer":"unknown","primaries":"unknown","name":"1080i50","timecode":"10:00:00:00"}`. Optional `sourceWidth`/`sourceHeight`: size of the signal when the helper has already reduced the picture (NDI `--width`).
 - `FRAM`: one frame in the format `pixel`, rows without further padding. `pixel` ∈ `v210` (48 pixels per 128 bytes), `uyvy422`, `p216le`, `rgb48le`, `bgra`, `bgr0`, `rgba`, `rgb0`, `nv12`, `yuv420p`.
-- `STAT` (JSON `{"message":"…","code":"…"}`): status, e.g. “no input signal” (`code` optional, see above).
+- `STAT` (JSON `{"message":"…","code":"…"}`): status, e.g. “no input signal” (`code` optional, see above). `code` `ndi.stats` with `params` `{fps, received, ndiDropped, skipped, queue, connections}` (per second) is read by the bridge as counters.
 - `ERR `: error as JSON `{"message":"…","code":"…","params":{…}}` or as plain text; the helper exits afterwards.
 - `TIME` (JSON `{"tc":"10:00:00:00","df":false}`, optional, per frame before `FRAM`): timecode of the source (DeckLink: RP 188). The bridge forwards it as `{"type":"tc","tc":…,"kind":"decklink","fps":…,"df":…}`.
 

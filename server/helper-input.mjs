@@ -2,7 +2,7 @@
 // that writes records to stdout (helper protocol, docs/frame-protocol.md):
 //
 //   4 × ASCII tag | uint32 LE payload length | payload
-//   INFO  JSON {width, height, fpsNum, fpsDen, pixel, matrix?, range?, transfer?, primaries?, name?, timecode?}
+//   INFO  JSON {width, height, fpsNum, fpsDen, pixel, matrix?, range?, transfer?, primaries?, name?, timecode?, sourceWidth?, sourceHeight?}
 //   FRAM  one picture in `pixel` layout, rows without padding (v210: 128-byte blocks per 48 px)
 //   STAT  JSON {message, code?, params?}   (status text, e.g. "no input signal"; code: server/messages.mjs)
 //   TIME  JSON {tc, df}          (optional, per frame: source timecode, e.g. DeckLink RP 188)
@@ -142,6 +142,8 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
   // frame phase against the ST 2059-1 grid (server/phase.mjs), when the bridge passes a clock
   let phase = null, lastFps = 0, lastDf = false;
   let ff = null, fmt = null, outBytes = 0, asm = null, sent = 0, dropped = 0, closed = false, stderr = '', status = '';
+  /** helper's own counters (NDI: received, ndiDropped, skipped, queue, connections per second) */
+  let helperStats = null, helperDropped = 0, losing = false;
 
   const stopFf = () => { if (ff) { ff.stdin.destroy(); ff.kill('SIGKILL'); ff = null; } };
   const sendFrame = (frame) => {
@@ -173,7 +175,8 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
     ff.on('close', (code) => { if (self === ff && code && !closed) ctx.fail(ws, stderr.trim().split('\n').pop() || bmsg('ffmpeg.exit', `ffmpeg exited (${code})`, { code })); });
     if (ws.readyState === ws.OPEN) {
       ws.send(JSON.stringify({
-        type: 'info', width, height, depth, fps: fpsLimit || f.fps, sourceWidth: f.width, sourceHeight: f.height,
+        // the helper may have reduced the picture already (NDI --width): report the signal's size
+        type: 'info', width, height, depth, fps: fpsLimit || f.fps, sourceWidth: Number(info.sourceWidth) || f.width, sourceHeight: Number(info.sourceHeight) || f.height,
         codec: `${label}${info.name ? ` · ${info.name}` : ''}`, pixFmt: info.pixel, decodeMatrix,
         transfer: info.transfer ?? 'unknown', primaries: info.primaries ?? 'unknown', matrix: info.matrix ?? 'unknown', range: info.range ?? 'unknown',
         ...(info.timecode ? { timecode: info.timecode } : {}),
@@ -200,8 +203,21 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
       if (ff.stdin.writableLength > fmt.bytes * 2) { dropped++; return; }
       ff.stdin.write(Buffer.from(payload));
     } else if (tag === 'STAT') {
-      status = helperText(payload);
-      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped, ...toMsg(status) }));
+      const m = helperText(payload);
+      if (m.code === 'ndi.stats') {
+        // NDI counters once a second: losses go into `dropped`; text only while pictures get lost
+        const c = m.params ?? {};
+        helperStats = c;
+        const lost = (Number(c.ndiDropped) || 0) + (Number(c.skipped) || 0);
+        helperDropped += lost;
+        const was = losing;
+        losing = lost > 0 || c.connections === 0;
+        if (c.connections === 0) status = bmsg('ndi.noConnection', 'NDI source not connected');
+        else if (lost > 0) status = bmsg('ndi.dropping', `NDI: ${lost} pictures lost in the last second (network ${c.ndiDropped}, helper ${c.skipped})`, { lost, ndi: Number(c.ndiDropped) || 0, helper: Number(c.skipped) || 0 });
+        else if (was) status = bmsg('ndi.recovered', `NDI: no losses again (${c.fps} fps)`, { fps: Number(c.fps) || 0 });
+        else return;
+      } else status = m;
+      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: dropped + helperDropped, ...toMsg(status), ...(helperStats ? { helper: helperStats } : {}) }));
     } else if (tag === 'ERR') {
       ctx.fail(ws, helperText(payload));
     }
@@ -226,7 +242,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
     self.stdin.end();
   });
   const stats = setInterval(() => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped, ...(status ? toMsg(status) : {}), ...(phase?.report() ? { phase: phase.report() } : {}) }));
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: dropped + helperDropped, ...(status ? toMsg(status) : {}), ...(helperStats ? { helper: helperStats } : {}), ...(phase?.report() ? { phase: phase.report() } : {}) }));
   }, 1000);
   ws.on('close', () => { closed = true; clearInterval(stats); stopFf(); helper.kill('SIGTERM'); });
 }

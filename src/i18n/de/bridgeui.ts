@@ -25,7 +25,7 @@ export default {
   'bridgeui.chooseDecklink': 'DeckLink wählen …',
   'bridgeui.decklinkFormatTitle': 'Aufnahmeformat der Karte; RGB-4:4:4-Signale kommen immer als 10-bit-RGB',
   'bridgeui.untestedHw': 'ungeprüft mit Hardware',
-  'bridgeui.noNdiSources': 'Keine NDI-Quellen gefunden',
+  'bridgeui.noNdiSources': 'Keine NDI-Quellen gefunden. Windows: Netzwerkprofil auf „Privat“ stellen, lz-ndi.exe in der Firewall freigeben; Quellen in einem anderen Subnetz im NDI Access Manager eintragen.',
   'bridgeui.chooseNdi': 'NDI-Quelle wählen …',
   'bridgeui.folderTitle': 'Neuestes Standbild eines Ordners auf dem Bridge-Rechner, in voller Tiefe (16-bit-TIFF, 10-bit-DPX, 16-bit-PNG, EXR) – Exporte aus Lightroom, Capture One, Resolve. Freigabe: Desktop-App per Dialog, sonst Bridge mit --watch-dir starten.',
   'bridgeui.noFolders': 'Keine Ordner freigegeben – Bridge mit --watch-dir <Ordner> starten',

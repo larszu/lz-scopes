@@ -1,19 +1,30 @@
 // lz-ndi – NDI(R) receive helper for the lz-scopes bridge.
 //
 //   lz-ndi --list [--wait <ms>]         one JSON line: {"ok":true,"version":"…","sources":[{"name":"…","url":"…"}]}
-//   lz-ndi --capture <source name>      helper protocol on stdout (docs/frame-protocol.md)
-//   lz-ndi --send-test <name> [seconds] test sender: P216 frames, left half Y′ 940, right half 502 (10-bit scale)
+//   lz-ndi --capture <source name> [--depth 8|16] [--width N]
+//                                       helper protocol on stdout (docs/frame-protocol.md)
+//   lz-ndi --send-test <name> [seconds] [WxH] test sender: P216 frames, left half Y′ 940, right half 502 (10-bit scale)
+//   lz-ndi --selftest                   checks the box-filter reduction, one JSON line
 //
 // The NDI runtime is loaded at run time (dlopen / LoadLibrary) from $NDI_RUNTIME_DIR_V6 or
 // the system paths – it is installed by the user (NDI Tools or the NDI runtime from
-// ndi.video) and is not part of lz-scopes. Frames are requested as
-// NDIlib_recv_color_format_best, so 16-bit sources arrive as P216 and 8-bit ones as UYVY.
+// ndi.video) and is not part of lz-scopes.
+//
+// --depth 16 asks for NDIlib_recv_color_format_best (16-bit sources as P216), --depth 8 for
+// _fastest (UYVY, half the data). --width N reduces the picture in the helper by a whole
+// factor while it stays at least N wide (box filter in Y′CbCr, matrix and range unchanged),
+// so a 1080p source crosses the pipes with a quarter of the bytes; ffmpeg scales the rest.
+// One thread receives, the main thread writes: when the bridge reads slower than NDI
+// delivers, only the newest picture waits and older ones are counted as skipped.
 //
 // NDI(R) is a registered trademark of Vizrt NDI AB. https://ndi.video/
 
 #include "ndi-min.h"
 
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -71,6 +82,9 @@ struct Ndi {
   NDI_recv_capture_v3_fn recv_capture_v3 = nullptr;
   NDI_recv_free_video_v2_fn recv_free_video_v2 = nullptr;
   NDI_recv_destroy_fn recv_destroy = nullptr;
+  NDI_recv_get_performance_fn recv_get_performance = nullptr;   // optional (counters)
+  NDI_recv_get_queue_fn recv_get_queue = nullptr;
+  NDI_recv_get_no_connections_fn recv_get_no_connections = nullptr;
   NDI_send_create_fn send_create = nullptr;
   NDI_send_send_video_v2_fn send_send_video_v2 = nullptr;
   NDI_send_destroy_fn send_destroy = nullptr;
@@ -92,7 +106,7 @@ static std::string loadNdi(Ndi& n) {
 #endif
   LibHandle h = nullptr;
   for (const auto& p : tries) { h = openLib(p); if (h) { n.path = p; break; } }
-  if (!h) return "NDI runtime not found – install NDI Tools or the NDI runtime from ndi.video";
+  if (!h) return "NDI runtime not found – install the NDI runtime (ndi.link/NDIRedistV6) or NDI Tools, then restart LZ Scopes";
 #define LOAD(field, name) n.field = (decltype(n.field))sym(h, name); if (!n.field) return std::string("NDI runtime incomplete: ") + name;
   LOAD(initialize, "NDIlib_initialize")
   LOAD(destroy, "NDIlib_destroy")
@@ -109,6 +123,9 @@ static std::string loadNdi(Ndi& n) {
   LOAD(send_send_video_v2, "NDIlib_send_send_video_v2")
   LOAD(send_destroy, "NDIlib_send_destroy")
 #undef LOAD
+  n.recv_get_performance = (NDI_recv_get_performance_fn)sym(h, "NDIlib_recv_get_performance");
+  n.recv_get_queue = (NDI_recv_get_queue_fn)sym(h, "NDIlib_recv_get_queue");
+  n.recv_get_no_connections = (NDI_recv_get_no_connections_fn)sym(h, "NDIlib_recv_get_no_connections");
   if (!n.initialize()) return "NDI cannot be initialised on this computer (CPU without SSE4.2?)";
   return "";
 }
@@ -181,7 +198,140 @@ static const char* repack(const NDI_video_frame_v2& v, std::vector<uint8_t>& out
   }
 }
 
-static int capture(const std::string& name) {
+// ---------------------------------------------------------------- reduction
+
+/**
+ * Box filter by the whole factor k (k ≥ 2) for 4:2:2 layouts: every output luma is the mean of
+ * k×k input lumas, every output Cb/Cr the mean of the k×k chroma samples it covers. `T` is the
+ * sample type (uint8 for UYVY, uint16 for P216). Output width is even, rows beyond h/k·k drop.
+ */
+template <typename T>
+static void reduceUyvy(const T* in, int w, int h, int k, std::vector<uint8_t>& outBytes, int& ow, int& oh) {
+  ow = (w / k) & ~1; oh = h / k;
+  outBytes.resize((size_t)ow * oh * 2 * sizeof(T));
+  T* out = reinterpret_cast<T*>(outBytes.data());
+  const uint32_t n = (uint32_t)k * k;
+  for (int oy = 0; oy < oh; oy++) {
+    for (int op = 0; op < ow / 2; op++) {              // output pixel pair: Cb Y0 Cr Y1
+      uint32_t cb = 0, cr = 0, y0 = 0, y1 = 0;
+      for (int dy = 0; dy < k; dy++) {
+        const T* row = in + (size_t)(oy * k + dy) * w * 2;
+        for (int j = 0; j < k; j++) {                     // input pairs op·k … op·k+k−1
+          const T* q = row + (size_t)(op * k + j) * 4;
+          cb += q[0]; cr += q[2];
+        }
+        for (int j = 0; j < k; j++) { y0 += row[(size_t)(2 * op * k + j) * 2 + 1]; y1 += row[(size_t)((2 * op + 1) * k + j) * 2 + 1]; }
+      }
+      T* o = out + (size_t)oy * ow * 2 + (size_t)op * 4;
+      o[0] = (T)((cb + n / 2) / n); o[1] = (T)((y0 + n / 2) / n); o[2] = (T)((cr + n / 2) / n); o[3] = (T)((y1 + n / 2) / n);
+    }
+  }
+}
+
+/** P216: Y plane (w×h uint16) then CbCr interleaved (w×h uint16); same filter as above. */
+static void reduceP216(const uint16_t* in, int w, int h, int k, std::vector<uint8_t>& outBytes, int& ow, int& oh) {
+  ow = (w / k) & ~1; oh = h / k;
+  outBytes.resize((size_t)ow * oh * 4);
+  uint16_t* oY = reinterpret_cast<uint16_t*>(outBytes.data());
+  uint16_t* oC = oY + (size_t)ow * oh;
+  const uint16_t* iC = in + (size_t)w * h;
+  const uint32_t n = (uint32_t)k * k;
+  for (int oy = 0; oy < oh; oy++) {
+    for (int ox = 0; ox < ow; ox++) {
+      uint32_t y = 0;
+      for (int dy = 0; dy < k; dy++) for (int dx = 0; dx < k; dx++) y += in[(size_t)(oy * k + dy) * w + ox * k + dx];
+      oY[(size_t)oy * ow + ox] = (uint16_t)((y + n / 2) / n);
+    }
+    for (int op = 0; op < ow / 2; op++) {
+      uint32_t cb = 0, cr = 0;
+      for (int dy = 0; dy < k; dy++) for (int j = 0; j < k; j++) {
+        const uint16_t* q = iC + (size_t)(oy * k + dy) * w + (size_t)(op * k + j) * 2;
+        cb += q[0]; cr += q[1];
+      }
+      oC[(size_t)oy * ow + op * 2] = (uint16_t)((cb + n / 2) / n);
+      oC[(size_t)oy * ow + op * 2 + 1] = (uint16_t)((cr + n / 2) / n);
+    }
+  }
+}
+
+/** Whole reduction factor so the result stays ≥ maxWidth; 1 = keep. */
+static int reduceFactor(int w, int maxWidth) { return maxWidth > 0 && w >= 2 * maxWidth ? w / maxWidth : 1; }
+
+/** Reduces a repacked picture in place when the layout allows it; returns the new size. */
+static void reduce(const char* pixel, std::vector<uint8_t>& buf, std::vector<uint8_t>& tmp, int& w, int& h, int maxWidth) {
+  const int k = reduceFactor(w, maxWidth);
+  if (k < 2) return;
+  int ow = 0, oh = 0;
+  if (std::strcmp(pixel, "uyvy422") == 0) reduceUyvy<uint8_t>(buf.data(), w, h, k, tmp, ow, oh);
+  else if (std::strcmp(pixel, "p216le") == 0) reduceP216(reinterpret_cast<const uint16_t*>(buf.data()), w, h, k, tmp, ow, oh);
+  else return;   // RGB and 4:2:0 layouts are rare on NDI; ffmpeg scales them
+  buf.swap(tmp); w = ow; h = oh;
+}
+
+// ---------------------------------------------------------------- capture
+
+/** One picture handed from the receive thread to the writer (newest wins). */
+struct Picture {
+  std::vector<uint8_t> data;
+  const char* pixel = nullptr;
+  int w = 0, h = 0, fpsN = 0, fpsD = 1;
+  bool interlaced = false;
+};
+
+struct Shared {
+  std::mutex m;
+  std::condition_variable cv;
+  Picture slot;
+  bool has = false;
+  std::string stat, err;           // records for the writer (JSON); err ends the helper
+  int64_t skipped = 0;             // pictures replaced before the writer took them
+  bool lastWasVideo = false;
+};
+
+static void receiveLoop(Ndi& n, NDI_recv_instance r, Shared& sh, std::atomic<bool>& stop) {
+  Picture next;
+  auto lastFrame = std::chrono::steady_clock::now();
+  while (!stop) {
+    NDI_video_frame_v2 v;
+    std::memset(&v, 0, sizeof v);
+    const int32_t t = n.recv_capture_v3(r, &v, nullptr, nullptr, 100);
+    if (t == NDI_frame_type_error) {
+      std::lock_guard<std::mutex> l(sh.m);
+      sh.err = "{\"code\":\"ndi.lost\",\"message\":\"Connection to the NDI source lost\"}";
+      sh.cv.notify_one();
+      return;
+    }
+    if (t != NDI_frame_type_video) {
+      if (std::chrono::steady_clock::now() - lastFrame > std::chrono::seconds(2)) {
+        std::lock_guard<std::mutex> l(sh.m);
+        sh.stat = "{\"code\":\"ndi.waiting\",\"message\":\"waiting for a picture from the NDI source\"}";
+        sh.cv.notify_one();
+        lastFrame = std::chrono::steady_clock::now();
+      }
+      continue;
+    }
+    lastFrame = std::chrono::steady_clock::now();
+    // copy out and free at once: NDI's own queue is short
+    next.pixel = repack(v, next.data);
+    next.w = v.xres; next.h = v.yres; next.fpsN = v.frame_rate_N; next.fpsD = v.frame_rate_D;
+    next.interlaced = v.frame_format_type != NDI_frame_format_progressive;
+    const uint32_t fourcc = v.FourCC;
+    n.recv_free_video_v2(r, &v);
+    std::lock_guard<std::mutex> l(sh.m);
+    if (!next.pixel) {
+      char cc[5] = { (char)(fourcc & 0xff), (char)((fourcc >> 8) & 0xff), (char)((fourcc >> 16) & 0xff), (char)(fourcc >> 24), 0 };
+      sh.stat = std::string("{\"code\":\"ndi.format\",\"message\":\"NDI format ") + jsonEscape(cc) + " not supported\",\"params\":{\"fourcc\":\"" + jsonEscape(cc) + "\"}}";
+      sh.cv.notify_one();
+      continue;
+    }
+    if (sh.has) sh.skipped++;
+    std::swap(sh.slot, next);       // the old slot's buffer is reused for the next picture
+    sh.has = true;
+    sh.cv.notify_one();
+  }
+}
+
+static int capture(const std::string& name, int depth, int maxWidth) {
   Ndi n;
   std::string err = loadNdi(n);
   if (!err.empty()) { writeText("ERR ", "{\"code\":\"" + std::string(ndiErrCode(err)) + "\",\"message\":\"" + jsonEscape(err) + "\"}"); return 2; }
@@ -201,53 +351,106 @@ static int capture(const std::string& name) {
   if (foundName.empty()) { const std::string en = jsonEscape(name); writeText("ERR ", "{\"code\":\"ndi.notFound\",\"message\":\"NDI source \\\"" + en + "\\\" not found\",\"params\":{\"name\":\"" + en + "\"}}"); return 2; }
   found.p_ndi_name = foundName.c_str();
   found.p_url_address = foundUrl.empty() ? nullptr : foundUrl.c_str();
-  NDI_recv_create_v3 rc = { found, NDI_recv_color_format_best, NDI_recv_bandwidth_highest, false, "LZ Scopes" };
+  const int32_t colour = depth == 8 ? NDI_recv_color_format_fastest : NDI_recv_color_format_best;
+  NDI_recv_create_v3 rc = { found, colour, NDI_recv_bandwidth_highest, false, "LZ Scopes" };
   NDI_recv_instance r = n.recv_create_v3(&rc);
   n.find_destroy(f);
   if (!r) { writeText("ERR ", "{\"code\":\"ndi.recvFailed\",\"message\":\"NDI receiver cannot be created\"}"); return 2; }
+
+  Shared sh;
+  std::atomic<bool> stop(false);
+  std::thread rx(receiveLoop, std::ref(n), r, std::ref(sh), std::ref(stop));
   std::string lastInfo;
-  std::vector<uint8_t> buf;
-  auto lastFrame = std::chrono::steady_clock::now();
+  Picture pic;
+  std::vector<uint8_t> tmp;
+  int64_t sent = 0, lastSent = 0, lastSkipped = 0, lastTotal = 0, lastDropped = 0;
+  auto lastStats = std::chrono::steady_clock::now();
+  int rc2 = 0;
   for (;;) {
-    NDI_video_frame_v2 v;
-    std::memset(&v, 0, sizeof v);
-    const int32_t t = n.recv_capture_v3(r, &v, nullptr, nullptr, 1000);
-    if (t == NDI_frame_type_error) { writeText("ERR ", "{\"code\":\"ndi.lost\",\"message\":\"Connection to the NDI source lost\"}"); return 3; }
-    if (t != NDI_frame_type_video) {
-      if (std::chrono::steady_clock::now() - lastFrame > std::chrono::seconds(2)) { writeText("STAT", "{\"code\":\"ndi.waiting\",\"message\":\"waiting for a picture from the NDI source\"}"); lastFrame = std::chrono::steady_clock::now(); }
-      continue;
+    std::string stat, fatal;
+    bool got = false;
+    {
+      std::unique_lock<std::mutex> l(sh.m);
+      sh.cv.wait_for(l, std::chrono::milliseconds(250), [&] { return sh.has || !sh.stat.empty() || !sh.err.empty(); });
+      if (sh.has) { std::swap(pic, sh.slot); sh.has = false; got = true; }
+      stat.swap(sh.stat); fatal.swap(sh.err);
     }
-    lastFrame = std::chrono::steady_clock::now();
-    const char* pixel = repack(v, buf);
-    if (!pixel) {
-      char cc[5] = { (char)(v.FourCC & 0xff), (char)((v.FourCC >> 8) & 0xff), (char)((v.FourCC >> 16) & 0xff), (char)(v.FourCC >> 24), 0 };
-      writeText("STAT", std::string("{\"code\":\"ndi.format\",\"message\":\"NDI format ") + jsonEscape(cc) + " not supported\",\"params\":{\"fourcc\":\"" + jsonEscape(cc) + "\"}}");
-      n.recv_free_video_v2(r, &v);
-      continue;
+    if (!stat.empty()) writeText("STAT", stat);
+    if (!fatal.empty()) { writeText("ERR ", fatal); rc2 = 3; break; }
+    if (got) {
+      int w = pic.w, h = pic.h;
+      reduce(pic.pixel, pic.data, tmp, w, h, maxWidth);
+      // NDI signals no colour metadata here; the bridge applies BT.709 above SD, BT.601 for SD.
+      // Fields may arrive individually (field_0/1); each is then measured as its own picture.
+      std::string info = "{\"width\":" + std::to_string(w) + ",\"height\":" + std::to_string(h)
+        + ",\"sourceWidth\":" + std::to_string(pic.w) + ",\"sourceHeight\":" + std::to_string(pic.h)
+        + ",\"fpsNum\":" + std::to_string(pic.fpsN) + ",\"fpsDen\":" + std::to_string(pic.fpsD)
+        + ",\"pixel\":\"" + pic.pixel + "\",\"range\":\"" + (pic.pixel[0] == 'b' || pic.pixel[0] == 'r' ? "pc" : "tv") + "\",\"interlaced\":" + (pic.interlaced ? "true" : "false")
+        + ",\"name\":\"" + jsonEscape(foundName) + "\"}";
+      if (info != lastInfo) { writeText("INFO", info); lastInfo = info; }
+      writeRecord("FRAM", pic.data.data(), (uint32_t)pic.data.size());
+      sent++;
     }
-    // NDI signals no colour metadata here; the bridge applies BT.709 above SD, BT.601 for SD.
-    // With color_format_best the SDK header says fields may arrive individually (field_0/1):
-    // each field is then measured as its own picture.
-    std::string info = "{\"width\":" + std::to_string(v.xres) + ",\"height\":" + std::to_string(v.yres)
-      + ",\"fpsNum\":" + std::to_string(v.frame_rate_N) + ",\"fpsDen\":" + std::to_string(v.frame_rate_D)
-      + ",\"pixel\":\"" + pixel + "\",\"range\":\"" + (pixel[0] == 'b' || pixel[0] == 'r' ? "pc" : "tv") + "\",\"interlaced\":" + (v.frame_format_type == NDI_frame_format_progressive ? "false" : "true")
-      + ",\"name\":\"" + jsonEscape(foundName) + "\"}";
-    if (info != lastInfo) { writeText("INFO", info); lastInfo = info; }
-    n.recv_free_video_v2(r, &v);
-    writeRecord("FRAM", buf.data(), (uint32_t)buf.size());
+    // counters about once a second: NDI's own total/dropped, its queue, connections, our skips
+    const auto now = std::chrono::steady_clock::now();
+    if (now - lastStats >= std::chrono::seconds(1)) {
+      const double secs = std::chrono::duration<double>(now - lastStats).count();
+      lastStats = now;
+      NDI_recv_performance total = { 0, 0, 0 }, dropped = { 0, 0, 0 };
+      NDI_recv_queue queue = { 0, 0, 0 };
+      if (n.recv_get_performance) n.recv_get_performance(r, &total, &dropped);
+      if (n.recv_get_queue) n.recv_get_queue(r, &queue);
+      const int conns = n.recv_get_no_connections ? n.recv_get_no_connections(r) : -1;
+      int64_t skipped;
+      { std::lock_guard<std::mutex> l(sh.m); skipped = sh.skipped; }
+      char b[400];
+      snprintf(b, sizeof b, "{\"code\":\"ndi.stats\",\"message\":\"NDI counters\",\"params\":{\"fps\":%.1f,\"received\":%lld,\"ndiDropped\":%lld,\"skipped\":%lld,\"queue\":%d,\"connections\":%d}}",
+        (sent - lastSent) / secs, (long long)(total.video_frames - lastTotal), (long long)(dropped.video_frames - lastDropped), (long long)(skipped - lastSkipped), queue.video_frames, conns);
+      lastSent = sent; lastSkipped = skipped; lastTotal = total.video_frames; lastDropped = dropped.video_frames;
+      writeText("STAT", b);
+    }
   }
+  stop = true;
+  rx.join();
+  n.recv_destroy(r);
+  n.destroy();
+  return rc2;
+}
+
+/** Reduction check without NDI: known pictures in, means out (vitest runs it when built). */
+static int selftest() {
+  bool ok = true;
+  // UYVY 8×2 → k=2 → 4×1. Luma = column index·10, Cb = 100+pair, Cr = 200+pair
+  std::vector<uint8_t> u(8 * 2 * 2), t, o;
+  for (int y = 0; y < 2; y++) for (int p = 0; p < 4; p++) {
+    uint8_t* q = &u[(size_t)y * 16 + p * 4];
+    q[0] = (uint8_t)(100 + p); q[1] = (uint8_t)(2 * p * 10 + y); q[2] = (uint8_t)(200 + p); q[3] = (uint8_t)((2 * p + 1) * 10 + y);
+  }
+  int ow = 0, oh = 0;
+  reduceUyvy<uint8_t>(u.data(), 8, 2, 2, o, ow, oh);
+  // out pair 0 covers input pixels 0..3 (pairs 0,1): Y0 = mean(0,10 | +1) = 5.5→6, Y1 = mean(20,30) = 25.5→26, Cb = 100.5→101, Cr = 200.5→201
+  ok = ok && ow == 4 && oh == 1 && o.size() == 8 && o[0] == 101 && o[1] == 6 && o[2] == 201 && o[3] == 26 && o[4] == 103 && o[5] == 46 && o[6] == 203 && o[7] == 66;
+  // P216 4×4 flat Y′ 940<<6 left half, 502<<6 right half; k=2 → 2×2, CbCr 512<<6
+  std::vector<uint16_t> p(4 * 4 * 2);
+  for (int y = 0; y < 4; y++) for (int x = 0; x < 4; x++) { p[(size_t)y * 4 + x] = (uint16_t)((x < 2 ? 940 : 502) << 6); p[16 + (size_t)y * 4 + x] = (uint16_t)((x % 2 ? 520 : 504) << 6); }
+  reduceP216(p.data(), 4, 4, 2, o, ow, oh);
+  const uint16_t* r16 = reinterpret_cast<const uint16_t*>(o.data());
+  ok = ok && ow == 2 && oh == 2 && r16[0] == (940 << 6) && r16[1] == (502 << 6) && r16[4] == (504 << 6) && r16[5] == (520 << 6);
+  ok = ok && reduceFactor(1920, 960) == 2 && reduceFactor(1280, 960) == 1 && reduceFactor(3840, 960) == 4 && reduceFactor(1920, 0) == 1;
+  (void)t;
+  printf("{\"ok\":%s}\n", ok ? "true" : "false");
+  return ok ? 0 : 1;
 }
 
 // ---------------------------------------------------------------- test sender
 
-static int sendTest(const std::string& name, int seconds) {
+static int sendTest(const std::string& name, int seconds, int w, int h) {
   Ndi n;
   std::string err = loadNdi(n);
   if (!err.empty()) { fprintf(stderr, "%s\n", err.c_str()); return 2; }
   NDI_send_create sc = { name.c_str(), nullptr, true, false };
   NDI_send_instance s = n.send_create(&sc);
   if (!s) { fprintf(stderr, "NDI sender cannot be created\n"); return 2; }
-  const int w = 320, h = 180;
   std::vector<uint16_t> p((size_t)w * h * 2);
   for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
     p[(size_t)y * w + x] = (uint16_t)((x < w / 2 ? 940 : 502) << 6);      // Y′, 10-bit code value in 16 bit
@@ -273,8 +476,21 @@ int main(int argc, char** argv) {
     for (int i = 2; i + 1 < argc; i++) if (std::strcmp(argv[i], "--wait") == 0) wait = std::atoi(argv[i + 1]);
     return listSources(wait < 0 ? 0 : wait > 10000 ? 10000 : wait);
   }
-  if (argc >= 3 && std::strcmp(argv[1], "--capture") == 0) return capture(argv[2]);
-  if (argc >= 3 && std::strcmp(argv[1], "--send-test") == 0) return sendTest(argv[2], argc >= 4 ? std::atoi(argv[3]) : 30);
-  fprintf(stderr, "usage: lz-ndi --list [--wait ms] | --capture <name> | --send-test <name> [seconds]\n");
+  if (argc >= 3 && std::strcmp(argv[1], "--capture") == 0) {
+    int depth = 16, width = 0;
+    for (int i = 3; i + 1 < argc; i++) {
+      if (std::strcmp(argv[i], "--depth") == 0) depth = std::atoi(argv[i + 1]) == 8 ? 8 : 16;
+      if (std::strcmp(argv[i], "--width") == 0) width = std::atoi(argv[i + 1]);
+    }
+    return capture(argv[2], depth, width < 0 ? 0 : width);
+  }
+  if (argc >= 3 && std::strcmp(argv[1], "--send-test") == 0) {
+    int w = 320, h = 180;
+    if (argc >= 5) std::sscanf(argv[4], "%dx%d", &w, &h);
+    w = w < 16 ? 16 : w > 7680 ? 7680 : w & ~1; h = h < 16 ? 16 : h > 4320 ? 4320 : h;
+    return sendTest(argv[2], argc >= 4 ? std::atoi(argv[3]) : 30, w, h);
+  }
+  if (argc >= 2 && std::strcmp(argv[1], "--selftest") == 0) return selftest();
+  fprintf(stderr, "usage: lz-ndi --list [--wait ms] | --capture <name> [--depth 8|16] [--width N] | --send-test <name> [seconds] [WxH] | --selftest\n");
   return 1;
 }

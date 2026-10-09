@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -127,6 +128,31 @@ describe('helper protocol (DeckLink/NDI helpers)', () => {
       import('node:child_process').then(({ execFile }) => execFile(process.execPath, [fake, '--list'], (_e, out) => res(JSON.parse(out))));
     });
     expect(ok).toMatchObject({ ok: true, devices: [{ name: 'Fake UltraStudio' }] });
+  });
+
+  it('NDI counters: losses count as dropped and show a message, recovery says so', async () => {
+    const msgs: Record<string, unknown>[] = [];
+    await new Promise<void>((done) => {
+      const ws = Object.assign(new EventEmitter(), {
+        OPEN: 1, readyState: 1, bufferedAmount: 0,
+        send(d: Buffer | string) { if (typeof d === 'string') msgs.push(JSON.parse(d)); },
+        close() { ws.readyState = 3; ws.emit('close'); done(); },
+      });
+      startHelperStream(ws, {
+        bin: process.execPath, args: [fake, '--ndi-stats'], label: 'NDI', params: new URLSearchParams('depth=8'),
+        ctx: { ffmpeg: 'ffmpeg', fail: () => ws.close(), outputSize, decodeParams, applyDecodeOverride, deviceOptions },
+      });
+    });
+    const stats = msgs.filter((m) => m.type === 'stats' && m.helper);
+    // the first, loss-free counter sends nothing; then the loss, then the recovery
+    expect(stats.map((m) => m.code)).toEqual(['ndi.dropping', 'ndi.recovered']);
+    expect(stats[0]).toMatchObject({ dropped: 5, params: { lost: 5, ndi: 3, helper: 2 }, helper: { skipped: 2 } });
+  });
+
+  const helperBin = fileURLToPath(new URL(`../helpers/bin/lz-ndi${process.platform === 'win32' ? '.exe' : ''}`, import.meta.url));
+  it.skipIf(!existsSync(helperBin))('lz-ndi --selftest: box-filter reduction of UYVY and P216', async () => {
+    const out = await new Promise<string>((res) => { import('node:child_process').then(({ execFile }) => execFile(helperBin, ['--selftest'], (_e, o) => res(String(o)))); });
+    expect(JSON.parse(out)).toEqual({ ok: true });
   });
 
   const ffmpeg = ffmpegCandidates()[0];

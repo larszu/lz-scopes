@@ -235,7 +235,8 @@ for (const lang of ['de', 'en'] as const) {
         await targets(page, '#bar-more .popover', 'popover ⋯', touch, f);
         await page.keyboard.press('Escape');
       }
-      const gear = '.panel .pop-trigger';
+      // the ⚙ of the panels (the ? of the scope help has its own pass below)
+      const gear = '.panel .pop-trigger:not(.help-trigger)';
       const gears = await page.locator(gear).evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).length);
       if (gears) {
         await behaviour(page, `${gear} >> visible=true`, '.panel .popover:popover-open', 'popover ⚙', f);
@@ -244,6 +245,19 @@ for (const lang of ['de', 'en'] as const) {
         await truncation(page, '.panel .popover:popover-open', 'popover ⚙', f);
         await targets(page, '.panel .popover:popover-open', 'popover ⚙', touch, f);
         await page.screenshot({ path: join(OUT, `${tag}-popover.png`) });
+        await page.keyboard.press('Escape'); await settles(page, '.panel .popover:popover-open', false);
+        // scope help card (src/help/scopeHelp.ts): fits the screen, nothing cut off, targets large enough
+        const help = '.panel .help-trigger >> visible=true';
+        if (await page.locator(help).count()) {
+          await page.locator(help).first().click(); await settles(page, '.popover.scopehelp:popover-open', true);
+          // placement happens in the toggle event, a moment after opening (same wait as the ⚙ pass)
+          await page.waitForTimeout(400);
+          await geometry(page, '.popover.scopehelp:popover-open', 'popover ?', f);
+          await truncation(page, '.popover.scopehelp:popover-open', 'popover ?', f);
+          await targets(page, '.popover.scopehelp:popover-open', 'popover ?', touch, f);
+          await page.keyboard.press('Escape'); await settles(page, '.popover.scopehelp:popover-open', false);
+        }
+        await page.locator(`${gear} >> visible=true`).first().click(); await page.waitForTimeout(400);
         // one open at a time: the menu bar (or ☰) closes the popover and the other way round
         // keyboard on purpose: an open ☰ panel covers the ⚙ on a phone (a tap would land in the panel)
         await page.locator(burger ? '#menubar .mb-burger' : '#menubar .mb-title >> nth=0').press('Enter'); await page.waitForTimeout(150);

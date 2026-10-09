@@ -30,7 +30,9 @@ export default {
   extraMetadata: { type: 'commonjs', main: 'electron/main.cjs', desktopName: 'lz-scopes.desktop' },
   // The Resolve helper (run by Python) and the native capture helpers (helpers/bin, built by
   // scripts/build-helpers.mjs) must live outside the asar archive; ffmpeg is an extraResource.
-  asarUnpack: ['server/resolve_helper.py', 'helpers/bin/**'],
+  // serialport (the built-in camera bridge, electron/camera-bridge.cjs): native N-API module,
+  // loadable only from a real path outside the archive
+  asarUnpack: ['server/resolve_helper.py', 'helpers/bin/**', '**/node_modules/serialport/**', '**/node_modules/@serialport/**', '**/*.node'],
   // no installer without the redistributable ffmpeg (a missing folder would be skipped silently)
   beforePack: async (ctx) => {
     const os = { darwin: 'mac', win32: 'win', linux: 'linux' }[ctx.electronPlatformName] ?? null
@@ -48,7 +50,7 @@ export default {
     artifactName: '${productName}-${version}-${arch}.${ext}',
     // ffmpeg/ffprobe are fat binaries (lipo in scripts/ffmpeg-fetch.mjs), identical in both
     // halves; the helpers are built universal as well
-    x64ArchFiles: '{**/ffmpeg/ffmpeg,**/ffmpeg/ffprobe,**/helpers/bin/*}',
+    x64ArchFiles: '{**/ffmpeg/ffmpeg,**/ffmpeg/ffprobe,**/helpers/bin/*,**/node_modules/@serialport/bindings-cpp/prebuilds/**}',
     // InfoPlist.strings: German permission texts (the English ones are extendInfo below). Electron
     // already ships <lang>.lproj folders in Contents/Resources (Chromium locales); these files are
     // added to them. Do not set `electronLanguages` without en and de, it would drop the folders.

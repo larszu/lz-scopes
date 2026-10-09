@@ -61,6 +61,13 @@ jobs:
           mediamtx --version
       # headless Chromium for the viewport checks (e2e/responsive.spec.ts)
       - run: npx playwright install --with-deps chromium
+      # the camera bridge built into the desktop app (scripts/build-camera-bridge.mjs); same tag as scripts/camera-bridge.json
+      - uses: actions/checkout@v5
+        with:
+          repository: larszu/lz-camera-bridge
+          ref: v2.2.0
+          path: vendor/lz-camera-bridge
+          sparse-checkout: packages/bridge
       # Electron downloads its binary on first use; WebGL runs in SwiftShader (slow, see e2e/playwright.config.ts)
       - run: xvfb-run -a npm run test:e2e
 
@@ -125,6 +132,14 @@ jobs:
           node scripts/build-helpers.mjs decklink ndi
           for h in lz-decklink lz-ndi; do "helpers/bin/$h" --list || true; done
           helpers/bin/lz-ndi --selftest
+      # the camera bridge built into the desktop app (scripts/build-camera-bridge.mjs); same tag as scripts/camera-bridge.json
+      - uses: actions/checkout@v5
+        with:
+          repository: larszu/lz-camera-bridge
+          ref: v2.2.0
+          path: vendor/lz-camera-bridge
+          sparse-checkout: packages/bridge
+      - run: node scripts/build-camera-bridge.mjs --required
       - name: Package (AppImage, deb)
         run: node node_modules/electron-builder/cli.js --config electron-builder.js --linux --publish never
       - name: Package contents
@@ -133,6 +148,9 @@ jobs:
           ls -lh release/
           res=release/linux-unpacked/resources
           test -x "$res/ffmpeg/ffmpeg"; test -x "$res/ffmpeg/ffprobe"; ls "$res/ffmpeg/licenses"
+          # built-in camera bridge: bundle in the archive, serialport's native module unpacked
+          node -e "const a=require('@electron/asar');const l=a.listPackage('$res/app.asar');if(!l.some(f=>f.endsWith('electron/camera-bridge.cjs')))throw new Error('camera-bridge.cjs missing')"
+          ls "$res"/app.asar.unpacked/node_modules/@serialport/bindings-cpp/prebuilds/linux-x64/*.node
           test -x "$res/app.asar.unpacked/helpers/bin/lz-decklink"; test -x "$res/app.asar.unpacked/helpers/bin/lz-ndi"
           test -f release/latest-linux.yml && cat release/latest-linux.yml
           ls release/*.AppImage release/*.deb

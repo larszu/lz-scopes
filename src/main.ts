@@ -2056,6 +2056,7 @@ const shading = new ShadingControl({
   redraw: () => panelSigs.clear(),
 }, app);
 registerMenuCommand('scopes', { id: 'shading', label: SHADING_T.menu, title: SHADING_T.buttonTitle }, () => shading.toggleBar());
+registerMenuCommand('scopes', { id: 'cameras', label: SHADING_T.camMenu, title: SHADING_T.camMenuTitle }, () => { void shading.openCameras(); });
 const dock = createDock($('#dock'), {
   element: panelElement,
   title: panelTitle,

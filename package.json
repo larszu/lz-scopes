@@ -9,22 +9,23 @@
     "build": "tsc --noEmit && vite build",
     "start": "node server/index.mjs",
     "test": "vitest run",
-    "test:e2e": "vite build && playwright test -c e2e/playwright.config.ts",
+    "test:e2e": "vite build && node scripts/build-camera-bridge.mjs && playwright test -c e2e/playwright.config.ts",
     "typecheck": "tsc --noEmit",
     "lang:check": "node scripts/lang-check.mjs",
     "build:helpers": "node scripts/build-helpers.mjs",
-    "electron:dev": "vite build && electron .",
+    "electron:dev": "node scripts/build-camera-bridge.mjs && vite build && electron .",
     "ffmpeg:fetch": "node scripts/ffmpeg-fetch.mjs",
     "decklink:fetch": "node scripts/decklink-sdk-fetch.mjs",
-    "dist:mac": "npm run build && node scripts/ffmpeg-fetch.mjs darwin-universal && node scripts/decklink-sdk-fetch.mjs && node scripts/build-helpers.mjs colorsync ndi decklink && electron-builder --config electron-builder.js --mac --universal --publish never",
-    "dist:win": "npm run build && node scripts/ffmpeg-fetch.mjs win32-x64 && electron-builder --config electron-builder.js --win --publish never",
-    "dist:linux": "npm run build && node scripts/ffmpeg-fetch.mjs linux-x64 && node scripts/decklink-sdk-fetch.mjs && node scripts/build-helpers.mjs ndi decklink && electron-builder --config electron-builder.js --linux --publish never",
+    "dist:mac": "npm run build && node scripts/build-camera-bridge.mjs --required && node scripts/ffmpeg-fetch.mjs darwin-universal && node scripts/decklink-sdk-fetch.mjs && node scripts/build-helpers.mjs colorsync ndi decklink && electron-builder --config electron-builder.js --mac --universal --publish never",
+    "dist:win": "npm run build && node scripts/build-camera-bridge.mjs --required && node scripts/ffmpeg-fetch.mjs win32-x64 && electron-builder --config electron-builder.js --win --publish never",
+    "dist:linux": "npm run build && node scripts/build-camera-bridge.mjs --required && node scripts/ffmpeg-fetch.mjs linux-x64 && node scripts/decklink-sdk-fetch.mjs && node scripts/build-helpers.mjs ndi decklink && electron-builder --config electron-builder.js --linux --publish never",
     "predev": "node scripts/copy-mediapipe.mjs",
     "prebuild": "node scripts/copy-mediapipe.mjs",
     "companion:test": "npm --prefix companion test",
     "companion:build": "npm --prefix companion run build",
     "ios:sync": "npm run build && cap sync ios",
-    "ios:open": "cap open ios"
+    "ios:open": "cap open ios",
+    "build:camera-bridge": "node scripts/build-camera-bridge.mjs"
   },
   "engines": {
     "node": ">=20"
@@ -34,6 +35,7 @@
     "bonjour-service": "^1.4.4",
     "dockview-core": "^8.3.1",
     "electron-updater": "^6.8.9",
+    "serialport": "^12.0.0",
     "ws": "^8.22.0"
   },
   "devDependencies": {
@@ -47,6 +49,8 @@
     "concurrently": "^10.0.5",
     "electron": "^44.4.5",
     "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "ssh2": "^1.17.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
     "vitest": "^5.0.2"

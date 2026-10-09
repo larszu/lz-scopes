@@ -9,6 +9,7 @@ const { setAppMenu } = require('./menu.cjs');
 const { text, setLang } = require('./i18n.cjs');
 const { registerScheme, setupTestVideos } = require('./testVideos.cjs');
 const { setupUpdater } = require('./updater.cjs');
+const { setupCameraBridge } = require('./cameraBridge.cjs');
 
 // test videos (#52) are played over lzs-media://; schemes must be registered before ready
 registerScheme();
@@ -73,6 +74,8 @@ async function createWindow() {
   setupTestVideos(() => mainWindow);
   // System display profile / monitor mode (#17): restored on quit and after a crash.
   setupDisplayProfiles(ipcMain, app);
+  // Built-in camera bridge for Touch Shading (electron/cameraBridge.cjs): starts when wanted
+  setupCameraBridge(ipcMain, app);
   // feedback report: hardware, OS and GPU – no host name, user name or paths
   ipcMain.handle('lzs:sysinfo', async () => {
     const os = require('node:os');

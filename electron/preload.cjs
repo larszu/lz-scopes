@@ -4,6 +4,11 @@ contextBridge.exposeInMainWorld('lzsDesktop', {
   /** app.getLocale() (#94): the UI language when the user has not chosen one. */
   locale: (() => { try { return String(ipcRenderer.sendSync('lzs:locale') || ''); } catch { return ''; } })(),
   displays: () => ipcRenderer.invoke('lzs:displays'),
+  /** Built-in camera bridge (electron/cameraBridge.cjs): status, and start when Touch Shading needs it. */
+  cameraBridge: {
+    status: () => ipcRenderer.invoke('lzs:camera-bridge-status'),
+    start: () => ipcRenderer.invoke('lzs:camera-bridge-start'),
+  },
   /** Feedback report: OS, CPU, RAM, GPU, screens (no host or user name). */
   sysinfo: () => ipcRenderer.invoke('lzs:sysinfo'),
   /** Windows and screens for capture (Resolve, Lightroom, Capture One …) with thumbnails. */

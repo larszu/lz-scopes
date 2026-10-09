@@ -28,6 +28,7 @@ export const ALLOW_FILES = {
   'src/i18n/': 'the dictionaries themselves',
   'src/vendor/': 'third-party code',
   'electron/i18n.cjs': 'texts of the Electron main process, which cannot import src/i18n',
+  'electron/camera-bridge.cjs': 'generated bundle of lz-camera-bridge (scripts/build-camera-bridge.mjs), its own messages',
 };
 
 /** Words that only exist in German (lower case, whole words). */

@@ -89,3 +89,41 @@ test('Vectorscope: drehen = Hue, radial = Sättigung (Simulator)', async () => {
   await expect(page.locator('[data-field="hue"]')).toHaveText(/Hue 0° \(\+0\)/);
   await expect(page.locator('[data-field="saturation"]')).toHaveText(/128 \(\+0\)/);
 });
+
+test('Kamera-Bridge eingebaut: startet mit Touch Shading, Kamera anlegen, als Ziel wählen', async () => {
+  const { page } = a;
+  await menuClick(a, 'shading');
+  if (!(await page.locator('.shading-bar').isVisible())) await menuClick(a, 'shading');
+  await page.selectOption('[data-shading-target]', '');
+  const setup = page.locator('[data-shading-setup]');
+  await expect(setup).toBeVisible();
+  // built-in bridge on 9700 (or an LZ Camera Bridge already running there)
+  await expect(setup).toContainText(/Kamera-Bridge .* läuft auf Port 9700|bereits laufende LZ Camera Bridge/, { timeout: 20_000 });
+  const status = await page.evaluate(() => (window as unknown as { lzsDesktop: { cameraBridge: { status(): Promise<{ state: string }> } } }).lzsDesktop.cameraBridge.status());
+  expect(['running', 'external']).toContain(status.state);
+  await page.screenshot({ path: test.info().outputPath('setup.png') });
+
+  // camera dialog: a demo camera (no hardware) and a VISCA head that is not there
+  await page.locator('[data-shading-setup] [data-shading-cameras]').click();
+  const dlg = page.locator('dialog#cameras');
+  await expect(dlg).toBeVisible();
+  await dlg.locator('[data-cam-add]').click();
+  await dlg.locator('[data-cam-mode]').selectOption('demo');
+  await dlg.getByPlaceholder('z. B. Bühne links').fill('Demo E2E');
+  await dlg.locator('[data-cam-save]').click();
+  await expect(dlg.locator('.cam-row', { hasText: 'Demo E2E' })).toBeVisible({ timeout: 15_000 });
+  await expect(dlg.locator('.cam-row', { hasText: 'Demo E2E' }).locator('.dot[data-status="live"]')).toBeVisible({ timeout: 15_000 });
+  await dlg.locator('[data-cam-add]').click();
+  await dlg.locator('[data-cam-mode]').selectOption('visca');
+  await dlg.locator('[data-cam-save]').click();
+  await expect(dlg.locator('.cam-err')).toContainText('IP-Adresse');
+  await page.screenshot({ path: test.info().outputPath('cameras.png') });
+  await dlg.locator('button', { hasText: 'Abbrechen' }).click();
+
+  // straight to shading: the demo camera becomes the target, the setup steps give way
+  await dlg.locator('.cam-row', { hasText: 'Demo E2E' }).locator('button', { hasText: 'Diese shaden' }).click();
+  await expect(dlg).toHaveCount(0);
+  await expect(page.locator('[data-shading-target] option:checked')).toContainText('Demo E2E');
+  await expect(setup).toHaveCount(0);
+  await expect(page.locator('.shading-bar [data-shading-cameras]')).toBeVisible();
+});

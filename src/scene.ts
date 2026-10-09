@@ -33,7 +33,7 @@ export const isOverlayScope = (s: unknown): s is ScopeType => typeof s === 'stri
 
 /** Default place for a scope: waveforms in the lower third, round scopes in a corner. */
 export function newElement(scope: ScopeType, taken = 0): OverlayElement {
-  const isRound = scope === 'vector' || scope === 'cie';
+  const isRound = scope === 'vector' || scope === 'hls' || scope === 'cie';
   const off = (taken % 4) * 0.04;
   const base = isRound
     ? { x: 0.72 - off, y: 0.52 - off, w: 0.25, h: 0.44 }

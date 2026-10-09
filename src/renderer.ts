@@ -17,9 +17,9 @@ import { BLUR_FS, CRT_DISPLAY_FS, CRT_FS, CRT_VS_MAIN, PERSIST_FS, PHOSPHORS, be
 /** Beam segments per CRT scope and frame (each is a quad, far more fill than a point). */
 const CRT_BUDGET = 150_000;
 
-export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'skin' | 'diamond' | 'cube' | 'satlum' | 'chplot';
-const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7, diamond: 8, cube: 9, satlum: 10, chplot: 11 };
-const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1, diamond: 2, cube: 1, satlum: 1, chplot: 1 };
+export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'hls' | 'cie' | 'skin' | 'diamond' | 'cube' | 'satlum' | 'chplot';
+const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7, diamond: 8, cube: 9, satlum: 10, chplot: 11, hls: 12 };
+const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1, diamond: 2, cube: 1, satlum: 1, chplot: 1, hls: 1 };
 
 export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'green' | 'gamut' | 'r103' | 'neutral';
 // 'green' = the skin overlay with the green qualifier's range (panel.ts passes it as skin)
@@ -165,6 +165,15 @@ bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
   } else if (uMode == 9) {
     // 3D colour volume (cube.ts): rotated, orthographic
     pos = (uRot * cubeQ(rgb)).xy * ${CUBE_SCALE.toFixed(4)} * uView.x + uView.yz;
+    if (uColorize == 1) col = srcCol;
+  } else if (uMode == 12) {
+    // HLS vectorscope (graticule.ts hsl/hlsPoint): HSL hue as the angle from the matrix's YUV red, HSL saturation as the radius
+    vec3 c = clamp(rgb, 0.0, 1.0);
+    float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b)), d = mx - mn, l = (mx + mn) * 0.5;
+    float s = d <= 1e-6 ? 0.0 : d / (1.0 - abs(2.0 * l - 1.0));
+    float h = d <= 1e-6 ? 0.0 : mx == c.r ? mod((c.g - c.b) / d + 6.0, 6.0) : mx == c.g ? (c.b - c.r) / d + 2.0 : (c.r - c.g) / d + 4.0;
+    float a = atan(0.5, -kr / (2.0 * (1.0 - kb))) + h / 6.0 * 6.28318530718;
+    pos = vec2(cos(a), sin(a)) * s * 0.9 * uZoom;
     if (uColorize == 1) col = srcCol;
   } else if (uMode == 5) {
     pos = vec2(cb, cr) * 2.0 * 0.9 * uZoom;
@@ -626,7 +635,7 @@ export class Renderer {
     const acc = this.accum(key, vp.w, vp.h);
     const kind = this.texKind(src, t);
     const crt = p.crt?.on ? p.crt : null;
-    const wave = p.mode !== 'vector' && p.mode !== 'cie' && p.mode !== 'diamond' && p.mode !== 'cube' && p.mode !== 'satlum' && p.mode !== 'chplot';
+    const wave = p.mode !== 'vector' && p.mode !== 'hls' && p.mode !== 'cie' && p.mode !== 'diamond' && p.mode !== 'cube' && p.mode !== 'satlum' && p.mode !== 'chplot';
     // Normalise so that the display brightness does not depend on source or panel size.
     const sections = p.mode === 'parade' || p.mode === 'yrgb' ? p.secN ?? (p.mode === 'yrgb' ? 4 : 3) : p.mode === 'ycbcr' ? 3 : 1;
     let stepX: number, stepY: number;

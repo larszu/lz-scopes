@@ -4,7 +4,7 @@
 import { drawGenlockPanel, type GenlockOptions } from './genlock';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, mul3, rgbToXyzMatrix, bandRange, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId, type HdrPreview } from './color';
 import {
-  drawChannelPlotGraticule, drawCubeGraticule, drawLutVolume, drawDiamondGraticule, drawSatLumGraticule, diamondPoint, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawWaveGraticule, drawWaveProbe,
+  drawChannelPlotGraticule, drawCubeGraticule, drawLutVolume, drawDiamondGraticule, drawSatLumGraticule, diamondPoint, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawHlsGraticule, hsl, hlsPoint, drawWaveGraticule, drawWaveProbe,
   WAVE_ZOOMS, channelLayout, isAudio, isWaveform, plotRect, type WaveChannels, type WaveOpts, type WaveZoom, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
 import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/panels';
@@ -108,7 +108,7 @@ const XY: ViewLimits = { min: 1, max: 16, axes: 'xy', cover: true };
 export function viewLimits(scope: ScopeType): ViewLimits | null {
   if (isWaveform(scope)) return { min: 1, max: 20, axes: 'y', cover: true };
   if (scope === 'cube') return { min: 0.3, max: 8, axes: 'xy', cover: false };
-  if (scope === 'vector' || scope === 'cie' || scope === 'satlum' || scope === 'chplot' || scope === 'diamond' || scope === 'hist' || scope === 'picture') return XY;
+  if (scope === 'vector' || scope === 'hls' || scope === 'cie' || scope === 'satlum' || scope === 'chplot' || scope === 'diamond' || scope === 'hist' || scope === 'picture') return XY;
   return null;
 }
 /** Current view of a panel (the 3D volume: its own zoom/pan). */
@@ -266,13 +266,13 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
 }
 
 export const defaultPanel = (scope: ScopeType): PanelState => ({
-  scope, sourceId: '', gain: 1, colorize: scope === 'vector' || scope === 'cie' || scope === 'cube' || scope === 'satlum' || scope === 'chplot', zoom: 1, picture: 'normal', hist: 'rgb', log: false,
+  scope, sourceId: '', gain: 1, colorize: scope === 'vector' || scope === 'hls' || scope === 'cie' || scope === 'cube' || scope === 'satlum' || scope === 'chplot', zoom: 1, picture: 'normal', hist: 'rgb', log: false,
 });
 
 const PARADE: ScopeType[] = ['parade', 'yrgb', 'wf-rgb'];
 
 const SCATTER: Partial<Record<ScopeType, ScatterMode>> = {
-  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-green': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', cie: 'cie', diamond: 'diamond', cube: 'cube', satlum: 'satlum', chplot: 'chplot',
+  'wf-luma': 'luma', 'wf-color': 'luma', 'wf-skin': 'skin', 'wf-green': 'skin', 'wf-rgb': 'rgb', parade: 'parade', yrgb: 'yrgb', ycbcr: 'ycbcr', vector: 'vector', hls: 'hls', cie: 'cie', diamond: 'diamond', cube: 'cube', satlum: 'satlum', chplot: 'chplot',
 };
 
 /**
@@ -372,6 +372,14 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     if (probeRgb) {
       const { cb, cr } = ycbcr(probeRgb[0], probeRgb[1], probeRgb[2], src.colorspace);
       const [x, y] = vectorPoint(r, cb, cr, p.zoom);
+      ctx.strokeStyle = '#00dcff'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.moveTo(x - 9, y); ctx.lineTo(x + 9, y); ctx.moveTo(x, y - 9); ctx.lineTo(x, y + 9); ctx.stroke();
+    }
+  } else if (p.scope === 'hls') {
+    drawHlsGraticule(ctx, r, src.colorspace, p.zoom);
+    if (probeRgb) {
+      const q = hsl(probeRgb[0], probeRgb[1], probeRgb[2]);
+      const [x, y] = hlsPoint(r, q.h, q.s, src.colorspace, p.zoom);
       ctx.strokeStyle = '#00dcff'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.moveTo(x - 9, y); ctx.lineTo(x + 9, y); ctx.moveTo(x, y - 9); ctx.lineTo(x, y + 9); ctx.stroke();
     }

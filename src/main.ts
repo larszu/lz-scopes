@@ -852,7 +852,7 @@ function fillHead(v: PanelView) {
   const multi = sources.length > 1 && !isLight(p.scope);
   lead.replaceChildren(...[
     select(p.scope, Object.entries(SCOPE_LABELS) as Option[], (val) => {
-      p.scope = val as ScopeType; p.view = undefined; if (val === 'vector' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
+      p.scope = val as ScopeType; p.view = undefined; if (val === 'vector' || val === 'hls' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
     }, '', { 'aria-label': t('ui.scope') }),
     multi && select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), t('panel.sourceTitle')),
     stageChip(p),
@@ -907,7 +907,7 @@ function panelSettings(p: PanelState): Node[] {
     (v) => { p.stage = v === 'auto' ? undefined : v as Stage; save(); refreshHeads(); }, t('panel.stageTitle')));
   const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv' | 'skinBand' | 'greenBand' | 'greenWedge', label: string, dflt = false) =>
     checkbox(p[key] ?? dflt, label, (v) => { p[key] = v; save(); refreshHeads(); });
-  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot';
+  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'hls' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot';
   if (scatter) {
     row(t('panel.brightness'), slider(Math.log2(p.gain), (v) => { p.gain = 2 ** v; save(); }, { min: -3, max: 3, step: 0.1, reset: 0, title: t('panel.gainTitle') }));
   }
@@ -976,7 +976,7 @@ function panelSettings(p: PanelState): Node[] {
     row('', button(t('panel.tl.clear'), () => panelSource(p)?.history.clear(), { small: true }));
     rows.push(hint(t('panel.tl.hint')));
   }
-  if ((p.scope === 'vector' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot') && !p.crt?.on) {
+  if ((p.scope === 'vector' || p.scope === 'hls' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot') && !p.crt?.on) {
     row(t('panel.persist'), select(String(p.persist ?? 0), [['0', t('common.off')], ['300', `${num(0.3, 1)} s`], ['1000', '1 s'], ['3000', '3 s'], ['10000', '10 s'], ['-1', t('panel.infinite')]], (v) => { p.persist = Number(v); save(); },
       t('panel.persistTitle')));
   }
@@ -1162,7 +1162,7 @@ function attachPanelGestures(idx: number, p: () => PanelState, body: HTMLElement
       p().cube = { ...c, yaw: ((c.yaw + dx * 0.5 + 540) % 360) - 180, pitch: Math.max(-90, Math.min(90, c.pitch + dy * 0.5)) };
     },
     wheelTaken: () => p().scope === 'wf-skin' || p().scope === 'wf-green',
-    wheelAtCentre: () => p().scope === 'vector',
+    wheelAtCentre: () => p().scope === 'vector' || p().scope === 'hls',
   }, () => { if (!resetView(idx)) toggleSolo(idx); });
 }
 
@@ -1789,7 +1789,7 @@ function execute(c: Command): unknown {
       const i = panelIndex(c.panel), p = state.panels[i];
       p.scope = c.scope as ScopeType;
       p.view = undefined;
-      if (p.scope === 'vector' || p.scope === 'cie') p.colorize = true;
+      if (p.scope === 'vector' || p.scope === 'hls' || p.scope === 'cie') p.colorize = true;
       save(); const v = views.get(i); if (v) fillHead(v); dock.setTitle(i); needClear = true;
       return { panel: i + 1, scope: p.scope };
     }

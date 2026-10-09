@@ -6,7 +6,7 @@ import type { ModuleInstance } from './main.js'
 export const SCOPES: { id: string; label: string }[] = [
   { id: 'picture', label: 'Picture' }, { id: 'wf-luma', label: 'Waveform Luma' }, { id: 'wf-color', label: 'Waveform Colour' },
   { id: 'wf-skin', label: 'Waveform Skin Tones' }, { id: 'wf-rgb', label: 'Waveform RGB' }, { id: 'parade', label: 'RGB Parade' },
-  { id: 'yrgb', label: 'YRGB Parade' }, { id: 'ycbcr', label: 'YCbCr Parade' }, { id: 'vector', label: 'Vectorscope' },
+  { id: 'yrgb', label: 'YRGB Parade' }, { id: 'ycbcr', label: 'YCbCr Parade' }, { id: 'vector', label: 'Vectorscope' }, { id: 'hls', label: 'HLS Vectorscope' },
   { id: 'cie', label: 'CIE 1931' }, { id: 'diamond', label: 'Diamond (Gamut)' }, { id: 'cube', label: '3D Colour Volume' },
   { id: 'satlum', label: 'Saturation over Luma' }, { id: 'chplot', label: 'Channel Plot' }, { id: 'minmax', label: 'Min/Max per Line' },
   { id: 'timeline', label: 'Timeline' }, { id: 'qclog', label: 'QC Log' },

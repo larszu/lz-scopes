@@ -31,4 +31,10 @@ export default {
   'feedback.sentHint': 'Der vollständige Bericht liegt auch in der Zwischenablage – einfügen, falls das Mailprogramm ihn kürzt.',
   'feedback.cut': '[Bericht gekürzt – vollständiger Text in der Zwischenablage]',
   'feedback.subject': 'LZ Scopes Feedback',
+  'feedback.gpu.chip': 'Langsame Grafik',
+  'feedback.gpu.title': 'Grafik bremst die Scopes',
+  'feedback.gpu.integrated': 'LZ Scopes zeichnet auf der Grafik im Prozessor ({active}), obwohl eine {other}-Grafikkarte vorhanden ist. Das kann die Bildrate halbieren.',
+  'feedback.gpu.integratedFix': 'Windows-Einstellungen → System → Anzeige → Grafik → LZ Scopes → Optionen → „Hohe Leistung“, danach die App neu starten. Bei NVIDIA auch: NVIDIA-Systemsteuerung → 3D-Einstellungen verwalten → Programmeinstellungen.',
+  'feedback.gpu.software': 'LZ Scopes zeichnet ohne Grafikbeschleunigung (Software-Rendering). Die Scopes laufen dann deutlich langsamer.',
+  'feedback.gpu.softwareFix': 'Grafiktreiber aktualisieren und die App neu starten. Unter Hilfe → Feedback senden stehen bei „Grafik und Bildschirme“ die betroffenen Funktionen.',
 } satisfies Translation<typeof en>;

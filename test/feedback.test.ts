@@ -48,3 +48,21 @@ describe('feedback report', () => {
     expect(l[0]).toMatch(/W x from <ip>$/);
   });
 });
+
+describe('gpu advice', async () => {
+  const { gpuAdvice } = await import('../src/feedback/gpuAdvice');
+  const ok = { webgl2: 'enabled', gpu_compositing: 'enabled' };
+  it('Windows on Intel next to NVIDIA → integrated', () => {
+    expect(gpuAdvice({ platform: 'win32', gpuFeatures: ok, gpus: [{ vendorId: 0x8086, deviceId: 1, active: true }, { vendorId: 0x10de, deviceId: 2, active: false }] }))
+      .toEqual({ kind: 'integrated', active: 'Intel', other: 'NVIDIA' });
+  });
+  it('no advice on the dedicated GPU, on Intel alone or on macOS', () => {
+    expect(gpuAdvice({ platform: 'win32', gpuFeatures: ok, gpus: [{ vendorId: 0x8086, deviceId: 1, active: false }, { vendorId: 0x10de, deviceId: 2, active: true }] })).toBeNull();
+    expect(gpuAdvice({ platform: 'win32', gpuFeatures: ok, gpus: [{ vendorId: 0x8086, deviceId: 1, active: true }] })).toBeNull();
+    expect(gpuAdvice({ platform: 'darwin', gpuFeatures: ok, gpus: [{ vendorId: 0x8086, deviceId: 1, active: true }, { vendorId: 0x1002, deviceId: 2, active: false }] })).toBeNull();
+  });
+  it('software rendering on any platform', () => {
+    expect(gpuAdvice({ platform: 'linux', gpuFeatures: { webgl2: 'enabled', gpu_compositing: 'disabled_software' }, gpus: [] })).toEqual({ kind: 'software' });
+    expect(gpuAdvice({ platform: 'win32', gpuFeatures: { webgl2: 'unavailable_software' }, gpus: [] })).toEqual({ kind: 'software' });
+  });
+});

@@ -61,7 +61,7 @@ import { LANG_NAMES, LANGS, lang, langPref, num, setLangPref, systemLang, t, typ
 import { ShadingControl, SIM_URL } from './shading/ui';
 import { T as SHADING_T } from './shading/text';
 import { installFeedbackLog } from './feedback/log';
-import { openFeedback } from './feedback/dialog';
+import { checkGpu, openFeedback } from './feedback/dialog';
 
 installFeedbackLog();
 declare const __APP_VERSION__: string | undefined;
@@ -154,6 +154,13 @@ setGenlockBridge(bridgeUrl);
 // ---------------------------------------------------------------- DOM
 
 const app = $('#app');
+// shown when the GPU slows the scopes down (Windows: integrated GPU next to a dedicated one; software rendering)
+const gpuWarn = button(t('feedback.gpu.chip'), () => {}, { small: true, attrs: { id: 'gpu-warn', class: 'btn mini warn', hidden: true } });
+checkGpu((title, body) => {
+  gpuWarn.title = body[0];
+  gpuWarn.onclick = () => openModal({ title, size: 'sm', body: body.map((p) => h('p', {}, p)) });
+  gpuWarn.hidden = false;
+}).catch(() => {});
 const freezeBtn = button(t('main.freeze'), () => toggleFreeze(), { title: t('main.freezeTitle'), pressed: false, attrs: { id: 'freeze' } });
 const sideToggle = iconButton('◧', t('main.side.aria'), () => toggleSidebar(), { title: t('main.side.toggle'), attrs: { id: 'toggle-side' } });
 /** Header overflow (narrow windows): the same layout presets and scale as the header groups. */
@@ -177,7 +184,8 @@ app.replaceChildren(
       h('div', { class: 'group', id: 'globals' }),
       moreMenu),
     h('div', { class: 'spacer' }),
-    h('span', { class: 'fps', id: 'fps' }),
+    h('span', { class: 'fps', id: 'fps', title: t('main.fpsTitle') }),
+    gpuWarn,
     freezeBtn,
     iconButton('⚙', t('common.settings'), () => openSettings(), { title: t('main.settingsTitle'), attrs: { id: 'settings-btn' } }),
     iconButton('⛶', t('main.full'), () => toggleFullscreen(), { title: t('main.fullTitle'), attrs: { id: 'full' } })),
@@ -191,7 +199,9 @@ const grid = $('#grid');
 const glCanvas = $<HTMLCanvasElement>('#gl');
 let renderer: Renderer;
 try {
-  renderer = new Renderer(glCanvas);
+  // every panel is copied into its own canvas right after drawing (drawAll): no kept buffer needed.
+  // Debug switch {"preserveBuffer":true} for comparisons on Windows.
+  renderer = new Renderer(glCanvas, { preserve: debugFlags().preserveBuffer === true });
 } catch (e) {
   grid.replaceChildren(h('div', { class: 'fatal' }, (e as Error).message));
   throw e;
@@ -427,6 +437,9 @@ function removeSource(s: Source) {
   renderSources(); renderPanels(); save(); refreshMenu();
 }
 
+/** A control row with a layout class: 'opts' = grid of short selects, 'stack' = one long select per line. */
+function classRow(cls: 'opts' | 'stack', ...kids: Parameters<typeof row>) { const r = row(...kids); r.classList.add(cls); return r; }
+
 function renderSources() {
   $('#source-list').replaceChildren(...sources.map((s, i) => {
     const set = s.settings;
@@ -452,7 +465,7 @@ function renderSources() {
       };
       card.append(
         row(urlIn),
-        row(
+        classRow('opts',
           select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', t('main.native')]], (v) => upd({ width: Number(v) }, true), s.lowLatency && effectiveWidth(set.width, true, s.llConfig.width) !== set.width ? t('main.src.widthLimited', { px: s.llConfig.width }) : t('main.src.widthTitle')),
           select(String(set.fps), [['0', t('main.src.fpsAll')], ['10', '10 fps'], ['25', '25 fps'], ['30', '30 fps']], (v) => upd({ fps: Number(v) }, true), t('main.src.fpsTitle')),
           select(set.yuv ? 'yuv' : String(set.depth), [['8', '8 bit'], ['16', '16 bit'], ['yuv', '16 bit Y′CbCr']], (v) => upd(v === 'yuv' ? { depth: 16, yuv: true } : { depth: Number(v) as 8 | 16, yuv: false }, true), t('main.src.depthTitle')),
@@ -499,7 +512,7 @@ function renderSources() {
     }
     const ar = audioRow(s, renderSources);
     if (ar) card.append(ar);
-    if (s.kind !== 'audio') card.append(row(
+    if (s.kind !== 'audio') card.append(classRow('stack',
       groupedSelect(set.transfer, transferGroups(`auto: ${transferLabel(s.transfer)} (${s.transferOrigin})`),
         (v) => upd({ transfer: v as SourceSettings['transfer'] }), t('main.src.transferTitle')),
       select(set.colorspace, [['auto', `Matrix auto: ${s.colorspace} (${s.colorspaceOrigin})`], ['709', 'Rec.709'], ['2020', 'Rec.2020'], ['601', 'Rec.601 525 (SMPTE-C)'], ['601-625', 'Rec.601 625 (EBU)']], (v) => upd({ colorspace: v as SourceSettings['colorspace'] }), t('main.src.matrixTitle'))),
@@ -513,6 +526,7 @@ function renderSources() {
     if (s.kind !== 'audio') card.append(chainControls(s, upd));
     if (s.url === 'resolve:' && s.status === 'live') card.append(resolveRouteRow(s));
     if (s.message) card.append(h('div', { class: 'msg', role: s.status === 'error' ? 'alert' : null }, s.message));
+    if (s.kind === 'webcam' && s.status === 'live') card.append(row(chip('', { attrs: { 'data-srcfps': s.id } })));
     // LUT files dropped on a source card: LUT 1, with Shift LUT 2
     card.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); card.classList.add('drop'); } });
     card.addEventListener('dragleave', () => card.classList.remove('drop'));
@@ -1331,6 +1345,22 @@ function frame(now: number) {
     displayFps = Math.round((fpsFrames * 1000) / (now - fpsT)); fpsFrames = 0; fpsT = now;
     $('#fps').textContent = `${displayFps} fps`;
     updateLatencyChips();
+    updateSourceFps();
+  }
+}
+
+/**
+ * Pictures per second a camera or capture really delivers (requestVideoFrameCallback). Cameras
+ * lengthen the exposure in low light and then send fewer pictures than promised.
+ */
+function updateSourceFps() {
+  for (const el of document.querySelectorAll<HTMLElement>('[data-srcfps]')) {
+    const s = sources.find((x) => x.id === el.dataset.srcfps);
+    if (!s || s.status !== 'live') continue;
+    const slow = s.nominalFps > 0 && s.fps < s.nominalFps * 0.8;
+    el.textContent = t('main.src.deliveredFps', { fps: s.fps, nominal: s.nominalFps || '?' });
+    el.classList.toggle('warn', slow);
+    el.title = slow ? t('main.src.deliveredSlow', { nominal: s.nominalFps }) : t('main.src.deliveredTitle');
   }
 }
 

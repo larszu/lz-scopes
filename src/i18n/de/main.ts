@@ -242,4 +242,8 @@ export default {
   'main.pattern.manage': 'Logo / Bilder …',
   'main.pattern.videosTitle': 'Frei lizenzierte Testvideos (Big Buck Bunny, HDR) laden',
   'main.pattern.videos': 'Testvideos …',
+  'main.fpsTitle': 'Bildrate der Anzeige (wie oft die Scopes gezeichnet werden)',
+  'main.src.deliveredFps': 'Kamera liefert {fps} von {nominal} fps',
+  'main.src.deliveredTitle': 'Bilder pro Sekunde, die die Kamera tatsächlich sendet',
+  'main.src.deliveredSlow': 'Die Kamera sendet weniger Bilder als ihre {nominal} fps – meist längere Belichtung bei wenig Licht. Mehr Licht oder feste Belichtung hilft; die Scopes selbst begrenzen nicht.',
 } satisfies Translation<typeof en>;

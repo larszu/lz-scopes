@@ -168,3 +168,9 @@ dialog.modal-xl { width: min(1180px, 96vw); }
   font-size: var(--fs-sm); line-height: 1.45; color: var(--text-soft);
 }
 .feedback .modal-foot { flex-wrap: wrap; }
+/* header: the GPU slows the scopes down (src/feedback/gpuAdvice.ts) */
+.btn.warn { color: var(--warn-text); background: var(--warn-bg); border-color: transparent; }
+/* source cards: short selects in a grid that wraps instead of shrinking to one letter; long ones one per line */
+.row.opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr)); }
+.row.opts > select { min-width: 0; }
+.row.stack > select { flex-basis: 100%; }

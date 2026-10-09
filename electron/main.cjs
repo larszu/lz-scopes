@@ -77,12 +77,12 @@ async function createWindow() {
   ipcMain.handle('lzs:sysinfo', async () => {
     const os = require('node:os');
     const cpus = os.cpus();
-    let gpu = null;
+    let gpus = [];
     try {
       const g = await app.getGPUInfo('basic');
-      const dev = g?.gpuDevice?.find((d) => d.active) ?? g?.gpuDevice?.[0];
-      if (dev) gpu = { vendorId: dev.vendorId, deviceId: dev.deviceId, driver: dev.driverVersion ?? null };
+      gpus = (g?.gpuDevice ?? []).map((d) => ({ vendorId: d.vendorId, deviceId: d.deviceId, active: !!d.active, driver: d.driverVersion ?? null }));
     } catch { /* not available */ }
+    const gpu = gpus.find((d) => d.active) ?? gpus[0] ?? null;
     return {
       // macOS 26.0 / Windows 11 Pro 10.0.26100 / Linux 6.8 (Ubuntu …): readable, without the kernel build string
       os: process.platform === 'darwin' ? `macOS ${process.getSystemVersion()}`
@@ -90,7 +90,7 @@ async function createWindow() {
           : `Linux ${os.release()} (${os.version()})`,
       arch: os.arch(), cpu: cpus[0]?.model?.trim() ?? '', cores: cpus.length, ramGb: Math.round(os.totalmem() / 2 ** 30),
       runtime: `Electron ${process.versions.electron} · Chromium ${process.versions.chrome} · Node ${process.versions.node}`,
-      gpu, gpuFeatures: app.getGPUFeatureStatus(),
+      platform: process.platform, gpu, gpus, gpuFeatures: app.getGPUFeatureStatus(),
       screens: screen.getAllDisplays().map((d) => ({ width: d.size.width, height: d.size.height, scale: d.scaleFactor, hz: d.displayFrequency ?? 0, primary: d.id === screen.getPrimaryDisplay().id })),
     };
   });

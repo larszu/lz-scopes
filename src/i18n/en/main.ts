@@ -241,4 +241,8 @@ export default {
   'main.pattern.manage': 'Logo / images …',
   'main.pattern.videosTitle': 'Load freely licensed test videos (Big Buck Bunny, HDR)',
   'main.pattern.videos': 'Test videos …',
+  'main.fpsTitle': 'Frame rate of the display (how often the scopes are drawn)',
+  'main.src.deliveredFps': 'Camera delivers {fps} of {nominal} fps',
+  'main.src.deliveredTitle': 'Pictures per second the camera really sends',
+  'main.src.deliveredSlow': 'The camera sends fewer pictures than its {nominal} fps – usually longer exposure in low light. More light or a fixed exposure helps; the scopes themselves are not the limit.',
 } as const satisfies Messages;

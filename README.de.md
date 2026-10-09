@@ -292,7 +292,7 @@ Konfiguration: `--port`/`PORT` (4192; nicht 4190 – steht auf der Sperrliste de
 
 ## Feedback
 
-**Hilfe → Feedback senden …** öffnet einen Bericht mit Beschreibung, System (Betriebssystem und Version, Prozessor, Arbeitsspeicher), Grafik und Bildschirmen, Leistung (Anzeige-fps, je Quelle Auflösung, fps, verworfene Bilder) und den letzten Warnungen. Jeder Teil lässt sich abwählen; der angezeigte Text ist genau das, was gesendet wird. Nie enthalten: Bilder, Quellennamen und -adressen, Dateipfade, Benutzer- und Rechnernamen; Adressen, IPs und E-Mail-Adressen in Meldungen werden ersetzt. Senden per E-Mail (privat) oder als GitHub-Issue (öffentlich).
+**Hilfe → Feedback senden …** öffnet einen Bericht mit Beschreibung, System (Betriebssystem und Version, Prozessor, Arbeitsspeicher), Grafik und Bildschirmen, Leistung (Anzeige-fps, je Quelle Auflösung, fps, verworfene Bilder) und den letzten Warnungen. Jeder Teil lässt sich abwählen; der angezeigte Text ist genau das, was gesendet wird. Nie enthalten: Bilder, Quellennamen und -adressen, Dateipfade, Benutzer- und Rechnernamen; Adressen, IPs und E-Mail-Adressen in Meldungen werden ersetzt. Senden per E-Mail an scopes@zumpelars.de (privat) oder als GitHub-Issue (öffentlich).
 
 ## Offene Punkte
 

@@ -209,7 +209,7 @@ view.setSource(src);
 
 ## Feedback
 
-**Help → Send Feedback …** opens a report with your description, system (OS and version, processor, memory), graphics and screens, performance (display fps; per source resolution, fps, dropped frames) and the latest warnings. Each part can be left out; the text shown is exactly what is sent. Never included: pictures, source names and addresses, file paths, user and computer names; addresses, IPs and e-mail addresses in messages are replaced. Send by e-mail (private) or as a GitHub issue (public).
+**Help → Send Feedback …** opens a report with your description, system (OS and version, processor, memory), graphics and screens, performance (display fps; per source resolution, fps, dropped frames) and the latest warnings. Each part can be left out; the text shown is exactly what is sent. Never included: pictures, source names and addresses, file paths, user and computer names; addresses, IPs and e-mail addresses in messages are replaced. Send by e-mail to scopes@zumpelars.de (private) or as a GitHub issue (public).
 
 ## Author
 

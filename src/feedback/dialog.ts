@@ -6,7 +6,7 @@ import { lang, t } from '../i18n';
 import { logLines } from './log';
 import { SECTIONS, buildReport, fitForUrl, type FeedbackData, type Section, type SourceInfo } from './report';
 
-export const FEEDBACK_MAIL = 'info@zumpelars.de';
+export const FEEDBACK_MAIL = 'scopes@zumpelars.de';
 const ISSUES = 'https://github.com/larszu/lz-scopes/issues/new';
 
 export interface FeedbackHost {

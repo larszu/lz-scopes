@@ -13,13 +13,13 @@ import { CUBE_SPACE_LABELS, SIGNAL_SPACES, cubeProject, cubeRotation, cubeWirefr
 import { t, type Key } from './i18n';
 import { bridgeText } from './i18n/bridgeMessage';
 
-export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats'
+export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'hls' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats'
   | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock' | 'genlock'
   | 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map' | 'light-spectrum' | 'light-swatch';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits';
 
 const SCOPE_IDS: ScopeType[] = [
-  'picture', 'wf-luma', 'wf-color', 'wf-skin', 'wf-green', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'cie', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'qclog', 'timeline', 'hist', 'stats', 'match',
+  'picture', 'wf-luma', 'wf-color', 'wf-skin', 'wf-green', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'hls', 'cie', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'qclog', 'timeline', 'hist', 'stats', 'match',
   'audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check', 'clock', 'genlock',
   // Opple Light Master (src/opple/scopes.ts, LIGHT_LABELS)
   'light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch',
@@ -40,7 +40,7 @@ export const FONT = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
 /** Plot area inside a panel body (CSS px), shared by WebGL and the overlay. */
 export function plotRect(scope: ScopeType, w: number, h: number, aspect = 16 / 9): Rect {
   if (isWaveform(scope)) return { x: 44, y: 8, w: Math.max(10, w - 52), h: Math.max(10, h - 16) };
-  if (scope === 'vector') {
+  if (scope === 'vector' || scope === 'hls') {
     const s = Math.max(10, Math.min(w, h) - 16);
     return { x: (w - s) / 2, y: (h - s) / 2, w: s, h: s };
   }
@@ -257,6 +257,57 @@ export function drawWaveProbe(ctx: CanvasRenderingContext2D, scope: ScopeType, r
 export function vectorPoint(r: Rect, cb: number, cr: number, zoom: number) {
   const R = r.w / 2;
   return [r.x + R + cb * 2 * 0.9 * zoom * R, r.y + R - cr * 2 * 0.9 * zoom * R] as const;
+}
+
+/**
+ * HLS vectorscope: hue (HSL, 0…1 from red over yellow, green, cyan, blue, magenta) as the angle,
+ * HSL saturation as the radius (100 % on the outer circle). Red sits where the YUV vectorscope
+ * puts it for this matrix, and the hues run the same way round, so both read alike; unlike YUV
+ * the six hues are 60° apart and saturation does not depend on brightness.
+ * Same maths as the shader (renderer.ts, uMode 12).
+ */
+export function hsl(r: number, g: number, b: number) {
+  r = Math.min(1, Math.max(0, r)); g = Math.min(1, Math.max(0, g)); b = Math.min(1, Math.max(0, b));
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn, l = (mx + mn) / 2;
+  const s = d <= 1e-6 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  let h = 0;
+  if (d > 1e-6) h = mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: h / 6, s, l };
+}
+/** Angle of pure red in the YUV vectorscope for this matrix (radians, counter-clockwise from +Cb). */
+export function hlsRedAngle(cs: Colorspace) {
+  const { kr, kb } = LUMA[cs];
+  return Math.atan2(0.5, -kr / (2 * (1 - kb)));
+}
+export function hlsPoint(r: Rect, h: number, s: number, cs: Colorspace, zoom: number) {
+  const R = r.w / 2, a = hlsRedAngle(cs) + h * Math.PI * 2;
+  return [r.x + R + Math.cos(a) * s * 0.9 * zoom * R, r.y + R - Math.sin(a) * s * 0.9 * zoom * R] as const;
+}
+
+const HLS_HUES = ['R', 'Yl', 'G', 'Cy', 'B', 'Mg'];
+export function drawHlsGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number) {
+  const R = r.w / 2, cx = r.x + R, cy = r.y + R, a0 = hlsRedAngle(cs);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
+  ctx.lineWidth = 1;
+  // saturation rings 25 / 50 / 75 / 100 %
+  for (const s of [0.25, 0.5, 0.75, 1]) {
+    ctx.strokeStyle = s === 1 ? GRID : GRID_DIM;
+    ctx.beginPath(); ctx.arc(cx, cy, R * 0.9 * zoom * s, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.font = FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  HLS_HUES.forEach((lbl, i) => {
+    const a = a0 + (i * Math.PI) / 3, c = Math.cos(a), s = Math.sin(a);
+    ctx.strokeStyle = GRID_DIM;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + c * R * 0.9 * zoom, cy - s * R * 0.9 * zoom); ctx.stroke();
+    ctx.fillStyle = LABEL;
+    const lr = Math.min(R * 0.97, R * 0.9 * zoom + 10);
+    ctx.fillText(lbl, cx + c * lr, cy - s * lr);
+  });
+  // bottom left: red sits at the top (≈103°), the title would cover its label there
+  ctx.fillStyle = LABEL; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText('HLS · S 25/50/75/100 %', r.x + 4, r.y + r.h - 4);
+  ctx.restore();
 }
 
 export interface BarTargetSet { t100: { label: string; cb: number; cr: number }[]; t75: { label: string; cb: number; cr: number }[]; label: string }

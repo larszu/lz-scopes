@@ -14,6 +14,7 @@ export default {
   'scope.name.parade': 'RGB Parade',
   'scope.name.yrgb': 'YRGB Parade',
   'scope.name.ycbcr': 'YCbCr Parade',
+  'scope.name.hls': 'HLS Vectorscope',
   'scope.name.vector': 'Vectorscope',
   'scope.name.cie': 'CIE Chromaticity',
   'scope.name.diamond': 'Diamond (Gamut)',

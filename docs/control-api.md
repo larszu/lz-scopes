@@ -29,7 +29,7 @@ Every command is a JSON object with `cmd`. Panels, sources, presets and scenes c
 | `source.select` | `source`; `panel` optional (without = all panels) |
 | `layout.preset` | `preset`: 1–6, id (`lc`) or label (`2x2`, `Colorist`) |
 | `layout.load` | `name` of a saved layout configuration |
-| `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `qclog`, `hist`, `stats`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `clock`, `genlock`) |
+| `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `hls`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `qclog`, `hist`, `stats`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `clock`, `genlock`) |
 | `panel.maximize` | `panel`, `mode` `toggle`\|`on`\|`off`; `off` without `panel` = restore |
 | `freeze` | `mode` `toggle`\|`on`\|`off` |
 | `qc.clear` | – (clear the QC log; state `qc`: `active`, `total`, `last`) |

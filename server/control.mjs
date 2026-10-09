@@ -10,7 +10,7 @@
 /** Codecs of the 10-bit output stream (server/out10.mjs, src/deep.ts). */
 export const CODECS10 = ['hevc10', 'hevc422', 'v210', 'prores'];
 
-export const OVERLAY_SCOPES = ['wf-luma', 'wf-color', 'wf-skin', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'cie', 'hist'];
+export const OVERLAY_SCOPES = ['wf-luma', 'wf-color', 'wf-skin', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'hls', 'cie', 'hist'];
 export const AUDIO_SCOPES = ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check'];
 /** Opple Light Master views (src/opple/scopes.ts) */
 export const LIGHT_SCOPES = ['light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch'];

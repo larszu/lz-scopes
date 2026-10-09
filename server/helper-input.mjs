@@ -35,18 +35,33 @@ export const HELPER_PIXELS = {
   yuv420p: { args: ['-f', 'rawvideo', '-pix_fmt', 'yuv420p'], bytes: (w, h) => w * h * 3 / 2 },
 };
 
-/** Splits the helper's stdout into records; never loses bytes across chunk borders. */
+/**
+ * Splits the helper's stdout into records; never loses bytes across chunk borders.
+ * Chunks are collected in a list and joined once per record: Windows pipes deliver a frame
+ * in thousands of small chunks, and re-concatenating on every chunk cost O(n²) (NDI at 2 fps).
+ */
 export class HelperRecordParser {
   constructor(onRecord, maxPayload = 256 * 1024 * 1024) {
     this.onRecord = onRecord; this.max = maxPayload; this.buf = Buffer.alloc(0);
+    /** @type {Buffer[]} */
+    this.pending = []; this.pendingBytes = 0; this.need = 0;
   }
   push(chunk) {
+    if (this.need) {
+      this.pending.push(chunk); this.pendingBytes += chunk.length;
+      if (this.pendingBytes < this.need) return;
+      chunk = Buffer.concat(this.pending, this.pendingBytes); this.pending = []; this.pendingBytes = 0; this.need = 0;
+    }
     this.buf = this.buf.length ? Buffer.concat([this.buf, chunk]) : chunk;
     while (this.buf.length >= 8) {
       const tag = this.buf.toString('ascii', 0, 4);
       const len = this.buf.readUInt32LE(4);
       if (!/^[A-Z ]{3,4}$/.test(tag) || len > this.max) throw new BridgeError('helper.protocol', `Helper protocol broken (${JSON.stringify(tag)})`, { tag: JSON.stringify(tag) });
-      if (this.buf.length < 8 + len) return;
+      if (this.buf.length < 8 + len) {
+        // wait for the rest of this record without copying on every chunk
+        this.pending = [this.buf]; this.pendingBytes = this.buf.length; this.need = 8 + len; this.buf = Buffer.alloc(0);
+        return;
+      }
       const payload = this.buf.subarray(8, 8 + len);
       this.buf = this.buf.subarray(8 + len);
       this.onRecord(tag.trim(), payload);

@@ -871,7 +871,7 @@ function fillHead(v: PanelView) {
   const wantHelp = helpOn() && hasHelp(p.scope);
   if (v.help && (!wantHelp || v.helpScope !== p.scope)) { v.help.remove(); v.help = undefined; }
   if (wantHelp && !v.help) {
-    v.help = popover({ label: '?', title: t('help.open', { scope: SCOPE_LABELS[p.scope] }), heading: SCOPE_LABELS[p.scope], align: 'end', cls: 'scopehelp', content: () => helpCard(state.panels[idx].scope, Object.keys(SCOPE_LABELS)) });
+    v.help = popover({ label: '?', title: t('help.open', { scope: SCOPE_LABELS[p.scope] }), heading: SCOPE_LABELS[p.scope], align: 'end', cls: 'scopehelp', triggerCls: 'icon pop-trigger help-trigger', content: () => helpCard(state.panels[idx].scope, Object.keys(SCOPE_LABELS)) });
     v.helpScope = p.scope;
     opts.insertBefore(v.help, v.pop ?? null);
   }

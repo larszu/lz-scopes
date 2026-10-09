@@ -335,6 +335,13 @@ dialog.ledtool ul { margin: 4px 0; padding-left: 18px; }
 .shading-msg { color: var(--meas-bad); max-width: 360px; }
 .shading-more .hint { max-width: 420px; }
 .shading-url { width: 220px; font-family: var(--mono); flex: none; }
+/* setup steps while no camera is reachable (src/shading/ui.ts) */
+.shading-setup { flex: 1 1 100%; max-width: 640px; display: flex; flex-direction: column; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line-1); }
+.shading-setup ol { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 6px; line-height: 1.45; }
+.shading-setup-url { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 4px; }
+.shading-link { font-size: var(--fs-sm); color: var(--text-muted); }
+.shading-link.open { color: var(--ok); }
+.shading-setup > .btn { align-self: flex-start; }
 body.shading-on .panel .body { touch-action: none; }
 
 /* colour targets (#55): logo pipette */

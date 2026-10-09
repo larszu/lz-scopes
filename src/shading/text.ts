@@ -42,4 +42,12 @@ export const T = {
   camN: (n: number) => t('shading.camN', { n }),
   get unreachable() { return t('shading.unreachable'); },
   get error() { return t('shading.error'); },
+  get setupTitle() { return t('shading.setup.title'); },
+  get setupStep1() { return t('shading.setup.step1'); },
+  get setupDownload() { return t('shading.setup.download'); },
+  get setupStep2() { return t('shading.setup.step2'); },
+  get setupStep3() { return t('shading.setup.step3'); },
+  get setupStep4() { return t('shading.setup.step4'); },
+  get setupSim() { return t('shading.setup.sim'); },
+  get setupNoCameras() { return t('shading.setup.noCameras'); },
 };

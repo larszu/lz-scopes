@@ -41,4 +41,12 @@ export default {
   'shading.camN': 'Kamera {n}',
   'shading.unreachable': 'lz-camera-bridge nicht erreichbar',
   'shading.error': 'Fehler',
+  'shading.setup.title': 'Kamera verbinden',
+  'shading.setup.step1': 'LZ Camera Bridge installieren und starten – sie spricht mit den Kameras, LZ Scopes schickt ihr nur die Werte.',
+  'shading.setup.download': 'Download',
+  'shading.setup.step2': 'In LZ Camera Bridge die Kamera anlegen: Protokoll wählen (z. B. VISCA over IP für Sony SRG/BRC und PTZOptics, Sony CGI, Panasonic AW, BirdDog) und IP-Adresse eintragen.',
+  'shading.setup.step3': 'Hier die Adresse der Bridge prüfen – auf diesem Rechner ws://localhost:9700, sonst ws://<IP des Bridge-Rechners>:9700.',
+  'shading.setup.step4': 'Kamera oben als Ziel wählen, „Aktiv“ einschalten und in Parade, Waveform oder Vectorscope ziehen.',
+  'shading.setup.sim': 'Ohne Kamera ausprobieren (Simulator)',
+  'shading.setup.noCameras': 'Bridge verbunden – noch keine Kamera angelegt',
 } satisfies Translation<typeof en>;

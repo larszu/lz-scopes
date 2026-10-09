@@ -142,9 +142,19 @@ jobs:
             # camera, microphone and local network without prompts (simulator only)
             xcrun simctl privacy "$UDID" grant all de.zumpelars.lzscopes || true
             # debug build: opens both RTSP sources directly at start (-LzsAutoStreams, ios/App/App/LzNative.swift)
-            xcrun simctl launch --console-pty "$UDID" de.zumpelars.lzscopes -LzsAutoStreams "rtsp://127.0.0.1:8554/h264 rtsp://127.0.0.1:8554/hevc" > "ios-shots/$kind-console.txt" 2>&1 &
-            # the first boot of a large iPad simulator keeps SpringBoard busy for a while
+            launch() { xcrun simctl launch --console-pty "$UDID" de.zumpelars.lzscopes -LzsAutoStreams "rtsp://127.0.0.1:8554/h264 rtsp://127.0.0.1:8554/hevc" > "ios-shots/$kind-console.txt" 2>&1 & CPID=$!; }
+            launch
+            # the first boot of a large iPad simulator keeps SpringBoard busy for a while and can send
+            # the freshly launched app to the background before its WebView starts (empty console):
+            # launch once more when nothing arrived
             sleep 30
+            if ! grep -q "lzs-ios" "ios-shots/$kind-console.txt"; then
+              echo "$kind: no console output after 30 s, launching again"
+              kill "$CPID" 2>/dev/null || true
+              xcrun simctl terminate "$UDID" de.zumpelars.lzscopes || true
+              launch
+              sleep 30
+            fi
             xcrun simctl io "$UDID" screenshot "ios-shots/$kind-30s.png"
             sleep 30
             xcrun simctl io "$UDID" screenshot "ios-shots/$kind.png"

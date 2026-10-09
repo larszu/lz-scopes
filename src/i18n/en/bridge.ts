@@ -61,7 +61,7 @@ export default {
 
   'bridge.ndi.noHelper': 'NDI helper not built (npm run build:helpers)',
   'bridge.ndi.unavailable': 'NDI not available – helper not built (npm run build:helpers)',
-  'bridge.ndi.noRuntime': 'NDI runtime not found – install NDI Tools or the NDI runtime from ndi.video',
+  'bridge.ndi.noRuntime': 'NDI runtime not found – install the NDI runtime (ndi.link/NDIRedistV6) or NDI Tools, then restart LZ Scopes',
   'bridge.ndi.runtimeIncomplete': 'NDI runtime incomplete',
   'bridge.ndi.initFailed': 'NDI cannot be initialised on this computer (CPU without SSE4.2?)',
   'bridge.ndi.findFailed': 'NDI search cannot be started',
@@ -70,6 +70,9 @@ export default {
   'bridge.ndi.recvFailed': 'NDI receiver cannot be created',
   'bridge.ndi.lost': 'Connection to the NDI source lost',
   'bridge.ndi.waiting': 'waiting for a picture from the NDI source',
+  'bridge.ndi.noConnection': 'NDI source not connected',
+  'bridge.ndi.dropping': 'NDI: {lost} pictures lost in the last second (network {ndi}, helper {helper})',
+  'bridge.ndi.recovered': 'NDI: no losses again ({fps} fps)',
   'bridge.ndi.format': 'NDI format {fourcc} not supported',
 
   'bridge.folder.notReleased': 'Folder not released – start the bridge with --watch-dir <folder>',

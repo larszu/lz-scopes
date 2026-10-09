@@ -37,7 +37,7 @@ jobs:
       - run: npm test
       - run: npm run build
       # the NDI helper builds without any SDK (helpers/ndi/ndi-min.h); run it once without runtime
-      - run: node scripts/build-helpers.mjs ndi && helpers/bin/lz-ndi --list
+      - run: node scripts/build-helpers.mjs ndi && helpers/bin/lz-ndi --list && helpers/bin/lz-ndi --selftest
 
   e2e:
     runs-on: ubuntu-latest
@@ -101,6 +101,7 @@ jobs:
           node scripts/build-helpers.mjs decklink ndi
           exe=""; if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
           for h in lz-decklink lz-ndi; do "helpers/bin/$h$exe" --list || true; done
+          "helpers/bin/lz-ndi$exe" --selftest
 
   # The Linux app as release.yml packages it (AppImage + deb, x64), started under Xvfb: bridge
   # up with the SHIPPED ffmpeg, UI served (scripts/linux-smoke.sh). The deb is installed with apt
@@ -123,6 +124,7 @@ jobs:
         run: |
           node scripts/build-helpers.mjs decklink ndi
           for h in lz-decklink lz-ndi; do "helpers/bin/$h" --list || true; done
+          helpers/bin/lz-ndi --selftest
       - name: Package (AppImage, deb)
         run: node node_modules/electron-builder/cli.js --config electron-builder.js --linux --publish never
       - name: Package contents

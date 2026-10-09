@@ -1007,7 +1007,8 @@ function startNdi(ws, params, url) {
   const ffmpeg = ffmpegCandidates()[0];
   if (!ffmpeg) return fail(ws, bmsg('ffmpeg.missing', 'ffmpeg not found'));
   startHelperStream(ws, {
-    bin, args: ['--capture', url.slice('ndi:'.length)], label: 'NDI', params,
+    // 8 bit: NDI's fastest format (UYVY); 16 bit: best (P216). The helper reduces to the analysis width.
+    bin, args: ['--capture', url.slice('ndi:'.length), '--depth', params.get('depth') === '8' ? '8' : '16', '--width', String(Math.max(0, Number(params.get('width') ?? 960) || 0))], label: 'NDI', params,
     ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions, now: clockNow },
   });
 }

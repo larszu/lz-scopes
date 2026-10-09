@@ -56,8 +56,8 @@ enum {
 enum {
   NDI_frame_format_interleaved = 0, NDI_frame_format_progressive = 1, NDI_frame_format_field_0 = 2, NDI_frame_format_field_1 = 3,
 };
-enum { NDI_recv_color_format_best = 101 };
-enum { NDI_recv_bandwidth_highest = 100 };
+enum { NDI_recv_color_format_fastest = 100, NDI_recv_color_format_best = 101 };
+enum { NDI_recv_bandwidth_lowest = 0, NDI_recv_bandwidth_highest = 100 };
 
 typedef void* NDI_find_instance;
 typedef void* NDI_recv_instance;
@@ -67,6 +67,8 @@ typedef struct { const char* p_ndi_name; const char* p_url_address; } NDI_source
 typedef struct { bool show_local_sources; const char* p_groups; const char* p_extra_ips; } NDI_find_create;
 typedef struct { NDI_source source_to_connect_to; int32_t color_format; int32_t bandwidth; bool allow_video_fields; const char* p_ndi_recv_name; } NDI_recv_create_v3;
 typedef struct { const char* p_ndi_name; const char* p_groups; bool clock_video, clock_audio; } NDI_send_create;
+typedef struct { int64_t video_frames; int64_t audio_frames; int64_t metadata_frames; } NDI_recv_performance;
+typedef struct { int video_frames; int audio_frames; int metadata_frames; } NDI_recv_queue;
 typedef struct {
   int xres, yres;
   uint32_t FourCC;
@@ -91,6 +93,9 @@ typedef NDI_recv_instance (*NDI_recv_create_v3_fn)(const NDI_recv_create_v3*);
 typedef int32_t (*NDI_recv_capture_v3_fn)(NDI_recv_instance, NDI_video_frame_v2*, void* audio, void* metadata, uint32_t timeout_ms);
 typedef void (*NDI_recv_free_video_v2_fn)(NDI_recv_instance, const NDI_video_frame_v2*);
 typedef void (*NDI_recv_destroy_fn)(NDI_recv_instance);
+typedef void (*NDI_recv_get_performance_fn)(NDI_recv_instance, NDI_recv_performance* total, NDI_recv_performance* dropped);
+typedef void (*NDI_recv_get_queue_fn)(NDI_recv_instance, NDI_recv_queue* total);
+typedef int (*NDI_recv_get_no_connections_fn)(NDI_recv_instance);
 typedef NDI_send_instance (*NDI_send_create_fn)(const NDI_send_create*);
 typedef void (*NDI_send_send_video_v2_fn)(NDI_send_instance, const NDI_video_frame_v2*);
 typedef void (*NDI_send_destroy_fn)(NDI_send_instance);

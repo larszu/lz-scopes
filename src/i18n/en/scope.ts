@@ -28,6 +28,7 @@ export default {
   'scope.name.stats': 'Measurements',
   'scope.name.match': 'Colour Match',
   'scope.name.tiles': 'Tiles (multi-camera)',
+  'scope.name.noise': 'Noise Meter',
   'scope.name.audio-meter': 'Audio Level & Loudness',
   'scope.name.audio-loudness': 'Audio Loudness History',
   'scope.name.audio-spectrum': 'Audio Spectrum',

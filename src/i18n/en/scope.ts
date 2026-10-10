@@ -31,6 +31,7 @@ export default {
   'scope.name.noise': 'Noise Meter',
   'scope.name.wshading': 'White-Shading Map',
   'scope.name.skinall': 'Skin Tone All Cameras',
+  'scope.name.simulcast': 'Simulcast Deviation',
   'scope.name.audio-meter': 'Audio Level & Loudness',
   'scope.name.audio-loudness': 'Audio Loudness History',
   'scope.name.audio-spectrum': 'Audio Spectrum',

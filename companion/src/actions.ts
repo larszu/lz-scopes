@@ -11,7 +11,7 @@ export const SCOPES: { id: string; label: string }[] = [
   { id: 'satlum', label: 'Saturation over Luma' }, { id: 'chplot', label: 'Channel Plot' }, { id: 'minmax', label: 'Min/Max per Line' },
   { id: 'timeline', label: 'Timeline' }, { id: 'qclog', label: 'QC Log' },
   { id: 'hist', label: 'Histogram' }, { id: 'stats', label: 'Measurements' },
-  { id: 'wf-green', label: 'Waveform Greens' }, { id: 'match', label: 'Colour Match' },
+  { id: 'wf-green', label: 'Waveform Greens' }, { id: 'match', label: 'Colour Match' }, { id: 'simulcast', label: 'Simulcast Deviation' },
   { id: 'audio-meter', label: 'Audio Levels & Loudness' }, { id: 'audio-loudness', label: 'Audio Loudness History' },
   { id: 'audio-spectrum', label: 'Audio Spectrum' }, { id: 'audio-phase', label: 'Audio Goniometer' },
   { id: 'clock', label: 'Clock / Time Code' }, { id: 'genlock', label: 'Reference / Genlock' },

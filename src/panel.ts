@@ -32,6 +32,7 @@ import { clockOpts, drawClockOverlay, drawClockPanel, type ClockOptions } from '
 import { GREEN_DEFAULT, targetSignal } from './match/core';
 import { drawMatchPanel, matchSignature, type MatchSettings } from './match/panel';
 import { drawLightPanel, isLight, lightSignature, type LightPanelOptions } from './opple/scopes';
+import { drawSimulcastPanel, type SimulcastSettings } from './simulcastPanel';
 import { t } from './i18n';
 import { IDENTITY, isIdentity, viewRect, waveRange, type View, type ViewLimits } from './view';
 import { GHOST_CSS, GHOST_TINT, deltaRows, ghostChannels, hasGhost, histOf, levelDeltas, traceLevels } from './ghost';
@@ -104,6 +105,8 @@ export interface PanelState {
   clockOverlay?: boolean;
   /** light scopes (Opple Light Master, src/opple/scopes.ts) */
   light?: Partial<LightPanelOptions>;
+  /** simulcast deviation map (simulcastPanel.ts): stages compared, colour scale */
+  simulcast?: SimulcastSettings;
   /** zoom/pan from gestures (#89, view.ts); the 3D volume keeps its view in `cube` */
   view?: View;
   /** reference trace of the reference camera (ghost.ts) over this scope, with Δ levels */
@@ -548,6 +551,8 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
   const tick = p.scope === 'clock' || (p.scope === 'picture' && p.clockOverlay) ? `|t${Math.floor(performance.now() / 40)}`
     // QC log: new events, and the durations of active ones once a second
     : p.scope === 'genlock' ? `|g${Math.floor(Date.now() / 250)}`
+    // simulcast map: chain settings of other stages can change without a new frame
+    : p.scope === 'simulcast' ? `|s${Math.floor(Date.now() / 500)}`
     : p.scope === 'qclog' ? `|q${qcLog.version}:${Math.floor(Date.now() / 1000)}` : '';
   if (p.scope === 'clock') return `C|${src?.id}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}${tick}`;
   if (isLight(p.scope)) return `${lightSignature(p.scope, p.light, body.w, body.h)}|${body.x},${body.y}`;
@@ -619,6 +624,11 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   }
   if (p.scope === 'tiles') { drawTiles(renderer, ctx, key, p, body, o); return; }
   if (p.scope === 'skinall') { renderer.clearRect(body); drawSkinAllPanel(ctx, p, body, o); return; }
+  if (p.scope === 'simulcast') {
+    renderer.clearRect(body);
+    drawSimulcastPanel(ctx, body.w, body.h, p.simulcast, src, o.emptyText ?? t('panel.draw.addSource'));
+    return;
+  }
   if (src) src = stageView(src, p.stage ?? o.stage ?? 'signal');
   const aspect = src && src.width ? src.width / src.height : 16 / 9;
   const frame = plotRect(p.scope, body.w, body.h, aspect);

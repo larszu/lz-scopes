@@ -253,5 +253,11 @@ export default {
   'help.light-swatch.try': "Measure a light with a visible green cast.",
   'help.light-swatch.check': "the patch looks greener than the Planckian reference next to it.",
   'help.light-swatch.pitfall': "The rendering depends on the display and its calibration; it illustrates, it does not measure.",
+  'help.simulcast.one': "Heat map of how far the converted picture (e.g. SDR from HDR) differs from the real one, as ΔE ITP.",
+  'help.simulcast.what': "In an HDR/SDR simulcast most viewers see the SDR conversion. The panel compares two stages of the source's chain – the HDR signal and the picture after the CST/LUT – both as display light, the SDR placed back with 100 % = 203 cd/m², and colours every area by ΔE ITP (ITU-R BT.2124). It shows where the conversion loses highlights, colour or shadow detail.",
+  'help.simulcast.read': "Grey = below 1, not noticeable; blue → yellow → red up to the scale, white above.\nTop left: mean, 95th percentile and maximum, share above 1 and above the chosen limit.\nStages in ⚙: reference (real picture) and the compared one.\nGood: grey where the picture matters; colour only in highlights above SDR white.",
+  'help.simulcast.try': "Test pattern \"PQ ramp with reference white 203\", in the sidebar under CST / LUT a CST to Rec.709 / BT.1886 with tone mapping \"Clip at the target peak\"; panel stages \"Signal\" and \"after CST\".",
+  'help.simulcast.check': "the ramp stays grey up to about 203 cd/m² and turns coloured towards the right (clipped highlights); the bottom field at 203 cd/m² stays grey.",
+  'help.simulcast.pitfall': "ΔE ITP assumes the most critical adaptation: values of 1–3 are rarely visible in a normal living room. Log stages are scene light and only give an order, not a visibility.",
   // --- end scope texts ---
 } satisfies Messages;

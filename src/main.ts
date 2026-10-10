@@ -29,6 +29,7 @@ import type { GenConfig } from './audio/dsp/signals';
 import { audioPanelSettings, audioRow, audioSourceControls, mountGenerator } from './audio/ui';
 import { setClockHooks } from './clock/panel';
 import { genlockPanelSettings, setGenlockBridge } from './genlock';
+import { simulcastPanelSettings } from './simulcastPanel';
 import { clockPanelSettings } from './clock/ui';
 import { generator } from './audio/io';
 import { PATTERNS, RESOLUTIONS, patternById } from './patterns';
@@ -905,7 +906,7 @@ function fillHead(v: PanelView) {
 
 /** Measuring stage in the panel head, honest about stages that have nothing to apply. */
 function stageChip(p: PanelState): HTMLElement | null {
-  if (isAudio(p.scope) || p.scope === 'clock' || p.scope === 'genlock' || isLight(p.scope)) return null;
+  if (isAudio(p.scope) || p.scope === 'clock' || p.scope === 'genlock' || p.scope === 'simulcast' || isLight(p.scope)) return null;
   const n = stageNote(panelSource(p), p.stage ?? state.stage ?? 'signal');
   return n.text ? chip(n.text, { tone: n.warn ? 'warn' : undefined, cls: 'stagechip', title: t('panel.stageChipTitle') }) : null;
 }
@@ -955,6 +956,7 @@ function panelSettings(p: PanelState): Node[] {
   if (p.scope === 'tiles') return tileSettings(p);
   if (isAudio(p.scope)) return audioPanelSettings(p, save);
   if (isLight(p.scope)) return lightPanelSettings(p, save);
+  if (p.scope === 'simulcast') return simulcastPanelSettings(p, save);
   if (p.scope === 'genlock') return genlockPanelSettings(p, save);
   if (p.scope === 'clock') return clockPanelSettings(p, save, sources, () => refreshPanelSettings(p));
   const rows: Node[] = [];

@@ -30,6 +30,7 @@ import feedback from './en/feedback';
 import help from './en/help';
 import compare from './en/compare';
 import wallcheck from './en/wallcheck';
+import sim from './en/sim';
 
 
 import tools from './en/tools';
@@ -73,6 +74,7 @@ export const en = {
   ...help,
   ...compare,
   ...wallcheck,
+  ...sim,
 };
 
 export type Key = keyof typeof en;

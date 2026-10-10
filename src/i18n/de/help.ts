@@ -253,5 +253,11 @@ export default {
   'help.light-swatch.try': "Licht mit sichtbarem Grünstich messen.",
   'help.light-swatch.check': "Fläche wirkt grünlicher als die Planck-Vergleichsfläche daneben.",
   'help.light-swatch.pitfall': "Die Darstellung hängt vom Display und dessen Kalibrierung ab; sie ist eine Veranschaulichung, keine Messung.",
+  'help.simulcast.one': "Heatmap, wie weit das gewandelte Bild (z. B. SDR aus HDR) vom echten abweicht, als ΔE ITP.",
+  'help.simulcast.what': "Im HDR/SDR-Simulcast sehen die meisten Zuschauer die SDR-Wandlung. Das Panel vergleicht zwei Stufen der Kette einer Quelle – das HDR-Signal und das Bild nach CST/LUT – beide als Displaylicht, SDR zurückgesetzt mit 100 % = 203 cd/m², und färbt jede Stelle nach ΔE ITP (ITU-R BT.2124). Es zeigt, wo die Wandlung Lichter, Farbe oder Schattenzeichnung verliert.",
+  'help.simulcast.read': "Grau = unter 1, nicht sichtbar; blau → gelb → rot bis zur Skala, darüber weiß.\nOben links: Mittel, 95. Perzentil und Maximum, Anteil über 1 und über der gewählten Grenze.\nStufen im ⚙: Referenz (echtes Bild) und die verglichene.\nGut: grau, wo das Bild wichtig ist; Farbe nur in Lichtern über SDR-Weiß.",
+  'help.simulcast.try': "Testbild „PQ-Verlauf mit Referenzweiß 203“, in der Seitenleiste unter CST / LUT eine CST nach Rec.709 / BT.1886 mit Tone Mapping „Clip an der Zielspitze“; Stufen im Panel „Signal“ und „nach CST“.",
+  'help.simulcast.check': "der Verlauf bleibt bis etwa 203 cd/m² grau und färbt sich nach rechts (beschnittene Lichter); das untere Feld bei 203 cd/m² bleibt grau.",
+  'help.simulcast.pitfall': "ΔE ITP setzt die kritischste Adaptation voraus: Werte von 1–3 sind im normalen Wohnzimmer selten sichtbar. Log-Stufen sind Szenenlicht und geben nur eine Rangfolge, keine Sichtbarkeit.",
   // --- end scope texts ---
 } satisfies Translation<typeof en>;

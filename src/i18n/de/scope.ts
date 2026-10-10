@@ -32,6 +32,7 @@ export default {
   'scope.name.noise': 'Rauschmessung',
   'scope.name.wshading': 'White-Shading-Karte',
   'scope.name.skinall': 'Hautton aller Kameras',
+  'scope.name.simulcast': 'Simulcast-Abweichung',
   'scope.name.audio-meter': 'Audio Pegel & Lautheit',
   'scope.name.audio-loudness': 'Audio Lautheitsverlauf',
   'scope.name.audio-spectrum': 'Audio Spektrum',

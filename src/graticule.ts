@@ -15,12 +15,12 @@ import { bridgeText } from './i18n/bridgeMessage';
 import { stopLabel, stopTicks, stopsOf } from './stops';
 
 export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'hls' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats' | 'tiles' | 'noise' | 'wshading' | 'skinall'
-  | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock' | 'genlock'
+  | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock' | 'genlock' | 'simulcast'
   | 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map' | 'light-spectrum' | 'light-swatch';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits' | 'stop';
 
 const SCOPE_IDS: ScopeType[] = [
-  'picture', 'wf-luma', 'wf-color', 'wf-skin', 'wf-green', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'hls', 'cie', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'qclog', 'timeline', 'hist', 'stats', 'match', 'tiles', 'noise', 'wshading', 'skinall',
+  'picture', 'wf-luma', 'wf-color', 'wf-skin', 'wf-green', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'hls', 'cie', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'qclog', 'timeline', 'hist', 'stats', 'match', 'simulcast', 'tiles', 'noise', 'wshading', 'skinall',
   'audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check', 'clock', 'genlock',
   // Opple Light Master (src/opple/scopes.ts, LIGHT_LABELS)
   'light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch',

@@ -1111,3 +1111,5 @@ Gemeinsamer Hinweis: Der Opple misst einen Wert an einer Stelle, kein Bild. Die 
 ## Werkzeug-Karten im LED-Wand-Dialog
 
 Die Finder im LED-Wand-Dialog haben dieselbe „?“-Karte (`toolHelp` in `src/help/scopeHelp.ts`, Texte `help.led-*` in `src/i18n/*/wallcheck.ts`). Quellen je Werkzeug: Shutter-/Scanraten-Finder → [shutter-finder.md](shutter-finder.md), Moiré-Messer → [moire-meter.md](moire-meter.md).
+
+Panel *Simulcast-Abweichung* (`help.simulcast.*` in `help.ts`): Quellen und Grenzen in [simulcast-map.md](simulcast-map.md); die Aufgabe nutzt das Testbild „PQ-Verlauf mit Referenzweiß 203“ und eine CST nach Rec.709 mit Clip (geprüft in `e2e/simulcast.spec.ts`).

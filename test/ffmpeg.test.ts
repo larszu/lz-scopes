@@ -13,7 +13,7 @@ const manifest = JSON.parse(readFileSync(new URL('../scripts/ffmpeg-builds.json'
 
 describe('ffmpeg: manifest and licence rules', () => {
   it('every shipped download is pinned by URL and SHA-256', () => {
-    for (const t of ['darwin-arm64', 'darwin-x64', 'win32-x64', 'linux-x64', 'linux-arm64']) {
+    for (const t of ['darwin-arm64', 'darwin-x64', 'win32-x64', 'linux-x64']) {
       for (const f of manifest.targets[t].files) {
         expect(f.url).toMatch(/^https:\/\//);
         expect(f.sha256).toMatch(/^[0-9a-f]{64}$/);

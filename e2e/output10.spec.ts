@@ -1,15 +1,17 @@
 import { expect, test, type Page } from '@playwright/test';
-import { spawn } from 'node:child_process';
-import { type App, SHIPPED_FFMPEG, expectOk, freePort, launchApp, until, which } from './app';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { type App, LISTEN_TIMEOUT_S, RW_TIMEOUT_S, SHIPPED_FFMPEG, expectOk, freePort, launchApp, own, until, which } from './app';
 
 // 10-bit output windows (src/deep.ts): the pattern window draws on a float16 canvas, the
 // scope windows ask for a RGBA16F WebGL buffer, and a 10-bit stream reaches ffmpeg with
 // exact codes. Where the Chromium of the test machine offers no float16 canvas / RGBA16F
 // (e.g. an old SwiftShader), the tests skip instead of failing.
 
-let a: App;
+let a: App, rx: ChildProcess | undefined;
 test.beforeAll(async () => { a = await launchApp(); });
 test.afterAll(async () => { await a?.close(); });
+// the receiver ends with its test, also when the test fails or times out (#123)
+test.afterEach(() => { rx?.kill('SIGKILL'); rx = undefined; });
 
 // receiver: the shipped build (npm run ffmpeg:fetch), else a system ffmpeg
 const ffmpeg = SHIPPED_FFMPEG ?? which('ffmpeg') ?? 'ffmpeg';
@@ -42,13 +44,15 @@ test('Testbild-Fenster: float16-Canvas trägt alle 1024 Codes der 10-bit-Rampe',
 test('10-bit-Stream (v210): exakte Codes kommen bei ffmpeg an', async () => {
   const port = await freePort();
   const out: Buffer[] = [];
-  const rx = spawn(ffmpeg, ['-hide_banner', '-f', 'nut', '-i', `tcp://127.0.0.1:${port}?listen=1`, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'yuv422p10le', 'pipe:1']);
-  rx.stdout.on('data', (d) => out.push(d));
-  const done = new Promise((ok) => rx.on('close', ok));
+  // listen_timeout in ms, timeout (socket I/O) in µs
+  const url = `tcp://127.0.0.1:${port}?listen=1&listen_timeout=${LISTEN_TIMEOUT_S * 1000}&timeout=${RW_TIMEOUT_S * 1e6}`;
+  const p = rx = own(spawn(ffmpeg, ['-hide_banner', '-f', 'nut', '-i', url, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'yuv422p10le', 'pipe:1']));
+  p.stdout.on('data', (d) => out.push(d));
+  const done = new Promise((ok) => p.on('close', ok));
   await new Promise((r) => setTimeout(r, 500));
   const w = await openWindow(`out=ramp10&w=1920&h=1080&stream=e2e10&codec=v210&target=${encodeURIComponent(`tcp://127.0.0.1:${port}`)}`);
   await Promise.race([done, new Promise((r) => setTimeout(r, 60_000))]);
-  rx.kill();
+  p.kill('SIGKILL'); rx = undefined;
   const raw = Buffer.concat(out);
   expect(raw.length).toBe(1920 * 1080 * 4);
   const y = new Uint16Array(raw.buffer, raw.byteOffset, 1920 * 1080);

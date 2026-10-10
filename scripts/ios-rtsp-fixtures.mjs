@@ -34,10 +34,19 @@ writeFileSync(join(dir, 'mediamtx.yml'), [
   'paths:', '  all_others:',
 ].join('\n'));
 const mtx = spawn(MTX, [join(dir, 'mediamtx.yml')], { cwd: dir, stdio: 'ignore' });
-await sleep(1500);
+const pubs = [];
+const cleanup = () => {
+  for (const p of pubs) p.kill('SIGKILL');
+  mtx.kill('SIGKILL');
+  rmSync(dir, { recursive: true, force: true });
+};
+// Ctrl-C or kill: no finally runs, take the children along (#123)
+for (const sig of ['SIGINT', 'SIGTERM']) process.once(sig, () => { cleanup(); process.exit(130); });
 
 const COMMON = ['-hide_banner', '-loglevel', 'error', '-re', '-f', 'lavfi', '-i', 'smptehdbars=size=640x360:rate=25',
-  '-vf', 'setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709', '-pix_fmt', 'yuv420p', '-g', '10', '-bf', '0'];
+  '-vf', 'setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709', '-pix_fmt', 'yuv420p', '-g', '10', '-bf', '0',
+  // the publishers end by themselves should this script die without cleanup
+  '-t', '120'];
 const STREAMS = {
   h264: ['-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '16'],
   hevc: ['-c:v', 'libx265', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '18', '-x265-params', 'log-level=error:bframes=0:keyint=10'],
@@ -88,16 +97,14 @@ async function record(name) {
   console.log(`${name}: ${raw.length} bytes, ${aus.length} access units (${aus.filter((a) => a.key).length} key), dropped ${depack.dropped}`);
 }
 
-mkdirSync(OUT, { recursive: true });
-const pubs = [];
 try {
+  await sleep(1500);
+  mkdirSync(OUT, { recursive: true });
   for (const [name, args] of Object.entries(STREAMS)) {
     pubs.push(spawn(FFMPEG, [...COMMON, ...args, '-f', 'rtsp', '-rtsp_transport', 'tcp', `rtsp://127.0.0.1:${port}/${name}`], { stdio: 'inherit' }));
   }
   await sleep(2500);
   for (const name of Object.keys(STREAMS)) await record(name);
 } finally {
-  for (const p of pubs) p.kill('SIGKILL');
-  mtx.kill('SIGKILL');
-  rmSync(dir, { recursive: true, force: true });
+  cleanup();
 }

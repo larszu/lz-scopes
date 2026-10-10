@@ -48,6 +48,8 @@ export default {
   'scope.mark.grey18Log': '18 % grey {curve}',
   'scope.zoomBadge': 'MAGNIFIER {lo} … {hi} %',
   'scope.unitScene': 'scene %',
+  'scope.unitStop': 'STOP · {curve} · 0 = grey card',
+  'scope.probeStop': '≈ {stops} stop vs. grey card',
   'scope.green': 'Green',
   'scope.skinTone': 'Skin tone',
   'scope.stats.status': 'Status',

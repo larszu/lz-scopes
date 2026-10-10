@@ -221,7 +221,7 @@ try {
 // in the settings window, in the panel ⚙ popovers that show it, and offered to the control API
 // (command "setting", docs/control-api.md).
 
-const UNIT_OPTIONS = (): Option[] => [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', t('settings.scopes.nitsScene')]];
+const UNIT_OPTIONS = (): Option[] => [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', t('settings.scopes.nitsScene')], ['stop', t('settings.scopes.stop')]];
 const TINT_OPTIONS = (): Option[] => [['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]];
 const SET = {
   lang: { key: 'lang', kind: 'select', label: () => t('lang.label'), title: () => t('lang.title'), hint: () => t('lang.hint'),

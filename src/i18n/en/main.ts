@@ -68,6 +68,7 @@ export default {
   'settings.scopes': 'Scopes',
   'settings.scopes.scale': 'Scale',
   'settings.scopes.nitsScene': 'cd/m² / scene',
+  'settings.scopes.stop': 'STOP (stops from grey card)',
   'settings.scopes.standard': 'Standard',
   'settings.scopes.zebra': 'Zebra',
   'settings.stage': 'Measuring point / CST',

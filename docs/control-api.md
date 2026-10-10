@@ -31,7 +31,7 @@ Every command is a JSON object with `cmd`. Panels, sources, presets and scenes c
 | `layout.load` | `name` of a saved layout configuration |
 | `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `hls`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `qclog`, `hist`, `stats`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `clock`, `genlock`) |
 | `panel.maximize` | `panel`, `mode` `toggle`\|`on`\|`off`; `off` without `panel` = restore |
-| `freeze` | `mode` `toggle`\|`on`\|`off` |
+| `freeze` | `mode` `toggle`\|`on`\|`off`; all sources at the same moment of the scene (measured latency taken out) |
 | `qc.clear` | – (clear the QC log; state `qc`: `active`, `total`, `last`) |
 | `roi.clear` | `source` optional (without = all): delete measuring frame and measuring point |
 | `pattern.select` | `pattern` (id or name), `source` optional (otherwise the first test pattern source) |
@@ -41,7 +41,7 @@ Every command is a JSON object with `cmd`. Panels, sources, presets and scenes c
 | `scene.select` | `scene`; `output` optional (without = default and all open overlay outputs) |
 | `stream.start` | `stream` (name → `/out/<stream>.mjpeg`), `output` optional (otherwise the first open output; if none is open, an overlay window opens), `target` optional (`rtmp://`, `srt://`, `rtsp://`, `udp://`, `tcp://`, `rtp://`), `codec` optional (10 bit, as for `output.open`; without it MJPEG; a 10-bit codec cannot go over RTMP) |
 | `stream.stop` | `output` or `stream` optional (without = all) |
-| `transport` | `op` `play`\|`pause`\|`toggle`\|`stop`\|`next`\|`prev`\|`forward`\|`rewind`\|`start`\|`end`, `source` optional (otherwise the video file on screen) |
+| `transport` | `op` `play`\|`pause`\|`toggle`\|`stop`\|`next`\|`prev`\|`forward`\|`rewind`\|`start`\|`end`, `source` optional (otherwise the video file on screen; without one the open recordings on their shared clock) |
 | `audio.reset` | `source` optional (otherwise all sources with audio): reset I, LRA, max M/S, max TP, counter and log (EBU Tech 3341) |
 | `audio.pause` | `mode` `toggle`\|`on`\|`off`, `source` optional: pause/resume I and LRA (Tech 3341) |
 | `generator` | `mode` `toggle`\|`on`\|`off`, `signal` optional (`sine`, `ebu-ident`, `glits`, `blits`, `ebu-multi`, `ident-lr`, `pink`, `pink-band`, `white`, `sweep`, `steps`, `polarity`, `avsync`, …), `freq` 10–20000 Hz, `level` −90–0 dBFS; above −6 dBFS only with `"force": true` |

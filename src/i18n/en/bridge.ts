@@ -84,6 +84,8 @@ export default {
   'bridge.record.stoppedDiskFull': 'Recording stopped: disk full',
   'bridge.record.hevcSoftware': 'No hardware HEVC encoder – libx265 (software)',
   'bridge.record.hevcNone': 'No HEVC encoder works here – ProRes 422 HQ instead',
+  'bridge.playback.notFound': 'Recording not found in a released folder',
+  'bridge.playback.unreadable': 'Recording cannot be read (ffprobe)',
   'bridge.ring.off': 'Ring buffer not running for this source',
   'bridge.ring.empty': 'Ring buffer has no pictures yet',
   'bridge.ring.joinFailed': 'Ring buffer could not be saved: {reason}',

@@ -379,3 +379,8 @@ button.rec.on::before { content: ''; display: inline-block; width: 8px; height: 
 .rec-status { color: var(--text-muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; word-break: break-word; }
 .rec-status.bad { color: var(--err); }
 #rec-all { font-variant-numeric: tabular-nums; }
+/* playback of recordings on one clock (src/record/playback.ts) */
+.pb-bar { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--line-1); }
+.pb-bar .pb-pos { width: 100%; }
+.pb-time { color: var(--text-muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.pb-take { border-top: 1px solid var(--line-1); padding: 6px 0; display: flex; flex-direction: column; gap: 4px; }

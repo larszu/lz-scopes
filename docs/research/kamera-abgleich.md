@@ -39,6 +39,8 @@ Kameras sehen die Szene aus verschiedenen Winkeln. Verglichen werden deshalb **V
 
 ### 2. Gleichzeitig einfrieren (klein)
 
+Umgesetzt, siehe [aufzeichnung.md](aufzeichnung.md#gleichzeitig-einfrieren-schritt-2).
+
 - Ein Tastendruck friert alle Quellen ein; die gemessene Latenz je Quelle wird ausgeglichen, damit alle Bilder aus demselben Moment stammen (LED-Licht, Bewegung).
 - Baut auf dem Bildpuffer aus Schritt 5 auf, der ein paar Bilder je Quelle vorhält.
 
@@ -57,7 +59,7 @@ Kameras sehen die Szene aus verschiedenen Winkeln. Verglichen werden deshalb **V
 
 ### 5. Lokale Aufzeichnung der Quellen (mittel)
 
-Umgesetzt sind die Aufzeichnung in der Bridge und im Browser mit Begleitdatei und der Ringpuffer: [aufzeichnung.md](aufzeichnung.md).
+Umgesetzt sind die Aufzeichnung in der Bridge und im Browser mit Begleitdatei, der Ringpuffer und die synchrone Wiedergabe: [aufzeichnung.md](aufzeichnung.md).
 
 Zweck: Abgleich nachträglich prüfen (vorher/nachher, Drift über die Show), Kameras ohne Live-Zugriff vergleichen, Belege für Kunden.
 

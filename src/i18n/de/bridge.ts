@@ -83,6 +83,8 @@ export default {
   'bridge.record.stoppedDiskFull': 'Aufnahme beendet: Platte voll',
   'bridge.record.hevcSoftware': 'Kein HEVC-Hardware-Encoder – libx265 (Software)',
   'bridge.record.hevcNone': 'Kein HEVC-Encoder funktioniert hier – stattdessen ProRes 422 HQ',
+  'bridge.playback.notFound': 'Aufnahme in keinem freigegebenen Ordner gefunden',
+  'bridge.playback.unreadable': 'Aufnahme nicht lesbar (ffprobe)',
   'bridge.ring.off': 'Ringpuffer für diese Quelle nicht aktiv',
   'bridge.ring.empty': 'Ringpuffer hat noch keine Bilder',
   'bridge.ring.joinFailed': 'Ringpuffer ließ sich nicht sichern: {reason}',

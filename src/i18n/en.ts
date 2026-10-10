@@ -29,6 +29,7 @@ import calib from './en/calib';
 import feedback from './en/feedback';
 import help from './en/help';
 import compare from './en/compare';
+import wallcheck from './en/wallcheck';
 
 
 import tools from './en/tools';
@@ -71,6 +72,7 @@ export const en = {
   ...feedback,
   ...help,
   ...compare,
+  ...wallcheck,
 };
 
 export type Key = keyof typeof en;

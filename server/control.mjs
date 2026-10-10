@@ -46,6 +46,9 @@ export const COMMANDS = {
   'audio.reset': 'Reset loudness (I, LRA, max M/S, max TP, counters, log; Tech 3341): source (optional; none = all sources with sound)',
   'audio.pause': 'Pause/resume I and LRA (Tech 3341): mode toggle|on|off, source (optional; none = all sources with sound)',
   'generator': 'Tone generator: mode toggle|on|off, signal (optional), freq (Hz, optional), level (dBFS, optional; above −6 only with force: true)',
+  'record': 'Local recording: mode toggle|on|off, source (optional; none = all recordable sources, as "record all")',
+  'record.mark': 'Marker in the running recordings: label (optional), source (optional; none = all)',
+  'record.event': 'Event in the companion file of the running recordings: kind (letters, digits, _ . -), data (JSON value), source (optional)',
   'setting': `Set a global setting: key (${SETTING_KEYS.join(', ')}), value (choice, number, true/false, or [lo, hi] for skinLuma); state.settings lists keys, values and choices`,
 };
 
@@ -161,6 +164,18 @@ export function validateCommand(raw) {
       if (!TRANSPORT_OPS.includes(/** @type {string} */ (c.op))) errors.push(`op: ${TRANSPORT_OPS.join(', ')}`); else out.op = c.op;
       check(optRef('source'));
       break;
+    case 'record': check(optMode()); check(optRef('source')); break;
+    case 'record.mark':
+      check(optRef('source'));
+      if (c.label !== undefined && c.label !== '') { if (!isStr(c.label) || c.label.length > 200) errors.push('label: text up to 200 characters'); else out.label = c.label; }
+      break;
+    case 'record.event': {
+      check(optRef('source'));
+      if (!isStr(c.kind) || !/^[\w.-]{1,40}$/.test(c.kind)) errors.push('kind: letters, digits, _ . - (max. 40)'); else out.kind = c.kind;
+      const text = JSON.stringify(c.data ?? null);
+      if (text.length > 16 * 1024) errors.push('data: at most 16 KB as JSON'); else out.data = c.data ?? null;
+      break;
+    }
     case 'setting': {
       if (!SETTING_KEYS.includes(/** @type {string} */ (c.key))) errors.push(`key: ${SETTING_KEYS.join(', ')}`); else out.key = c.key;
       const v = c.value;

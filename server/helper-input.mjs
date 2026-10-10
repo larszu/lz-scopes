@@ -144,8 +144,30 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
   let ff = null, fmt = null, outBytes = 0, asm = null, sent = 0, dropped = 0, closed = false, stderr = '', status = '';
   /** helper's own counters (NDI: received, ndiDropped, skipped, queue, connections per second) */
   let helperStats = null, helperDropped = 0, losing = false;
+  // local recording (server/recorder.mjs): encoded second output of this ffmpeg; toggling restarts it
+  let lastInfo = null;
+  const recorder = ctx.recorder?.({
+    restart: () => { if (lastInfo && !closed) startFf(lastInfo); },
+    media: () => ({ width: fmt?.width ?? 0, height: fmt?.height ?? 0, fps: fmt?.fps ?? 0, codec: label, audioMap: null }),
+  }) ?? null;
+  ws.on('message', (data, isBinary) => {
+    if (isBinary || !recorder) return;
+    let m;
+    try { m = JSON.parse(String(data)); } catch { return; }
+    recorder.handle(m).catch((e) => recorder.error(e));
+  });
 
-  const stopFf = () => { if (ff) { ff.stdin.destroy(); ff.kill('SIGKILL'); ff = null; } };
+  const stopFf = () => {
+    if (!ff) return;
+    const old = ff;
+    ff = null;
+    if (old.recording) {
+      // let the recording close its segment: end of input, then ffmpeg exits by itself
+      old.stdout.removeAllListeners('data');
+      old.stdin.end();
+      setTimeout(() => { if (old.exitCode === null && old.signalCode === null) old.kill('SIGKILL'); }, 5000).unref();
+    } else { old.stdin.destroy(); old.kill('SIGKILL'); }
+  };
   const sendFrame = (frame) => {
     if (ws.readyState !== ws.OPEN) return;
     if (ws.bufferedAmount < outBytes * 2) { ws.send(frame, { binary: true }); sent++; } else dropped++;
@@ -157,6 +179,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
     const f = helperFormat(info);
     if (f.error) return ctx.fail(ws, f.error);
     fmt = f;
+    lastInfo = info;
     lastFps = f.fps;
     phase = ctx.now && f.fps > 0 ? new PhaseTracker(Math.round(Number(info.fpsNum)), Math.round(Number(info.fpsDen) || 1)) : null;
     const { width, height } = ctx.outputSize(f.width, f.height, maxWidth);
@@ -166,13 +189,16 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
     // interlaced signal (helper INFO): DeckLink delivers both fields woven in one frame; scale field by field
     const vf = [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}${info.interlaced ? ':interl=1' : ''}`];
     if (fpsLimit) vf.push(`fps=${fpsLimit}`);
-    ff = spawn(ctx.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', ...f.input, '-vf', vf.join(','), '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-threads', '1', '-f', 'rawvideo', 'pipe:1'],
-      { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    const rec = recorder?.outputs(3) ?? { args: [], pipes: 0, sessions: [] };
+    ff = spawn(ctx.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', ...f.input, '-map', '0:v:0', '-vf', vf.join(','), '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-threads', '1', '-f', 'rawvideo', 'pipe:1', ...rec.args],
+      { stdio: ['pipe', 'pipe', 'pipe', ...Array(rec.pipes).fill('pipe')], windowsHide: true });
+    ff.recording = rec.sessions.length > 0;
+    if (rec.sessions.length) recorder.attach(ff, rec);
     ff.stdin.on('error', () => {});
     ff.stderr.on('data', (d) => { stderr = (stderr + d).slice(-1500); });
     ff.stdout.on('data', onOut);
     const self = ff;
-    ff.on('close', (code) => { if (self === ff && code && !closed) ctx.fail(ws, stderr.trim().split('\n').pop() || bmsg('ffmpeg.exit', `ffmpeg exited (${code})`, { code })); });
+    ff.on('close', (code) => { if (self === ff && !self.ending && code && !closed) ctx.fail(ws, stderr.trim().split('\n').pop() || bmsg('ffmpeg.exit', `ffmpeg exited (${code})`, { code })); });
     if (ws.readyState === ws.OPEN) {
       ws.send(JSON.stringify({
         // the helper may have reduced the picture already (NDI --width): report the signal's size
@@ -233,16 +259,17 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
         ws.close();
       }
     };
+    recorder?.ended('end');
     // let ffmpeg convert what it already has, then end
     if (!ff || closed) return finish();
     const self = ff;
-    const timer = setTimeout(finish, 2000);
-    self.removeAllListeners('close');
+    const timer = setTimeout(finish, self.recording ? 5000 : 2000);
+    self.ending = true;
     self.on('close', () => { clearTimeout(timer); ff = null; finish(); });
     self.stdin.end();
   });
   const stats = setInterval(() => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: dropped + helperDropped, ...(status ? toMsg(status) : {}), ...(helperStats ? { helper: helperStats } : {}), ...(phase?.report() ? { phase: phase.report() } : {}) }));
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: dropped + helperDropped, ...(status ? toMsg(status) : {}), ...(helperStats ? { helper: helperStats } : {}), ...(phase?.report() ? { phase: phase.report() } : {}), ...(recorder?.active ? { rec: recorder.status() } : {}) }));
   }, 1000);
-  ws.on('close', () => { closed = true; clearInterval(stats); stopFf(); helper.kill('SIGTERM'); });
+  ws.on('close', () => { closed = true; clearInterval(stats); recorder?.ended('closed'); stopFf(); helper.kill('SIGTERM'); });
 }

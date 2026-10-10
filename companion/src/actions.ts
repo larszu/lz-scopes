@@ -94,6 +94,16 @@ export function updateActions(self: ModuleInstance): void {
       },
     },
     qc_clear: { name: 'Clear QC log', options: [], callback: run('qc_clear') },
+    record: {
+      name: 'Record (one source or all)',
+      options: [{ type: 'dropdown', id: 'mode', label: 'Mode', default: 'toggle', choices: MODES }, sourceOption(self, true)],
+      callback: run('record'),
+    },
+    record_mark: {
+      name: 'Marker in the running recordings',
+      options: [{ type: 'textinput', id: 'label', label: 'Label (empty = M1, M2 …)', default: '' }, sourceOption(self, true)],
+      callback: run('record_mark'),
+    },
     freeze: { name: 'Freeze', options: [{ type: 'dropdown', id: 'mode', label: 'Mode', default: 'toggle', choices: MODES }], callback: run('freeze') },
     roi_clear: { name: 'Clear measuring frame and point', options: [sourceOption(self, true)], callback: run('roi_clear') },
     pattern_select: {

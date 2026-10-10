@@ -41,6 +41,8 @@ import { handleOut10 } from './out10.mjs';
 import { readStamp, stampAge } from './stamp.mjs';
 import { startOwnRtp } from './rtsp.mjs';
 import { announce } from './bonjour.mjs';
+import { recordRoots, freeBytes } from './record.mjs';
+import { StreamRecorder, handleUploadSocket } from './recorder.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -158,6 +160,18 @@ export function audioMap(url) {
   const d = parseDevice(url);
   if (d?.kind === 'device' && d.api === 'v4l2' && d.audio !== null) return '1:a:0';
   return '0:a:0';
+}
+
+/**
+ * Sound for the recording output: the stream specifier of the sound inside this ffmpeg, or null.
+ * Network inputs always carry their sound streams ('?' = optional); test tone and ALSA are a
+ * second input only when the sound is requested; 'split' and own RTP have it in another process.
+ */
+export function recordAudioMap(url, { soundInProcess }) {
+  if (url in TEST_PATTERNS) return soundInProcess ? '1:a:0' : null;
+  const d = parseDevice(url);
+  if (d) return soundInProcess && d.audio !== null ? audioMap(url) : null;
+  return /^(rtsps?|rtmps?|rtp|udp|srt|http|https|tcp):\/\//i.test(url) ? '0:a:0?' : null;
 }
 
 function inputArgs(url, transport, { audio = false, video = true, device = {} } = {}) {
@@ -363,7 +377,7 @@ export function outputSize(w, h, maxWidth) {
  * (parsed by PtsTracker); needs `-loglevel info`. Not in 'split' mode: two ffmpeg
  * processes open two sessions whose timestamps cannot be compared.
  */
-export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', pts = false, device = {}, pixFmt = '', log = 'error', codec = 'raw', gop = 50, ownInput = null }) {
+export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', pts = false, device = {}, pixFmt = '', log = 'error', codec = 'raw', gop = 50, ownInput = null, extra = [] }) {
   const test = url in TEST_PATTERNS;
   const withPts = pts && audio !== 'split';
   // time code (#28) and PTS (#24) both read showinfo output; level+info keeps the error lines recognisable
@@ -375,7 +389,8 @@ export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video =
   const vfPts = needShowinfo ? `${vf},showinfo=checksum=0` : vf;
   // codec 'h264' (#16): 8-bit 4:2:0 H.264 in FLV framing for remote bridges; no B-frames, no
   // lookahead, every packet flushed at once. `vf` must then produce yuv420p.
-  const vid = videoOut({ codec, vfPts, depth, pixFmt, gop });
+  // `extra`: further outputs of the same process (recording, server/recorder.mjs), after the analysis output
+  const vid = [...videoOut({ codec, vfPts, depth, pixFmt, gop }), ...extra];
   // own RTP reception (server/rtsp.mjs): the picture comes as Matroska on stdin; sound, if
   // wanted, from a second ffmpeg with its own RTSP session (like 'split', no common PTS)
   if (ownInput && video) {
@@ -624,12 +639,37 @@ async function startStream(ws, params) {
   // own reception: the sound needs a second ffmpeg with its own session ('split')
   let sent = 0, dropped = 0, frameNo = 0, stderr = '', closed = false, split = process.env.LZS_AUDIO_SPLIT === '1' || !!own;
   const procs = new Set();
+  // local recording (server/recorder.mjs): a second output of this ffmpeg; toggling restarts it
+  let current = null, restarting = false, recAudio = null;
+  const recorder = video ? new StreamRecorder({
+    url, ffmpeg, allowed: ws.recordAllowed === true, roots: () => RECORD_ROOTS, clock: clockNow,
+    send: (m) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); },
+    restart: () => restart(),
+    media: () => ({ width: info.width, height: info.height, fps: info.fps, codec: info.codec, audioMap: recAudio }),
+  }) : null;
+  ws.on('message', (data, isBinary) => {
+    if (isBinary || !recorder) return;
+    let m;
+    try { m = JSON.parse(String(data)); } catch { return; }
+    recorder.handle(m).catch((e) => recorder.error(e));
+  });
+  /** end ffmpeg; gracefully (SIGINT: segment trailer written) while it records */
+  const stopProc = (p, graceful) => {
+    if (!graceful || p.exitCode !== null) return p.kill('SIGKILL');
+    if (own) p.stdin?.end(); else p.kill('SIGINT');
+    setTimeout(() => { if (p.exitCode === null && p.signalCode === null) p.kill('SIGKILL'); }, 5000).unref();
+  };
+  const restart = () => {
+    if (closed || !current) return;
+    restarting = true;
+    stopProc(current, true);
+  };
   const packetizer = audioInfo ? new AudioPacketizer(audioInfo.sampleRate, audioInfo.channels, (buf) => { if (ws.readyState === ws.OPEN) ws.send(buf, { binary: true }); }) : null;
 
   // H.264: whole access units from the FLV demuxer; when the browser falls behind, skip to
   // the next key frame (a dropped delta frame would corrupt everything up to it)
   let waitKey = false;
-  const demux = h264 ? new FlvH264Demuxer(({ codec }) => {
+  const makeDemux = () => h264 ? new FlvH264Demuxer(({ codec }) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'video', codec, format: 'annexb' }));
   }, ({ key, data }) => {
     if (ws.readyState !== ws.OPEN) return;
@@ -640,6 +680,7 @@ async function startStream(ws, params) {
     } else { waitKey = true; dropped++; }
     frameNo++;
   }) : null;
+  let demux = makeDemux();
   // PTS (protocol 2 with picture and sound in one process): from showinfo/ashowinfo on stderr
   let pts = null;
   /** frames waiting for their PTS line (at most 150 ms, then sent with NaN) */
@@ -694,18 +735,23 @@ async function startStream(ws, params) {
   const launch = (mode) => {
     // PTS (#24) only on the raw path: H.264 packets carry the bridge clock (#16) instead
     const withPts = proto === 2 && video && !!audioInfo && mode === 'fd3' && !h264;
-    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: audioInfo ? mode : 'none', pts: withPts, device, pixFmt: yp?.yuv ? 'ayuv64le' : '', log: wantTc ? 'level+info' : 'error',
-      codec: h264 ? 'h264' : 'raw', gop: Math.max(10, Math.round((fpsLimit || info.fps || 25) * 2)), ownInput: own?.inputArgs ?? null });
     const fd3 = mode === 'fd3' && video && !!audioInfo;
+    recAudio = own ? null : recordAudioMap(url, { soundInProcess: fd3 });
+    const rec = recorder?.outputs(4) ?? { args: [], pipes: 0, sessions: [] };
+    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: audioInfo ? mode : 'none', pts: withPts, device, pixFmt: yp?.yuv ? 'ayuv64le' : '', log: wantTc ? 'level+info' : 'error',
+      codec: h264 ? 'h264' : 'raw', gop: Math.max(10, Math.round((fpsLimit || info.fps || 25) * 2)), ownInput: own?.inputArgs ?? null, extra: rec.args });
     pts = withPts ? new PtsTracker(audioInfo.sampleRate, (index, t) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'apts', index, pts: t })); }) : null;
     const t0 = Date.now();
     let audioBytes = 0;
     const onAudio = (c) => { audioBytes += c.length; packetizer.push(c); };
-    const spawnOne = (a, withFd3, tracker, stdin = 'ignore') => {
-      const p = spawn(ffmpeg, a, { stdio: withFd3 ? [stdin, 'pipe', 'pipe', 'pipe'] : [stdin, 'pipe', 'pipe'], windowsHide: true });
+    const spawnOne = (a, withFd3, tracker, stdin = 'ignore', pipes = 0) => {
+      const stdio = [stdin, 'pipe', 'pipe'];
+      if (withFd3 || pipes) stdio.push(withFd3 ? 'pipe' : 'ignore');
+      for (let i = 0; i < pipes; i++) stdio.push('pipe');
+      const p = spawn(ffmpeg, a, { stdio, windowsHide: true });
       procs.add(p);
       // time code (#28): showinfo side data; PTS (#24): PtsTracker; errors go to the stderr tail
-      const tc = wantTc ? new ShowinfoTracker((m) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); }, (e) => { stderr = (stderr + '\n' + e).slice(-2000); }) : null;
+      const tc = wantTc ? new ShowinfoTracker((m) => { recorder?.onTc(m.tc); if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); }, (e) => { stderr = (stderr + '\n' + e).slice(-2000); }) : null;
       p.stderr.on('data', (d) => {
         const text = String(d);
         tc?.push(text);
@@ -717,7 +763,9 @@ async function startStream(ws, params) {
       });
       return p;
     };
-    const main = spawnOne(args.main, fd3, pts, own ? 'pipe' : 'ignore');
+    const main = spawnOne(args.main, fd3, pts, own ? 'pipe' : 'ignore', rec.pipes);
+    current = main;
+    if (rec.sessions.length) recorder.attach(main, rec);
     if (own) own.attach(main.stdin);
     main.stdout.on('data', video ? onVideo : onAudio);
     if (fd3) main.stdio[3].on('data', onAudio);
@@ -730,6 +778,17 @@ async function startStream(ws, params) {
     main.on('error', (e) => fail(ws, bmsg('ffmpeg.spawn', `ffmpeg cannot be started: ${e.message}`, { reason: e.message })));
     main.on('close', (code) => {
       procs.delete(main);
+      if (current === main) current = null;
+      // recording switched on or off: same source, new ffmpeg (frames continue on this socket)
+      if (restarting && !closed && ws.readyState === ws.OPEN) {
+        restarting = false;
+        side?.kill('SIGKILL');
+        assembler.pending = []; assembler.bytes = 0; waiting.length = 0;
+        demux = makeDemux(); waitKey = true;
+        stderr = '';
+        return launch(split ? 'split' : 'fd3');
+      }
+      recorder?.ended('end');
       // pipe:3 not usable (e.g. handle inheritance on Windows): retry with a second process
       if (fd3 && code !== 0 && !closed && ws.readyState === ws.OPEN && audioBytes === 0 && Date.now() - t0 < 8000
         && /pipe:3|bad file descriptor|invalid argument|error opening output/i.test(stderr.split('\n').filter((l) => /error|invalid|bad file/i.test(l)).join('\n'))) {
@@ -749,10 +808,17 @@ async function startStream(ws, params) {
     if (stampAges.length) { st.stampAge = ageStats(stampAges); stampAges.length = 0; }
     if (packetizer) Object.assign(st, { audioSent: packetizer.packets, audioDropped: 0, audioGaps: 0, audioSplit: split, pts: !!pts });
     if (own) st.rtp = own.report();
+    if (recorder?.active) st.rec = recorder.status();
     ws.send(JSON.stringify(st));
   }, 1000);
   own?.on('error', (e) => { stderr = (stderr + `\nOwn RTP reception: ${e.message}`).slice(-2000); });
-  ws.on('close', () => { clearInterval(stats); clearInterval(ptsTimer); closed = true; own?.stop(); for (const p of procs) p.kill('SIGKILL'); });
+  ws.on('close', () => {
+    clearInterval(stats); clearInterval(ptsTimer); closed = true;
+    const recording = !!recorder && (recorder.active || recorder.closing.size > 0);
+    recorder?.ended('closed');
+    for (const p of procs) stopProc(p, recording && p === current);
+    own?.stop();
+  });
 }
 
 /** mean/min/max of stamp ages (ms) for the stats message */
@@ -969,7 +1035,7 @@ function startDeckLink(ws, params, url) {
   const pixel = params.get('pixel') === '8' ? '8' : '10';
   startHelperStream(ws, {
     bin, args: ['--capture', index, '--bits', pixel], label: 'DeckLink', params,
-    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions, now: clockNow },
+    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions, now: clockNow, recorder: helperRecorder(ws, url, ffmpeg) },
   });
 }
 
@@ -983,6 +1049,15 @@ export async function ndiStatus() {
   if (!bin) return { available: false, helper: false, runtime: false, sources: [], ...field('error', bmsg('ndi.noHelper', 'NDI helper not built (npm run build:helpers)')) };
   const r = await helperList(bin, ['--wait', '1500']);
   return { available: !!r.ok, helper: true, runtime: !!r.runtime, version: r.version, sources: r.sources ?? [], ...(r.ok ? {} : field('error', { message: r.error ?? '', code: r.code })) };
+}
+
+/** Recording folders released with --record-dir / LZS_RECORD_DIRS or by the desktop app (server/record.mjs). */
+let RECORD_ROOTS = recordRoots();
+/** Release one more recording folder (desktop app: default folder, native dialog). */
+export function addRecordDir(dir) {
+  RECORD_ROOTS = recordRoots([...RECORD_ROOTS.flatMap((r) => ['--record-dir', r.dir]), '--record-dir', dir], {});
+  const root = RECORD_ROOTS.find((r) => r.dir === resolve(dir));
+  return { name: root.name };
 }
 
 /** Watch folders released with --watch-dir / LZS_WATCH_DIRS (server/folder.mjs). */
@@ -1009,7 +1084,15 @@ function startNdi(ws, params, url) {
   startHelperStream(ws, {
     // 8 bit: NDI's fastest format (UYVY); 16 bit: best (P216). The helper reduces to the analysis width.
     bin, args: ['--capture', url.slice('ndi:'.length), '--depth', params.get('depth') === '8' ? '8' : '16', '--width', String(Math.max(0, Number(params.get('width') ?? 960) || 0))], label: 'NDI', params,
-    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions, now: clockNow },
+    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions, now: clockNow, recorder: helperRecorder(ws, url, ffmpeg) },
+  });
+}
+
+/** Recorder factory for the helper inputs (DeckLink, NDI): encoded recording, no sound. */
+function helperRecorder(ws, url, ffmpeg) {
+  return ({ restart, media }) => new StreamRecorder({
+    url, ffmpeg, allowed: ws.recordAllowed === true, roots: () => RECORD_ROOTS, clock: clockNow, restart, media,
+    send: (m) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); },
   });
 }
 
@@ -1063,6 +1146,11 @@ const server = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
     return res.end(JSON.stringify(WATCH_ROOTS.map((r) => ({ name: r.name, url: `folder:${r.name}` }))));
   }
+  if (path === '/api/record/roots') {
+    // names and free space only – the paths stay on the bridge machine
+    res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
+    return res.end(JSON.stringify(RECORD_ROOTS.map((r) => ({ name: r.name, free: freeBytes(r.dir) }))));
+  }
   if (path === '/api/ndi') {
     ndiStatus().then((st) => { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(st)); });
     return;
@@ -1103,6 +1191,8 @@ const server = createServer((req, res) => {
 
 const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 wss.on('connection', (ws, req) => {
+  // recording writes files: only the local app of the same origin, or a client with the control token
+  ws.recordAllowed = !accessProblem(req) || !controlAccess({ remote: req.socket.remoteAddress, origin: req.headers.origin, host: req.headers.host });
   startStream(ws, new URL(req.url ?? '', 'http://x').searchParams).catch((e) => fail(ws, e));
 });
 
@@ -1243,6 +1333,8 @@ const controlClients = new Set();
 const pending = new Map();
 let appState = null, seq = 0;
 const meterWss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 4 * 1024 * 1024 });
+/** MediaRecorder chunks of browser sources (server/recorder.mjs) */
+const uploadWss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 64 * 1024 * 1024 });
 const ctlWss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 256 * 1024 });
 
 const presentedToken = (req) => {
@@ -1351,6 +1443,10 @@ server.on('upgrade', (req, socket, head) => {
     if (problem) { socket.end(`HTTP/1.1 ${problem.status} Forbidden\r\n\r\n`); return; }
     return clockWss.handleUpgrade(req, socket, head, (ws) => clockWss.emit('connection', ws, req));
   }
+  if (path === '/record-upload') {
+    const allowed = !accessProblem(req);
+    return uploadWss.handleUpgrade(req, socket, head, (ws) => handleUploadSocket(ws, new URL(req.url ?? '', 'http://x').searchParams, { roots: RECORD_ROOTS, allowed }).catch(() => ws.close()));
+  }
   const target = path === '/stream' ? wss : path === '/out' ? outWss : null;
   if (!target) return socket.destroy();
   target.handleUpgrade(req, socket, head, (ws) => target.emit('connection', ws, req));
@@ -1382,11 +1478,12 @@ function handleAllow(req, res) {
  * Start the bridge. Used by the CLI below and by the desktop app (electron/main.cjs),
  * which passes port 0 for a free port and its own dist folder.
  */
-export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false, controlToken, watchDirs, configDir, allowOrigins = [] } = {}) {
+export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false, controlToken, watchDirs, recordDirs, configDir, allowOrigins = [] } = {}) {
   if (dist) DIST = resolve(dist);
   ORIGINS = new OriginStore(configDir ? join(configDir, 'allowed-origins.json') : defaultOriginsFile());
   for (const o of allowOrigins) ORIGINS.allowTemporarily(o);
   if (watchDirs) WATCH_ROOTS = watchRoots(watchDirs.flatMap((d) => ['--watch-dir', d]), {});
+  if (recordDirs) for (const d of recordDirs) addRecordDir(d);
   if (controlToken !== undefined) CONTROL_TOKEN = controlToken;
   DEV = dev;
   return new Promise((ok, fail) => {

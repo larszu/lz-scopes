@@ -71,6 +71,21 @@ test('variables and feedbacks from a state', () => {
   assert.ok(!checks.clip_above(EMPTY_STATE, { threshold: 0 }))
 })
 
+test('recording: variables and feedback per source', () => {
+  const s = normalizeState({
+    sources: [{ index: 1, id: 's1', name: 'Kamera 1', kind: 'stream', status: 'live' }, { index: 2, id: 's2', name: 'Kamera 2', kind: 'stream', status: 'live' }],
+    recording: { active: 1, sources: [{ name: 'Kamera 2', id: 's2', seconds: 3725, take: '20261010-120000' }] },
+  })
+  const v = variableValues(s, true)
+  assert.equal(v.recording, '1'); assert.equal(v.recording_time, '1:02:05')
+  assert.ok(checks.recording(s, { source: '' }))
+  assert.ok(checks.recording(s, { source: '2' }))
+  assert.ok(checks.recording(s, { source: 'kamera 2' }))
+  assert.ok(!checks.recording(s, { source: '1' }))
+  assert.ok(!checks.recording(EMPTY_STATE, { source: '' }))
+  assert.equal(variableValues(EMPTY_STATE, true).recording_time, '')
+})
+
 test('choices key changes only with the lists', () => {
   const a = normalizeState({ sources: [{ index: 1, id: 's1', name: 'A' }], yMax: 50 })
   const b = normalizeState({ sources: [{ index: 1, id: 's1', name: 'A' }], yMax: 90 })
@@ -98,6 +113,7 @@ test('commands pass the bridge validation', async (t) => {
     ['audio_reset', { source: '' }], ['audio_pause', { mode: 'on', source: '2' }],
     ['generator', { mode: 'on', signal: 'ebu-ident', freq: 0, level: '-18' }], ['generator', { mode: 'off', signal: '', level: '' }],
     ['generator', { mode: 'on', level: '-3', force: true }],
+    ['record', { mode: 'toggle', source: '' }], ['record', { mode: 'on', source: '2' }], ['record_mark', { label: 'Take 1', source: '' }],
   ] as [string, Record<string, unknown>][]) {
     const r = validateCommand(buildCommand(id, o))
     assert.ok(r.ok, `${id}: ${r.error}`)

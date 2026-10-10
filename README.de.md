@@ -265,6 +265,21 @@ Panel-Typ **Referenz / Genlock**: Haustakt am Referenzeingang einer DeckLink. Es
 
 Ein Simulator läuft ohne Kamera. An einer Sony SRG-A40 steuert die Bridge über HTTP-CGI R- und B-Gain des Weißabgleichs (gemessen). Hue, Schwarz und Gamma gibt es dort nicht. Mehr in [docs/research/touch-shading.md](docs/research/touch-shading.md).
 
+## Aufzeichnung
+
+Jede Quelle lässt sich lokal mitschneiden, um einen Kamera-Abgleich nachträglich zu prüfen (vorher/nachher, Drift über die Show) oder als Beleg. **Aufnahme** in der Quellenkarte schneidet eine Quelle mit, **Alle aufnehmen** in der Kopfleiste (Taste `R`) alle Quellen in eine gemeinsame Aufnahme; `M` setzt einen Marker in alle laufenden Aufnahmen.
+
+- **In der Bridge, im selben ffmpeg-Prozess** wie das Analysebild (zweiter Ausgang): Capture-Geräte lassen sich nicht zweimal öffnen, Netzwerkkameras bekommen keine zweite Sitzung. Start und Stopp starten das ffmpeg der Quelle neu; das Analysebild setzt dafür kurz aus.
+- **Netzwerkquellen** (RTSP, SRT, RTMP, UDP, RTP, HTTP) werden unverändert kopiert (`-c copy`), auch im RTP-Eigenempfang (die Access Units laufen unverändert vom Matroska-Strom in die Datei); Ton mit, soweit die Quelle ihn hat.
+- **Unkomprimierte Quellen** (Testbilder, Capture-Geräte, DeckLink, NDI) in der vollen Quellauflösung, wählbar unter **Einstellungen → Aufnahme**: ProRes 422 HQ, DNxHR HQX (10 bit, schnittfähig), HEVC 10 bit mit Hardware-Encoder (VideoToolbox, NVENC, Quick Sync; sonst libx265) oder FFV1 (verlustfrei im Quellformat, auch Sub-Black/Super-White). Ton als PCM 24 bit.
+- **Browser-Quellen** (Kamera, Bildschirm, Videodatei, Testbild-Generator) mit MediaRecorder (8 bit, WebM bzw. MP4); die Seite schickt die Daten an die Bridge, die sie in denselben Ordner schreibt.
+- **Dateien:** Matroska oder MOV in Segmenten (Standard 5 min, einstellbar); stürzt etwas ab, fehlt höchstens das gerade geschriebene Segment. Je Aufnahme ein Unterordner `<Datum-Uhrzeit>/`, darin je Quelle `<Name>_000.mkv`, `<Name>_001.mkv` … und eine Begleitdatei `<Name>.json`: Quelleneinstellungen (Transfer, Matrix, Gamut, CST/LUT), Wanduhr- und PTP-Zeit des ersten Bildes, Timecode der Quelle, gemessene Latenz, Segmente mit Startzeit, Marker und Ereignisse (für die Paint-Änderungen des späteren geschlossenen Abgleichs).
+- **Zielordner:** nur freigegebene Ordner – in der Desktop-App *Filme/Videos › LZ Scopes* und unter **Einstellungen → Aufnahme → Ordner wählen …** gewählte, mit `npm start` die mit `--record-dir <Ordner>` (mehrfach) oder `LZS_RECORD_DIRS` angegebenen. Die Seite nennt einen Ordner nur beim Namen, nie mit Pfad; Aufnahmen startet nur die lokale App gleicher Herkunft oder ein Client mit Steuer-Token.
+- **Platz:** Vor dem Start muss Platz für zwei Segmente plus 1 GB frei sein; die Quellenkarte zeigt die restlichen Minuten, unter 1 GB endet die Aufnahme. Richtwerte: ProRes 422 HQ 1080p50 ≈ 2,7 GB je Minute, H.264 mit 10 Mbit/s ≈ 75 MB.
+- **Steuer-API und Companion:** `record`, `record.mark`, `record.event` ([docs/control-api.de.md](docs/control-api.de.md)); Companion-Aktionen *Record* und *Marker*, Feedback *Recording*, Variablen `recording` und `recording_time`.
+
+Hintergrund und Messwerte: [docs/research/aufzeichnung.md](docs/research/aufzeichnung.md).
+
 ## Einbetten
 
 `src/index.ts` exportiert `ScopeView`: ein WebGL-Canvas mit wählbaren Scopes, ohne Framework.
@@ -315,6 +330,7 @@ Siehe [Issues](https://github.com/larszu/lz-scopes/issues) und die Recherchen in
 - Kein AJA. NDI nur mit installierter NDI-Runtime, ohne Ton, mit echten Quellen im Netz ungeprüft. DeckLink nur über den eigenen Helfer (ffmpegs eigener DeckLink-Weg ist „nonfree“ und nicht weitergebbar); der Helfer ist in der Desktop-App enthalten, lief aber noch nie mit Hardware, der Windows-Helfer ist nur kompiliert.
 - Audio: Browser liefern über `getUserMedia` höchstens 2 Kanäle; Mehrkanal kommt nur über die Bridge. Ungeprüft: Mehrkanal-Interfaces und Dante mit echter Hardware, die Bridge unter Windows (Ersatzweg für `pipe:3`, DirectShow-Ton), der A/V-Versatz gegen eine echte Kamera.
 - Browser-Quellen (Kamera, Datei) liefern immer 8 bit und durchlaufen das Farbmanagement des Browsers.
+- Aufzeichnung: geprüft mit lavfi-Testbildern (ProRes, HEVC über VideoToolbox), Netzwerk-Kopie über UDP/MPEG-TS und MediaRecorder in der Desktop-App. Ungeprüft: NVENC, Quick Sync und VAAPI, DeckLink- und NDI-Aufnahme mit echter Hardware, die Bridge unter Windows (Segmentliste per Datei, Stopp ohne SIGINT). NDI kommt über den Helfer dekodiert an und wird daher neu kodiert, nicht kopiert. Im RTP-Eigenempfang und mit getrenntem Tonprozess zeichnet die Bridge nur das Bild auf.
 
 ## Tests
 

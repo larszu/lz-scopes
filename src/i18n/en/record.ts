@@ -1,0 +1,33 @@
+// English source texts: local recording (src/record/).
+import type { Messages } from '../types';
+
+export default {
+  'record.rec': 'Rec',
+  'record.stop': 'Stop',
+  'record.title': 'Record this source in the bridge (network sources unchanged, raw sources with the codec from Settings → Recording)',
+  'record.titleBrowser': 'Record this source in the page (MediaRecorder, 8 bit) into the recording folder',
+  'record.all': 'Record all',
+  'record.allStop': 'Stop',
+  'record.allTitle': 'Record all sources into one take, or stop all recordings (R)',
+  'record.nothing': 'No source can be recorded right now',
+  'record.starting': 'starting …',
+  'record.copy': 'copy, no re-encoding',
+  'record.minutesLeft': '{min} min space left',
+  'record.failed': 'Recording {source}: {error}',
+  'record.noStream': 'Recording {source}: no picture stream available',
+  'record.noMediaRecorder': 'This browser cannot record (MediaRecorder missing)',
+  'record.marked': 'Marker {label} in {n} recordings',
+  'record.settings': 'Recording',
+  'record.folder': 'Folder',
+  'record.addFolder': 'Choose folder …',
+  'record.free': 'free',
+  'record.noRoot': 'no folder released',
+  'record.folderHint': 'The bridge writes only into released folders: in the desktop app Movies/Videos › LZ Scopes and folders chosen here, with npm start the folders given with --record-dir. Each take gets its own subfolder with one file per source and a companion file (.json).',
+  'record.codec': 'Codec for raw sources',
+  'record.codec.hevc': 'HEVC 10 bit (hardware encoder)',
+  'record.codec.ffv1': 'FFV1 (lossless)',
+  'record.codecHint': 'Applies to test patterns, capture devices, DeckLink and NDI. Network sources (RTSP, SRT, RTMP, UDP …) are written unchanged without re-encoding. HEVC uses VideoToolbox, NVENC or Quick Sync and falls back to libx265. FFV1 keeps the source format exactly, including sub-black and super-white.',
+  'record.container': 'Container',
+  'record.segment': 'Segment length',
+  'record.segmentHint': 'A new file starts after this time; if the app or the computer crashes, at most the segment being written is lost.',
+} as const satisfies Messages;

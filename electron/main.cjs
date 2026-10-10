@@ -39,15 +39,17 @@ let mainWindow = null;
 let origin = '';
 
 async function createWindow() {
-  const { startBridge, ffmpegCandidates, addWatchDir } = await import(pathToFileURL(path.join(__dirname, '..', 'server', 'index.mjs')).href);
+  const { startBridge, ffmpegCandidates, addWatchDir, addRecordDir } = await import(pathToFileURL(path.join(__dirname, '..', 'server', 'index.mjs')).href);
   // Fixed port 4192 when free, so Bitfocus Companion finds the control API. Not 4190:
   // that is on the Fetch "bad ports" list (sieve), Chrome and Node's fetch refuse it.
   // (LZS_PORT, LZS_HOST, LZS_CONTROL_TOKEN override); otherwise any free port.
   const dist = path.join(__dirname, '..', 'dist');
   const host = process.env.LZS_HOST || '127.0.0.1';
   let port;
-  try { ({ port } = await startBridge({ port: Number(process.env.LZS_PORT) || 4192, host, dist, configDir: app.getPath('userData') })); }
-  catch { ({ port } = await startBridge({ port: 0, host, dist, configDir: app.getPath('userData') })); }
+  // recordings (server/record.mjs): <Movies|Videos>/LZ Scopes is released by default; LZS_RECORD_DIRS adds more
+  const recordDirs = [process.env.LZS_RECORD_DEFAULT || path.join(app.getPath('videos'), 'LZ Scopes')];
+  try { ({ port } = await startBridge({ port: Number(process.env.LZS_PORT) || 4192, host, dist, configDir: app.getPath('userData'), recordDirs })); }
+  catch { ({ port } = await startBridge({ port: 0, host, dist, configDir: app.getPath('userData'), recordDirs })); }
   origin = `http://127.0.0.1:${port}`;
   console.log(`bridge ${origin}, ffmpeg: ${ffmpegCandidates()[0] ?? 'missing'}`);
 
@@ -105,6 +107,12 @@ async function createWindow() {
     const { dialog } = require('electron');
     const r = await dialog.showOpenDialog(mainWindow, { title: text('watchFolder'), properties: ['openDirectory'] });
     return r.canceled || !r.filePaths[0] ? null : addWatchDir(r.filePaths[0]);
+  });
+  // one more recording folder (native dialog); the bridge only ever writes into released folders
+  ipcMain.handle('lzs:record-folder', async () => {
+    const { dialog } = require('electron');
+    const r = await dialog.showOpenDialog(mainWindow, { title: text('recordFolder'), properties: ['openDirectory', 'createDirectory'] });
+    return r.canceled || !r.filePaths[0] ? null : addRecordDir(r.filePaths[0]);
   });
   ipcMain.handle('lzs:capture-sources', async () => {
     const list = await desktopCapturer.getSources({ types: ['window', 'screen'], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: false });

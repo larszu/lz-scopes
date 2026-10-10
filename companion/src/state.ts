@@ -29,6 +29,8 @@ export interface ScopesState {
     maxTP: number | null; paused: boolean; seconds: number; avOffsetMs: number | null; ident: string; identProblems: string[]
   } | null
   generator?: { running: boolean; signal: string; level: number; freq: number; channels: number } | null
+  /** local recordings: running count and which sources */
+  recording?: { active: number; sources: { name: string; id: string; seconds: number; take: string | null }[] } | null
   /** QC log: active events, total, latest event */
   qc?: { active: number; total: number; last: string } | null
 }
@@ -58,11 +60,13 @@ export function normalizeState(raw: unknown): ScopesState {
       paused: r.audio.paused === true, identProblems: arr(r.audio.identProblems),
     } : null,
     generator: r.generator && typeof r.generator === 'object' ? { ...r.generator, running: r.generator.running === true } : null,
+    recording: r.recording && typeof r.recording === 'object' ? { active: Number(r.recording.active) || 0, sources: arr(r.recording.sources) } : null,
     qc: r.qc && typeof r.qc === 'object' ? { active: Number(r.qc.active) || 0, total: Number(r.qc.total) || 0, last: String(r.qc.last ?? '') } : null,
   }
 }
 
 const pct = (v: number | null) => (v === null ? '' : v.toFixed(1))
+const clock = (sec: number) => { const s = Math.max(0, Math.floor(sec)); const p = (n: number) => String(n).padStart(2, '0'); return `${Math.floor(s / 3600)}:${p(Math.floor((s % 3600) / 60))}:${p(s % 60)}` }
 
 /** Companion variable values; empty strings for "unknown", never invented zeros. */
 export function variableValues(s: ScopesState, connected: boolean): Record<string, string> {
@@ -94,6 +98,8 @@ export function variableValues(s: ScopesState, connected: boolean): Record<strin
     ident: s.audio?.ident ?? '',
     ident_problems: (s.audio?.identProblems ?? []).join(' · '),
     generator: s.generator ? (s.generator.running ? s.generator.signal : 'off') : '',
+    recording: s.recording ? String(s.recording.active) : '',
+    recording_time: s.recording?.sources.length ? clock(Math.max(...s.recording.sources.map((x) => x.seconds))) : '',
     qc_active: s.qc ? String(s.qc.active) : '',
     qc_last: s.qc?.last ?? '',
   }
@@ -127,6 +133,8 @@ export const VARIABLES: { variableId: string; name: string }[] = [
   { variableId: 'ident', name: 'Detected ident' },
   { variableId: 'ident_problems', name: 'Ident findings (swapped, missing, polarity)' },
   { variableId: 'generator', name: 'Tone generator (signal or off)' },
+  { variableId: 'recording', name: 'Recordings running' },
+  { variableId: 'recording_time', name: 'Recording time (longest running)' },
   { variableId: 'qc_active', name: 'QC: active events' },
   { variableId: 'qc_last', name: 'QC: last event' },
 ]
@@ -154,6 +162,13 @@ export const checks = {
   loudness_paused: (s: ScopesState) => s.audio?.paused === true,
   true_peak_above: (s: ScopesState, o: Record<string, unknown>) => s.audio?.maxTP != null && s.audio.maxTP > Number(o.threshold ?? -1),
   ident_problem: (s: ScopesState) => (s.audio?.identProblems.length ?? 0) > 0,
+  recording: (s: ScopesState, o: Record<string, unknown>) => {
+    const list = s.recording?.sources ?? []
+    const want = String(o.source ?? '').trim()
+    if (!want || want === '0') return list.length > 0
+    const src = s.sources.find((x) => String(x.index) === want || x.id === want || same(x.name, want))
+    return list.some((x) => (src ? x.id === src.id : same(x.name, want)))
+  },
 }
 
 /** Lists that feed dropdown choices; when this key changes the definitions are rebuilt. */

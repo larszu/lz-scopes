@@ -34,6 +34,7 @@ import tools from './en/tools';
 import clock from './en/clock';
 import audio from './en/audio';
 import ui from './en/ui';
+import record from './en/record';
 
 export const en = {
   ...common,
@@ -42,6 +43,7 @@ export const en = {
   ...clock,
   ...audio,
   ...ui,
+  ...record,
   ...bridgeui,
   ...chain,
   ...color,

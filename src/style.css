@@ -30,6 +30,8 @@ body { background: var(--surface-0); overflow: hidden; }
 }
 @container bar (max-width: 640px) {
   .bar { gap: 6px; }
+  /* recording stays in the ⋯ menu, the source cards and on R; the header shows it only while it runs */
+  #rec-all:not(.on) { display: none; }
   .brand .product, .fps { display: none; }
   .brand { padding-right: 0; }
 }
@@ -371,3 +373,9 @@ table.tvtable progress { width: 90px; }
 .cameras .cam-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; }
 .cameras .cam-err { flex-basis: 100%; color: var(--meas-bad); font-size: var(--fs-sm); }
 .cameras .cam-editor { display: flex; flex-direction: column; gap: 6px; padding-top: var(--sp-2); border-top: 1px solid var(--line-1); }
+
+/* local recording (src/record/record.ts): REC is a real tally state – the only red here is the square */
+button.rec.on::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 6px; background: var(--signal); transform: rotate(-11deg); }
+.rec-status { color: var(--text-muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; word-break: break-word; }
+.rec-status.bad { color: var(--err); }
+#rec-all { font-variant-numeric: tabular-nums; }

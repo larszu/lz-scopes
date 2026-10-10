@@ -14,6 +14,8 @@ export const SHORTCUTS: Shortcut[] = [
   { group: t('keys.g.view'), keys: ['Space'], what: t('keys.freeze') },
   { group: t('keys.g.view'), keys: ['Escape'], what: t('keys.escape') },
   { group: t('keys.g.view'), keys: ['C'], what: t('keys.stage') },
+  { group: t('keys.g.record'), keys: ['R'], what: t('keys.record') },
+  { group: t('keys.g.record'), keys: ['M'], what: t('keys.mark') },
   { group: t('keys.g.video'), keys: ['Left', 'Right'], what: t('keys.frame') },
   { group: t('keys.g.video'), keys: ['Shift+Left', 'Shift+Right'], what: t('keys.second') },
   { group: t('keys.g.video'), keys: ['J', 'K', 'L'], what: t('keys.shuttle') },

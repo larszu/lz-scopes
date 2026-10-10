@@ -178,7 +178,7 @@ jobs:
         run: |
           set -euo pipefail
           ff="$(ls -d release/linux*-unpacked)/resources/ffmpeg/ffmpeg"
-          "$ff" -hide_banner -f alsa -ac 8 -i null -t 1 -f null - 2>&1 | tee /dev/stderr | grep -E "Audio: .*8 channels"
+          "$ff" -hide_banner -f alsa -ac 8 -i null -t 1 -f null - 2>&1 | tee /dev/stderr | grep -E 'Audio: pcm_s16le, 48000 Hz, (8 channels|7\.1), s16, 6144 kb/s'
           if sudo modprobe snd-aloop 2>/dev/null; then
             sudo chmod a+rw /dev/snd/*; cat /proc/asound/pcm
             "$ff" -hide_banner -f alsa -ac 8 -i hw:Loopback,1 -t 1 -f null - 2>&1 | tail -3

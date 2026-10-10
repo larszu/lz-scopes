@@ -15,6 +15,7 @@ import {
 import { bt709InverseOetf } from '../color';
 import { mountMeterCheck } from './oppleUi';
 import { flickerFinder, type RegionFrac } from './flickerUi';
+import { moireMeter } from './moireUi';
 import type { PointStat } from './oppleCheck';
 import { lang, num, t } from '../i18n';
 import { button, checkbox, disclosure, download, h, hint, inlineLabel as lab, modal, numberInput, row, select as sel, table, textInput, type Kid, type Modal } from '../ui';
@@ -320,7 +321,9 @@ export function openLedTool(host: LedHost) {
     const b = bbox(frame, corners);
     return [b.x0 / frame.width, b.y0 / frame.height, b.x1 / frame.width, b.y1 / frame.height];
   };
-  const flickerBox = flickerFinder({ source: () => cams().find((x) => x.id === srcId) ?? cams()[0], region: regionFrac });
+  const camSrc = () => cams().find((x) => x.id === srcId) ?? cams()[0];
+  const flickerBox = flickerFinder({ source: camSrc, region: regionFrac });
+  const moireBox = moireMeter({ frame: () => frame, corners: () => corners, wall: () => s.wall, source: camSrc });
   let scanNote = '', thr = 20;
   const camBox = h('div');
   function renderCam() {
@@ -352,6 +355,7 @@ export function openLedTool(host: LedHost) {
         }, { title: t('led.scan.measureTitle') }), scanBox),
       hint(t('led.scan.hint')),
       flickerBox,
+      moireBox,
       row(
         h('b', {}, t('led.px.title')),
         lab(t('led.px.threshold'), numberInput(thr, (n) => { thr = n; }, { title: t('led.px.thresholdTitle'), size: 's' })),

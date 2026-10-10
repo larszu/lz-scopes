@@ -42,3 +42,28 @@ test('shutter finder records consecutive frames and shows exposures of whole cyc
   await phoneFits(finder);
   expect(errors).toEqual([]);
 });
+
+test('moiré meter: grid frequency from the placed corners and the spectrum of the grabbed picture', async () => {
+  const { page } = a;
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  expectOk(await a.control({ cmd: 'pattern.select', pattern: 'led-moire' }));
+  const dlg = page.locator('dialog.ledtool');
+  if (!(await dlg.isVisible())) await menuClick(a, 'led');
+  const cam = dlg.locator('details', { has: page.locator('summary', { hasText: 'Camera check' }) });
+  if ((await cam.getAttribute('open')) === null) await cam.locator('summary').click();
+  await cam.getByRole('button', { name: 'Grab picture' }).click();
+  await expect(cam).toContainText('Click the wall corners', { timeout: 30_000 });
+  const canvas = cam.locator('canvas.cam');
+  await canvas.scrollIntoViewIfNeeded();
+  const b = (await canvas.boundingBox())!;
+  for (const [fx, fy] of [[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]]) await page.mouse.click(b.x + fx * b.width, b.y + fy * b.height);
+  const meter = cam.locator('.moire');
+  await meter.getByRole('button', { name: 'Measure moiré' }).click();
+  await expect(meter).toContainText('Strongest periodic pattern');
+  await expect(meter.locator('.chip')).toHaveCount(1);
+  await expect(meter.locator('canvas.spectrum')).toBeVisible();
+  await page.screenshot({ path: 'test-results/e2e/ledfinder-moire.png' });
+  await phoneFits(meter);
+  expect(errors).toEqual([]);
+});

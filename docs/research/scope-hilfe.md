@@ -1110,4 +1110,4 @@ Gemeinsamer Hinweis: Der Opple misst einen Wert an einer Stelle, kein Bild. Die 
 
 ## Werkzeug-Karten im LED-Wand-Dialog
 
-Die Finder im LED-Wand-Dialog haben dieselbe „?“-Karte (`toolHelp` in `src/help/scopeHelp.ts`, Texte `help.led-*` in `src/i18n/*/wallcheck.ts`). Quellen je Werkzeug: Shutter-/Scanraten-Finder → [shutter-finder.md](shutter-finder.md).
+Die Finder im LED-Wand-Dialog haben dieselbe „?“-Karte (`toolHelp` in `src/help/scopeHelp.ts`, Texte `help.led-*` in `src/i18n/*/wallcheck.ts`). Quellen je Werkzeug: Shutter-/Scanraten-Finder → [shutter-finder.md](shutter-finder.md), Moiré-Messer → [moire-meter.md](moire-meter.md).

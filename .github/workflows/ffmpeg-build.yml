@@ -3,7 +3,7 @@ name: ffmpeg build
 # LZ Scopes' own minimal ffmpeg (scripts/ffmpeg-build/): FFmpeg + x264 + x265 10 bit + libsrt
 # + mbedTLS + zlib, static, GPLv3, no nonfree. Every target is built and tested on its own OS
 # (licence, SRT, v210/HEVC 10 over TCP and SRT: test/ffmpeg.test.ts, test/out10.test.ts);
-# Linux additionally: ALSA input device, linux-arm64 on an emulated Cortex-A76 (Raspberry Pi 5).
+# Linux additionally: ALSA input device, linux-arm64 on an emulated Raspberry Pi CPU (QEMU).
 #
 #   pull request touching the build  → build + test, nothing published
 #   workflow_dispatch, publish=true  → release ffmpeg-<version>-<rev> (prerelease, never

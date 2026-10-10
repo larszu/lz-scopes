@@ -7,6 +7,8 @@ import { TILE_HEAD, tileAspect, tileGrid } from '../src/tiles';
 let a: App;
 test.beforeAll(async () => { a = await launchApp(); });
 test.afterAll(async () => { await a?.close(); });
+// a stray key press (space) on the visible window freezes every source: start each test live
+test.beforeEach(async () => { expectOk(await a.control({ cmd: 'freeze', mode: 'off' })); });
 
 /** Colour of the brightest pixel around signal `level` in the middle column of the visible wf-luma panel. */
 async function traceColour(level: number) {
@@ -139,6 +141,29 @@ test('White-Shading-Karte: Grauverlauf links dunkler (blau), rechts heller (warm
   });
   await until(async () => { const r = await row(); return r.blueFirst && r.warm; }, 30_000, 'Karte blau links, warm rechts')
     .catch(async (e) => { console.log('Karte', await row()); throw e; });
+});
+
+test('Hautton aller Kameras: zwei Quellen als zwei farbige Wolken', async () => {
+  if ((await a.state()).sources.length < 2) await a.page.getByRole('button', { name: 'Testbild', exact: true }).click();
+  const st = await until(async () => { const s = await a.state(); return s.sources.length >= 2 ? s : false; }, 30_000, 'zweite Testbild-Quelle');
+  for (const s of st.sources.slice(0, 2)) expectOk(await a.control({ cmd: 'pattern.select', source: s.id, pattern: 'macbeth' }));
+  await singlePanel(a, 'skinall');
+  // dots/crosses in the first two cloud colours (src/skinTone.ts CLOUD_COLOURS) inside the vectorscope
+  const colours = () => a.page.evaluate(() => {
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4)!;
+    const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
+    const dpr = c.width / c.getBoundingClientRect().width, side = Math.min(c.width / dpr - 404, c.height / dpr - 16);
+    const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(Math.round(8 * dpr), Math.round(8 * dpr), Math.round(side * dpr), Math.round(side * dpr)).data;
+    let amber = 0, cyan = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] < 200) continue;
+      if (d[i] > 230 && d[i + 1] > 160 && d[i + 1] < 200 && d[i + 2] < 100) amber++;
+      if (d[i] < 120 && d[i + 1] > 180 && d[i + 2] > 230) cyan++;
+    }
+    return { amber, cyan };
+  });
+  await until(async () => { const c = await colours(); return c.amber > 10 && c.cyan > 10; }, 30_000, 'zwei Wolken')
+    .catch(async (e) => { console.log('Wolken', await colours()); throw e; });
 });
 
 test('STOP-Skala: Hauptlinie bei der Graukarte (SDR 40,9 %)', async () => {

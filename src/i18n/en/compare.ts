@@ -64,4 +64,12 @@ export default {
   'wshading.roiOnly': 'Measuring frame only',
   'wshading.roiTitle': 'Off: the whole picture (as for white shading); on: only the measuring frame',
   'wshading.hint': 'Point the camera at an evenly lit white or grey field (diffuser, slightly defocused, gain 0 dB, knee and gamma extras off), expose to about 70–90 %. Adjust per channel first saw H/V, then par H/V until the values are near 0; the colour map shows where the white turns colourful.',
+  'skinall.head': 'H = hue (offset from the skin-tone line), S = saturation; Δ against the reference · zoom ×{zoom}',
+  'skinall.faces': '{n} faces',
+  'skinall.frame': 'measuring frame',
+  'skinall.whole': 'whole picture',
+  'skinall.none': 'no skin pixels',
+  'skinall.findFaces': 'Find faces in these sources',
+  'skinall.findFacesTitle': 'Switch face tracking to "all faces" in every source of this panel',
+  'skinall.hint': 'Each source is one colour: its skin pixels as dots, their centre as a cross. Skin = the skin qualifier (luma window and hue tolerance around the 123° line). Measured in the faces when face tracking is on, otherwise in the measuring frame or the whole picture. The reference is the reference camera when it is in the panel, otherwise the first source with skin.',
 } as const satisfies Messages;

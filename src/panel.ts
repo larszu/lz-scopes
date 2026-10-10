@@ -39,6 +39,7 @@ import { LUMA } from './color';
 import { PEAK_COLOURS, PEAK_DEFAULT, PeakHold, lumaPlane, measureRect, sharpness, type PeakColour, type Rect4 } from './focus';
 import { channelPlanes, measureNoise, noiseRows, quantFloorDb, type NoiseResult } from './noise';
 import { analyseShading, cellColour, cellDeviation, rampColour, shadingRows, type ShadingChannel, type ShadingResult } from './whiteShading';
+import { CLOUD_COLOURS, cloudRow, skinCloud, type SkinCloud } from './skinTone';
 import { TILE_HEAD, sanitizeTiles, tileAspect, tileGrid, tileLabel, tileSources, type TileSettings } from './tiles';
 
 export interface PanelState {
@@ -115,6 +116,79 @@ export interface PanelState {
   noise?: { detrend?: boolean };
   /** white-shading map (whiteShading.ts): mapped quantity, full scale in %, measuring frame only */
   wshading?: { map?: ShadingChannel | 'colour'; scale?: number; roi?: boolean };
+  /** skin tone of all cameras (skinTone.ts): sources (empty = first eight) and vectorscope zoom */
+  skinall?: { sources?: string[]; zoom?: number };
+}
+
+/** Sources of the skin-tone panel (same choice rule as the tiles). */
+export function skinSources(p: PanelState, o: DrawOptions) {
+  const all = o.sourceList?.() ?? [];
+  return { all, list: tileSources(all.filter((s) => s.kind !== 'audio'), p.skinall?.sources ?? []) };
+}
+/** Skin cloud of a source: faces (face tracking) or the measuring frame, else the whole picture. */
+const cloudCache = new Map<string, { key: string; c: SkinCloud | null }>();
+export function skinCloudOf(src: Source, q: SkinRange): SkinCloud | null {
+  const b = baseOf(src), key = `${b.frameSeq}:${b.statsVersion}:${b.activeRois().flat().join(',')}:${q.lo}:${q.hi}:${q.tol}:${b.colorspace}`;
+  const hit = cloudCache.get(b.id);
+  if (hit?.key === key) return hit.c;
+  const { kr, kb } = LUMA[b.colorspace];
+  const c = skinCloud(b.roiSamples(15000), kr, kb, q);
+  cloudCache.set(b.id, { key, c });
+  return c;
+}
+
+function drawSkinAllPanel(ctx: CanvasRenderingContext2D, p: PanelState, body: Rect, o: DrawOptions) {
+  const { all, list } = skinSources(p, o);
+  const zoom = p.skinall?.zoom ?? 2;
+  const cs = list[0]?.colorspace ?? '709';
+  // vectorscope square on the left (wide) or on top (narrow), legend beside or below
+  const legendW = 470, wide = body.w > legendW + 220;
+  const side = wide ? Math.min(body.h - 16, body.w - legendW - 24) : Math.min(body.w - 16, body.h - 16 - (list.length + 2) * 15 - 12);
+  const r = { x: 8, y: 8, w: Math.max(40, side), h: Math.max(40, side) };
+  drawVectorGraticule(ctx, r, cs, zoom, o.skin.tol);
+  const refId = o.ref?.source()?.id;
+  const clouds = list.map((s) => ({ s, c: s.ready ? skinCloudOf(s, o.skin) : null }));
+  const ref = clouds.find((x) => x.s.id === refId && x.c)?.c ?? clouds.find((x) => x.c)?.c ?? null;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
+  clouds.forEach(({ c }, i) => {
+    if (!c) return;
+    ctx.fillStyle = CLOUD_COLOURS[i % CLOUD_COLOURS.length]; ctx.globalAlpha = 0.45;
+    for (const [cb, cr] of c.pts) { const [x, y] = vectorPoint(r, cb, cr, zoom); ctx.fillRect(x - 1, y - 1, 2, 2); }
+  });
+  ctx.globalAlpha = 1;
+  clouds.forEach(({ c }, i) => {
+    if (!c) return;
+    const [x, y] = vectorPoint(r, c.cb, c.cr, zoom);
+    ctx.strokeStyle = '#111'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(x - 8, y); ctx.lineTo(x + 8, y); ctx.moveTo(x, y - 8); ctx.lineTo(x, y + 8); ctx.stroke();
+    ctx.strokeStyle = CLOUD_COLOURS[i % CLOUD_COLOURS.length]; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x - 8, y); ctx.lineTo(x + 8, y); ctx.moveTo(x, y - 8); ctx.lineTo(x, y + 8); ctx.stroke();
+  });
+  ctx.restore();
+  const lx = wide ? r.x + r.w + 16 : 12, ly = wide ? 10 : r.y + r.h + 10;
+  ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillStyle = '#d6d6d6';
+  const head = wrapText(ctx, t('skinall.head', { zoom }), (wide ? body.w - lx : body.w - 24) - 8);
+  head.forEach((l, i) => ctx.fillText(l, lx, ly + i * 15));
+  const top = ly + head.length * 15 + 4;
+  if (!list.length) ctx.fillText(o.emptyText ?? t('panel.draw.addSource'), lx, top);
+  clouds.forEach(({ s, c }, i) => {
+    const y = top + i * 15;
+    ctx.fillStyle = CLOUD_COLOURS[i % CLOUD_COLOURS.length]; ctx.fillRect(lx, y + 2, 8, 8);
+    ctx.fillStyle = '#d6d6d6';
+    const label = `${all.indexOf(s) + 1} ${s.name}`.slice(0, 14).padEnd(14);
+    const where = s.faceTrack ? t('skinall.faces', { n: s.activeRois().length }) : s.roi ? t('skinall.frame') : t('skinall.whole');
+    ctx.fillText(c ? `${cloudRow(label, c, ref)}  ${where}` : `${label}  ${t('skinall.none')}  ${where}`, lx + 14, y);
+  });
+}
+
+/** Split a text line into lines of at most `maxW` px at spaces. */
+function wrapText(ctx: CanvasRenderingContext2D, line: string, maxW: number): string[] {
+  if (ctx.measureText(line).width <= maxW) return [line];
+  const out: string[] = []; let cur = '';
+  for (const w of line.split(' ')) { const next = cur ? `${cur} ${w}` : w; if (ctx.measureText(next).width > maxW && cur) { out.push(cur); cur = w; } else cur = next; }
+  return [...out, cur];
 }
 
 /** White-shading analysis of the whole picture (or the measuring frame), once per frame. */
@@ -170,15 +244,9 @@ function drawShadingPanel(ctx: CanvasRenderingContext2D, p: PanelState, src: Sou
   ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1; ctx.strokeRect(area.x + 0.5, area.y + 0.5, mw - 1, mh - 1);
   ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = '#d6d6d6';
   const tx = wide ? area.x + mw + 16 : 12, ty = wide ? 10 : area.y + mh + 10;
-  // wrap long text lines (not the table) to the space beside or below the map
+  // long text lines (not the table rows) wrap to the space beside or below the map
   const maxW = (wide ? body.w - tx : body.w - 24) - 8;
-  const wrapped = rows.flatMap((l) => {
-    if (ctx.measureText(l).width <= maxW || l.startsWith('  ') || /^[YRGB]′/.test(l)) return [l];
-    const out: string[] = []; let cur = '';
-    for (const w of l.split(' ')) { const next = cur ? `${cur} ${w}` : w; if (ctx.measureText(next).width > maxW && cur) { out.push(cur); cur = w; } else cur = next; }
-    return [...out, cur];
-  });
-  wrapped.forEach((l, i) => ctx.fillText(l, tx, ty + i * 15));
+  rows.flatMap((l) => (l.startsWith('  ') || /^[YRGB]′/.test(l) ? [l] : wrapText(ctx, l, maxW))).forEach((l, i) => ctx.fillText(l, tx, ty + i * 15));
 }
 
 /** Noise of the measuring frame (centre third without one), once per frame and setting. */
@@ -468,6 +536,10 @@ function drawAbLabels(ctx: CanvasRenderingContext2D, r: Rect, ab: NonNullable<Pa
 }
 
 export function panelSignature(p: PanelState, src: Source | null, body: Rect, o: DrawOptions): string {
+  if (p.scope === 'skinall') {
+    const { all, list } = skinSources(p, o);
+    return `K|${list.map((s) => `${all.indexOf(s)}:${s.name}:${s.id}:${s.frameSeq}:${s.statsVersion}:${s.status}:${s.faceMode}:${s.activeRois().flat().join(',')}`).join(';')}|${JSON.stringify(p)}|${JSON.stringify(o.skin)}|${o.ref?.source()?.id ?? ''}|${body.x},${body.y},${body.w},${body.h}`;
+  }
   if (p.scope === 'tiles') {
     const plan = tilePlan(p, body, o);
     return `T|${plan.tiles.map(({ src: s, no, cell, sub }) => `${no}:${s.name}:${panelSignature(sub, s, tileBody(body, cell), o)}`).join('||')}|${body.w}x${body.h}`;
@@ -546,6 +618,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     return;
   }
   if (p.scope === 'tiles') { drawTiles(renderer, ctx, key, p, body, o); return; }
+  if (p.scope === 'skinall') { renderer.clearRect(body); drawSkinAllPanel(ctx, p, body, o); return; }
   if (src) src = stageView(src, p.stage ?? o.stage ?? 'signal');
   const aspect = src && src.width ? src.width / src.height : 16 / 9;
   const frame = plotRect(p.scope, body.w, body.h, aspect);

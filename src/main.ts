@@ -14,7 +14,7 @@ import {
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
 import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
-import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
+import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
 import { attachGestures } from './gestures';
 import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
@@ -1091,6 +1091,23 @@ function panelSettings(p: PanelState): Node[] {
       else if (s.faceTrack && faceMod?.faceStatus.delegate === 'CPU') row('', h('p', { class: 'hint' }, t('panel.facesCpu')));
     }
   }
+  if (p.scope === 'skinall') {
+    const sk = p.skinall ?? {};
+    const chosen = new Set(sk.sources ?? []);
+    const video = sources.filter((s) => s.kind !== 'audio');
+    row(t('tiles.sources'), ...video.map((s) => checkbox(chosen.has(s.id), `${sources.indexOf(s) + 1} ${s.name}`, (on) => {
+      if (on) chosen.add(s.id); else chosen.delete(s.id);
+      p.skinall = { ...p.skinall, sources: video.filter((x) => chosen.has(x.id)).map((x) => x.id).slice(0, MAX_TILES) }; save();
+    })));
+    row(t('panel.vzoom'), select(String(sk.zoom ?? 2), [['1', '×1'], ['2', '×2'], ['5', '×5']], (v) => { p.skinall = { ...p.skinall, zoom: Number(v) }; save(); }));
+    row('', button(t('skinall.findFaces'), () => {
+      for (const s of skinSources(p, drawOptions()).list) s.faceMode = 'all';
+      faceLoadError = ''; refreshHeads();
+    }, { small: true, title: t('skinall.findFacesTitle') }));
+    global(SET.skinLuma);
+    global(SET.skinHue);
+    rows.push(hint(t('skinall.hint')));
+  }
   if (p.scope === 'wshading') {
     const ws = p.wshading ?? {};
     const setW = (patch: NonNullable<PanelState['wshading']>) => { p.wshading = { ...p.wshading, ...patch }; save(); };
@@ -1495,6 +1512,7 @@ function drawAll(now: number) {
     for (const v of openViews()) {
       const p = state.panels[v.idx];
       if (p.scope === 'tiles') for (const tl of tilePlan(p, { w: 1, h: 1 }, drawOptions()).tiles) used.add(tl.src);
+      if (p.scope === 'skinall') for (const s of skinSources(p, drawOptions()).list) used.add(s);
     }
     used.forEach((s) => {
       const every = s.kind === 'stream' && s.lowLatency ? s.llConfig.statsMs : 100;

@@ -14,7 +14,7 @@ import {
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
 import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
-import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, frameSamples, panelSignature, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
+import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, frameSamples, panelSignature, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
 import { attachGestures } from './gestures';
 import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
@@ -65,6 +65,7 @@ import { installFeedbackLog } from './feedback/log';
 import { checkGpu, openFeedback } from './feedback/dialog';
 import { hasHelp, helpCard, helpOn, setHelpOn } from './help/scopeHelp';
 import { hasGhost, sanitizeRef, type RefSettings } from './ghost';
+import { MAX_TILES, TILE_SCOPES, sanitizeTiles, type TileSettings } from './tiles';
 
 installFeedbackLog();
 declare const __APP_VERSION__: string | undefined;
@@ -876,7 +877,7 @@ function fillHead(v: PanelView) {
       iconButton('⤢', t('panel.solo'), () => toggleSolo(idx)));
   }
   const [lead, opts] = [v.head.children[0] as HTMLElement, v.head.children[1] as HTMLElement];
-  const multi = sources.length > 1 && !isLight(p.scope);
+  const multi = sources.length > 1 && !isLight(p.scope) && p.scope !== 'tiles';
   lead.replaceChildren(...[
     select(p.scope, Object.entries(SCOPE_LABELS) as Option[], (val) => {
       p.scope = val as ScopeType; p.view = undefined; if (val === 'vector' || val === 'hls' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
@@ -924,11 +925,33 @@ function addScopePanel(scope: ScopeType = 'wf-luma') {
 /** Settings of one measuring tool, shown in its ⚙ menu. */
 /** Rebuild the rows of a panel's open ⚙ popover (rows appear or disappear). */
 function refreshPanelSettings(p: PanelState) {
+  p = innerOf.get(p) ?? p;
   const v = [...views.values()].find((x) => state.panels[x.idx] === p);
   if (v) { fillHead(v); v.pop?.refresh(); }
 }
 
+/** Tile panels show the settings of their inner scope through a view of the panel state (proxy → panel). */
+const innerOf = new WeakMap<PanelState, PanelState>();
+
+function tileSettings(p: PanelState): Node[] {
+  const ts = sanitizeTiles(p.tiles);
+  const setT = (patch: Partial<TileSettings>) => { p.tiles = { ...ts, ...patch }; Object.assign(ts, patch); save(); refreshPanelSettings(p); };
+  const video = sources.filter((s) => s.kind !== 'audio');
+  const rows: Node[] = [
+    field(t('tiles.scope'), select(ts.scope, TILE_SCOPES.map((sc) => [sc, SCOPE_LABELS[sc]] as Option), (v) => setT({ scope: v as TileSettings['scope'] }), t('tiles.scopeTitle'))),
+    field(t('tiles.sources'), ...video.map((s) => checkbox(ts.sources.includes(s.id), `${sources.indexOf(s) + 1} ${s.name}`, (on) => {
+      const want = new Set(ts.sources); if (on) want.add(s.id); else want.delete(s.id);
+      setT({ sources: video.filter((x) => want.has(x.id)).map((x) => x.id).slice(0, MAX_TILES) });
+    }))),
+    hint(t('tiles.hint', { max: MAX_TILES })),
+  ];
+  const inner = new Proxy(p, { get: (o, k) => (k === 'scope' ? ts.scope : Reflect.get(o, k)) });
+  innerOf.set(inner, p);
+  return [...rows, ...panelSettings(inner)];
+}
+
 function panelSettings(p: PanelState): Node[] {
+  if (p.scope === 'tiles') return tileSettings(p);
   if (isAudio(p.scope)) return audioPanelSettings(p, save);
   if (isLight(p.scope)) return lightPanelSettings(p, save);
   if (p.scope === 'genlock') return genlockPanelSettings(p, save);
@@ -1448,6 +1471,11 @@ function drawAll(now: number) {
     const used = new Set(openViews().map((v) => panelSource(state.panels[v.idx])).filter(Boolean) as Source[]);
     const refSrc = state.ref?.sourceId && state.panels.some((q) => q.ghost) ? sources.find((x) => x.id === state.ref!.sourceId) : undefined;
     if (refSrc) used.add(refSrc);
+    // tile panels: every source they show
+    for (const v of openViews()) {
+      const p = state.panels[v.idx];
+      if (p.scope === 'tiles') for (const tl of tilePlan(p, { w: 1, h: 1 }, drawOptions()).tiles) used.add(tl.src);
+    }
     used.forEach((s) => {
       const every = s.kind === 'stream' && s.lowLatency ? s.llConfig.statsMs : 100;
       if (now - (statsAt.get(s) ?? -Infinity) < every - 1) return;
@@ -1576,6 +1604,7 @@ function drawOptions(): DrawOptions {
     stage: state.stage ?? 'signal',
     sourceById: (id) => sources.find((s) => s.id === id) ?? null,
     deRef: state.deRef ?? 'off',
+    sourceList: () => sources,
     ...refDraw(),
   };
 }

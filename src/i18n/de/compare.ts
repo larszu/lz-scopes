@@ -25,4 +25,8 @@ export default {
   'ghost.median': 'Median',
   'ghost.peak': 'Spitze',
   'ghost.noData': 'noch kein Bild zum Vergleichen',
+  'tiles.scope': 'Scope je Kachel',
+  'tiles.scopeTitle': 'Derselbe Scope erscheint einmal je Quelle',
+  'tiles.sources': 'Quellen',
+  'tiles.hint': 'Nichts angehakt: die ersten {max} Videoquellen in Listenreihenfolge. Jede Kachel trägt die Kamera-ID (Nummer in der Quellenliste und Name). Die Zeilen darunter gelten für alle Kacheln.',
 } satisfies Translation<typeof en>;

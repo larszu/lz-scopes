@@ -27,6 +27,7 @@ export default {
   'scope.name.hist': 'Histogram',
   'scope.name.stats': 'Measurements',
   'scope.name.match': 'Colour Match',
+  'scope.name.tiles': 'Tiles (multi-camera)',
   'scope.name.audio-meter': 'Audio Level & Loudness',
   'scope.name.audio-loudness': 'Audio Loudness History',
   'scope.name.audio-spectrum': 'Audio Spectrum',

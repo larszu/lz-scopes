@@ -24,4 +24,8 @@ export default {
   'ghost.median': 'median',
   'ghost.peak': 'peak',
   'ghost.noData': 'no picture to compare yet',
+  'tiles.scope': 'Scope per tile',
+  'tiles.scopeTitle': 'The same scope is shown once per source',
+  'tiles.sources': 'Sources',
+  'tiles.hint': 'Nothing ticked: the first {max} video sources in list order. Each tile carries the camera ID (number in the source list and name). The rows below apply to every tile.',
 } as const satisfies Messages;

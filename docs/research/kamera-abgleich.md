@@ -1,6 +1,6 @@
 # Kamera-Abgleich: Kameras übereinanderlegen, messen, aufzeichnen
 
-Stand 10.10.2026. Plan; Schritt 1 ist umgesetzt, die übrigen sind offen. Marktbild aus Herstellerseiten und Presse, Herstellerangaben nicht nachgeprüft.
+Stand 10.10.2026. Plan; Schritt 1 und der Hautton-Teil von Schritt 3 sind umgesetzt, die übrigen sind offen. Marktbild aus Herstellerseiten und Presse, Herstellerangaben nicht nachgeprüft.
 
 ## Ausgangslage in lz-scopes
 
@@ -53,7 +53,7 @@ Kameras sehen die Szene aus verschiedenen Winkeln. Verglichen werden deshalb **V
 ### 3. Dasselbe Objekt finden (mittel)
 
 - **Farbtafel**: vier Ecken je Kamera klicken (Homographie aus der LED-Prüfung), Median je Feld. Ergebnis: **Match-Matrix** Feld × Kamera mit ΔE00 zur Referenz, dazu ein per kleinster Quadrate gefitteter 3×3- bzw. Multi-Matrix-Vorschlag. Später automatische Tafelerkennung (OpenCV `mcc`).
-- **Hautton**: Gesichter je Kamera (MediaPipe), Hautverteilungen aller Kameras farbig in einem Vectorscope.
+- **Hautton** (umgesetzt, Panel *Hautton aller Kameras*, [kamera-messwerkzeuge.md](kamera-messwerkzeuge.md)): Gesichter je Kamera (MediaPipe), Hautverteilungen aller Kameras farbig in einem Vectorscope.
 - **Ausschnitt-Vergleich**: Messrahmen in A und B, beide Ausschnitte nebeneinander bzw. als **Butterfly-Split** (B gespiegelt). Vergleicht dasselbe Gesicht trotz anderer Perspektive.
 - Volle Bildüberlagerung mit Ausrichtung (Feature-Matching, Homographie) nur als Option für Kameras auf fast gleicher Achse.
 

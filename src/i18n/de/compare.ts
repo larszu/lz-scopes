@@ -65,4 +65,12 @@ export default {
   'wshading.roiOnly': 'Nur Messrahmen',
   'wshading.roiTitle': 'Aus: das ganze Bild (wie beim White Shading); an: nur der Messrahmen',
   'wshading.hint': 'Kamera auf eine gleichmäßig beleuchtete weiße oder graue Fläche richten (Diffusor, leicht unscharf, Gain 0 dB, Knie und Gamma-Extras aus), auf etwa 70–90 % belichten. Je Kanal erst Saw H/V, dann Par H/V verstellen, bis die Werte nahe 0 liegen; die Farbstich-Karte zeigt, wo das Weiß farbig wird.',
+  'skinall.head': 'H = Farbton (Abstand zur Hauttonlinie), S = Sättigung; Δ gegen die Referenz · Zoom ×{zoom}',
+  'skinall.faces': '{n} Gesichter',
+  'skinall.frame': 'Messrahmen',
+  'skinall.whole': 'ganzes Bild',
+  'skinall.none': 'keine Hautpixel',
+  'skinall.findFaces': 'Gesichter in diesen Quellen suchen',
+  'skinall.findFacesTitle': 'Gesichtserkennung in jeder Quelle dieses Panels auf „alle Gesichter“ stellen',
+  'skinall.hint': 'Jede Quelle hat eine Farbe: ihre Hautpixel als Punkte, deren Mitte als Kreuz. Haut = der Hautton-Qualifier (Luma-Fenster und Farbton-Toleranz um die 123°-Linie). Gemessen wird in den Gesichtern, wenn die Gesichtserkennung läuft, sonst im Messrahmen oder im ganzen Bild. Referenz ist die Referenzkamera, wenn sie im Panel ist, sonst die erste Quelle mit Haut.',
 } satisfies Translation<typeof en>;

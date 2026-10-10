@@ -551,7 +551,10 @@ export function drawCieGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Col
   ctx.fillText(uv ? 'CIE 1976 u′v′' : 'CIE 1931 xy', r.x + 4, uv ? r.y + r.h - 4 : r.y + 4);
 }
 
-export function drawHistogram(ctx: CanvasRenderingContext2D, r: Rect, src: Source, mode: 'rgb' | 'luma' | 'split', log: boolean) {
+/**
+ * @param ghost reference histograms (ghost.ts histOf) drawn as outlines in the reference colour
+ */
+export function drawHistogram(ctx: CanvasRenderingContext2D, r: Rect, src: Source, mode: 'rgb' | 'luma' | 'split', log: boolean, ghost?: { hist: Float32Array[]; color: string; alpha: number }) {
   const st = src.stats;
   ctx.strokeStyle = GRID_DIM; ctx.lineWidth = 1;
   for (let i = 0; i <= 10; i++) {
@@ -577,6 +580,19 @@ export function drawHistogram(ctx: CanvasRenderingContext2D, r: Rect, src: Sourc
     ctx.beginPath(); ctx.moveTo(r.x, base);
     for (let b = 0; b < 256; b++) ctx.lineTo(r.x + ((b + 0.5) / 256) * r.w, base - Math.min(1, tf(h[b]) / max) * (rh - 2));
     ctx.lineTo(r.x + r.w, base); ctx.closePath(); ctx.fill();
+    if (ghost) {
+      // reference: same scaling rule on its own counts (sample numbers differ between sources)
+      const g = ghost.hist[c];
+      let gm = 1;
+      for (let b = 1; b < 255; b++) gm = Math.max(gm, tf(g[b]));
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = ghost.alpha;
+      ctx.strokeStyle = ghost.color; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (let b = 0; b < 256; b++) { const x = r.x + ((b + 0.5) / 256) * r.w, y = base - Math.min(1, tf(g[b]) / gm) * (rh - 2); if (b) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+      ctx.stroke();
+      ctx.restore();
+    }
   });
   ctx.restore();
   ctx.textAlign = 'left'; ctx.fillStyle = LABEL;

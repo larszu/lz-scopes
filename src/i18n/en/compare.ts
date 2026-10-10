@@ -1,0 +1,27 @@
+// English source texts: camera comparison – reference camera and ghost trace (ghost.ts).
+import type { Messages } from '../types';
+
+export default {
+  'ghost.section': 'Reference camera',
+  'ghost.source': 'Reference',
+  'ghost.sourceTitle': 'The camera all others are compared with: its trace appears in the scopes that have "Reference trace" switched on',
+  'ghost.sourceHint': 'Set up one camera, make it the reference, then match the others to its trace (Tektronix calls this a frozen trace for camera matching).',
+  'ghost.mode': 'Reference trace',
+  'ghost.modeTitle': 'Live follows the reference camera; frozen keeps the picture of the moment you froze it',
+  'ghost.modeHint': 'Frozen: the aligned camera stays as a template even when it is re-framed or switched to another input.',
+  'ghost.live': 'live',
+  'ghost.frozen': 'frozen',
+  'ghost.opacity': 'Reference opacity',
+  'ghost.opacityTitle': 'Strength of the reference trace over the live trace',
+  'ghost.refreeze': 'Freeze again',
+  'ghost.refreezeTitle': "Take the reference camera's current picture as the frozen reference",
+  'ghost.hint': 'The reference trace is drawn in magenta. Each scope with the trace switched on lists Δ = live − reference for black (mean of the darkest 1 %), median and highlight (mean of the brightest 1 %) in percentage points, per Y′, R′, G′, B′; inside a measuring frame only for the frame.',
+  'ghost.trace': 'Reference',
+  'ghost.traceText': 'Show reference trace',
+  'ghost.traceTitle': 'Overlay the trace of the reference camera (Settings → Reference camera) in magenta and show the level differences',
+  'ghost.box.ref': 'Ref {name} ({mode})',
+  'ghost.black': 'black',
+  'ghost.median': 'median',
+  'ghost.peak': 'peak',
+  'ghost.noData': 'no picture to compare yet',
+} as const satisfies Messages;

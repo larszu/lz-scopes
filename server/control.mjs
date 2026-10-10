@@ -20,7 +20,7 @@ export const TRANSPORT_OPS = ['play', 'pause', 'toggle', 'stop', 'next', 'prev',
 const MODES = ['toggle', 'on', 'off'];
 /** Generator signals (src/audio/dsp/signals.ts) */
 /** Global settings the control API can set (src/main.ts SET, described once in src/ui/schema.ts). */
-export const SETTING_KEYS = ['theme', 'scheme', 'sidebar', 'display', 'hdrPreview', 'unit', 'tint', 'precision', 'falseColour', 'skinLuma', 'skinHue', 'zebra', 'stage', 'deRef', 'lowLatency'];
+export const SETTING_KEYS = ['theme', 'scheme', 'sidebar', 'display', 'hdrPreview', 'unit', 'tint', 'precision', 'falseColour', 'skinLuma', 'skinHue', 'zebra', 'stage', 'deRef', 'lowLatency', 'refSource', 'refMode', 'refOpacity'];
 export const GEN_SIGNALS = ['sine', 'square', 'triangle', 'saw', 'white', 'pink', 'pink-band', 'sweep', 'steps', 'ebu-ident', 'glits', 'ident-lr', 'polarity', 'avsync', 'blits', 'ebu-multi'];
 
 /** Every command with a short description (GET /api/control/commands, docs). */

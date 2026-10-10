@@ -238,7 +238,7 @@ void main() {
 
 const DISPLAY_FS = `#version 300 es
 precision highp float;
-uniform sampler2D uAcc; uniform float uGain; uniform vec3 uTint; uniform int uAvg;
+uniform sampler2D uAcc; uniform float uGain; uniform vec3 uTint; uniform int uAvg, uMono;
 in vec2 vUv; out vec4 o;
 void main() {
   vec4 a = texture(uAcc, vUv);
@@ -252,6 +252,8 @@ void main() {
     float m = max(a.r, max(a.g, a.b));
     c = m > 0.0 ? a.rgb / m * (1.0 - exp(-m * uGain)) : vec3(0.0);
   }
+  // reference trace (ghost.ts): brightness only, in the ghost colour
+  if (uMono == 1) c = vec3(max(c.r, max(c.g, c.b)));
   o = vec4(c * uTint, 1.0);
 }`;
 
@@ -402,12 +404,17 @@ export interface PictureParams {
 
 const colMajor = (m: number[]) => [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
 
+/** Reference trace drawn over a panel (ghost.ts): its colour and, when frozen, the snapshot to read. */
+export interface GhostDraw { tint: [number, number, number]; snapshot?: string }
+
 export class Renderer {
   readonly gl: WebGL2RenderingContext;
   private progs = new Map<string, WebGLProgram>();
   private uloc = new Map<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
   private vao: WebGLVertexArrayObject;
   private textures = new Map<string, SrcTex>();
+  /** frozen copies of source frames (reference camera, ghost.ts) */
+  private snaps = new Map<string, SrcTex>();
   private accums = new Map<string, Accum>();
   private sigs = new Map<string, string>();
   private lutTex = new Map<string, LutTex & { version: number }>();
@@ -559,12 +566,45 @@ export class Renderer {
   }
 
   dropPanel(key: string) {
-    for (const k of [key, `${key}#p0`, `${key}#p1`, `${key}#g0`, `${key}#g1`, `${key}#da`, `${key}#db`]) {
+    for (const k of [key, `${key}#p0`, `${key}#p1`, `${key}#g0`, `${key}#g1`, `${key}#da`, `${key}#db`, `${key}#ref`]) {
       const a = this.accums.get(k);
       if (a) { this.gl.deleteTexture(a.tex); this.gl.deleteFramebuffer(a.fbo); this.accums.delete(k); }
     }
     this.settling.delete(key); this.crtTimes.delete(key);
   }
+  /**
+   * Keep a copy of the source's current frame under `tag` (frozen reference). The copy has the
+   * texture's own format (8-bit, 16-bit or Y′CbCr), so the frozen trace is measured exactly like
+   * the live one. Returns false when the source has no frame yet.
+   */
+  snapshot(src: Source, tag: string): boolean {
+    const t = this.sourceTexture(baseOf(src));
+    if (!t || !t.w) return false;
+    const gl = this.gl;
+    this.dropSnapshot(tag);
+    const tex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, t.u16 ? gl.RGBA16UI : gl.RGBA8, t.w, t.h);
+    const rd = gl.createFramebuffer()!, dr = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, rd);
+    gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t.tex, 0);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, dr);
+    gl.framebufferTexture2D(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.blitFramebuffer(0, 0, t.w, t.h, 0, 0, t.w, t.h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    gl.deleteFramebuffer(rd); gl.deleteFramebuffer(dr);
+    this.snaps.set(tag, { tex, w: t.w, h: t.h, u16: t.u16, seq: ++this.snapSeq });
+    return true;
+  }
+  private snapSeq = 0;
+  dropSnapshot(tag: string) {
+    const s = this.snaps.get(tag);
+    if (s) { this.gl.deleteTexture(s.tex); this.snaps.delete(tag); }
+  }
+  hasSnapshot(tag: string) { return this.snaps.has(tag); }
+
   dropSource(id: string) {
     const t = this.textures.get(id);
     if (t) { this.gl.deleteTexture(t.tex); this.textures.delete(id); }
@@ -627,8 +667,8 @@ export class Renderer {
    * @param overlay add the traces on top of what is already there (scope over picture)
    * @param opacity trace strength when overlaid (0…1)
    */
-  drawScatter(key: string, src: Source, rect: Rect, p: ScatterParams, overlay = false, opacity = 1) {
-    const t = this.sourceTexture(baseOf(src));
+  drawScatter(key: string, src: Source, rect: Rect, p: ScatterParams, overlay = false, opacity = 1, ghost?: GhostDraw) {
+    const t = ghost?.snapshot ? this.snaps.get(ghost.snapshot) ?? null : this.sourceTexture(baseOf(src));
     if (!t) return;
     const gl = this.gl;
     const vp = this.viewport(rect);
@@ -656,7 +696,7 @@ export class Renderer {
     const intensity = ((wave ? 0.9 : 0.6) * area) / n / (dot * dot) * (p.mode === 'cube' ? 6 : 1) * (p.density ?? 1);
 
     // Only re-scatter when the frame or a parameter changed; otherwise reuse the accumulation.
-    const sig = `${src.id}:${src.frameSeq}:${t.w}x${t.h}:${acc.w}x${acc.h}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${chainOf(src)?.sig ?? ''}:${JSON.stringify(baseOf(src).yuv)}:${baseOf(src).colorspace}:${this.dpr}:${JSON.stringify(p)}`;
+    const sig = `${ghost?.snapshot ? `snap:${ghost.snapshot}:${t.seq}` : `${src.id}:${src.frameSeq}`}:${t.w}x${t.h}:${acc.w}x${acc.h}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${chainOf(src)?.sig ?? ''}:${JSON.stringify(baseOf(src).yuv)}:${baseOf(src).colorspace}:${this.dpr}:${JSON.stringify(p)}`;
     const fresh = this.sigs.get(key) !== sig;
     this.sigs.set(key, sig);
     if (fresh) {
@@ -748,8 +788,9 @@ export class Renderer {
       gl.bindTexture(gl.TEXTURE_2D, shown);
       gl.uniform1i(this.u(dp, 'uAcc'), 0);
       gl.uniform1f(this.u(dp, 'uGain'), p.gain);
-      gl.uniform3f(this.u(dp, 'uTint'), 1, 1, 1);
+      gl.uniform3fv(this.u(dp, 'uTint'), ghost?.tint ?? [1, 1, 1]);
       gl.uniform1i(this.u(dp, 'uAvg'), avg);
+      gl.uniform1i(this.u(dp, 'uMono'), ghost ? 1 : 0);
     }
     if (overlay) {
       gl.enable(gl.BLEND);

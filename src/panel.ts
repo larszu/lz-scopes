@@ -36,6 +36,7 @@ import { t } from './i18n';
 import { IDENTITY, isIdentity, viewRect, waveRange, type View, type ViewLimits } from './view';
 import { GHOST_CSS, GHOST_TINT, deltaRows, ghostChannels, hasGhost, histOf, levelDeltas, traceLevels } from './ghost';
 import { LUMA } from './color';
+import { PEAK_COLOURS, PEAK_DEFAULT, PeakHold, lumaPlane, measureRect, sharpness, type PeakColour, type Rect4 } from './focus';
 import { TILE_HEAD, sanitizeTiles, tileAspect, tileGrid, tileLabel, tileSources, type TileSettings } from './tiles';
 
 export interface PanelState {
@@ -106,6 +107,30 @@ export interface PanelState {
   ghost?: boolean;
   /** tile view (tiles.ts): inner scope and sources */
   tiles?: TileSettings;
+  /** picture 'peaking' overlay (focus.ts): gradient threshold and colour */
+  peak?: { threshold?: number; colour?: PeakColour };
+}
+
+/** Focus value per source: last frame's sharpness and the peak hold (focus.ts). */
+const focusState = new Map<string, { key: string; value: number; hold: PeakHold }>();
+/** Start the focus peak hold of a source over. */
+export function resetFocusPeak(id: string) { focusState.get(id)?.hold.reset(); }
+/** Sharpness of the measuring frame (centre third without one) and its peak since reset; region in source pixels. */
+export function focusOf(src: Source): { value: number; peak: number; rect: Rect4 } | null {
+  const b = baseOf(src), f = b.cpuFrame();
+  if (!f) return null;
+  const roi = b.activeRois()[0];
+  const sx = f.w / b.width, sy = f.h / b.height;
+  const rect = measureRect(roi ? [roi[0] * sx, roi[1] * sy, roi[2] * sx, roi[3] * sy] : null, f.w, f.h);
+  const st = focusState.get(b.id) ?? { key: '', value: 0, hold: new PeakHold() };
+  focusState.set(b.id, st);
+  const key = `${b.frameSeq}:${rect.join(',')}:${f.w}`;
+  if (st.key !== key) {
+    const { kr, kb } = LUMA[b.colorspace];
+    st.value = sharpness(lumaPlane(f.px, f.w, f.decode, kr, kb, rect));
+    st.key = key;
+  }
+  return { value: st.value, peak: st.hold.update(`${rect.join(',')}:${f.w}`, st.value), rect: [rect[0] / sx, rect[1] / sy, rect[2] / sx, rect[3] / sy] };
 }
 
 // ------------------------------------------------------------------ zoom and pan (#89)
@@ -524,6 +549,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       mode: p.picture, bands: FALSE_COLOR_PRESETS[o.falsePreset] ?? [], zebra: o.zebra, zebraLow: o.zebraLow,
       roi: s.activeRois(), skin: p.picture === 'green' ? greenOf(o) : o.skin, display: displayParams(s, o.display, o.hdrPreview), warn: warnMatrix(s, p.gamutTarget),
       ...(p.picture === 'neutral' ? { neutral: neutralParams(p) } : {}),
+      ...(p.picture === 'peaking' ? { peaking: { threshold: p.peak?.threshold ?? PEAK_DEFAULT.threshold, colour: PEAK_COLOURS[p.peak?.colour ?? PEAK_DEFAULT.colour] } } : {}),
       ...(rgcOn ? { rgc: { toAp1: gamutConvert(GAMUTS[s.gamut], GAMUTS.ap1), fromAp1: gamutConvert(GAMUTS.ap1, GAMUTS[s.gamut]) } } : {}),
     });
     const ab = p.ab && p.ab.mode !== 'off' ? p.ab : null;
@@ -593,6 +619,24 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
         ctx.fillStyle = col; ctx.fillRect(frame.x + 6, y - 4, 8, 8);
         ctx.fillStyle = '#ddd'; ctx.fillText(label, frame.x + 18, y);
       });
+    }
+    if (p.picture === 'peaking') {
+      const fv = focusOf(src);
+      if (fv) {
+        if (!src.activeRois().length) {
+          // the centre third that is measured without a measuring frame
+          const [x0, y0, x1, y1] = fv.rect;
+          ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+          ctx.strokeRect(r.x + (x0 / src.width) * r.w, r.y + (y0 / src.height) * r.h, ((x1 - x0) / src.width) * r.w, ((y1 - y0) / src.height) * r.h);
+          ctx.setLineDash([]);
+        }
+        const lines = [t('focus.value', { value: fv.value.toFixed(1), peak: fv.peak.toFixed(1), pct: fv.peak > 0 ? Math.round((fv.value / fv.peak) * 100) : 0 })];
+        drawTextBox(ctx, frame.x + 6, frame.y + frame.h - 6 - lines.length * 15 - 8, lines);
+        // bar: current value against the peak hold
+        const bw = 120, bx = frame.x + 6, by = frame.y + frame.h - 6 - lines.length * 15 - 16;
+        ctx.fillStyle = 'rgba(8,9,11,0.78)'; ctx.fillRect(bx, by, bw, 6);
+        ctx.fillStyle = '#e8e8e8'; ctx.fillRect(bx, by, fv.peak > 0 ? (bw * fv.value) / fv.peak : 0, 6);
+      } else drawTextBox(ctx, frame.x + 6, frame.y + frame.h - 29, [t('panel.draw.noCpu')]);
     }
     if (p.picture === 'neutral') {
       const np = neutralParams(p), nc = src.neutralCast(np.threshold, np.lo, np.hi);

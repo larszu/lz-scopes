@@ -82,6 +82,29 @@ test('Kachelansicht: zwei Quellen, je eine Waveform-Kachel', async () => {
     .catch(async (e) => { console.log('Kachelpegel', await read()); throw e; });
 });
 
+/** Share of strongly red pixels in the visible picture panel (peaking colour red). */
+async function redShare() {
+  return a.page.evaluate(() => {
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === 'picture')!;
+    const c = el.querySelector<HTMLCanvasElement>('canvas.blit')!;
+    const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] < 80 && d[i + 2] < 80) n++;
+    return n / (d.length / 4);
+  });
+}
+
+test('Fokus-Peaking: Kanten des Schachbretts rot, Graufläche ohne', async () => {
+  expectOk(await a.control({ cmd: 'pattern.select', pattern: 'checker' }));
+  await singlePanel(a, 'picture');
+  await a.page.locator('.panel .pop-trigger:not(.help-trigger) >> visible=true').first().click();
+  await a.page.locator('.panel .popover:popover-open').getByRole('combobox', { name: 'Overlay' }).selectOption('peaking');
+  await a.page.keyboard.press('Escape');
+  await until(async () => (await redShare()) > 0.002, 30_000, 'rote Kanten');
+  expectOk(await a.control({ cmd: 'pattern.select', pattern: 'gray50' }));
+  await until(async () => (await redShare()) < 0.0005, 30_000, 'keine Kanten auf Grau');
+});
+
 test('STOP-Skala: Hauptlinie bei der Graukarte (SDR 40,9 %)', async () => {
   expectOk(await a.control({ cmd: 'pattern.select', pattern: 'steps11' }));
   await singlePanel(a, 'wf-luma');

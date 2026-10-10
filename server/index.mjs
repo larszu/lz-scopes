@@ -95,7 +95,7 @@ export function validateInput(url) {
  *   device:<avfoundation|dshow|v4l2>:<video name>[#audio=<audio name>][#ch=<n>]
  *   audio:<avfoundation|dshow|alsa>:<audio name>[#ch=<n>]
  * The audio API follows the video API (v4l2 → alsa). Names are passed as one argv element,
- * never through a shell; #ch only takes a number (dshow/alsa `-channels`).
+ * never through a shell; #ch only takes a number (dshow `-channels`, alsa `-ac`).
  * Dante: Dante Virtual Soundcard / Dante Via appear as normal system audio devices and
  * are picked up here like any other interface (no Dante protocol of our own).
  */
@@ -133,11 +133,14 @@ export function deviceArgs(url, rateOverride, opts = {}) {
   const d = parseDevice(url);
   if (!d) return null;
   const withAudio = opts.audio !== false && d.audio !== null;
-  const chArgs = d.ch && d.audioApi !== 'avfoundation' ? ['-channels', String(d.ch)] : [];
+  // dshow has its own `channels` option; ALSA only `ch_layout` (FFmpeg 7+), which ffmpeg's input
+  // option -ac fills with "<n>C" (an ffmpeg 6 ignores it and records 2 channels)
+  const chArgs = d.ch && d.audioApi === 'dshow' ? ['-channels', String(d.ch)] : [];
+  const alsaCh = d.ch ? ['-ac', String(d.ch)] : [];
   if (d.kind === 'audio') {
     if (d.api === 'avfoundation') return ['-f', 'avfoundation', '-i', `:${d.audio}`];
     if (d.api === 'dshow') return ['-f', 'dshow', ...chArgs, '-i', `audio=${d.audio}`];
-    return ['-f', 'alsa', ...chArgs, '-i', d.audio];
+    return ['-f', 'alsa', ...alsaCh, '-i', d.audio];
   }
   // the device's own capture rate; the analysis rate is limited later by the fps filter
   // explicit mode/pixel format: see server/devices.mjs
@@ -146,7 +149,7 @@ export function deviceArgs(url, rateOverride, opts = {}) {
   // sound of the same device in the same ffmpeg input (avfoundation, dshow) or as a second input (v4l2 + ALSA)
   if (d.api === 'avfoundation') return [...v.slice(0, -1), `${d.video}:${d.audio}`];
   if (d.api === 'dshow') return [...v.slice(0, -2), ...chArgs, '-i', `video=${d.video}:audio=${d.audio}`];
-  return [...v, '-f', 'alsa', ...chArgs, '-i', d.audio];
+  return [...v, '-f', 'alsa', ...alsaCh, '-i', d.audio];
 }
 
 /** Device URL without the #audio/#ch suffix (key of the rate and format caches). */

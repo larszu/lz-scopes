@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ffmpegCandidates, ffmpegFor, ffmpegInfo, ffmpegOrigin, hostTarget, licenseOf, noFfmpegMessage, outputProtocols } from '../server/ffmpeg.mjs';
@@ -75,6 +75,14 @@ describe.skipIf(!shippedFfmpeg)('ffmpeg: the shipped build of this machine', () 
     const d = parseInputDevices(out);
     expect(d.has('alsa')).toBe(true);
     expect(d.has('v4l2')).toBe(true);
+  });
+  it.skipIf(process.platform !== 'linux')('Linux: records 8 channels over ALSA with the bridge arguments (alsa-lib null device, no sound card needed)', async () => {
+    // @ts-expect-error plain JS module
+    const { deviceArgs } = await import('../server/index.mjs');
+    const args = deviceArgs('audio:alsa:null#ch=8');
+    const r = spawnSync(shippedFfmpeg!, ['-hide_banner', ...args, '-t', '0.2', '-f', 'null', '-'], { encoding: 'utf8' });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stderr).toMatch(/Input #0, alsa[\s\S]*Audio: pcm_\w+, 48000 Hz, 8 channels/);
   });
 });
 

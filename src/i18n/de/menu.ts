@@ -88,6 +88,7 @@ export default {
   'keys.g.record': 'Aufnahme',
   'keys.record': 'Alle Quellen aufnehmen / alle Aufnahmen beenden',
   'keys.mark': 'Marker in die laufenden Aufnahmen',
+  'keys.ringSave': 'Ringpuffer aller Quellen sichern (gleiche Zeitmarke)',
   'keys.frame': 'ein Bild zurück / vor',
   'keys.second': 'eine Sekunde zurück / vor',
   'keys.shuttle': 'Shuttle rückwärts / Stopp / vorwärts',

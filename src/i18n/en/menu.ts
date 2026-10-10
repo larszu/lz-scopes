@@ -87,6 +87,7 @@ export default {
   'keys.g.record': 'Recording',
   'keys.record': 'Record all sources / stop all recordings',
   'keys.mark': 'Marker in the running recordings',
+  'keys.ringSave': 'Save the ring buffers of all sources (same time mark)',
   'keys.frame': 'one frame back / forward',
   'keys.second': 'one second back / forward',
   'keys.shuttle': 'Shuttle reverse / stop / forward',

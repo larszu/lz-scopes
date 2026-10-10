@@ -56,7 +56,7 @@ import { Source, type AudioInput, type SourceKind, type SourceSettings } from '.
 import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
 import { SOURCE_ITEMS, mountMenu, refreshMenu, registerMenuCommand, type MenuActions, type MenuState } from './menu/appMenu';
 import { openSettings, refreshSettings, registerSettingsSection } from './menu/settings';
-import { initRecording, isRecording, markAll, eventAll, onBridgeRecord, recordAll, recordAllButton, recordRow, recordSection, recordingState, sourceStopped, startRecording, stopRecording } from './record/record';
+import { initRecording, isRecording, markAll, eventAll, onBridgeRecord, recordAll, recordAllButton, recordRow, recordSection, recordingState, ringOn, saveRingButton, saveRings, setRing, sourceStopped, startRecording, stopRecording } from './record/record';
 import { aboutSection, keysSection } from './menu/pages';
 import { LANG_NAMES, LANGS, lang, langPref, num, setLangPref, systemLang, t, type LangPref } from './i18n';
 import { ShadingControl, SIM_URL } from './shading/ui';
@@ -167,7 +167,7 @@ const freezeBtn = button(t('main.freeze'), () => toggleFreeze(), { title: t('mai
 const sideToggle = iconButton('◧', t('main.side.aria'), () => toggleSidebar(), { title: t('main.side.toggle'), attrs: { id: 'toggle-side' } });
 /** Header overflow (narrow windows): the same layout presets and scale as the header groups. */
 const moreMenu = popover({ label: '⋯', title: t('ui.more'), heading: t('ui.moreTitle'), cls: 'more-body', content: () => [field(t('ui.layouts'), layoutControl()), settingRow(SET.unit),
-  row(button(t('record.all'), () => recordAll(), { title: t('record.allTitle') }))] });
+  row(button(t('record.all'), () => recordAll(), { title: t('record.allTitle') }), button(t('ring.save'), () => saveRings(), { title: t('ring.saveTitle') }))] });
 moreMenu.id = 'bar-more';
 const side = h('aside', { class: 'side', id: 'side' },
   h('h2', {}, t('main.sources')),
@@ -190,6 +190,7 @@ app.replaceChildren(
     h('span', { class: 'fps', id: 'fps', title: t('main.fpsTitle') }),
     gpuWarn,
     recordAllButton,
+    saveRingButton,
     freezeBtn,
     iconButton('⚙', t('common.settings'), () => openSettings(), { title: t('main.settingsTitle'), attrs: { id: 'settings-btn' } }),
     iconButton('⛶', t('main.full'), () => toggleFullscreen(), { title: t('main.fullTitle'), attrs: { id: 'full' } })),
@@ -1933,6 +1934,17 @@ function execute(c: Command): unknown {
       recordAll(on);
       return recordingState();
     }
+    case 'ring': {
+      const list = c.source !== undefined ? [need(findSource(c.source), `Source ${c.source} not found`)] : sources.filter((s) => s.kind === 'stream');
+      const on = c.mode === 'toggle' ? !list.some(ringOn) : c.mode === 'on';
+      for (const s of list) setRing(s, on);
+      return recordingState();
+    }
+    case 'ring.save': {
+      const n = saveRings({ pre: typeof c.pre === 'number' ? c.pre : undefined, post: typeof c.post === 'number' ? c.post : undefined });
+      if (!n) throw new Error('No ring buffer running');
+      return { saving: n };
+    }
     case 'record.mark': {
       const list = c.source !== undefined ? [need(findSource(c.source), `Source ${c.source} not found`)] : undefined;
       return { marked: markAll(typeof c.label === 'string' ? c.label : '', list) };
@@ -2050,6 +2062,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'b' || e.key === 'B') toggleSidebar();
   else if (e.key === 'r' || e.key === 'R') recordAll();
   else if (e.key === 'm' || e.key === 'M') markAll();
+  else if (e.key === 'p' || e.key === 'P') saveRings();
   else if (e.key === 'c' || e.key === 'C') setStage(STAGES[(STAGES.indexOf(state.stage ?? 'signal') + 1) % STAGES.length]);
   else if (e.key === 'Escape') { if (narrowQuery.matches && drawerOpen) { toggleSidebar(false); $('#toggle-side').focus(); } else if (dock.api.hasMaximizedGroup()) dock.exitMaximized(); else { sources.forEach((s) => { s.probe = null; s.roi = null; s.faceMode = 'off'; }); refreshHeads(); } }
 });
@@ -2181,7 +2194,7 @@ sources.forEach((s) => { if (s.kind === 'stream' && s.url) s.connectStream(s.url
 Source.onResolve = (s, msg) => resolvePlayback.onResolve(s, msg);
 Source.onStop = (s) => { resolvePlayback.onStop(s); sourceStopped(s); };
 Source.onRecord = (s, msg) => onBridgeRecord(s, msg);
-initRecording({ sources: () => sources, bridgeUrl, changed: () => renderSources(), hud: alertHud, latencyOf: (s) => s.latency.summary()?.total.mean ?? null });
+initRecording({ sources: () => sources, bridgeUrl, changed: () => renderSources(), hud: alertHud, latencyOf: (s) => s.latency.summary()?.total.mean ?? null, save });
 
 // running DaVinci Resolve on the bridge machine: one click to connect
 mountResolveLive($('#resolve-live'), {

@@ -60,6 +60,8 @@ export interface SourceSettings {
   lowLatency?: boolean;
   /** this source's own low-latency settings; missing fields follow the global ones */
   ll?: Partial<LowLatencyConfig>;
+  /** bridge: keep a ring buffer for "save the last … s" (src/record/record.ts) */
+  ring?: boolean;
 }
 
 export interface StreamInfo {
@@ -496,8 +498,9 @@ export class Source {
           this.rtpStats = msg.rtp ?? null;
           this.phase = msg.phase ?? null;
           if (msg.rec) Source.onRecord?.(this, msg.rec);
+          if (msg.ring) Source.onRecord?.(this, msg.ring);
           if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', bridgeMessage(msg));
-        } else if (msg.type === 'record') {
+        } else if (msg.type === 'record' || msg.type === 'ring') {
           // local recording in the bridge (server/recorder.mjs)
           Source.onRecord?.(this, msg);
         } else if (msg.type === 'resolve') {

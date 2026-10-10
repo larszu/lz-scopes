@@ -642,7 +642,7 @@ async function startStream(ws, params) {
   // local recording (server/recorder.mjs): a second output of this ffmpeg; toggling restarts it
   let current = null, restarting = false, recAudio = null;
   const recorder = video ? new StreamRecorder({
-    url, ffmpeg, allowed: ws.recordAllowed === true, roots: () => RECORD_ROOTS, clock: clockNow,
+    url, ffmpeg, ffprobe: ffprobeCandidates([ffmpeg])[0] ?? '', allowed: ws.recordAllowed === true, roots: () => RECORD_ROOTS, clock: clockNow,
     send: (m) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); },
     restart: () => restart(),
     media: () => ({ width: info.width, height: info.height, fps: info.fps, codec: info.codec, audioMap: recAudio }),
@@ -809,6 +809,7 @@ async function startStream(ws, params) {
     if (packetizer) Object.assign(st, { audioSent: packetizer.packets, audioDropped: 0, audioGaps: 0, audioSplit: split, pts: !!pts });
     if (own) st.rtp = own.report();
     if (recorder?.active) st.rec = recorder.status();
+    if (recorder?.ringActive) st.ring = recorder.ringStatus();
     ws.send(JSON.stringify(st));
   }, 1000);
   own?.on('error', (e) => { stderr = (stderr + `\nOwn RTP reception: ${e.message}`).slice(-2000); });
@@ -1091,7 +1092,7 @@ function startNdi(ws, params, url) {
 /** Recorder factory for the helper inputs (DeckLink, NDI): encoded recording, no sound. */
 function helperRecorder(ws, url, ffmpeg) {
   return ({ restart, media }) => new StreamRecorder({
-    url, ffmpeg, allowed: ws.recordAllowed === true, roots: () => RECORD_ROOTS, clock: clockNow, restart, media,
+    url, ffmpeg, ffprobe: ffprobeCandidates([ffmpeg])[0] ?? '', allowed: ws.recordAllowed === true, roots: () => RECORD_ROOTS, clock: clockNow, restart, media,
     send: (m) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); },
   });
 }

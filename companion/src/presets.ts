@@ -35,6 +35,8 @@ export function updatePresets(self: ModuleInstance): void {
     [{ feedbackId: 'frozen', options: {}, style: { bgcolor: AMBER, color: BLACK } }])
   p.record_all = button('Recording', 'Record all', 'REC\\n$(lz-scopes:recording_time)', 'record', { mode: 'toggle', source: '' },
     [{ feedbackId: 'recording', options: { source: '' }, style: { bgcolor: RED, color: WHITE } }], '14')
+  p.ring_save = button('Recording', 'Save ring buffers', 'SAVE\\nRING', 'ring_save', { pre: 0, post: '' },
+    [{ feedbackId: 'ring_active', options: { source: '' }, style: { bgcolor: AMBER, color: BLACK } }])
   p.record_mark = button('Recording', 'Marker', 'MARK', 'record_mark', { label: '', source: '' })
   p.roi_clear = button('Measure', 'Clear measuring frame', 'ROI\\nclear', 'roi_clear', { source: '' })
   p.clip = button('Measure', 'Clipping display', 'Clip\\n$(lz-scopes:clip) %', 'freeze', { mode: 'toggle' },

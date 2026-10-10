@@ -269,7 +269,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
     self.stdin.end();
   });
   const stats = setInterval(() => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: dropped + helperDropped, ...(status ? toMsg(status) : {}), ...(helperStats ? { helper: helperStats } : {}), ...(phase?.report() ? { phase: phase.report() } : {}), ...(recorder?.active ? { rec: recorder.status() } : {}) }));
+    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped: dropped + helperDropped, ...(status ? toMsg(status) : {}), ...(helperStats ? { helper: helperStats } : {}), ...(phase?.report() ? { phase: phase.report() } : {}), ...(recorder?.active ? { rec: recorder.status() } : {}), ...(recorder?.ringActive ? { ring: recorder.ringStatus() } : {}) }));
   }, 1000);
   ws.on('close', () => { closed = true; clearInterval(stats); recorder?.ended('closed'); stopFf(); helper.kill('SIGTERM'); });
 }

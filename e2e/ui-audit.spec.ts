@@ -142,8 +142,28 @@ const settles = async (page: Page, sel: string, open: boolean, ms = 2000) => {
   while (Date.now() < end) { if (await isOpen(page, sel) === open) return true; await page.waitForTimeout(50); }
   return false;
 };
-/** After opening: let the open animation finish before the next action (sheets ignore clicks while they slide in). */
-const OPENED_MS = 300;
+/**
+ * After opening: wait until the overlay stands still – placed by its toggle handler, open animation
+ * finished, same box in two polls. Sheets ignore clicks while they slide in; a fixed pause was too
+ * short on slow CI runners (#132).
+ */
+const steady = (page: Page, sel: string, ms = 2000) => page.waitForFunction((sel) => {
+  const e = [...document.querySelectorAll(sel)].find((x) => x.getClientRects().length > 0);
+  if (!e) return false;
+  if (e.getAnimations({ subtree: true }).some((a) => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity)) return false;
+  const w = window as unknown as { __steady?: Record<string, string> };
+  const r = e.getBoundingClientRect(), box = `${r.left},${r.top},${r.width},${r.height}`;
+  const prev = (w.__steady ??= {})[sel]; w.__steady[sel] = box;
+  return prev === box;
+}, sel, { timeout: ms, polling: 50 }).then(() => true, () => false);
+/** The element at the centre of the trigger, when it is not the trigger itself (an overlay covers it). */
+const coveredBy = (page: Page, trigger: string) => page.locator(trigger).first().evaluate((t) => {
+  const r = t.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  if (!hit || t.contains(hit)) return '';
+  const o = hit.closest('[popover], dialog') ?? hit;
+  return `${o.tagName.toLowerCase()}.${[...o.classList].join('.')}`;
+});
 const focusIs = (page: Page, sel: string) => page.evaluate((sel) => !!document.activeElement?.matches(sel), sel);
 
 /** A point outside every overlay that triggers nothing: the brand area of the header. */
@@ -163,21 +183,26 @@ async function behaviour(page: Page, trigger: string, overlay: string, where: st
   const t = page.locator(trigger).first();
   await t.click();
   if (!await settles(page, overlay, true)) { f.push({ check: 'open', where, detail: `${trigger} öffnet ${overlay} nicht` }); return; }
-  await page.waitForTimeout(OPENED_MS);
+  await steady(page, overlay);
   if (o.toggle !== false) {
-    await t.click({ force: true });
-    if (!await settles(page, overlay, false)) { f.push({ check: 'trigger-toggle', where, detail: 'erneuter Klick auf den Auslöser schließt nicht' }); await page.keyboard.press('Escape'); }
+    // an overlay lying over its own trigger is a real UX fault, reported as such (a forced click would land in the overlay)
+    const cover = await coveredBy(page, trigger);
+    if (cover) { f.push({ check: 'covers-trigger', where, detail: `${cover} verdeckt den Auslöser` }); await page.keyboard.press('Escape'); await settles(page, overlay, false); }
+    else {
+      await t.click({ force: true });
+      if (!await settles(page, overlay, false)) { f.push({ check: 'trigger-toggle', where, detail: 'erneuter Klick auf den Auslöser schließt nicht' }); await page.keyboard.press('Escape'); }
+    }
   }
   else { await page.keyboard.press('Escape'); await settles(page, overlay, false); }
   if (o.outside !== false) {
-    await t.click(); await settles(page, overlay, true); await page.waitForTimeout(OPENED_MS);
+    await t.click(); await settles(page, overlay, true); await steady(page, overlay);
     await outsideClick(page, overlay);
     if (!await settles(page, overlay, false)) { f.push({ check: 'outside-click', where, detail: 'Klick außerhalb schließt nicht' }); await page.keyboard.press('Escape'); }
   }
   // keyboard: focus the trigger, Enter opens, Esc closes and the focus is back on the trigger
   await t.focus(); await page.keyboard.press('Enter');
   if (!await settles(page, overlay, true)) { f.push({ check: 'keyboard-open', where, detail: 'Enter auf dem Auslöser öffnet nicht' }); return; }
-  await page.waitForTimeout(OPENED_MS); await page.keyboard.press('Escape');
+  await steady(page, overlay); await page.keyboard.press('Escape');
   if (!await settles(page, overlay, false)) { f.push({ check: 'esc', where, detail: 'Esc schließt nicht' }); await outsideClick(page); }
   else if (!await t.evaluate((e) => e === document.activeElement)) f.push({ check: 'focus-return', where, detail: `Fokus nach Esc auf ${await page.evaluate(() => document.activeElement?.tagName + '.' + document.activeElement?.className)}` });
 }
@@ -230,7 +255,7 @@ for (const lang of ['de', 'en'] as const) {
       // header overflow and panel ⚙ popovers
       if (await page.locator('#bar-more .pop-trigger').isVisible()) {
         await behaviour(page, '#bar-more .pop-trigger', '#bar-more .popover', 'popover ⋯', f);
-        await page.locator('#bar-more .pop-trigger').click(); await page.waitForTimeout(400);
+        await page.locator('#bar-more .pop-trigger').click(); await steady(page, '#bar-more .popover');
         await geometry(page, '#bar-more .popover', 'popover ⋯', f);
         await targets(page, '#bar-more .popover', 'popover ⋯', touch, f);
         await page.keyboard.press('Escape');
@@ -240,7 +265,7 @@ for (const lang of ['de', 'en'] as const) {
       const gears = await page.locator(gear).evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).length);
       if (gears) {
         await behaviour(page, `${gear} >> visible=true`, '.panel .popover:popover-open', 'popover ⚙', f);
-        await page.locator(`${gear} >> visible=true`).first().click(); await page.waitForTimeout(400);
+        await page.locator(`${gear} >> visible=true`).first().click(); await steady(page, '.panel .popover:popover-open');
         await geometry(page, '.panel .popover:popover-open', 'popover ⚙', f);
         await truncation(page, '.panel .popover:popover-open', 'popover ⚙', f);
         await targets(page, '.panel .popover:popover-open', 'popover ⚙', touch, f);
@@ -250,20 +275,20 @@ for (const lang of ['de', 'en'] as const) {
         const help = '.panel .help-trigger >> visible=true';
         if (await page.locator(help).count()) {
           await page.locator(help).first().click(); await settles(page, '.popover.scopehelp:popover-open', true);
-          // placement happens in the toggle event, a moment after opening (same wait as the ⚙ pass)
-          await page.waitForTimeout(400);
+          // placement happens in the toggle event, a moment after opening
+          await steady(page, '.popover.scopehelp:popover-open');
           await geometry(page, '.popover.scopehelp:popover-open', 'popover ?', f);
           await truncation(page, '.popover.scopehelp:popover-open', 'popover ?', f);
           await targets(page, '.popover.scopehelp:popover-open', 'popover ?', touch, f);
           await page.keyboard.press('Escape'); await settles(page, '.popover.scopehelp:popover-open', false);
         }
-        await page.locator(`${gear} >> visible=true`).first().click(); await page.waitForTimeout(400);
+        await page.locator(`${gear} >> visible=true`).first().click(); await steady(page, '.panel .popover:popover-open');
         // one open at a time: the menu bar (or ☰) closes the popover and the other way round
         // keyboard on purpose: an open ☰ panel covers the ⚙ on a phone (a tap would land in the panel)
-        await page.locator(burger ? '#menubar .mb-burger' : '#menubar .mb-title >> nth=0').press('Enter'); await page.waitForTimeout(150);
-        if (await isOpen(page, '.panel .popover:popover-open')) f.push({ check: 'one-open', where: 'popover ⚙ + menu', detail: 'Popover bleibt offen, wenn das Menü aufgeht' });
-        await page.locator(`${gear} >> visible=true`).first().press('Enter'); await page.waitForTimeout(150);
-        if (await isOpen(page, burger ? '#menubar .mb-items' : '#menubar .mb-drop')) f.push({ check: 'one-open', where: 'menu + popover ⚙', detail: 'Menü bleibt offen, wenn das Popover aufgeht' });
+        await page.locator(burger ? '#menubar .mb-burger' : '#menubar .mb-title >> nth=0').press('Enter');
+        if (!await settles(page, '.panel .popover:popover-open', false)) f.push({ check: 'one-open', where: 'popover ⚙ + menu', detail: 'Popover bleibt offen, wenn das Menü aufgeht' });
+        await page.locator(`${gear} >> visible=true`).first().press('Enter');
+        if (!await settles(page, burger ? '#menubar .mb-items' : '#menubar .mb-drop', false)) f.push({ check: 'one-open', where: 'menu + popover ⚙', detail: 'Menü bleibt offen, wenn das Popover aufgeht' });
         await page.keyboard.press('Escape'); await outsideClick(page);
       } else f.push({ check: 'missing', where: 'popover ⚙', detail: 'kein sichtbarer ⚙-Auslöser' });
 

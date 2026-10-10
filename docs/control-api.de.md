@@ -46,6 +46,8 @@ Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen
 | `audio.pause` | `mode` `toggle`\|`on`\|`off`, `source` optional: I und LRA anhalten/fortsetzen (Tech 3341) |
 | `generator` | `mode` `toggle`\|`on`\|`off`, `signal` optional (`sine`, `ebu-ident`, `glits`, `blits`, `ebu-multi`, `ident-lr`, `pink`, `pink-band`, `white`, `sweep`, `steps`, `polarity`, `avsync`, …), `freq` 10–20000 Hz, `level` −90–0 dBFS; über −6 dBFS nur mit `"force": true` |
 | `record` | `mode` `toggle`\|`on`\|`off`, `source` optional (ohne = alle aufnehmbaren Quellen in eine gemeinsame Aufnahme, wie „Alle aufnehmen“; `toggle` beendet alle, sobald eine läuft) |
+| `ring` | `mode` `toggle`\|`on`\|`off`, `source` optional (ohne = alle Bridge-Quellen): Ringpuffer der Quelle |
+| `ring.save` | `pre` (s, optional), `post` (s, optional; Nachlauf): alle Ringpuffer mit derselben Zeitmarke sichern; ohne Angabe die Werte aus Einstellungen → Aufnahme |
 | `record.mark` | `label` optional (ohne = M1, M2 …), `source` optional (ohne = alle laufenden Aufnahmen): Marker in die Begleitdatei |
 | `record.event` | `kind` (Buchstaben, Ziffern, `_ . -`), `data` (beliebiger JSON-Wert bis 16 KB), `source` optional: Ereignis in die Begleitdatei, z. B. Paint-Änderungen |
 | `setting` | `key` (`theme`, `scheme`, `sidebar`, `display`, `hdrPreview`, `unit`, `tint`, `precision`, `falseColour`, `skinLuma`, `skinHue`, `zebra`, `stage`, `deRef`, `lowLatency`, `refSource` (Quellen-ID oder leer = aus), `refMode` (`live`/`frozen`), `refOpacity` (5…100 %)), `value`: eine der Auswahlen, eine Zahl im Bereich, `true`/`false` oder `[lo, hi]` für `skinLuma`. Dieselbe Beschreibung baut das Einstellungen-Fenster und die ⚙-Zeilen der Panels (src/ui/schema.ts); `state.settings` listet Schlüssel, Werte, Auswahlen und Bereiche |
@@ -69,7 +71,7 @@ Antwort: `{ ok, result?, error?, state }`. `error` ist ein englischer Text, der 
   "audio": { "source": "Kamera 1", "momentary": -22.8, "shortTerm": -23.1, "integrated": -23.0, "lra": 4.2, "maxTP": -2.1,
              "paused": false, "seconds": 312, "avOffsetMs": 12.5, "ident": "EBU-Stereo-Ident (R 49)", "identProblems": [] },
   "generator": { "running": false, "signal": "sine", "level": -18, "freq": 1000, "channels": 2 },
-  "recording": { "active": 1, "sources": [{ "name": "Kamera 1", "id": "s1", "seconds": 312, "take": "20261010-213005" }] },
+  "recording": { "active": 1, "sources": [{ "name": "Kamera 1", "id": "s1", "seconds": 312, "take": "20261010-213005" }], "ring": [{ "name": "Kamera 2", "id": "s2", "pre": 60, "buffered": 60 }] },
   "settings": [{ "key": "unit", "kind": "select", "label": "Skala", "value": "percent", "options": ["percent", "bit8", "bit10", "nits"] }, …],
   "sources": [], "layouts": [], "presets": [], "panels": [], "scenes": [], "patterns": []
 }
@@ -105,6 +107,8 @@ curl -s -H "$J" -d '{"cmd":"transport","op":"next"}' $B
 curl -s -H "$J" -d '{"cmd":"record","mode":"on"}' $B                       # alle Quellen aufnehmen
 curl -s -H "$J" -d '{"cmd":"record.mark","label":"Gamma +2"}' $B
 curl -s -H "$J" -d '{"cmd":"record","mode":"off"}' $B
+curl -s -H "$J" -d '{"cmd":"ring","mode":"on"}' $B                         # Ringpuffer für alle Bridge-Quellen
+curl -s -H "$J" -d '{"cmd":"ring.save","post":5}' $B                       # letzte Sekunden + 5 s Nachlauf sichern
 # mit Token von einem anderen Rechner
 curl -s -H "$J" -H 'Authorization: Bearer geheim' -d '{"cmd":"freeze"}' http://studio.local:4192/api/control
 ```
@@ -113,7 +117,7 @@ Im Browser öffnet `output.open` ein Fenster nur, wenn Pop-ups für die Seite er
 
 ## Companion-Modul
 
-`companion/` enthält das Modul `companion-module-lz-scopes` (API `@companion-module/base` ~1.14.1, wie das Modul in lz-camera-bridge) mit Aktionen für die Befehle oben (außer `record.event`), Feedbacks (Aufnahme läuft, Verbunden, Eingefroren, Quelle aktiv, Clipping/Y′ über Schwelle, Layout, Szene, Ausgabe offen, Stream läuft, Panel maximiert, Videodatei läuft, Tongenerator läuft, I/LRA angehalten, Max True Peak über Schwelle, Ident-Befund), Variablen (auch Lautheit M/S/I/LRA, True Peak, A/V-Versatz, Ident, laufende Aufnahmen und Aufnahmedauer) und Presets.
+`companion/` enthält das Modul `companion-module-lz-scopes` (API `@companion-module/base` ~1.14.1, wie das Modul in lz-camera-bridge) mit Aktionen für die Befehle oben (außer `record.event`), Feedbacks (Aufnahme läuft, Ringpuffer läuft, Verbunden, Eingefroren, Quelle aktiv, Clipping/Y′ über Schwelle, Layout, Szene, Ausgabe offen, Stream läuft, Panel maximiert, Videodatei läuft, Tongenerator läuft, I/LRA angehalten, Max True Peak über Schwelle, Ident-Befund), Variablen (auch Lautheit M/S/I/LRA, True Peak, A/V-Versatz, Ident, laufende Aufnahmen und Aufnahmedauer) und Presets.
 
 ```bash
 cd companion

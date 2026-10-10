@@ -71,3 +71,22 @@ test('Aufnahme-Knopf der Quellenkarte und „alle aufnehmen“ über die Steuer-
   await until(() => { const n = statSync(join(take2, webm)).size; const done = n > 1000 && n === last; last = n; return done; }, 15_000, 'WebM vollständig');
   expect(frames(join(take2, webm))).toBeGreaterThan(10);
 });
+
+test('Ringpuffer: Ring in der Quellenkarte, Sichern über die Steuer-API, Kopfleiste zeigt „Ring sichern“', async () => {
+  const { page } = a;
+  const st = (await a.state()).sources.find((x) => x.kind === 'stream' && x.status === 'live')!;
+  await expect(page.locator('#ring-save')).toBeHidden();
+  await page.locator(`button[data-ring="${st.id}"]`).click();
+  await expect(page.locator(`[data-ringstat="${st.id}"]`)).toContainText('Ring 60 s', { timeout: 30_000 });
+  await expect(page.locator('#ring-save')).toBeVisible();
+  // a few seconds into the ring, then save: the file holds what the ring has (from its start)
+  await page.waitForTimeout(7000);
+  const before = new Set(readdirSync(dir));
+  expect((await a.control({ cmd: 'ring.save', post: 1 })).ok).toBe(true);
+  const take = await until(() => readdirSync(dir).find((d) => !before.has(d) && d.endsWith('-ring')), 30_000, 'Ring-Aufnahme');
+  const mkv = await until(() => readdirSync(join(dir, take)).find((f) => f.endsWith('_ring.mkv')), 30_000, 'Ring-Datei');
+  await until(() => readdirSync(join(dir, take)).some((f) => f.endsWith('_ring.json')), 15_000, 'Begleitdatei des Rings');
+  expect(frames(join(dir, take, mkv))).toBeGreaterThan(20);
+  expect((await a.control({ cmd: 'ring', mode: 'off' })).ok).toBe(true);
+  await expect(page.locator('#ring-save')).toBeHidden({ timeout: 15_000 });
+});

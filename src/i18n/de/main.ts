@@ -69,6 +69,7 @@ export default {
   'settings.scopes': 'Scopes',
   'settings.scopes.scale': 'Skala',
   'settings.scopes.nitsScene': 'cd/m² / Szene',
+  'settings.scopes.stop': 'STOP (Blenden zur Graukarte)',
   'settings.scopes.standard': 'Standard',
   'settings.scopes.zebra': 'Zebra',
   'settings.stage': 'Messpunkt / CST',

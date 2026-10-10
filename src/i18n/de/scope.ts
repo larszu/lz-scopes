@@ -49,6 +49,8 @@ export default {
   'scope.mark.grey18Log': '18 % Grau {curve}',
   'scope.zoomBadge': 'LUPE {lo} … {hi} %',
   'scope.unitScene': 'Szene %',
+  'scope.unitStop': 'STOP · {curve} · 0 = Graukarte',
+  'scope.probeStop': '≈ {stops} Blenden zur Graukarte',
   'scope.green': 'Grün',
   'scope.skinTone': 'Hautton',
   'scope.stats.status': 'Status',

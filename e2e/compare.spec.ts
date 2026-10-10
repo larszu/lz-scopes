@@ -81,3 +81,26 @@ test('Kachelansicht: zwei Quellen, je eine Waveform-Kachel', async () => {
   await until(async () => { const [w1, b1, b2, w2] = await read(); return w1 > 150 && b2 > 150 && b1 < 60 && w2 < 60; }, 60_000, 'Kacheln mit Weiß in 1 und Schwarz in 2')
     .catch(async (e) => { console.log('Kachelpegel', await read()); throw e; });
 });
+
+test('STOP-Skala: Hauptlinie bei der Graukarte (SDR 40,9 %)', async () => {
+  expectOk(await a.control({ cmd: 'pattern.select', pattern: 'steps11' }));
+  await singlePanel(a, 'wf-luma');
+  expectOk(await a.control({ cmd: 'setting', key: 'unit', value: 'stop' }));
+  // major graticule line (src/graticule.ts GRID, solid) at stop 0 on the overlay canvas
+  const line = (level: number) => a.page.evaluate(({ level, wmin, wmax }) => {
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === 'wf-luma')!;
+    const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
+    const dpr = c.width / c.getBoundingClientRect().width, cssW = c.width / dpr, cssH = c.height / dpr;
+    const r = { x: 44, y: 8, w: cssW - 52, h: cssH - 16 };
+    const y = r.y + r.h - ((level - wmin) / (wmax - wmin)) * r.h;
+    const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(Math.round((r.x + r.w * 0.31) * dpr), Math.round((y - 2) * dpr), 1, Math.round(4 * dpr)).data;
+    let alpha = 0;
+    for (let i = 3; i < d.length; i += 4) alpha = Math.max(alpha, d[i]);
+    return alpha;
+  }, { level, wmin: WAVE_MIN, wmax: WAVE_MAX });
+  const grey = 1.099 * 0.18 ** 0.45 - 0.099;
+  await until(async () => (await line(grey)) > 80, 30_000, 'Linie bei Blende 0');
+  // the percent scale has no line there (only every 10 %)
+  expectOk(await a.control({ cmd: 'setting', key: 'unit', value: 'percent' }));
+  await until(async () => (await line(grey)) < 20, 30_000, 'keine Linie bei 40,9 % in der %-Skala');
+});

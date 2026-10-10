@@ -1091,6 +1091,10 @@ function panelSettings(p: PanelState): Node[] {
       else if (s.faceTrack && faceMod?.faceStatus.delegate === 'CPU') row('', h('p', { class: 'hint' }, t('panel.facesCpu')));
     }
   }
+  if (p.scope === 'noise') {
+    row(t('noise.detrend'), checkbox(p.noise?.detrend !== false, t('noise.detrendText'), (v) => { p.noise = { ...p.noise, detrend: v }; save(); }, t('noise.detrendTitle')));
+    rows.push(hint(t('noise.hint')));
+  }
   if (p.scope === 'stats') {
     row(t('panel.hdr10'), button(t('panel.hdr10Reset'), () => { panelSource(p)?.resetLightLevel(); }, { small: true, title: t('panel.hdr10Title') }));
   }

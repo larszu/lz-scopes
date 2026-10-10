@@ -37,6 +37,7 @@ import { IDENTITY, isIdentity, viewRect, waveRange, type View, type ViewLimits }
 import { GHOST_CSS, GHOST_TINT, deltaRows, ghostChannels, hasGhost, histOf, levelDeltas, traceLevels } from './ghost';
 import { LUMA } from './color';
 import { PEAK_COLOURS, PEAK_DEFAULT, PeakHold, lumaPlane, measureRect, sharpness, type PeakColour, type Rect4 } from './focus';
+import { channelPlanes, measureNoise, noiseRows, quantFloorDb, type NoiseResult } from './noise';
 import { TILE_HEAD, sanitizeTiles, tileAspect, tileGrid, tileLabel, tileSources, type TileSettings } from './tiles';
 
 export interface PanelState {
@@ -109,6 +110,44 @@ export interface PanelState {
   tiles?: TileSettings;
   /** picture 'peaking' overlay (focus.ts): gradient threshold and colour */
   peak?: { threshold?: number; colour?: PeakColour };
+  /** noise meter (noise.ts): remove a fitted shading surface before measuring (default on) */
+  noise?: { detrend?: boolean };
+}
+
+/** Noise of the measuring frame (centre third without one), once per frame and setting. */
+const noiseCache = new Map<string, { key: string; r: NoiseResult | null; rect: Rect4; scaled: boolean; fw: number; sw: number }>();
+export function noiseOf(src: Source, detrend: boolean) {
+  const b = baseOf(src), f = b.cpuFrame();
+  if (!f) return null;
+  const roi = b.activeRois()[0], sx = f.w / b.width, sy = f.h / b.height;
+  const rect = measureRect(roi ? [roi[0] * sx, roi[1] * sy, roi[2] * sx, roi[3] * sy] : null, f.w, f.h);
+  const key = `${b.frameSeq}:${rect.join(',')}:${f.w}:${detrend}:${b.colorspace}`;
+  const hit = noiseCache.get(b.id);
+  if (hit?.key === key) return hit;
+  const { kr, kb } = LUMA[b.colorspace];
+  const c = chainOf(src);
+  const decode = c ? ((px: ArrayLike<number>, i: number) => c.apply(f.decode(px, i)) as [number, number, number]) : f.decode;
+  const out = { key, r: measureNoise(channelPlanes(f.px, f.w, decode, kr, kb, rect), detrend), rect, scaled: f.w < (b.info?.sourceWidth ?? b.width) || f.w < b.width, fw: f.w, sw: Math.max(b.width, b.info?.sourceWidth ?? 0) };
+  noiseCache.set(b.id, out);
+  return out;
+}
+
+function drawNoisePanel(ctx: CanvasRenderingContext2D, p: PanelState, src: Source) {
+  const detrend = p.noise?.detrend !== false;
+  const m = noiseOf(src, detrend);
+  const lines = [src.name];
+  if (!m?.r) lines.push(t('noise.noData'));
+  else {
+    const [x0, y0, x1, y1] = m.rect;
+    lines.push(t(src.activeRois().length ? 'noise.region' : 'noise.regionCentre', { w: x1 - x0, h: y1 - y0 }) + (detrend ? ` · ${t('noise.detrendOn')}` : ''), '');
+    lines.push(...noiseRows(m.r, { level: t('noise.level'), sigma: 'σ %' }), '');
+    lines.push(t('noise.snr', { db: Number.isFinite(m.r.Y.db) ? (-m.r.Y.db).toFixed(1) : '∞' }));
+    const floor = src.yuv ? quantFloorDb(src.yuv.bits, !src.yuv.full) : quantFloorDb(src.depth === 16 ? 16 : 8, false);
+    lines.push(t('noise.floor', { db: floor.toFixed(1) }));
+    if (m.scaled) lines.push(t('noise.scaled', { w: m.fw, src: m.sw }));
+  }
+  ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.fillStyle = '#d6d6d6'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  lines.forEach((l, i) => ctx.fillText(l, 12, 10 + i * 15));
 }
 
 /** Focus value per source: last frame's sharpness and the peak hold (focus.ts). */
@@ -668,6 +707,8 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     if (p.audioBar !== false && src.audio) drawAudioBar(ctx, src.audio, frame);
   } else if (p.scope === 'match') {
     drawMatchPanel(ctx, body.w, body.h, p.match, src, matchCtx(o));
+  } else if (p.scope === 'noise') {
+    drawNoisePanel(ctx, p, src);
   } else if (p.scope === 'stats') {
     const lines = statsLines(src, o.displayFps);
     if (probeRgb) lines.push('', t('settings.stage.point'), ...[...probeLines(src, probeRgb, o.unit), ...deLines(src, probeRgb, o)]);

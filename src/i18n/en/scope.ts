@@ -32,6 +32,7 @@ export default {
   'scope.name.wshading': 'White-Shading Map',
   'scope.name.skinall': 'Skin Tone All Cameras',
   'scope.name.simulcast': 'Simulcast Deviation',
+  'scope.name.encoder': 'Encoder Confidence',
   'scope.name.audio-meter': 'Audio Level & Loudness',
   'scope.name.audio-loudness': 'Audio Loudness History',
   'scope.name.audio-spectrum': 'Audio Spectrum',

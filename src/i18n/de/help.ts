@@ -259,5 +259,11 @@ export default {
   'help.simulcast.try': "Testbild „PQ-Verlauf mit Referenzweiß 203“, in der Seitenleiste unter CST / LUT eine CST nach Rec.709 / BT.1886 mit Tone Mapping „Clip an der Zielspitze“; Stufen im Panel „Signal“ und „nach CST“.",
   'help.simulcast.check': "der Verlauf bleibt bis etwa 203 cd/m² grau und färbt sich nach rechts (beschnittene Lichter); das untere Feld bei 203 cd/m² bleibt grau.",
   'help.simulcast.pitfall': "ΔE ITP setzt die kritischste Adaptation voraus: Werte von 1–3 sind im normalen Wohnzimmer selten sichtbar. Log-Stufen sind Szenenlicht und geben nur eine Rangfolge, keine Sichtbarkeit.",
+  'help.encoder.one': "Programm gegen Rücklauf eines Streams: Verzögerung, Blockbildung, Banding und A/V-Versatz, live.",
+  'help.encoder.what': "Kleine Produktionen streamen ohne Monitoring-Kette. Den dekodierten Stream (HLS, RTMP, SRT) als Quelle anlegen, in diesem Panel zeigen und im ⚙ das Programm wählen (was in den Encoder geht). Das Panel vergleicht beide laufend und zeigt, was Encoder und Strecke hinzufügen.",
+  'help.encoder.read': "Verzögerung: wie weit der Rücklauf hinterherläuft, mit der Sicherheit der Zuordnung (bewegter Inhalt nötig).\nBlockbildung B/A: Sprünge über die 8-Pixel-Blockgrenzen gegen die innerhalb der Blöcke; 1 = keine Blockstruktur. Programm → Rücklauf.\nBanding: Index nach CAMBI (vereinfacht); höher = mehr Stufen in flachen Verläufen.\nA/V: Versatz jeder Quelle aus Blitz und Piep und die Differenz, die die Strecke hinzufügt (BT.1359-1).\nGut: Rücklauf in jeder Zeile nahe am Programm.",
+  'help.encoder.try': "Zwei Quellen: das Testbild „A/V-Sync“ mit dem Generator-Piep als Programm, dasselbe Signal per ffmpeg durchgereicht (oder ein RTSP-Teststream) als Rücklauf. Panel-Quelle = Rücklauf, im ⚙ Programm = das Testbild.",
+  'help.encoder.check': "sobald sich das Bild bewegt, erscheint eine Verzögerung; die A/V-Zeile zeigt beide Versätze und ihre Differenz.",
+  'help.encoder.pitfall': "Blockbildung misst nur bei nativer Analysebreite (Bridge-Breite „nativ“); ein skaliertes Analysebild verschmiert das 8-Pixel-Raster.",
   // --- end scope texts ---
 } satisfies Translation<typeof en>;

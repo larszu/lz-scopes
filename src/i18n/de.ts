@@ -39,6 +39,7 @@ import help from './de/help';
 import compare from './de/compare';
 import wallcheck from './de/wallcheck';
 import sim from './de/sim';
+import enc from './de/enc';
 import type { Key } from './en';
 import type { Msg } from './types';
 
@@ -78,4 +79,5 @@ export const de: Record<Key, Msg> = {
   ...compare,
   ...wallcheck,
   ...sim,
+  ...enc,
 };

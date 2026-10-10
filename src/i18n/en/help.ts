@@ -259,5 +259,11 @@ export default {
   'help.simulcast.try': "Test pattern \"PQ ramp with reference white 203\", in the sidebar under CST / LUT a CST to Rec.709 / BT.1886 with tone mapping \"Clip at the target peak\"; panel stages \"Signal\" and \"after CST\".",
   'help.simulcast.check': "the ramp stays grey up to about 203 cd/m² and turns coloured towards the right (clipped highlights); the bottom field at 203 cd/m² stays grey.",
   'help.simulcast.pitfall': "ΔE ITP assumes the most critical adaptation: values of 1–3 are rarely visible in a normal living room. Log stages are scene light and only give an order, not a visibility.",
+  'help.encoder.one': "Programme against the return of a stream: delay, blocking, banding and A/V offset, live.",
+  'help.encoder.what': "Small productions stream without a monitoring chain. Add the decoded stream (HLS, RTMP, SRT) as a source, show it in this panel and pick the programme (what goes into the encoder) in ⚙. The panel compares both continuously and shows what the encoder and the stream path add.",
+  'help.encoder.read': "Delay: how far the return lags behind, with how sure the match is (moving content needed).\nBlocking B/A: differences across the 8-pixel block boundaries against those inside the blocks; 1 = no block structure. Programme → return.\nBanding: index after CAMBI (simplified); higher = more steps in flat gradients.\nA/V: offset of each source from flash and beep, and the difference the stream adds (BT.1359-1).\nGood: return close to the programme in every row.",
+  'help.encoder.try': "Two sources: the test pattern \"A/V sync\" with the generator beep as programme, the same signal pushed through ffmpeg (or an RTSP test stream) as return. Panel source = return, ⚙ programme = the test pattern.",
+  'help.encoder.check': "a delay appears once the picture moves; the A/V line shows both offsets and their difference.",
+  'help.encoder.pitfall': "Blocking only measures at the native analysis width (bridge width \"native\"); a scaled analysis picture smears the 8-pixel grid.",
   // --- end scope texts ---
 } satisfies Messages;

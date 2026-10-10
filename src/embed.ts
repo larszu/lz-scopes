@@ -27,9 +27,9 @@ export interface ScopeViewOptions {
 const CSS = `
 .lzs-root{position:relative;display:grid;gap:3px;width:100%;height:100%;background:#0b0c0e;font:11px system-ui,sans-serif;color:#d9dce0}
 .lzs-root>canvas.lzs-gl{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-.lzs-panel{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid #22262b;border-radius:3px}
+.lzs-panel{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid #22262b}
 .lzs-head{position:relative;z-index:1;display:flex;gap:4px;padding:2px 3px;background:rgba(17,19,22,.92);border-bottom:1px solid #22262b}
-.lzs-head select{font:inherit;color:inherit;background:#181b1f;border:1px solid #2d3238;border-radius:3px;padding:1px 3px}
+.lzs-head select{font:inherit;color:inherit;background:#181b1f;border:1px solid #2d3238;border-radius:0;padding:1px 3px}
 .lzs-body{position:relative;flex:1;min-height:0}
 .lzs-body canvas{position:absolute;inset:0;width:100%;height:100%}`;
 

@@ -2,7 +2,7 @@
 
 Nimmt von einem Gerät mit DeckLink-Schnittstelle auf (LZ Scopes compatible with Blackmagic Design DeckLink) und schreibt die Bilder im Helfer-Protokoll (`docs/frame-protocol.de.md`) auf stdout. Die Bridge startet ihn für Quellen `decklink:<n>` und rechnet wie bei Streams mit ffmpeg nach R′G′B′ um.
 
-**Stand:** In der Desktop-App enthalten (macOS universal, Windows x64; gebaut in `release.yml`). Auf macOS gegen die Include-Dateien des DeckLink SDK 12.0 kompiliert und ohne Treiber ausgeführt (meldet „Blackmagic Desktop Video ist nicht installiert (DeckLink-Treiber fehlt)“). Der Windows-Zweig wird in CI kompiliert, aber nirgends ausgeführt. **Nie mit echter Hardware gelaufen.** Bezeichnung nach SDK-EULA §6.2: „LZ Scopes compatible with Blackmagic Design DeckLink“.
+**Stand:** In der Desktop-App enthalten (macOS universal, Windows x64, Linux x64 und arm64; gebaut in `release.yml`). Auf macOS gegen die Include-Dateien des DeckLink SDK 12.0 kompiliert und ohne Treiber ausgeführt (meldet „Blackmagic Desktop Video ist nicht installiert (DeckLink-Treiber fehlt)“). Der Windows-Zweig wird in CI kompiliert, aber nirgends ausgeführt; unter Linux (x64, arm64) wird er in CI kompiliert und ohne Treiber gestartet. Desktop Video für Linux gibt es auch für AArch64; Blackmagic nennt als getestete ARM-Plattformen nur Jetson AGX Xavier und Clara AGX, für Raspberry Pi 5 oder Jetson Orin nichts. **Nie mit echter Hardware gelaufen.** Bezeichnung nach SDK-EULA §6.2: „LZ Scopes compatible with Blackmagic Design DeckLink“.
 
 ## Warum ein eigener Helfer
 

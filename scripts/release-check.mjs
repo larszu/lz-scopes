@@ -1,7 +1,7 @@
 /**
  * Is a GitHub release complete? Reads the asset names (one per line) from stdin and checks
  * them against what release.yml must attach: both installers for Windows (NSIS + portable),
- * dmg + zip for macOS (universal), AppImage + deb for Linux (x64), the update feeds for electron-updater and every ffmpeg
+ * dmg + zip for macOS (universal), AppImage + deb for Linux (x64 and arm64), the update feeds for electron-updater and every ffmpeg
  * source archive of scripts/ffmpeg-builds.json (GPLv3 section 6d).
  *
  *   gh release view v1.3.0 --json assets -q '.assets[].name' | node scripts/release-check.mjs
@@ -26,6 +26,9 @@ export function requiredAssets(manifest = JSON.parse(readFileSync(join(ROOT, 'sc
     ['Linux AppImage (x64)', (n) => /-x86_64\.AppImage$/.test(n)],
     ['Linux deb (amd64)', (n) => /_amd64\.deb$|-amd64\.deb$/.test(n)],
     ['Update-Feed Linux latest-linux.yml', (n) => n === 'latest-linux.yml'],
+    ['Linux AppImage (arm64)', (n) => /-arm64\.AppImage$/.test(n)],
+    ['Linux deb (arm64)', (n) => /[-_]arm64\.deb$/.test(n)],
+    ['Update-Feed Linux arm64 latest-linux-arm64.yml', (n) => n === 'latest-linux-arm64.yml'],
   ];
   for (const s of manifest.sources.files) req.push([`Quelltext ${s.name}`, (n) => n === s.name]);
   return req;

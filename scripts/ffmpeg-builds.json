@@ -1,56 +1,66 @@
 {
-  "_doc": "ffmpeg builds the desktop app ships (and the tests use): LZ Scopes' own minimal build (scripts/ffmpeg-build/, .github/workflows/ffmpeg-build.yml), published as the pre-release ffmpeg-9.0.2-lzs1. No --enable-nonfree anywhere; scripts/ffmpeg-fetch.mjs checks the configure line of every binary. Research and licence duties: docs/research/ffmpeg-lizenz.md. Update: run ffmpeg-build.yml with publish=true, then new URL + SHA-256 here.",
+  "_doc": "ffmpeg builds the desktop app ships (and the tests use): LZ Scopes' own minimal build (scripts/ffmpeg-build/, .github/workflows/ffmpeg-build.yml), published as the pre-release ffmpeg-9.0.2-lzs2. No --enable-nonfree anywhere; scripts/ffmpeg-fetch.mjs checks the configure line of every binary. Research and licence duties: docs/research/ffmpeg-lizenz.md. Update: run ffmpeg-build.yml with publish=true, then new URL + SHA-256 here.",
   "targets": {
     "darwin-arm64": {
-      "version": "9.0.2-lzs1",
+      "version": "9.0.2-lzs2",
       "provider": "LZ Scopes own build (static, GPLv3): FFmpeg + x264 + x265 10 bit + libsrt + mbedTLS + zlib",
-      "page": "https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs1",
+      "page": "https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs2",
       "buildScript": "https://github.com/larszu/lz-scopes/tree/main/scripts/ffmpeg-build",
       "files": [
-        { "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs1/ffmpeg-9.0.2-lzs1-darwin-arm64.zip", "sha256": "362223341942176c176c68058dd62f99703efad7153d41a54ec0214ab82d323d", "take": { "ffmpeg": "ffmpeg", "ffprobe": "ffprobe", "BUILD-INFO.txt": "BUILD-INFO.txt" } }
+        { "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs2/ffmpeg-9.0.2-lzs2-darwin-arm64.zip", "sha256": "d0819904785aaa276a0a66ba4ed65bc2aab56a72e5921bc2c17bd3c9c80e406c", "take": { "ffmpeg": "ffmpeg", "ffprobe": "ffprobe", "BUILD-INFO.txt": "BUILD-INFO.txt" } }
       ]
     },
     "darwin-x64": {
-      "version": "9.0.2-lzs1",
+      "version": "9.0.2-lzs2",
       "provider": "LZ Scopes own build (static, GPLv3): FFmpeg + x264 + x265 10 bit + libsrt + mbedTLS + zlib",
-      "page": "https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs1",
+      "page": "https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs2",
       "buildScript": "https://github.com/larszu/lz-scopes/tree/main/scripts/ffmpeg-build",
       "files": [
-        { "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs1/ffmpeg-9.0.2-lzs1-darwin-x64.zip", "sha256": "cb6731d57f57d71228c8064fce9e1b7929021bbd6409879d98b13ad57ed0b4aa", "take": { "ffmpeg": "ffmpeg", "ffprobe": "ffprobe", "BUILD-INFO.txt": "BUILD-INFO.txt" } }
+        { "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs2/ffmpeg-9.0.2-lzs2-darwin-x64.zip", "sha256": "afc12ed927d83a4798da00e3bfc034b185d2b86eee10af0facab5e3a5048c120", "take": { "ffmpeg": "ffmpeg", "ffprobe": "ffprobe", "BUILD-INFO.txt": "BUILD-INFO.txt" } }
       ]
     },
     "win32-x64": {
-      "version": "9.0.2-lzs1",
+      "version": "9.0.2-lzs2",
       "provider": "LZ Scopes own build (static, GPLv3): FFmpeg + x264 + x265 10 bit + libsrt + mbedTLS + zlib",
-      "page": "https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs1",
+      "page": "https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs2",
       "buildScript": "https://github.com/larszu/lz-scopes/tree/main/scripts/ffmpeg-build",
       "files": [
-        { "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs1/ffmpeg-9.0.2-lzs1-win32-x64.zip", "sha256": "dc1420db21dd9c28d0e4f20487302fad2ea7f50d005ee845e54bfeecb1ec5688", "take": { "ffmpeg.exe": "ffmpeg.exe", "ffprobe.exe": "ffprobe.exe", "BUILD-INFO.txt": "BUILD-INFO.txt" } }
+        { "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs2/ffmpeg-9.0.2-lzs2-win32-x64.zip", "sha256": "f0aaee22ea385edb12644e2e9e79f7688cf785d0a7290fc2461609c3605612d6", "take": { "ffmpeg.exe": "ffmpeg.exe", "ffprobe.exe": "ffprobe.exe", "BUILD-INFO.txt": "BUILD-INFO.txt" } }
       ]
     },
     "linux-x64": {
-      "_doc": "shipped in the Linux app (AppImage, deb); dynamically linked against glibc 2.38+ and libstdc++ (Ubuntu 24.04, Debian 13, Fedora 39 or later); input devices: v4l2, no ALSA (built with --disable-autodetect)",
-      "version": "9.0.2-lzs1",
+      "_doc": "shipped in the Linux app (AppImage, deb; x64); dynamically linked against glibc 2.38+, libstdc++ and libasound (Ubuntu 24.04, Debian 13, Fedora 39 or later); input devices: v4l2, alsa",
+      "version": "9.0.2-lzs2",
       "provider": "LZ Scopes own build (static, GPLv3): FFmpeg + x264 + x265 10 bit + libsrt + mbedTLS + zlib",
-      "page": "https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs1",
+      "page": "https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs2",
       "buildScript": "https://github.com/larszu/lz-scopes/tree/main/scripts/ffmpeg-build",
       "files": [
-        { "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs1/ffmpeg-9.0.2-lzs1-linux-x64.zip", "sha256": "95ac4e36502b6e9134201673686e902c6baaaf116a3a661955a59af769d567ce", "take": { "ffmpeg": "ffmpeg", "ffprobe": "ffprobe", "BUILD-INFO.txt": "BUILD-INFO.txt" } }
+        { "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs2/ffmpeg-9.0.2-lzs2-linux-x64.zip", "sha256": "84c19dfbde3aa77d7192b46a61a2722dc93362ad54f1e0515bd813f832c2e964", "take": { "ffmpeg": "ffmpeg", "ffprobe": "ffprobe", "BUILD-INFO.txt": "BUILD-INFO.txt" } }
+      ]
+    },
+    "linux-arm64": {
+      "_doc": "shipped in the Linux app (AppImage, deb; arm64: Raspberry Pi 5, Jetson); built on Ubuntu 22.04 with GCC 12, dynamically linked against glibc 2.35+, libstdc++ and libasound (Ubuntu 22.04, JetPack 6, Raspberry Pi OS 12 or later); input devices: v4l2, alsa",
+      "version": "9.0.2-lzs2",
+      "provider": "LZ Scopes own build (static, GPLv3): FFmpeg + x264 + x265 10 bit + libsrt + mbedTLS + zlib",
+      "page": "https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs2",
+      "buildScript": "https://github.com/larszu/lz-scopes/tree/main/scripts/ffmpeg-build",
+      "files": [
+        { "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs2/ffmpeg-9.0.2-lzs2-linux-arm64.zip", "sha256": "55eb87e0d4a5de9ae3d62206cd5ee4d17bd4c2cb272da4f2532bed943c4bb41a", "take": { "ffmpeg": "ffmpeg", "ffprobe": "ffprobe", "BUILD-INFO.txt": "BUILD-INFO.txt" } }
       ]
     }
   },
   "universal": { "darwin-universal": ["darwin-arm64", "darwin-x64"] },
   "sources": {
-    "_doc": "Corresponding source attached to every app release (GPLv3 section 6d, release.yml job `sources`): the exact inputs of the build, copied from the ffmpeg-9.0.2-lzs1 release, SHA-256 as in its SHA256SUMS.",
+    "_doc": "Corresponding source attached to every app release (GPLv3 section 6d, release.yml job `sources`): the exact inputs of the build, copied from the ffmpeg-9.0.2-lzs2 release, SHA-256 as in its SHA256SUMS.",
     "files": [
-      { "name": "ffmpeg-9.0.2.tar.xz", "for": "FFmpeg 9.0.2", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs1/ffmpeg-9.0.2.tar.xz", "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e" },
-      { "name": "x264-b35605ace3ddf7c1a5d67a2eb553f034aef41d55.tar.gz", "for": "x264 stable b35605a (git archive of the commit)", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs1/x264-b35605ace3ddf7c1a5d67a2eb553f034aef41d55.tar.gz", "sha256": "cd71a7515b0e9a012e1ac9b1f8415bebcaf6fc97d4db32286642ac4c0fbe24f9" },
-      { "name": "x265_4.2.tar.gz", "for": "x265 4.2", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs1/x265_4.2.tar.gz", "sha256": "40b1ea0453e0309f0eba934e0ddf533f8f6295966679e8894e8f1c1c8d5e1210" },
-      { "name": "srt-1.5.7.tar.gz", "for": "libsrt 1.5.7", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs1/srt-1.5.7.tar.gz", "sha256": "017cd1e437ef2073a4dd10ddf7b55e86bc3d6ebac0393d13bd22f6a57055d32b" },
-      { "name": "mbedtls-3.6.7.tar.bz2", "for": "mbedTLS 3.6.7", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs1/mbedtls-3.6.7.tar.bz2", "sha256": "a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6" },
-      { "name": "zlib-1.3.2.tar.xz", "for": "zlib 1.3.2", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs1/zlib-1.3.2.tar.xz", "sha256": "d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3" },
-      { "name": "ffmpeg-build.sh", "for": "build script (scripts/ffmpeg-build/build.sh at the build commit)", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs1/build.sh", "sha256": "2192098899f157324d529e4495b4c64e4582f689eef3896fbd6f4f5ca6a784fd" },
-      { "name": "ffmpeg-sources.txt", "for": "source list with checksums (scripts/ffmpeg-build/sources.txt)", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs1/sources.txt", "sha256": "65e479fdab759566d71bb0b985a958645ff516f9003a5ea2eff47ea186af582b" }
+      { "name": "ffmpeg-9.0.2.tar.xz", "for": "FFmpeg 9.0.2", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs2/ffmpeg-9.0.2.tar.xz", "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e" },
+      { "name": "x264-b35605ace3ddf7c1a5d67a2eb553f034aef41d55.tar.gz", "for": "x264 stable b35605a (git archive of the commit)", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs2/x264-b35605ace3ddf7c1a5d67a2eb553f034aef41d55.tar.gz", "sha256": "cd71a7515b0e9a012e1ac9b1f8415bebcaf6fc97d4db32286642ac4c0fbe24f9" },
+      { "name": "x265_4.2.tar.gz", "for": "x265 4.2", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs2/x265_4.2.tar.gz", "sha256": "40b1ea0453e0309f0eba934e0ddf533f8f6295966679e8894e8f1c1c8d5e1210" },
+      { "name": "srt-1.5.7.tar.gz", "for": "libsrt 1.5.7", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs2/srt-1.5.7.tar.gz", "sha256": "017cd1e437ef2073a4dd10ddf7b55e86bc3d6ebac0393d13bd22f6a57055d32b" },
+      { "name": "mbedtls-3.6.7.tar.bz2", "for": "mbedTLS 3.6.7", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs2/mbedtls-3.6.7.tar.bz2", "sha256": "a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6" },
+      { "name": "zlib-1.3.2.tar.xz", "for": "zlib 1.3.2", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs2/zlib-1.3.2.tar.xz", "sha256": "d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3" },
+      { "name": "ffmpeg-build.sh", "for": "build script (scripts/ffmpeg-build/build.sh at the build commit)", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs2/build.sh", "sha256": "237b10d9850fdc05f4688ffbe2d0795e44735d3104bb8a382500e69f48db4bbb" },
+      { "name": "ffmpeg-sources.txt", "for": "source list with checksums (scripts/ffmpeg-build/sources.txt)", "url": "https://github.com/larszu/lz-scopes/releases/download/ffmpeg-9.0.2-lzs2/sources.txt", "sha256": "65e479fdab759566d71bb0b985a958645ff516f9003a5ea2eff47ea186af582b" }
     ]
   }
 }

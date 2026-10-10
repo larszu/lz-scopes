@@ -110,11 +110,19 @@ jobs:
           for h in lz-decklink lz-ndi; do "helpers/bin/$h$exe" --list || true; done
           "helpers/bin/lz-ndi$exe" --selftest
 
-  # The Linux app as release.yml packages it (AppImage + deb, x64), started under Xvfb: bridge
-  # up with the SHIPPED ffmpeg, UI served (scripts/linux-smoke.sh). The deb is installed with apt
-  # (AppArmor profile, /opt) and started like a user would.
+  # The Linux app as release.yml packages it (AppImage + deb, x64 and arm64, each on its own
+  # runner), started under Xvfb: bridge up with the SHIPPED ffmpeg, UI served
+  # (scripts/linux-smoke.sh). The deb is installed with apt (AppArmor profile, /opt) and started
+  # like a user would. arm64 on Ubuntu 22.04 (glibc 2.35: Raspberry Pi OS 12, JetPack 6).
   linux-app:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, os: ubuntu-latest }
+          - { arch: arm64, os: ubuntu-22.04-arm }
+    name: linux-app (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
@@ -124,7 +132,7 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: sudo apt-get update -q && sudo apt-get install -y -q xvfb
-      - run: node scripts/ffmpeg-fetch.mjs linux-x64
+      - run: node scripts/ffmpeg-fetch.mjs linux-${{ matrix.arch }}
       - run: npm run build
       - run: node scripts/decklink-sdk-fetch.mjs
       - name: Helpers (DeckLink, NDI) build and start without driver
@@ -140,24 +148,43 @@ jobs:
           path: vendor/lz-camera-bridge
           sparse-checkout: packages/bridge
       - run: node scripts/build-camera-bridge.mjs --required
-      - name: Package (AppImage, deb)
-        run: node node_modules/electron-builder/cli.js --config electron-builder.js --linux --publish never
+      - name: Package (AppImage, deb; ${{ matrix.arch }})
+        run: node node_modules/electron-builder/cli.js --config electron-builder.js --linux --${{ matrix.arch }} --publish never
       - name: Package contents
         run: |
           set -eu
           ls -lh release/
-          res=release/linux-unpacked/resources
+          # linux-unpacked (x64), linux-arm64-unpacked (arm64)
+          res="$(ls -d release/linux*-unpacked)/resources"
           test -x "$res/ffmpeg/ffmpeg"; test -x "$res/ffmpeg/ffprobe"; ls "$res/ffmpeg/licenses"
           # built-in camera bridge: bundle in the archive, serialport's native module unpacked
           node -e "const a=require('@electron/asar');const l=a.listPackage('$res/app.asar');if(!l.some(f=>f.endsWith('electron/camera-bridge.cjs')))throw new Error('camera-bridge.cjs missing')"
-          ls "$res"/app.asar.unpacked/node_modules/@serialport/bindings-cpp/prebuilds/linux-x64/*.node
+          ls "$res"/app.asar.unpacked/node_modules/@serialport/bindings-cpp/prebuilds/linux-${{ matrix.arch }}/*.node
           test -x "$res/app.asar.unpacked/helpers/bin/lz-decklink"; test -x "$res/app.asar.unpacked/helpers/bin/lz-ndi"
-          test -f release/latest-linux.yml && cat release/latest-linux.yml
+          cat release/latest-linux*.yml
+          # ffmpeg and helpers of this arch (electron-builder.js beforePack checks it as well)
+          file "$res/ffmpeg/ffmpeg" "$res/app.asar.unpacked/helpers/bin/lz-ndi"
+          "$res/ffmpeg/ffmpeg" -hide_banner -devices | grep -E '^ D[E ] +alsa '
           ls release/*.AppImage release/*.deb
           dpkg-deb --info release/*.deb
-          grep -E '^(Categories|Name|Exec)=' release/linux-unpacked/*.desktop 2>/dev/null || dpkg-deb --fsys-tarfile release/*.deb | tar -xO --wildcards '*.desktop'
+          grep -E '^(Categories|Name|Exec)=' release/linux*-unpacked/*.desktop 2>/dev/null || dpkg-deb --fsys-tarfile release/*.deb | tar -xO --wildcards '*.desktop'
           # packaging trap: the packaged package.json must not say "type": "module"
-          node -e "const p=JSON.parse(require('@electron/asar').extractFile('release/linux-unpacked/resources/app.asar','package.json'));console.log(p.type,p.main);if(p.type!=='commonjs')process.exit(1)"
+          node -e "const p=JSON.parse(require('@electron/asar').extractFile('$res/app.asar','package.json'));console.log(p.type,p.main);if(p.type!=='commonjs')process.exit(1)"
+      # ALSA capture with the shipped ffmpeg and the bridge's arguments (#121; -ac fills the ALSA
+      # demuxer's ch_layout): 8 channels through alsa-lib from its `null` PCM
+      # (no kernel driver needed; the runner kernels have no snd-aloop). With snd-aloop (where it
+      # loads) also from a kernel device, which the bridge then has to offer (scripts/linux-smoke.sh).
+      - name: ALSA capture with the shipped ffmpeg
+        run: |
+          set -euo pipefail
+          ff="$(ls -d release/linux*-unpacked)/resources/ffmpeg/ffmpeg"
+          "$ff" -hide_banner -f alsa -ac 8 -i null -t 1 -f null - 2>&1 | tee /dev/stderr | grep -E 'Audio: pcm_s16le, 48000 Hz, (8 channels|7\.1), s16, 6144 kb/s'
+          if sudo modprobe snd-aloop 2>/dev/null; then
+            sudo chmod a+rw /dev/snd/*; cat /proc/asound/pcm
+            "$ff" -hide_banner -f alsa -ac 8 -i hw:Loopback,1 -t 1 -f null - 2>&1 | tail -3
+          else
+            echo "snd-aloop nicht ladbar: keine Kernel-Soundkarte, Geräteliste der Bridge mit ALSA ungeprüft"
+          fi
       - name: Smoke start AppImage
         run: |
           chmod +x release/*.AppImage

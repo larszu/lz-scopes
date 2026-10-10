@@ -90,3 +90,27 @@ test('Ringpuffer: Ring in der Quellenkarte, Sichern über die Steuer-API, Kopfle
   expect((await a.control({ cmd: 'ring', mode: 'off' })).ok).toBe(true);
   await expect(page.locator('#ring-save')).toBeHidden({ timeout: 15_000 });
 });
+
+test('Wiedergabe: Aufnahmen als Quellen öffnen, gemeinsame Uhr, Leertaste spielt', async () => {
+  const { page } = a;
+  await page.locator('#add button', { hasText: 'Aufnahme …' }).click();
+  const dlg = page.locator('dialog.modal[open]');
+  await expect(dlg).toContainText('Aufnahme öffnen');
+  // the first take of this run (newest first: the ring take and "record all" came later)
+  await dlg.locator('.pb-take').last().getByRole('button', { name: 'Alle öffnen' }).click();
+  await until(async () => (await a.state()).sources.some((x) => x.status === 'live' && x.name.includes(' · ')), 60_000, 'Aufnahme als Quelle live');
+  const bar = page.locator('.pb-bar');
+  await expect(bar).toBeVisible();
+  const time = bar.locator('.pb-time');
+  await expect(time).toContainText(' s / ');
+  const t0 = await time.textContent();
+  await bar.locator('[data-pb="play"]').click();
+  await expect(bar.locator('[data-pb="play"]')).toHaveAttribute('aria-pressed', 'true');
+  await page.waitForTimeout(1200);
+  expect(await time.textContent()).not.toBe(t0);
+  // Space (focus outside any field) pauses again
+  await page.locator('body').press(' ');
+  await expect(bar.locator('[data-pb="play"]')).toHaveAttribute('aria-pressed', 'false');
+  // control API transport goes to the recordings when no video file is open
+  expect((await a.control({ cmd: 'transport', op: 'start' })).ok).toBe(true);
+});

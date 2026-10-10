@@ -43,6 +43,7 @@ import { startOwnRtp } from './rtsp.mjs';
 import { announce } from './bonjour.mjs';
 import { recordRoots, freeBytes } from './record.mjs';
 import { StreamRecorder, handleUploadSocket } from './recorder.mjs';
+import { REC_URL, listRecordings, startPlayback } from './playback.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -87,6 +88,7 @@ export function validateInput(url) {
   if (/^decklink:\d{1,2}$/.test(url)) return null;
   if (/^ndi:[^\n\r\0]{1,200}$/.test(url) && !url.slice(4).startsWith('-')) return null;
   if (/^folder:[\w .-]{1,80}$/.test(url)) return null;
+  if (REC_URL.test(url)) return null;
   if (url.startsWith('-')) return bmsg('input.invalid', 'Invalid source');
   if (!ALLOWED.test(url)) return bmsg('input.scheme', 'Only rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s)://, resolve: or test:*');
   return null;
@@ -558,6 +560,11 @@ async function startStream(ws, params) {
   if (url.startsWith('decklink:')) return startDeckLink(ws, params, url);
   if (url.startsWith('ndi:')) return startNdi(ws, params, url);
   if (url.startsWith('folder:')) return startFolder(ws, params, url);
+  if (url.startsWith('rec:')) {
+    const ffmpeg = ffmpegCandidates()[0];
+    if (!ffmpeg) return fail(ws, bmsg('ffmpeg.missing', 'ffmpeg not found'));
+    return startPlayback(ws, params, url, { ffmpeg, ffprobe: ffprobeCandidates([ffmpeg])[0] ?? '', roots: () => RECORD_ROOTS, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions });
+  }
   const transport = params.get('transport') ?? 'tcp';
   // compressed transport for remote bridges (#16): 8 bit only, decoded by the browser; excludes the Y'CbCr path (#7)
   const h264 = params.get('codec') === 'h264';
@@ -1146,6 +1153,11 @@ const server = createServer((req, res) => {
     // names only – the paths stay on the bridge machine
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
     return res.end(JSON.stringify(WATCH_ROOTS.map((r) => ({ name: r.name, url: `folder:${r.name}` }))));
+  }
+  if (path === '/api/recordings') {
+    // takes in the released folders, names only (server/playback.mjs)
+    res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
+    return res.end(JSON.stringify(listRecordings(RECORD_ROOTS)));
   }
   if (path === '/api/record/roots') {
     // names and free space only – the paths stay on the bridge machine

@@ -59,6 +59,8 @@ import { Source, type AudioInput, type SourceKind, type SourceSettings } from '.
 import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
 import { SOURCE_ITEMS, mountMenu, refreshMenu, registerMenuCommand, type MenuActions, type MenuState } from './menu/appMenu';
 import { openSettings, refreshSettings, registerSettingsSection } from './menu/settings';
+import { initPlayback, onPlaybackMessage, openRecordingsDialog, playbackBar, sourceGone, transport as playbackTransport } from './record/playback';
+import { freezeMoment } from './record/sync';
 import { initRecording, isRecording, markAll, eventAll, onBridgeRecord, recordAll, recordAllButton, recordRow, recordSection, recordingState, ringOn, saveRingButton, saveRings, setRing, sourceStopped, startRecording, stopRecording } from './record/record';
 import { aboutSection, keysSection } from './menu/pages';
 import { LANG_NAMES, LANGS, lang, langPref, num, setLangPref, systemLang, t, type LangPref } from './i18n';
@@ -437,7 +439,12 @@ refreshFfmpegInfo();
 
 function toggleFreeze() {
   frozen = !frozen;
-  sources.forEach((s) => (s.frozen = frozen));
+  if (frozen) {
+    // all sources at the same moment of the scene: each one's measured latency is taken out (#140 step 2)
+    const lat = sources.map((s) => s.latency.summary()?.total.mean ?? null);
+    const scene = freezeMoment(Date.now(), lat);
+    sources.forEach((s, i) => s.freezeAt(scene, lat[i] ?? 0));
+  } else sources.forEach((s) => (s.frozen = false));
   freezeBtn.classList.toggle('on', frozen);
   freezeBtn.setAttribute('aria-pressed', String(frozen));
   freezeBtn.textContent = frozen ? t('main.resume') : t('main.freeze');
@@ -470,7 +477,8 @@ function removeSource(s: Source) {
 function classRow(cls: 'opts' | 'stack', ...kids: Parameters<typeof row>) { const r = row(...kids); r.classList.add(cls); return r; }
 
 function renderSources() {
-  $('#source-list').replaceChildren(...sources.map((s, i) => {
+  const pb = playbackBar();
+  $('#source-list').replaceChildren(...(pb ? [pb] : []), ...sources.map((s, i) => {
     const set = s.settings;
     const upd = (patch: Partial<SourceSettings>, reconnect = false) => {
       Object.assign(s.settings, patch); save();
@@ -808,6 +816,7 @@ $('#add').replaceChildren(
     ['webcam', t('main.add.webcam'), t('main.add.webcamTitle')], ['screen', t('main.add.screen'), t('main.add.screenTitle')], ['file', t('main.add.file'), ''],
     ['folder', t('main.add.folder'), t('main.add.folderTitle')], ['audio', 'Audio', t('main.add.audioTitle')],
   ] as const).map(([kind, label, title]) => button(label, () => addSourceOfKind(kind), { title })),
+  button(t('playback.add'), () => openRecordingsDialog(), { title: t('playback.addTitle') }),
 );
 
 /** Add an audio source and, if no audio panel is open, a pinned level/loudness panel for it. */
@@ -2044,6 +2053,8 @@ function execute(c: Command): unknown {
       return { stopped };
     }
     case 'transport': {
+      // recordings (src/record/playback.ts) when no video file is meant
+      if (c.source === undefined && !activeVideo() && playbackTransport(String(c.op))) return { playback: true };
       const s = need(c.source !== undefined ? findSource(c.source) : activeVideo(), 'No video file open');
       const v = need(s.isVideoFile ? s.video : null, `${s.name} is not a video file`);
       const playing = !v.paused || !!s.reverseSpeed;
@@ -2188,11 +2199,12 @@ document.addEventListener('keydown', (e) => {
   if ((e.target as HTMLElement).closest('input, select, textarea')) return;
   const keys = Object.keys(PRESETS);
   if (/^[1-6]$/.test(e.key)) setLayout(keys[Number(e.key) - 1]);
-  else if (e.key === ' ') { e.preventDefault(); const v = activeVideo(); if (v) v.togglePlay(); else toggleFreeze(); }
+  else if (e.key === ' ') { e.preventDefault(); const v = activeVideo(); if (v) v.togglePlay(); else if (!playbackTransport('toggle')) toggleFreeze(); }
   else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-    const v = activeVideo(); if (!v) return;
-    e.preventDefault();
     const d = e.key === 'ArrowRight' ? 1 : -1;
+    const v = activeVideo();
+    if (!v) { if (playbackTransport(d > 0 ? (e.shiftKey ? 'forward' : 'next') : (e.shiftKey ? 'rewind' : 'prev'))) e.preventDefault(); return; }
+    e.preventDefault();
     if (e.shiftKey) v.seek((v.video?.currentTime ?? 0) + d); else v.step(d);
   }
   else if (e.key === 'j' || e.key === 'J') activeVideo()?.shuttle(-1);
@@ -2335,8 +2347,9 @@ sources.forEach((s) => { if (s.kind === 'stream' && s.url) s.connectStream(s.url
 
 // Resolve playback (#88): live window capture while the timeline plays
 Source.onResolve = (s, msg) => resolvePlayback.onResolve(s, msg);
-Source.onStop = (s) => { resolvePlayback.onStop(s); sourceStopped(s); };
-Source.onRecord = (s, msg) => onBridgeRecord(s, msg);
+Source.onStop = (s) => { resolvePlayback.onStop(s); sourceStopped(s); sourceGone(s); };
+Source.onRecord = (s, msg) => (msg.type === 'playback' ? onPlaybackMessage(s, msg) : onBridgeRecord(s, msg));
+initPlayback({ sources: () => sources, bridgeUrl, changed: () => renderSources(), hud: alertHud, addStream: (url, name) => { const s = addSource('stream', name, url); s.connectStream(url, bridgeUrl()); return s; } });
 initRecording({ sources: () => sources, bridgeUrl, changed: () => renderSources(), hud: alertHud, latencyOf: (s) => s.latency.summary()?.total.mean ?? null, save });
 
 // running DaVinci Resolve on the bridge machine: one click to connect

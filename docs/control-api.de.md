@@ -31,7 +31,7 @@ Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen
 | `layout.load` | `name` einer gespeicherten Layout-Konfiguration |
 | `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `hls`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `qclog`, `hist`, `stats`, `tiles`, `noise`, `wshading`, `skinall`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `clock`, `genlock`) |
 | `panel.maximize` | `panel`, `mode` `toggle`\|`on`\|`off`; `off` ohne `panel` = zurück |
-| `freeze` | `mode` `toggle`\|`on`\|`off` |
+| `freeze` | `mode` `toggle`\|`on`\|`off`; alle Quellen im selben Moment der Szene (gemessene Latenz ausgeglichen) |
 | `qc.clear` | – (QC-Protokoll leeren; Zustand `qc`: `active`, `total`, `last`) |
 | `roi.clear` | `source` optional (ohne = alle): Messrahmen und Messpunkt löschen |
 | `pattern.select` | `pattern` (id oder Name), `source` optional (sonst erste Testbild-Quelle) |
@@ -41,7 +41,7 @@ Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen
 | `scene.select` | `scene`; `output` optional (ohne = Vorgabe und alle offenen Overlay-Ausgaben) |
 | `stream.start` | `stream` (Name → `/out/<stream>.mjpeg`), `output` optional (sonst die erste offene Ausgabe; ist keine offen, öffnet sich ein Overlay-Fenster), `target` optional (`rtmp://`, `srt://`, `rtsp://`, `udp://`, `tcp://`, `rtp://`), `codec` optional (10 bit, wie bei `output.open`; ohne Angabe MJPEG; ein 10-bit-Codec geht nicht über RTMP) |
 | `stream.stop` | `output` oder `stream` optional (ohne = alle) |
-| `transport` | `op` `play`\|`pause`\|`toggle`\|`stop`\|`next`\|`prev`\|`forward`\|`rewind`\|`start`\|`end`, `source` optional (sonst die gezeigte Videodatei) |
+| `transport` | `op` `play`\|`pause`\|`toggle`\|`stop`\|`next`\|`prev`\|`forward`\|`rewind`\|`start`\|`end`, `source` optional (sonst die gezeigte Videodatei; ohne Videodatei die geöffneten Aufnahmen an ihrer gemeinsamen Uhr) |
 | `audio.reset` | `source` optional (sonst alle Quellen mit Ton): I, LRA, Max M/S, Max TP, Zähler und Protokoll zurücksetzen (EBU Tech 3341) |
 | `audio.pause` | `mode` `toggle`\|`on`\|`off`, `source` optional: I und LRA anhalten/fortsetzen (Tech 3341) |
 | `generator` | `mode` `toggle`\|`on`\|`off`, `signal` optional (`sine`, `ebu-ident`, `glits`, `blits`, `ebu-multi`, `ident-lr`, `pink`, `pink-band`, `white`, `sweep`, `steps`, `polarity`, `avsync`, …), `freq` 10–20000 Hz, `level` −90–0 dBFS; über −6 dBFS nur mit `"force": true` |

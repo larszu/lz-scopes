@@ -52,6 +52,13 @@ jobs:
             sudo apt-get install -y -q nasm cmake pkg-config zip ${{ matrix.target == 'win32-x64' && 'mingw-w64' || 'libasound2-dev' }}
           fi
           cmake --version | head -1; nasm -v || true
+      # Ubuntu 22.04 has GCC 11, which does not know -march=armv9-a (x265's SVE2 code); GCC 12
+      # keeps glibc 2.35 and libstdc++ GLIBCXX_3.4.30 of the system
+      - name: GCC 12 (linux-arm64)
+        if: matrix.target == 'linux-arm64'
+        run: |
+          sudo apt-get install -y -q gcc-12 g++-12
+          echo "CC=gcc-12" >> "$GITHUB_ENV"; echo "CXX=g++-12" >> "$GITHUB_ENV"
       - name: Build ${{ matrix.target }}
         run: bash scripts/ffmpeg-build/build.sh ${{ matrix.target }} "$PWD/ffbuild/out"
       - uses: actions/setup-node@v5

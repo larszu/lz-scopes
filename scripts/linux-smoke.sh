@@ -5,7 +5,8 @@
 #
 # Starts the app under Xvfb with its own profile (LZS_USER_DATA, which also keeps the AppImage
 # updater off) on port 4199 and checks over the bridge's /api/health that it came up with the
-# SHIPPED ffmpeg (origin "bundled", no nonfree, SRT) and serves the UI. Fails after 90 s.
+# SHIPPED ffmpeg (origin "bundled", no nonfree, SRT) and serves the UI; with an ALSA capture
+# device on the machine, that /api/devices offers it. Fails after 90 s.
 set -euo pipefail
 [[ $# -gt 0 ]] || { echo "Aufruf: $0 <Befehl …>" >&2; exit 2; }
 port="${LZS_SMOKE_PORT:-4199}"
@@ -37,6 +38,13 @@ node -e '
   console.log(`ok: ffmpeg ${f.version || "?"} (${f.origin}, ${f.license})`);
 ' "$health"
 curl -fsS "http://127.0.0.1:$port/" | grep -qi '<html' || { echo "UI nicht ausgeliefert"; exit 1; }
+# ALSA (#121): where the machine has a capture device (CI: snd-aloop), the bridge must offer it
+if grep -q 'capture' /proc/asound/pcm 2>/dev/null; then
+  devices="$(curl -fsS "http://127.0.0.1:$port/api/devices")"
+  echo "$devices"
+  grep -q '"audio:alsa:hw:' <<<"$devices" || { echo "Bridge bietet kein ALSA-Gerät an"; exit 1; }
+  echo "ok: Bridge bietet ALSA-Aufnahmegeräte an"
+fi
 sleep 5
 kill -0 "$pid" 2>/dev/null || { echo "App nach dem Start abgestürzt:"; cat "$log"; exit 1; }
 echo "Linux-App startet: Bridge, mitgeliefertes ffmpeg und UI ok"

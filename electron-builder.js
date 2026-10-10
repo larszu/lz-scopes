@@ -1,13 +1,20 @@
 // electron-builder config (pattern: cable-planner). Signing turns on automatically
 // when CSC_LINK + CSC_KEY_PASSWORD are set; without them the build is unsigned.
-import { existsSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readSync } from 'node:fs'
 
 const year = new Date().getFullYear()
 
 // ffmpeg + ffprobe (scripts/ffmpeg-builds.json, fetched by scripts/ffmpeg-fetch.mjs) go to
 // <resources>/ffmpeg/ outside the asar archive, with their licences and the source offer
-// (licenses/ffmpeg/). server/ffmpeg.mjs finds them there.
-const ffmpegDir = { mac: 'vendor/ffmpeg/darwin-universal', win: 'vendor/ffmpeg/win32-x64', linux: 'vendor/ffmpeg/linux-x64' }
+// (licenses/ffmpeg/). server/ffmpeg.mjs finds them there. Linux per arch (${arch}: x64, arm64).
+const ffmpegDir = { mac: 'vendor/ffmpeg/darwin-universal', win: 'vendor/ffmpeg/win32-x64', linux: 'vendor/ffmpeg/linux-${arch}' }
+// electron-builder's Arch enum → name and ELF e_machine (x86-64 0x3e, AArch64 0xb7)
+const linuxArch = { 1: { name: 'x64', elf: 0x3e }, 3: { name: 'arm64', elf: 0xb7 } }
+const elfMachine = (file) => {
+  const b = Buffer.alloc(20), fd = openSync(file, 'r')
+  try { readSync(fd, b, 0, 20, 0) } finally { closeSync(fd) }
+  return b.readUInt32BE(0) === 0x7f454c46 ? b.readUInt16LE(18) : null
+}
 const ffmpegResources = (os, filter) => [
   { from: ffmpegDir[os], to: 'ffmpeg', filter },
   { from: 'licenses/ffmpeg', to: 'ffmpeg/licenses' },
@@ -41,9 +48,19 @@ export default {
   // no installer without the redistributable ffmpeg (a missing folder would be skipped silently)
   beforePack: async (ctx) => {
     const os = { darwin: 'mac', win32: 'win', linux: 'linux' }[ctx.electronPlatformName] ?? null
-    // Linux: only x64 has an ffmpeg build (scripts/ffmpeg-builds.json); arm64 would ship an x64 binary
-    if (os === 'linux' && ctx.arch !== 1) throw new Error('Linux: only x64 is built (no linux-arm64 ffmpeg yet)')
-    if (os && !existsSync(`${ffmpegDir[os]}/BUILD.json`)) throw new Error(`${ffmpegDir[os]} missing – node scripts/ffmpeg-fetch.mjs ${ffmpegDir[os].split('/').pop()}`)
+    if (!os) return
+    let dir = ffmpegDir[os]
+    if (os === 'linux') {
+      // ffmpeg (scripts/ffmpeg-builds.json) and the helpers (g++ of this machine) must match the
+      // package: an arm64 package with x64 binaries would install fine and fail on the device
+      const a = linuxArch[ctx.arch]
+      if (!a) throw new Error(`Linux: only x64 and arm64 are built, not arch ${ctx.arch}`)
+      dir = dir.replace('${arch}', a.name)
+      for (const f of [`${dir}/ffmpeg`, 'helpers/bin/lz-ndi', 'helpers/bin/lz-decklink']) {
+        if (existsSync(f) && elfMachine(f) !== a.elf) throw new Error(`${f} is not built for linux-${a.name}`)
+      }
+    }
+    if (!existsSync(`${dir}/BUILD.json`)) throw new Error(`${dir} missing – node scripts/ffmpeg-fetch.mjs ${dir.split('/').pop()}`)
   },
   directories: { buildResources: 'build', output: 'release' },
   mac: {
@@ -97,14 +114,13 @@ export default {
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
   },
-  // Linux (AppImage + deb, x64). File names without spaces: GitHub turns spaces in asset names
-  // into dots, while latest-linux.yml keeps the electron-builder name; the AppImage updater
-  // (electron/updater.cjs) needs both to match. arm64: no linux-arm64 ffmpeg build yet.
+  // Linux (AppImage + deb, x64 and arm64). File names without spaces: GitHub turns spaces in asset
+  // names into dots, while latest-linux.yml / latest-linux-arm64.yml keep the electron-builder name;
+  // the AppImage updater (electron/updater.cjs) needs both to match. No arch here: a target arch
+  // in the config is built IN ADDITION to --x64/--arm64, so each machine builds its own arch
+  // (default: the host's; release.yml: x64 and arm64 runner), with ffmpeg and helpers of that arch.
   linux: {
-    target: [
-      { target: 'AppImage', arch: 'x64' },
-      { target: 'deb', arch: 'x64' },
-    ],
+    target: ['AppImage', 'deb'],
     artifactName: 'lz-scopes-${version}-${arch}.${ext}',
     executableName: 'lz-scopes',
     syncDesktopName: true,

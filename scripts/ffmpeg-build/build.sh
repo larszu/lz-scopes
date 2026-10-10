@@ -75,9 +75,10 @@ case "$TARGET" in
   linux-x64|linux-arm64)
     want=$([[ $TARGET == linux-arm64 ]] && echo aarch64 || echo x86_64)
     [[ "$(uname -m)" == "$want" ]] || { echo "$TARGET muss auf $want-Linux gebaut werden" >&2; exit 1; }
-    export CC=gcc CXX=g++
+    # CC/CXX from outside: linux-arm64 is built on Ubuntu 22.04 with GCC 12 (x265's SVE2 code needs -march=armv9-a)
+    export CC="${CC:-gcc}" CXX="${CXX:-g++}"
     # ALSA: explicit despite --disable-autodetect; -lasound from the system (PKG_CONFIG_LIBDIR only sees $PREFIX)
-    FF_ARGS+=(--enable-alsa)
+    FF_ARGS+=(--enable-alsa --cc="$CC" --cxx="$CXX")
     ;;
   win32-x64)
     HOST=x86_64-w64-mingw32

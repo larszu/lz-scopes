@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ffmpegCandidates, ffmpegFor, ffmpegInfo, ffmpegOrigin, hostTarget, licenseOf, noFfmpegMessage, outputProtocols } from '../server/ffmpeg.mjs';
@@ -12,7 +13,7 @@ const manifest = JSON.parse(readFileSync(new URL('../scripts/ffmpeg-builds.json'
 
 describe('ffmpeg: manifest and licence rules', () => {
   it('every shipped download is pinned by URL and SHA-256', () => {
-    for (const t of ['darwin-arm64', 'darwin-x64', 'win32-x64']) {
+    for (const t of ['darwin-arm64', 'darwin-x64', 'win32-x64', 'linux-x64', 'linux-arm64']) {
       for (const f of manifest.targets[t].files) {
         expect(f.url).toMatch(/^https:\/\//);
         expect(f.sha256).toMatch(/^[0-9a-f]{64}$/);
@@ -42,6 +43,7 @@ describe('ffmpeg: manifest and licence rules', () => {
     expect(hostTarget('darwin', 'arm64')).toBe('darwin-universal');
     expect(hostTarget('win32', 'x64')).toBe('win32-x64');
     expect(hostTarget('linux', 'x64')).toBe('linux-x64');
+    expect(hostTarget('linux', 'arm64')).toBe('linux-arm64');
   });
   it('origin and messages', () => {
     expect(ffmpegOrigin('/x/ffmpeg', { FFMPEG: '/x/ffmpeg' })).toBe('env');
@@ -65,6 +67,14 @@ describe.skipIf(!shippedFfmpeg)('ffmpeg: the shipped build of this machine', () 
     expect(c[0]).toBe(shippedFfmpeg);
     expect(await ffmpegFor('srt://127.0.0.1:9000', c)).toBe(shippedFfmpeg);
     expect(await ffmpegFor('rtsp://h/1', c)).toBe(shippedFfmpeg);
+  });
+  it.skipIf(process.platform !== 'linux')('Linux: has the ALSA input device, so the bridge offers audio:alsa: (#121)', async () => {
+    // @ts-expect-error plain JS module
+    const { parseInputDevices } = await import('../server/index.mjs');
+    const out = execFileSync(shippedFfmpeg!, ['-hide_banner', '-devices'], { encoding: 'utf8' });
+    const d = parseInputDevices(out);
+    expect(d.has('alsa')).toBe(true);
+    expect(d.has('v4l2')).toBe(true);
   });
 });
 

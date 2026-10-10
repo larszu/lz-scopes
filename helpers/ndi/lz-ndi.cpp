@@ -102,7 +102,11 @@ static std::string loadNdi(Ndi& n) {
 #elif !defined(_WIN32)
   tries.push_back("/usr/lib/libndi.so.6");
   tries.push_back("/usr/local/lib/libndi.so.6");
+#if defined(__aarch64__)
+  tries.push_back("/usr/lib/aarch64-linux-gnu/libndi.so.6");
+#else
   tries.push_back("/usr/lib/x86_64-linux-gnu/libndi.so.6");
+#endif
 #endif
   LibHandle h = nullptr;
   for (const auto& p : tries) { h = openLib(p); if (h) { n.path = p; break; } }

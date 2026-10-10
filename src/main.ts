@@ -14,7 +14,7 @@ import {
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
 import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
-import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, frameSamples, panelSignature, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
+import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
 import { attachGestures } from './gestures';
 import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
@@ -65,6 +65,7 @@ import { installFeedbackLog } from './feedback/log';
 import { checkGpu, openFeedback } from './feedback/dialog';
 import { hasHelp, helpCard, helpOn, setHelpOn } from './help/scopeHelp';
 import { hasGhost, sanitizeRef, type RefSettings } from './ghost';
+import { PEAK_COLOURS, PEAK_DEFAULT, type PeakColour } from './focus';
 import { MAX_TILES, TILE_SCOPES, sanitizeTiles, type TileSettings } from './tiles';
 
 installFeedbackLog();
@@ -1094,7 +1095,7 @@ function panelSettings(p: PanelState): Node[] {
     row(t('panel.hdr10'), button(t('panel.hdr10Reset'), () => { panelSource(p)?.resetLightLevel(); }, { small: true, title: t('panel.hdr10Title') }));
   }
   if (p.scope === 'picture') {
-    row('Overlay', select(p.picture, [['normal', t('panel.ov.normal')], ['false', t('settings.scopes.falseColour')], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', t('panel.ov.skin')], ['green', t('panel.ov.green')], ['luma', 'Luma'], ['gamut', t('panel.ov.gamut')], ['r103', 'EBU R 103'], ['neutral', t('panel.ov.neutral')]], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
+    row('Overlay', select(p.picture, [['normal', t('panel.ov.normal')], ['false', t('settings.scopes.falseColour')], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', t('panel.ov.skin')], ['green', t('panel.ov.green')], ['luma', 'Luma'], ['gamut', t('panel.ov.gamut')], ['r103', 'EBU R 103'], ['neutral', t('panel.ov.neutral')], ['peaking', t('focus.overlay')]], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
     const ab = p.ab ?? { mode: 'off' as const, b: 'stage:cst', pos: 0.5, gain: 4 };
     const setAb = (patch: Partial<NonNullable<PanelState['ab']>>, rebuild = false) => {
       p.ab = { ...ab, ...patch }; Object.assign(ab, patch); save(); refreshHeads();
@@ -1118,6 +1119,13 @@ function panelSettings(p: PanelState): Node[] {
     if (p.picture === 'neutral') {
       row(t('panel.threshold'), select(String(p.neutral?.threshold ?? 5), [['2', '2 %'], ['5', '5 %'], ['10', '10 %']], (v) => { p.neutral = { ...p.neutral, threshold: Number(v) }; save(); }, t('panel.neutralTitle')));
       row(t('panel.range'), select(p.neutral?.range ?? 'all', [['all', t('panel.rangeAll')], ['shadows', t('panel.shadows')], ['mids', t('panel.mids')], ['highlights', t('panel.highlights')]], (v) => { p.neutral = { ...p.neutral, range: v as 'all' }; save(); }));
+    }
+    if (p.picture === 'peaking') {
+      const pk = { ...PEAK_DEFAULT, ...p.peak };
+      row(t('focus.threshold'), slider(pk.threshold, (v) => { p.peak = { ...p.peak, threshold: v }; save(); }, { min: 0.03, max: 0.5, step: 0.01, reset: PEAK_DEFAULT.threshold, title: t('focus.thresholdTitle') }));
+      row(t('focus.colour'), select(pk.colour, (Object.keys(PEAK_COLOURS) as PeakColour[]).map((c) => [c, t(`focus.colour.${c}`)] as Option), (v) => { p.peak = { ...p.peak, colour: v as PeakColour }; save(); }));
+      row('', button(t('focus.reset'), () => { const s = panelSource(p); if (s) resetFocusPeak(s.id); }, { small: true, title: t('focus.resetTitle') }));
+      rows.push(hint(t('focus.hint')));
     }
     if (p.picture === 'gamut') row(t('panel.tgtGamut'), select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, t('panel.tgtGamutTitle')));
     if (p.picture === 'false') global(SET.falseColour);

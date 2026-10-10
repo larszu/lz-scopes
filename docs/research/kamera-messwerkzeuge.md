@@ -19,3 +19,12 @@ Umgesetzt als Skala *STOP* (Einstellungen → Scopes → Skala bzw. Kopfleiste),
 
 - Für SDR ist die inverse OETF eine Annahme: Knie, Black Gamma und Kameramatrix verbiegen die echte Kurve, die Skala gilt dann nur im linearen Teil. Bei PQ sind es Display-Blenden (die Szenebelichtung ist nach der OOTF nicht mehr eindeutig).
 - Skala: ganze Blenden, beim Zoomen Drittelblenden; der Messpunkt zeigt zusätzlich „≈ … Blenden zur Graukarte“.
+
+## Fokushilfe – Wunsch 4
+
+Umgesetzt als Bild-Overlay *Fokus-Peaking* mit Schärfewert, `src/focus.ts`, Shader-Modus `peaking` in `src/renderer.ts`, Tests `test/focus.test.ts`.
+
+- **Vorbild**: Leader LV5600 *Focus Assist* und Nobe Live Pack (scope-wuensche.md); deren Verfahren sind nicht veröffentlicht. Es gibt keine Norm für einen Schärfewert im Live-Bild.
+- **Festlegung lz-scopes**: Kanten = Sobel-Gradient von Y′ in Quellauflösung, so skaliert, dass ein harter Sprung Schwarz→Weiß 1,0 ergibt; Peaking färbt alles über der Schwelle (Standard 0,12) ein. Schärfewert = Effektivwert dieses Gradienten im Messrahmen × 100 („Tenengrad“-Maß), ohne Messrahmen im mittleren Drittel; dazu ein Spitzenwert-Halter, der bei neuem Rahmen neu beginnt.
+- Der Wert hängt vom Motiv, vom Kontrast und vom Rauschen ab. Er taugt zum Scharfstellen auf das Maximum bei gleichem Ausschnitt, nicht zum Vergleich verschiedener Motive oder Kameras. Gemessen wird ohne Skalierung (große Rahmen werden auf die Mitte beschnitten), denn Skalieren glättet genau die Kanten.
+- Browser-Quellen werden für die CPU-Messung auf höchstens 960 px Breite gelesen; dort ist der Wert gröber als bei Bridge-Quellen in nativer Breite. Geprüft nur mit synthetischen Bildern (unscharf gerechnetes Schachbrett: Wert fällt mit wachsendem σ) und dem Testbild *Schachbrett* im e2e-Test.

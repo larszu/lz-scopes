@@ -13,7 +13,7 @@ export default {
   'help.progress': '{done} von {all} Aufgaben ausprobiert',
   'help.pitfall': 'Achtung:',
   // --- scope texts (sources and checks: docs/research/scope-hilfe.md) ---
-  'help.picture.one': "Das Quellbild, wahlweise mit Overlay: Falschfarben, Zebra, Clipping, Hautton, Grün, Luma, Gamut, EBU R 103 oder Neutral.",
+  'help.picture.one': "Das Quellbild, wahlweise mit Overlay: Falschfarben, Zebra, Clipping, Hautton, Grün, Luma, Gamut, EBU R 103, Neutral oder Fokus-Peaking.",
   'help.picture.what': "Erste Kontrolle, ob Bild, Schärfe und Ausschnitt stimmen, und Belichtung direkt im Bild prüfen. Zebra und Falschfarben zeigen, wo Lichter clippen oder Haut liegt, ohne den Blick vom Motiv zu nehmen. Ein Klick setzt einen Messpunkt, ein gezogener Rahmen einen Messbereich für alle Scopes; Rechtsklick löscht.",
   'help.picture.read': "Overlay Zebra: Streifen auf allem, dessen Luma Y′ den eingestellten Pegel erreicht (Vorgabe 95 %).\nFalschfarben (Paletten ARRI, Belichtung, RED Video, Sony SDR, Sony S-Log3) färben Pegelbänder; die Legende unten links nennt die Bänder der gewählten Palette.\nGamut-Warnung: Pixel mit negativen Anteilen im Zielgamut (709/P3/2020), in drei Stufen gelb/orange/magenta.\nOverlay „EBU R 103“: gelb = außerhalb −5/105 %, rot = außerhalb des Gesamtbereichs (Codes 4–1019).\nGut: Zebra nur auf Spitzlichtern, nicht auf Gesichtern oder großen Flächen.",
   'help.picture.try': "Testbild „SMPTE 75 % Balken + PLUGE“, im ⚙ Overlay „Zebra“, Pegel 95 % (Vorgabe).",

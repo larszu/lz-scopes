@@ -13,7 +13,7 @@ export default {
   'help.progress': '{done} of {all} tasks tried',
   'help.pitfall': 'Watch out:',
   // --- scope texts (sources and checks: docs/research/scope-hilfe.md) ---
-  'help.picture.one': "The source picture, optionally with an overlay: false colour, zebra, clipping, skin tone, green, luma, gamut, EBU R 103 or neutral.",
+  'help.picture.one': "The source picture, optionally with an overlay: false colour, zebra, clipping, skin tone, green, luma, gamut, EBU R 103, neutral or focus peaking.",
   'help.picture.what': "First check of picture, focus and framing, and exposure right in the image. Zebra and false colour show where highlights clip or where skin sits without looking away from the subject. A click sets a probe point, a dragged box a measurement area for every scope; right-click clears.",
   'help.picture.read': "Zebra overlay: stripes on everything whose luma Y′ reaches the set level (default 95 %).\nFalse colour (palettes ARRI, Exposure, RED Video, Sony SDR, Sony S-Log3) colours level bands; the legend at bottom left lists the bands of the chosen palette.\nGamut warning: pixels with negative components in the target gamut (709/P3/2020), in three steps yellow/orange/magenta.\n\"EBU R 103\" overlay: amber = outside −5/105 %, red = outside the total range (codes 4–1019).\nGood: zebra only on speculars, not on faces or large areas.",
   'help.picture.try': "\"SMPTE 75 % bars + PLUGE\" test pattern, in ⚙ overlay \"Zebra\", level 95 % (default).",

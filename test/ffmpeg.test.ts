@@ -82,7 +82,8 @@ describe.skipIf(!shippedFfmpeg)('ffmpeg: the shipped build of this machine', () 
     const args = deviceArgs('audio:alsa:null#ch=8');
     const r = spawnSync(shippedFfmpeg!, ['-hide_banner', ...args, '-t', '0.2', '-f', 'null', '-'], { encoding: 'utf8' });
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stderr).toMatch(/Input #0, alsa[\s\S]*Audio: pcm_\w+, 48000 Hz, 8 channels/);
+    // 8 channels without an order: ffmpeg prints the layout as 7.1 (6144 kb/s = 48 kHz × 16 bit × 8)
+    expect(r.stderr).toMatch(/Input #0, alsa[\s\S]*Audio: pcm_s16le, 48000 Hz, (8 channels|7\.1), s16, 6144 kb\/s/);
   });
 });
 

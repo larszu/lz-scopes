@@ -566,6 +566,8 @@ export class Renderer {
   }
 
   dropPanel(key: string) {
+    // tile panels (tiles.ts) hold one sub-panel per tile
+    if (!key.includes('#t')) for (let i = 0; i < 8; i++) this.dropPanel(`${key}#t${i}`);
     for (const k of [key, `${key}#p0`, `${key}#p1`, `${key}#g0`, `${key}#g1`, `${key}#da`, `${key}#db`, `${key}#ref`]) {
       const a = this.accums.get(k);
       if (a) { this.gl.deleteTexture(a.tex); this.gl.deleteFramebuffer(a.fbo); this.accums.delete(k); }

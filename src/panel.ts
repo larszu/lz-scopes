@@ -36,6 +36,7 @@ import { t } from './i18n';
 import { IDENTITY, isIdentity, viewRect, waveRange, type View, type ViewLimits } from './view';
 import { GHOST_CSS, GHOST_TINT, deltaRows, ghostChannels, hasGhost, histOf, levelDeltas, traceLevels } from './ghost';
 import { LUMA } from './color';
+import { TILE_HEAD, sanitizeTiles, tileAspect, tileGrid, tileLabel, tileSources, type TileSettings } from './tiles';
 
 export interface PanelState {
   scope: ScopeType; sourceId: string; gain: number; colorize: boolean; zoom: number;
@@ -103,6 +104,8 @@ export interface PanelState {
   view?: View;
   /** reference trace of the reference camera (ghost.ts) over this scope, with Δ levels */
   ghost?: boolean;
+  /** tile view (tiles.ts): inner scope and sources */
+  tiles?: TileSettings;
 }
 
 // ------------------------------------------------------------------ zoom and pan (#89)
@@ -168,6 +171,46 @@ export interface DrawOptions {
   sourceById?: (id: string) => Source | null;
   /** reference camera (ghost.ts); functions are left out of the panel signature, `sig` stands in */
   ref?: RefDraw;
+  /** all sources in list order (tile view: which sources, camera numbers) */
+  sourceList?: () => Source[];
+}
+
+/** Sources of a tile panel with their camera number (index in the source list). */
+export function tilePlan(p: PanelState, body: { w: number; h: number }, o: DrawOptions) {
+  const ts = sanitizeTiles(p.tiles);
+  const all = o.sourceList?.() ?? [];
+  const list = tileSources(all.filter((s) => s.kind !== 'audio'), ts.sources);
+  const cells = tileGrid(list.length, body.w, body.h, tileAspect(ts.scope));
+  return { ts, cells, tiles: list.map((s, i) => ({ src: s, no: all.indexOf(s), cell: cells[i], sub: { ...p, scope: ts.scope, sourceId: s.id, tiles: undefined, view: undefined } as PanelState })) };
+}
+/** Body rect of one tile's scope (below its ID strip), absolute like `body`. */
+const tileBody = (body: Rect, c: Rect): Rect => ({ x: body.x + c.x, y: body.y + c.y + TILE_HEAD, w: c.w, h: Math.max(1, c.h - TILE_HEAD) });
+
+function drawTiles(renderer: Renderer, ctx: CanvasRenderingContext2D, key: string, p: PanelState, body: Rect, o: DrawOptions) {
+  renderer.clearRect(body);
+  const { tiles } = tilePlan(p, body, o);
+  if (!tiles.length) {
+    ctx.fillStyle = '#6b7078'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(o.emptyText ?? t('panel.draw.addSource'), body.w / 2, body.h / 2);
+    return;
+  }
+  tiles.forEach(({ src, no, cell, sub }, i) => {
+    const inner = tileBody(body, cell);
+    renderer.clearRect(inner, [0.043, 0.047, 0.055]);
+    ctx.save();
+    ctx.translate(cell.x, cell.y + TILE_HEAD);
+    ctx.beginPath(); ctx.rect(0, 0, inner.w, inner.h); ctx.clip();
+    drawPanel(renderer, ctx, `${key}#t${i}`, sub, src, inner, o);
+    ctx.restore();
+    // camera ID strip
+    ctx.fillStyle = '#1c1f24'; ctx.fillRect(cell.x, cell.y, cell.w, TILE_HEAD);
+    ctx.fillStyle = '#e8e8e8'; ctx.font = '600 11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const label = tileLabel(no, src.name);
+    let text = label;
+    while (text.length > 4 && ctx.measureText(text).width > cell.w - 12) text = `${text.slice(0, -2)}…`;
+    ctx.fillText(text, cell.x + 6, cell.y + TILE_HEAD / 2 + 0.5);
+    if (src.status !== 'live' && !src.ready) { ctx.fillStyle = '#c8892b'; ctx.fillRect(cell.x + cell.w - 8, cell.y + 6, 5, 5); }
+  });
 }
 
 /** The reference as the panels see it. */
@@ -293,7 +336,11 @@ function drawAbLabels(ctx: CanvasRenderingContext2D, r: Rect, ab: NonNullable<Pa
   ctx.restore();
 }
 
-export function panelSignature(p: PanelState, src: Source | null, body: Rect, o: DrawOptions) {
+export function panelSignature(p: PanelState, src: Source | null, body: Rect, o: DrawOptions): string {
+  if (p.scope === 'tiles') {
+    const plan = tilePlan(p, body, o);
+    return `T|${plan.tiles.map(({ src: s, no, cell, sub }) => `${no}:${s.name}:${panelSignature(sub, s, tileBody(body, cell), o)}`).join('||')}|${body.w}x${body.h}`;
+  }
   // clocks run: redraw at 25 Hz
   const tick = p.scope === 'clock' || (p.scope === 'picture' && p.clockOverlay) ? `|t${Math.floor(performance.now() / 40)}`
     // QC log: new events, and the durations of active ones once a second
@@ -367,6 +414,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     drawLightPanel(ctx, p.scope, p.light, body.w, body.h);
     return;
   }
+  if (p.scope === 'tiles') { drawTiles(renderer, ctx, key, p, body, o); return; }
   if (src) src = stageView(src, p.stage ?? o.stage ?? 'signal');
   const aspect = src && src.width ? src.width / src.height : 16 / 9;
   const frame = plotRect(p.scope, body.w, body.h, aspect);

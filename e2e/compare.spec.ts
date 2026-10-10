@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { type App, expectOk, launchApp, singlePanel, until, WAVE_MAX, WAVE_MIN } from './app';
+import { TILE_HEAD, tileAspect, tileGrid } from '../src/tiles';
 
 // Camera comparison (src/ghost.ts and friends), driven through the control API and the panel ⚙.
 
@@ -43,4 +44,40 @@ test('Referenzkamera eingefroren: Geisterspur in Magenta am alten Pegel', async 
   // the live trace is in the mono tint (green by default), not magenta
   const live = await traceColour(0);
   expect(live[1]).toBeGreaterThan(live[0]);
+});
+
+/** Trace brightness at signal `level` in the middle of waveform tile `i` (layout from src/tiles.ts). */
+async function tileLevel(i: number, n: number, level: number) {
+  const size = await a.page.evaluate(() => {
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4)!;
+    const r = el.querySelector<HTMLCanvasElement>('canvas.blit')!.getBoundingClientRect();
+    return { w: r.width, h: r.height };
+  });
+  const c = tileGrid(n, size.w, size.h, tileAspect('wf-luma'))[i];
+  const body = { x: c.x, y: c.y + TILE_HEAD, w: c.w, h: c.h - TILE_HEAD };
+  const plot = { x: body.x + 44, y: body.y + 8, w: body.w - 52, h: body.h - 16 };
+  const y = plot.y + ((WAVE_MAX - level) / (WAVE_MAX - WAVE_MIN)) * plot.h;
+  return a.page.evaluate(({ x, y }) => {
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4)!;
+    const cv = el.querySelector<HTMLCanvasElement>('canvas.blit')!;
+    const dpr = cv.width / cv.getBoundingClientRect().width;
+    const d = cv.getContext('2d', { willReadFrequently: true })!.getImageData(Math.round(x * dpr), Math.round((y - 4) * dpr), 3, Math.round(8 * dpr)).data;
+    let max = 0;
+    for (let k = 0; k < d.length; k += 4) max = Math.max(max, d[k] + d[k + 1] + d[k + 2]);
+    return max;
+  }, { x: plot.x + plot.w / 2, y });
+}
+
+test('Kachelansicht: zwei Quellen, je eine Waveform-Kachel', async () => {
+  expectOk(await a.control({ cmd: 'setting', key: 'refSource', value: '' }));
+  if ((await a.state()).sources.length < 2) await a.page.getByRole('button', { name: 'Testbild', exact: true }).click();
+  const st = await until(async () => { const s = await a.state(); return s.sources.length >= 2 ? s : false; }, 30_000, 'zweite Testbild-Quelle');
+  expectOk(await a.control({ cmd: 'pattern.select', source: st.sources[0].id, pattern: 'white' }));
+  expectOk(await a.control({ cmd: 'pattern.select', source: st.sources[1].id, pattern: 'black' }));
+  await singlePanel(a, 'tiles');
+  const n = st.sources.length;
+  // tile 1 (white): trace at 100 %, nothing at 0 %; tile 2 (black): trace at 0 %, nothing at 100 %
+  const read = async () => [await tileLevel(0, n, 1), await tileLevel(0, n, 0), await tileLevel(1, n, 0), await tileLevel(1, n, 1)];
+  await until(async () => { const [w1, b1, b2, w2] = await read(); return w1 > 150 && b2 > 150 && b1 < 60 && w2 < 60; }, 60_000, 'Kacheln mit Weiß in 1 und Schwarz in 2')
+    .catch(async (e) => { console.log('Kachelpegel', await read()); throw e; });
 });

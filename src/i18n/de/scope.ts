@@ -28,6 +28,7 @@ export default {
   'scope.name.hist': 'Histogramm',
   'scope.name.stats': 'Messwerte',
   'scope.name.match': 'Farbabgleich',
+  'scope.name.tiles': 'Kacheln (mehrere Kameras)',
   'scope.name.audio-meter': 'Audio Pegel & Lautheit',
   'scope.name.audio-loudness': 'Audio Lautheitsverlauf',
   'scope.name.audio-spectrum': 'Audio Spektrum',

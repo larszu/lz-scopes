@@ -168,6 +168,21 @@ export const SHIPPED_FFMPEG = ((): string | null => {
   return existsSync(f) ? f : null;
 })();
 
+/**
+ * Child processes of this worker (publishers, receivers, mediamtx): killed when the worker
+ * exits, so none outlives an aborted run and keeps its port (#123). Per test cleanup stays in
+ * afterEach/afterAll of the spec.
+ */
+const owned = new Set<ChildProcess>();
+export function own<T extends ChildProcess>(p: T): T {
+  owned.add(p); p.once('exit', () => owned.delete(p));
+  return p;
+}
+process.once('exit', () => { for (const p of owned) p.kill('SIGKILL'); });
+
+/** Give a listener a deadline of its own: ffmpeg ends by itself if nobody connects or the stream stalls. */
+export const LISTEN_TIMEOUT_S = 300, RW_TIMEOUT_S = 60;
+
 /** mediamtx on free ports: RTSP (TCP and UDP), with `srt` also an SRT listener (UDP). */
 export async function startMediamtx(bin: string, opts: { srt?: boolean } = {}): Promise<{ rtsp: number; srt: number; stop: () => void; proc: ChildProcess }> {
   const rtsp = await freePort(), rtp = 20000 + 2 * Math.floor(Math.random() * 10000);
@@ -183,7 +198,7 @@ export async function startMediamtx(bin: string, opts: { srt?: boolean } = {}): 
     'paths:', '  all_others:',
   ].join('\n'));
   // cwd = temp dir: mediamtx writes auto.crt/auto.key into its working directory
-  const proc = spawn(bin, [cfg], { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'] });
+  const proc = own(spawn(bin, [cfg], { cwd: dir, stdio: ['ignore', 'ignore', 'pipe'] }));
   let err = '';
   proc.stderr?.on('data', (d) => { err += d; });
   await until(() => new Promise<boolean>((ok) => {

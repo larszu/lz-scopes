@@ -111,11 +111,15 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const names = Object.keys(VARIANTS).filter((n) => !only?.length || only.includes(n));
   const mtx = await startMediamtx(process.env.MEDIAMTX ?? 'mediamtx');
   const url = `rtsp://127.0.0.1:${mtx.rtsp}/bench`;
-  const src = startLatencySource(url, { width: w, height: h, fps, ffmpeg, codec: opt('codec', 'h264'), bframes: Number(opt('bframes', 0)) });
-  await sleep(2000);
+  let src = null;
+  const cleanup = () => { src?.stop(); mtx.stop(); };
+  // Ctrl-C or kill: no finally runs, take mediamtx and the source along (#123)
+  for (const sig of ['SIGINT', 'SIGTERM']) process.once(sig, () => { cleanup(); process.exit(130); });
   const all = Object.fromEntries(names.map((n) => [n, []]));
   const perRun = Object.fromEntries(names.map((n) => [n, []]));
   try {
+    src = startLatencySource(url, { width: w, height: h, fps, ffmpeg, codec: opt('codec', 'h264'), bframes: Number(opt('bframes', 0)) });
+    await sleep(2000);
     for (let r = 0; r < runs; r++) {
       for (const n of names) {
         const res = await pull(ffmpeg, url, { ...VARIANTS[n], seconds });
@@ -124,7 +128,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         perRun[n].push(summarise(res.ages)?.mean ?? NaN);
       }
     }
-  } finally { src.stop(); mtx.stop(); }
+  } finally { cleanup(); }
   const f = (x) => (Number.isFinite(x) ? x.toFixed(0) : '–');
   console.log(`\n${w}×${h} @ ${fps} fps, ${opt('codec', 'h264')}, B-frames ${opt('bframes', 0)}, ${runs} × ${seconds} s, stamp → out of ffmpeg (ms)\n`);
   console.log('| variant | mean | sd | min | p50 | max | run means | frames |\n|---|---|---|---|---|---|---|---|');

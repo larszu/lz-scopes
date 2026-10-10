@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { type App, expectOk, launchApp, singlePanel, startMediamtx, traceNear, until, waveProfile, which } from './app';
+import { type App, expectOk, launchApp, own, singlePanel, startMediamtx, traceNear, until, waveProfile, which } from './app';
 
 // RTSP end to end: ffmpeg publishes SMPTE HD bars (H.264) to a local mediamtx, the bridge
 // pulls them over RTSP, the app shows them. Skipped when mediamtx or ffmpeg is missing
@@ -12,10 +12,11 @@ test.skip(!MEDIAMTX || !FFMPEG, 'mediamtx oder ffmpeg fehlt (brew install mediam
 let a: App, mtx: Awaited<ReturnType<typeof startMediamtx>>, pub: ChildProcess;
 test.beforeAll(async () => {
   mtx = await startMediamtx(MEDIAMTX!);
-  pub = spawn(FFMPEG!, ['-hide_banner', '-loglevel', 'error', '-re', '-f', 'lavfi', '-i', 'smptehdbars=size=1280x720:rate=25',
+  // -t: the publisher ends by itself should afterAll never run
+  pub = own(spawn(FFMPEG!, ['-hide_banner', '-loglevel', 'error', '-re', '-t', '900', '-f', 'lavfi', '-i', 'smptehdbars=size=1280x720:rate=25',
     '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-g', '25',
     '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
-    '-f', 'rtsp', '-rtsp_transport', 'tcp', `rtsp://127.0.0.1:${mtx.rtsp}/e2e`], { stdio: 'ignore' });
+    '-f', 'rtsp', '-rtsp_transport', 'tcp', `rtsp://127.0.0.1:${mtx.rtsp}/e2e`], { stdio: 'ignore' }));
   a = await launchApp();
 });
 test.afterAll(async () => { await a?.close(); pub?.kill('SIGKILL'); mtx?.stop(); });

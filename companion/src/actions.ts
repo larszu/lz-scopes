@@ -99,6 +99,19 @@ export function updateActions(self: ModuleInstance): void {
       options: [{ type: 'dropdown', id: 'mode', label: 'Mode', default: 'toggle', choices: MODES }, sourceOption(self, true)],
       callback: run('record'),
     },
+    ring: {
+      name: 'Ring buffer on/off (one source or all)',
+      options: [{ type: 'dropdown', id: 'mode', label: 'Mode', default: 'toggle', choices: MODES }, sourceOption(self, true)],
+      callback: run('ring'),
+    },
+    ring_save: {
+      name: 'Save ring buffers (all sources, same time mark)',
+      options: [
+        { type: 'number', id: 'pre', label: 'Seconds before (0 = as set in the app)', default: 0, min: 0, max: 600 },
+        { type: 'textinput', id: 'post', label: 'Post-roll seconds (empty = as set in the app)', default: '' },
+      ],
+      callback: run('ring_save'),
+    },
     record_mark: {
       name: 'Marker in the running recordings',
       options: [{ type: 'textinput', id: 'label', label: 'Label (empty = M1, M2 …)', default: '' }, sourceOption(self, true)],

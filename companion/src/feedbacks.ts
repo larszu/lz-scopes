@@ -71,9 +71,14 @@ export function updateFeedbacks(self: ModuleInstance): void {
       options: [{ type: 'textinput', id: 'source', label: 'Source (number, name or id; empty = any)', default: '' }],
       callback: (fb) => checks.recording(s(), opts(fb.options)),
     },
+    ring_active: {
+      type: 'boolean', name: 'Ring buffer running', defaultStyle: { bgcolor: AMBER, color: BLACK },
+      options: [{ type: 'textinput', id: 'source', label: 'Source (number, name or id; empty = any)', default: '' }],
+      callback: (fb) => checks.ring_active(s(), opts(fb.options)),
+    },
     ident_problem: { type: 'boolean', name: 'Ident finding (swapped, missing, polarity)', defaultStyle: { bgcolor: RED, color: WHITE }, options: [], callback: () => checks.ident_problem(s()) },
   }
   self.setFeedbackDefinitions(defs)
 }
 
-export const FEEDBACK_IDS = ['connected', 'qc_active', 'frozen', 'source_active', 'clip_above', 'ymax_above', 'ymin_below', 'layout_active', 'scene_active', 'output_open', 'streaming', 'maximized', 'playing', 'generator_running', 'loudness_paused', 'true_peak_above', 'ident_problem', 'recording']
+export const FEEDBACK_IDS = ['connected', 'qc_active', 'frozen', 'source_active', 'clip_above', 'ymax_above', 'ymin_below', 'layout_active', 'scene_active', 'output_open', 'streaming', 'maximized', 'playing', 'generator_running', 'loudness_paused', 'true_peak_above', 'ident_problem', 'recording', 'ring_active']

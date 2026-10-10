@@ -12,7 +12,9 @@ import type { SettingsSection } from '../menu/settings';
 import { BrowserRecorder } from './browser';
 
 export type RecordCodec = 'prores' | 'dnxhr' | 'hevc' | 'ffv1';
-export interface RecordPrefs { root: string; codec: RecordCodec; container: 'mkv' | 'mov'; segmentMin: number }
+export interface RecordPrefs { root: string; codec: RecordCodec; container: 'mkv' | 'mov'; segmentMin: number; ringPre: number; ringPost: number }
+/** Ring buffer of a bridge source (server/ring.mjs) as the bridge reports it. */
+export interface RingState { state: 'starting' | 'running' | 'saving' | 'error'; pre?: number; post?: number; buffered?: number; message?: string; note?: string }
 export interface RecState {
   state: 'starting' | 'recording' | 'stopped' | 'error';
   take?: string; file?: string; seconds?: number; bytes?: number; segments?: number;
@@ -21,7 +23,7 @@ export interface RecState {
 }
 
 const KEY = 'lz-scopes.record';
-const DEFAULTS: RecordPrefs = { root: '', codec: 'prores', container: 'mkv', segmentMin: 5 };
+const DEFAULTS: RecordPrefs = { root: '', codec: 'prores', container: 'mkv', segmentMin: 5, ringPre: 60, ringPost: 0 };
 
 export function loadPrefs(): RecordPrefs {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }; } catch { return { ...DEFAULTS }; }
@@ -43,7 +45,7 @@ export function recordKind(s: Pick<Source, 'kind' | 'url' | 'status'> & { isVide
   return null;
 }
 
-interface Ctx { sources: () => Source[]; bridgeUrl: () => string; changed: () => void; hud: (text: string) => void; latencyOf: (s: Source) => number | null }
+interface Ctx { sources: () => Source[]; bridgeUrl: () => string; changed: () => void; hud: (text: string) => void; latencyOf: (s: Source) => number | null; save: () => void }
 let ctx: Ctx | null = null;
 const recs = new Map<string, RecState>();
 const browser = new Map<string, { r: BrowserRecorder; sidecar: Record<string, unknown>; stream: MediaStream; own: boolean }>();
@@ -64,6 +66,7 @@ export async function refreshRoots() {
 
 /** A recording message of the bridge for this source (Source.onRecord). */
 export function onBridgeRecord(s: Source, m: Record<string, unknown>) {
+  if (m.type === 'ring') return onBridgeRing(s, m);
   const prev = recs.get(s.id);
   const st = m.state as RecState['state'] | 'mark';
   if (st === 'mark') return;
@@ -185,6 +188,7 @@ export function eventAll(kind: string, data: unknown, list?: Source[]) {
 export function sourceStopped(s: Source) {
   if (browser.has(s.id)) stopRecording(s);
   else recs.delete(s.id);
+  rings.delete(s.id);
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -218,7 +222,10 @@ export function recordRow(s: Source): HTMLElement | null {
   const r = recs.get(s.id);
   if (!kind && !r) return null;
   const on = isRecording(s);
+  const ring = ringOn(s);
   return row(
+    ...(kind === 'bridge' || s.settings.ring ? [button(t('ring.toggle'), () => setRing(s, !s.settings.ring), { small: true, pressed: !!s.settings.ring, title: t('ring.toggleTitle', { pre: prefs.ringPre }), attrs: { 'data-ring': s.id } }),
+      h('span', { class: ['rec-status', rings.get(s.id)?.state === 'error' ? 'bad' : ''], 'data-ringstat': s.id }, ring || rings.has(s.id) ? ringText(s) : '')] : []),
     button(h('span', { class: 'rec-label' }, on ? t('record.stop') : t('record.rec')), () => toggleRecording(s),
       { small: true, pressed: on, title: kind === 'browser' ? t('record.titleBrowser') : t('record.title'), attrs: { class: ['btn', 'mini', 'rec', on ? 'on' : ''], 'data-rec': s.id } }),
     h('span', { class: ['rec-status', r?.state === 'error' ? 'bad' : ''], 'data-recstat': s.id, role: r?.state === 'error' ? 'alert' : null }, statusText(s)),
@@ -231,8 +238,87 @@ export const recordAllButton = button(t('record.all'), () => {
   if (!r.started && !r.stopped) ctx?.hud(t('record.nothing'));
 }, { title: t('record.allTitle'), pressed: false, attrs: { id: 'rec-all', class: 'btn rec' } });
 
+// ---- ring buffer ("save the last 60 s"): bridge sources only
+
+const rings = new Map<string, RingState>();
+/** saves of one press: take → sources still saving and files written */
+const saves = new Map<string, { left: number; files: number; failed: number }>();
+
+function onBridgeRing(s: Source, m: Record<string, unknown>) {
+  const st = m.state as string;
+  const note = m.noteCode ? bridgeMessage({ message: String(m.note), code: String(m.noteCode), params: m.noteParams as Record<string, unknown> }) : undefined;
+  if (st === 'running') rings.set(s.id, { state: rings.get(s.id)?.state === 'saving' ? 'saving' : 'running', pre: Number(m.pre), post: Number(m.post), buffered: Number(m.buffered), note });
+  else if (st === 'stopped') rings.delete(s.id);
+  else if (st === 'saving') { const r = rings.get(s.id); if (r) r.state = 'saving'; }
+  else if (st === 'saved' || st === 'error') {
+    const r = rings.get(s.id);
+    if (r) r.state = 'running';
+    if (st === 'error' && !r) rings.set(s.id, { state: 'error', message: bridgeMessage(m as never) });
+    const take = String(m.take ?? '');
+    const sv = saves.get(take);
+    if (sv) {
+      sv.left--; if (st === 'saved') sv.files++; else sv.failed++;
+      if (sv.left <= 0) { saves.delete(take); ctx?.hud(sv.failed ? t('ring.savedSome', { n: sv.files, failed: sv.failed, take }) : t('ring.saved', { n: sv.files, take })); }
+    } else if (st === 'error') ctx?.hud(t('ring.failed', { source: s.name, error: bridgeMessage(m as never) }));
+  }
+  ctx?.changed();
+}
+
+export const ringState = (s: Source) => rings.get(s.id) ?? null;
+export const ringOn = (s: Source) => { const r = rings.get(s.id); return !!r && r.state !== 'error'; };
+export const anyRing = () => !!ctx?.sources().some(ringOn);
+
+/** Ring buffer on/off for one source; the choice is kept with the source and applied when it is live. */
+export function setRing(s: Source, on: boolean) {
+  s.settings.ring = on;
+  ctx?.save();
+  if (on && !ringOn(s) && recordKind(s) === 'bridge') {
+    if (s.sendBridge({ type: 'ring', on: true, root: prefs.root, pre: prefs.ringPre, post: prefs.ringPost, codec: prefs.codec, name: s.name, settings: settingsOf(s) })) rings.set(s.id, { state: 'starting' });
+  } else if (!on) { if (ringOn(s)) s.sendBridge({ type: 'ring', on: false }); rings.delete(s.id); }
+  ctx?.changed();
+}
+
+/**
+ * "Save": all running rings with the same time mark; each source's window is shifted by its
+ * latency on the bridge. `pre`/`post` default to the settings (at most what the ring holds).
+ */
+export function saveRings(o: { pre?: number; post?: number; list?: Source[] } = {}) {
+  if (!ctx) return 0;
+  const list = (o.list ?? ctx.sources()).filter((s) => ringOn(s) && rings.get(s.id)?.state !== 'saving');
+  if (!list.length) { ctx.hud(t('ring.none')); return 0; }
+  const take = `${takeName()}-ring`, at = Date.now();
+  saves.set(take, { left: list.length, files: 0, failed: 0 });
+  for (const s of list) {
+    s.sendBridge({ type: 'ring.save', take, at, pre: o.pre ?? prefs.ringPre, post: o.post ?? prefs.ringPost, latencyMs: ctx.latencyOf(s) ?? 0, name: s.name, settings: settingsOf(s) });
+    const r = rings.get(s.id); if (r) r.state = 'saving';
+  }
+  ctx.hud(t('ring.saving', { n: list.length, post: o.post ?? prefs.ringPost }));
+  ctx.changed();
+  return list.length;
+}
+
+function ringText(s: Source) {
+  const r = rings.get(s.id);
+  if (!r) return '';
+  if (r.state === 'error') return r.message ?? '';
+  if (r.state === 'starting') return t('record.starting');
+  if (r.state === 'saving') return t('ring.savingOne');
+  return [t('ring.status', { pre: r.pre ?? prefs.ringPre, have: Math.min(r.buffered ?? 0, r.pre ?? 0) }), r.note].filter(Boolean).join(' · ');
+}
+
+/** Header button "save ring buffer" (shown while a ring runs). */
+export const saveRingButton = button(t('ring.save'), () => saveRings(), { title: t('ring.saveTitle'), attrs: { id: 'ring-save', hidden: true } });
+
 function tick() {
   if (!ctx) return;
+  for (const s of ctx.sources()) {
+    // a source with the ring switched on gets it back when it is live again (reconnect, app start)
+    if (s.settings.ring && !rings.has(s.id) && recordKind(s) === 'bridge') setRing(s, true);
+    if (!recordKind(s) && rings.has(s.id) && s.status !== 'live') rings.delete(s.id);
+    const el = document.querySelector<HTMLElement>(`[data-ringstat="${s.id}"]`);
+    if (el) el.textContent = ringText(s);
+  }
+  saveRingButton.hidden = !anyRing();
   for (const s of ctx.sources()) {
     const el = document.querySelector<HTMLElement>(`[data-recstat="${s.id}"]`);
     if (el) el.textContent = statusText(s);
@@ -247,7 +333,8 @@ function tick() {
 /** State for the control API (Companion feedbacks). */
 export function recordingState() {
   const list = (ctx?.sources() ?? []).filter(isRecording);
-  return { active: list.length, sources: list.map((s) => ({ name: s.name, id: s.id, seconds: Math.round((Date.now() - (recs.get(s.id)?.since ?? Date.now())) / 1000), take: recs.get(s.id)?.take ?? null })) };
+  const ringList = (ctx?.sources() ?? []).filter(ringOn);
+  return { active: list.length, ring: ringList.map((s) => ({ name: s.name, id: s.id, pre: rings.get(s.id)?.pre ?? null, buffered: rings.get(s.id)?.buffered ?? 0 })), sources: list.map((s) => ({ name: s.name, id: s.id, seconds: Math.round((Date.now() - (recs.get(s.id)?.since ?? Date.now())) / 1000), take: recs.get(s.id)?.take ?? null })) };
 }
 
 /** Settings → Recording. */
@@ -265,6 +352,9 @@ export function recordSection(order: number, chooseFolder?: () => Promise<{ name
       field(t('record.container'), select(prefs.container, [['mkv', 'Matroska (.mkv)'], ['mov', 'QuickTime (.mov)']], (v) => { prefs.container = v as 'mkv' | 'mov'; savePrefs(); })),
       field(t('record.segment'), numberInput(prefs.segmentMin, (v) => { prefs.segmentMin = v; savePrefs(); }, { min: 1, max: 60, clamp: true, size: 's' }), 'min'),
       hint(t('record.segmentHint')),
+      field(t('ring.length'), numberInput(prefs.ringPre, (v) => { prefs.ringPre = v; savePrefs(); }, { min: 4, max: 600, clamp: true, size: 'm' }), 's'),
+      field(t('ring.post'), numberInput(prefs.ringPost, (v) => { prefs.ringPost = v; savePrefs(); }, { min: 0, max: 120, clamp: true, size: 'm' }), 's'),
+      hint(t('ring.hint')),
     );
   };
   return { id: 'record', label: t('record.settings'), order, render: () => { render(); refreshRoots().then(render); return [body]; } };

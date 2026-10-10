@@ -59,6 +59,11 @@ export function buildCommand(actionId: string, o: Options): Command {
       return clean({ cmd: 'generator', mode: o.mode ?? 'toggle', signal: text(o.signal), freq, level, force: level !== undefined && level > -6 ? o.force === true || undefined : undefined })
     }
     case 'record': return clean({ cmd: 'record', mode: o.mode ?? 'toggle', source: ref(o.source) })
+    case 'ring': return clean({ cmd: 'ring', mode: o.mode ?? 'toggle', source: ref(o.source) })
+    case 'ring_save': {
+      const num = (v: unknown) => (v === undefined || v === '' || Number(v) <= 0 ? undefined : Number(v))
+      return clean({ cmd: 'ring.save', pre: num(o.pre), post: o.post === undefined || o.post === '' ? undefined : Number(o.post) })
+    }
     case 'record_mark': return clean({ cmd: 'record.mark', label: text(o.label), source: ref(o.source) })
     case 'setting': return clean({ cmd: 'setting', key: text(o.key), value: settingValue(o.value) })
   }

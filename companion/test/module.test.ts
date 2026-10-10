@@ -84,6 +84,12 @@ test('recording: variables and feedback per source', () => {
   assert.ok(!checks.recording(s, { source: '1' }))
   assert.ok(!checks.recording(EMPTY_STATE, { source: '' }))
   assert.equal(variableValues(EMPTY_STATE, true).recording_time, '')
+  const r = normalizeState({ sources: s.sources, recording: { active: 0, sources: [], ring: [{ name: 'Kamera 1', id: 's1', pre: 60, buffered: 42 }] } })
+  assert.ok(checks.ring_active(r, { source: '' }))
+  assert.ok(checks.ring_active(r, { source: '1' }))
+  assert.ok(!checks.ring_active(r, { source: '2' }))
+  assert.deepEqual(buildCommand('ring_save', { pre: 0, post: '' }), { cmd: 'ring.save' })
+  assert.deepEqual(buildCommand('ring_save', { pre: 30, post: '5' }), { cmd: 'ring.save', pre: 30, post: 5 })
 })
 
 test('choices key changes only with the lists', () => {
@@ -113,6 +119,7 @@ test('commands pass the bridge validation', async (t) => {
     ['audio_reset', { source: '' }], ['audio_pause', { mode: 'on', source: '2' }],
     ['generator', { mode: 'on', signal: 'ebu-ident', freq: 0, level: '-18' }], ['generator', { mode: 'off', signal: '', level: '' }],
     ['generator', { mode: 'on', level: '-3', force: true }],
+    ['ring', { mode: 'on', source: '' }], ['ring_save', { pre: 0, post: '' }], ['ring_save', { pre: 30, post: '5' }],
     ['record', { mode: 'toggle', source: '' }], ['record', { mode: 'on', source: '2' }], ['record_mark', { label: 'Take 1', source: '' }],
   ] as [string, Record<string, unknown>][]) {
     const r = validateCommand(buildCommand(id, o))

@@ -1115,3 +1115,5 @@ Die Finder im LED-Wand-Dialog haben dieselbe „?“-Karte (`toolHelp` in `src/h
 Panel *Simulcast-Abweichung* (`help.simulcast.*` in `help.ts`): Quellen und Grenzen in [simulcast-map.md](simulcast-map.md); die Aufgabe nutzt das Testbild „PQ-Verlauf mit Referenzweiß 203“ und eine CST nach Rec.709 mit Clip (geprüft in `e2e/simulcast.spec.ts`).
 
 Panel *Encoder-Konfidenz* (`help.encoder.*` in `help.ts`): Quellen und Grenzen in [encoder-confidence.md](encoder-confidence.md).
+
+Panel *Objektiv-Fingerabdruck* (`help.lens.*` in `help.ts`): Quellen und Grenzen in [lens-fingerprint.md](lens-fingerprint.md).

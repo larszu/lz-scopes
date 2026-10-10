@@ -265,5 +265,11 @@ export default {
   'help.encoder.try': "Two sources: the test pattern \"A/V sync\" with the generator beep as programme, the same signal pushed through ffmpeg (or an RTSP test stream) as return. Panel source = return, ⚙ programme = the test pattern.",
   'help.encoder.check': "a delay appears once the picture moves; the A/V line shows both offsets and their difference.",
   'help.encoder.pitfall': "Blocking only measures at the native analysis width (bridge width \"native\"); a scaled analysis picture smears the 8-pixel grid.",
+  'help.lens.one': "White shading and centre colour of the lens on a flat white field, stored per lens and zoom and compared after a lens change.",
+  'help.lens.what': "Every lens shades differently (fall-off to the edges, green/magenta top and bottom, a colour of its own), and it changes with the zoom. Cameras keep the corrections in lens files; this panel measures the picture: saw and parabola per channel, the centre colour as R/G and B/G, stored as a fingerprint. After a lens change it shows what differs from the stored fingerprint and which control to turn.",
+  'help.lens.read': "Map: brightness of each area against the centre (blue darker, orange brighter, ±10 %).\nTable: saw H/V and parabola H/V per channel in % of the centre, rest = what the four terms do not explain.\nΔ rows: live minus stored, in percentage points; the largest one is named.\nGood: Δ near 0, rest small.",
+  'help.lens.try': "Camera on an evenly lit white card or diffuser (fill the frame, slightly defocused), enter lens and zoom in ⚙, \"Store fingerprint\". Zoom in, store a second one, then zoom back.",
+  'help.lens.check': "back at the first zoom the panel picks that fingerprint and the Δ rows are near 0.",
+  'help.lens.pitfall': "Uneven light looks like lens shading – the field has to be even to a fraction of a percent (Tektronix: ±0.5 % typical with a diffuser).",
   // --- end scope texts ---
 } satisfies Messages;

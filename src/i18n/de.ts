@@ -40,6 +40,7 @@ import compare from './de/compare';
 import wallcheck from './de/wallcheck';
 import sim from './de/sim';
 import enc from './de/enc';
+import lens from './de/lens';
 import type { Key } from './en';
 import type { Msg } from './types';
 
@@ -80,4 +81,5 @@ export const de: Record<Key, Msg> = {
   ...wallcheck,
   ...sim,
   ...enc,
+  ...lens,
 };

@@ -34,6 +34,7 @@ import { drawMatchPanel, matchSignature, type MatchSettings } from './match/pane
 import { drawLightPanel, isLight, lightSignature, type LightPanelOptions } from './opple/scopes';
 import { drawSimulcastPanel, type SimulcastSettings } from './simulcastPanel';
 import { drawEncoderPanel, type EncoderSettings } from './encoderPanel';
+import { drawLensPanel, type LensSettings } from './lensPanel';
 import { t } from './i18n';
 import { IDENTITY, isIdentity, viewRect, waveRange, type View, type ViewLimits } from './view';
 import { GHOST_CSS, GHOST_TINT, deltaRows, ghostChannels, hasGhost, histOf, levelDeltas, traceLevels } from './ghost';
@@ -110,6 +111,8 @@ export interface PanelState {
   simulcast?: SimulcastSettings;
   /** encoder confidence (encoderPanel.ts): programme source against this panel's source (the return) */
   encoder?: EncoderSettings;
+  /** lens fingerprint (lensPanel.ts): lens, zoom, compared print */
+  lens?: LensSettings;
   /** zoom/pan from gestures (#89, view.ts); the 3D volume keeps its view in `cube` */
   view?: View;
   /** reference trace of the reference camera (ghost.ts) over this scope, with Δ levels */
@@ -558,6 +561,8 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
     : p.scope === 'simulcast' ? `|s${Math.floor(Date.now() / 500)}`
     // encoder confidence samples programme and return while it is drawn: 25 Hz
     : p.scope === 'encoder' ? `|e${Math.floor(Date.now() / 40)}`
+    // lens fingerprint: stored prints can change without a new frame
+    : p.scope === 'lens' ? `|l${Math.floor(Date.now() / 500)}`
     : p.scope === 'qclog' ? `|q${qcLog.version}:${Math.floor(Date.now() / 1000)}` : '';
   if (p.scope === 'clock') return `C|${src?.id}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}${tick}`;
   if (isLight(p.scope)) return `${lightSignature(p.scope, p.light, body.w, body.h)}|${body.x},${body.y}`;
@@ -629,6 +634,11 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   }
   if (p.scope === 'tiles') { drawTiles(renderer, ctx, key, p, body, o); return; }
   if (p.scope === 'skinall') { renderer.clearRect(body); drawSkinAllPanel(ctx, p, body, o); return; }
+  if (p.scope === 'lens') {
+    renderer.clearRect(body);
+    drawLensPanel(ctx, body.w, body.h, p.lens, src, o.emptyText ?? t('panel.draw.addSource'));
+    return;
+  }
   if (p.scope === 'encoder') {
     renderer.clearRect(body);
     drawEncoderPanel(ctx, body.w, body.h, p.encoder, src, o.sourceById ?? (() => null), o.emptyText ?? t('panel.draw.addSource'));

@@ -32,6 +32,7 @@ import compare from './en/compare';
 import wallcheck from './en/wallcheck';
 import sim from './en/sim';
 import enc from './en/enc';
+import lens from './en/lens';
 
 
 import tools from './en/tools';
@@ -77,6 +78,7 @@ export const en = {
   ...wallcheck,
   ...sim,
   ...enc,
+  ...lens,
 };
 
 export type Key = keyof typeof en;

@@ -265,5 +265,11 @@ export default {
   'help.encoder.try': "Zwei Quellen: das Testbild „A/V-Sync“ mit dem Generator-Piep als Programm, dasselbe Signal per ffmpeg durchgereicht (oder ein RTSP-Teststream) als Rücklauf. Panel-Quelle = Rücklauf, im ⚙ Programm = das Testbild.",
   'help.encoder.check': "sobald sich das Bild bewegt, erscheint eine Verzögerung; die A/V-Zeile zeigt beide Versätze und ihre Differenz.",
   'help.encoder.pitfall': "Blockbildung misst nur bei nativer Analysebreite (Bridge-Breite „nativ“); ein skaliertes Analysebild verschmiert das 8-Pixel-Raster.",
+  'help.lens.one': "White Shading und Mittenfarbe des Objektivs auf einer gleichmäßigen Weißfläche, gespeichert je Objektiv und Zoom und nach einem Objektivwechsel verglichen.",
+  'help.lens.what': "Jedes Objektiv schattiert anders (Randabfall, Grün/Magenta oben und unten, eine eigene Farbe), und das ändert sich mit dem Zoom. Kameras halten die Korrekturen in Lens Files; dieses Panel misst das Bild: Säge und Parabel je Kanal, die Mittenfarbe als R/G und B/G, gespeichert als Fingerabdruck. Nach einem Objektivwechsel zeigt es, was vom gespeicherten Fingerabdruck abweicht und welcher Regler zu drehen ist.",
+  'help.lens.read': "Karte: Helligkeit jeder Fläche gegen die Mitte (blau dunkler, orange heller, ±10 %).\nTabelle: Säge H/V und Parabel H/V je Kanal in % der Mitte, Rest = was die vier Terme nicht erklären.\nΔ-Zeilen: live minus gespeichert in Prozentpunkten; die größte wird genannt.\nGut: Δ nahe 0, Rest klein.",
+  'help.lens.try': "Kamera auf eine gleichmäßig beleuchtete Weißkarte oder einen Diffusor (bildfüllend, leicht unscharf), im ⚙ Objektiv und Zoom eintragen, „Fingerabdruck speichern“. Hineinzoomen, einen zweiten speichern, dann zurückzoomen.",
+  'help.lens.check': "zurück am ersten Zoom wählt das Panel diesen Fingerabdruck, und die Δ-Zeilen liegen nahe 0.",
+  'help.lens.pitfall': "Ungleichmäßiges Licht sieht aus wie Objektiv-Shading – die Fläche muss auf Bruchteile eines Prozents gleichmäßig sein (Tektronix: ±0,5 % mit Diffusor üblich).",
   // --- end scope texts ---
 } satisfies Translation<typeof en>;

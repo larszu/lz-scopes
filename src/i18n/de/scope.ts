@@ -34,6 +34,7 @@ export default {
   'scope.name.skinall': 'Hautton aller Kameras',
   'scope.name.simulcast': 'Simulcast-Abweichung',
   'scope.name.encoder': 'Encoder-Konfidenz',
+  'scope.name.lens': 'Objektiv-Fingerabdruck',
   'scope.name.audio-meter': 'Audio Pegel & Lautheit',
   'scope.name.audio-loudness': 'Audio Lautheitsverlauf',
   'scope.name.audio-spectrum': 'Audio Spektrum',

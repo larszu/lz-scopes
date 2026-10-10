@@ -28,7 +28,7 @@ export interface FrameMeta {
   av?: [number, number][];
 }
 
-type In = { type: 'open'; url: string } | { type: 'ack' } | { type: 'close' };
+type In = { type: 'open'; url: string } | { type: 'ack' } | { type: 'close' } | { type: 'send'; data: string };
 export type Out =
   | { type: 'text'; data: string }
   | { type: 'bin'; data: ArrayBuffer; meta?: FrameMeta }
@@ -160,5 +160,6 @@ self.onmessage = (e: MessageEvent<In>) => {
   const m = e.data;
   if (m.type === 'open') open(m.url);
   else if (m.type === 'ack') { inflight = false; flush(); }
+  else if (m.type === 'send') { if (ws?.readyState === WebSocket.OPEN) ws.send(m.data); }
   else if (m.type === 'close') { const s = ws; ws = null; s?.close(); decoder?.close(); decoder = null; self.close(); }
 };

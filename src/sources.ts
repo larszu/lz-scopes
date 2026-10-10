@@ -495,7 +495,11 @@ export class Source {
           this.latency.onBridgeStats(msg.stampAge);
           this.rtpStats = msg.rtp ?? null;
           this.phase = msg.phase ?? null;
+          if (msg.rec) Source.onRecord?.(this, msg.rec);
           if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', bridgeMessage(msg));
+        } else if (msg.type === 'record') {
+          // local recording in the bridge (server/recorder.mjs)
+          Source.onRecord?.(this, msg);
         } else if (msg.type === 'resolve') {
           // DaVinci Resolve (#88): timeline playing / paused again (server/resolveWatch.mjs)
           Source.onResolve?.(this, msg);
@@ -553,6 +557,34 @@ export class Source {
   resolveRoute: ResolveRoute | null = null;
   /** a 'resolve' message of the bridge arrived (main.ts → src/resolvePlayback.ts) */
   static onResolve: ((s: Source, msg: { state: 'playing' | 'paused'; played?: boolean; project?: string | null }) => void) | null = null;
+  /** a recording message of the bridge arrived (src/record/record.ts) */
+  static onRecord: ((s: Source, msg: Record<string, unknown>) => void) | null = null;
+  /** Send a text message on this source's bridge connection; false without one. */
+  sendBridge(msg: object): boolean {
+    if (!this.ws) return false;
+    this.ws.send(JSON.stringify(msg));
+    return true;
+  }
+  /** Media stream for MediaRecorder: camera/screen, video file or the pattern canvas; null for bridge sources. */
+  captureStream(fps = 25): MediaStream | null {
+    if (this.media) return this.media;
+    const el = (this.videoEl ?? this.element) as (HTMLMediaElement & { captureStream?: () => MediaStream }) | HTMLCanvasElement | null;
+    if (el instanceof HTMLCanvasElement) {
+      // canvas.captureStream() yields frames only when the canvas is painted on screen; ours is not in
+      // the document. Chromium: feed it frame by frame (MediaStreamTrackGenerator), else captureStream.
+      const Gen = (globalThis as unknown as { MediaStreamTrackGenerator?: new (o: { kind: string }) => MediaStreamTrack & { writable: WritableStream<VideoFrame> } }).MediaStreamTrackGenerator;
+      if (!Gen || typeof VideoFrame === 'undefined') return el.captureStream(fps);
+      const gen = new Gen({ kind: 'video' });
+      const writer = gen.writable.getWriter();
+      const t0 = performance.now();
+      const timer = setInterval(() => {
+        if (gen.readyState === 'ended') { clearInterval(timer); writer.close().catch(() => {}); return; }
+        writer.write(new VideoFrame(el, { timestamp: Math.round((performance.now() - t0) * 1000) })).catch(() => {});
+      }, 1000 / fps);
+      return new MediaStream([gen]);
+    }
+    return el && 'captureStream' in el && typeof el.captureStream === 'function' ? el.captureStream() : null;
+  }
   /** called by stop(), e.g. to end a live capture that belongs to this source */
   static onStop: ((s: Source) => void) | null = null;
   private liveShown = false;

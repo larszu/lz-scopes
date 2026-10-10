@@ -57,6 +57,8 @@ Kameras sehen die Szene aus verschiedenen Winkeln. Verglichen werden deshalb **V
 
 ### 5. Lokale Aufzeichnung der Quellen (mittel)
 
+Umgesetzt ist die Aufzeichnung in der Bridge und im Browser mit Begleitdatei: [aufzeichnung.md](aufzeichnung.md).
+
 Zweck: Abgleich nachträglich prüfen (vorher/nachher, Drift über die Show), Kameras ohne Live-Zugriff vergleichen, Belege für Kunden.
 
 - **In der Bridge, im selben ffmpeg-Prozess** wie der Analyse-Strom (zweiter Ausgang). Geräte wie DeckLink oder V4L2 lassen sich nicht zweimal öffnen.

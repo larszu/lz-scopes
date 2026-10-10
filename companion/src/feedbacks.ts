@@ -66,9 +66,14 @@ export function updateFeedbacks(self: ModuleInstance): void {
       type: 'boolean', name: 'Max true peak above threshold', defaultStyle: { bgcolor: RED, color: WHITE },
       options: [num('threshold', 'Threshold dBTP', -1, -60, 6)], callback: (fb) => checks.true_peak_above(s(), opts(fb.options)),
     },
+    recording: {
+      type: 'boolean', name: 'Recording', defaultStyle: { bgcolor: RED, color: WHITE },
+      options: [{ type: 'textinput', id: 'source', label: 'Source (number, name or id; empty = any)', default: '' }],
+      callback: (fb) => checks.recording(s(), opts(fb.options)),
+    },
     ident_problem: { type: 'boolean', name: 'Ident finding (swapped, missing, polarity)', defaultStyle: { bgcolor: RED, color: WHITE }, options: [], callback: () => checks.ident_problem(s()) },
   }
   self.setFeedbackDefinitions(defs)
 }
 
-export const FEEDBACK_IDS = ['connected', 'qc_active', 'frozen', 'source_active', 'clip_above', 'ymax_above', 'ymin_below', 'layout_active', 'scene_active', 'output_open', 'streaming', 'maximized', 'playing', 'generator_running', 'loudness_paused', 'true_peak_above', 'ident_problem']
+export const FEEDBACK_IDS = ['connected', 'qc_active', 'frozen', 'source_active', 'clip_above', 'ymax_above', 'ymin_below', 'layout_active', 'scene_active', 'output_open', 'streaming', 'maximized', 'playing', 'generator_running', 'loudness_paused', 'true_peak_above', 'ident_problem', 'recording']

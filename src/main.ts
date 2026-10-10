@@ -56,6 +56,7 @@ import { Source, type AudioInput, type SourceKind, type SourceSettings } from '.
 import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
 import { SOURCE_ITEMS, mountMenu, refreshMenu, registerMenuCommand, type MenuActions, type MenuState } from './menu/appMenu';
 import { openSettings, refreshSettings, registerSettingsSection } from './menu/settings';
+import { initRecording, isRecording, markAll, eventAll, onBridgeRecord, recordAll, recordAllButton, recordRow, recordSection, recordingState, sourceStopped, startRecording, stopRecording } from './record/record';
 import { aboutSection, keysSection } from './menu/pages';
 import { LANG_NAMES, LANGS, lang, langPref, num, setLangPref, systemLang, t, type LangPref } from './i18n';
 import { ShadingControl, SIM_URL } from './shading/ui';
@@ -165,7 +166,8 @@ checkGpu((title, body) => {
 const freezeBtn = button(t('main.freeze'), () => toggleFreeze(), { title: t('main.freezeTitle'), pressed: false, attrs: { id: 'freeze' } });
 const sideToggle = iconButton('◧', t('main.side.aria'), () => toggleSidebar(), { title: t('main.side.toggle'), attrs: { id: 'toggle-side' } });
 /** Header overflow (narrow windows): the same layout presets and scale as the header groups. */
-const moreMenu = popover({ label: '⋯', title: t('ui.more'), heading: t('ui.moreTitle'), cls: 'more-body', content: () => [field(t('ui.layouts'), layoutControl()), settingRow(SET.unit)] });
+const moreMenu = popover({ label: '⋯', title: t('ui.more'), heading: t('ui.moreTitle'), cls: 'more-body', content: () => [field(t('ui.layouts'), layoutControl()), settingRow(SET.unit),
+  row(button(t('record.all'), () => recordAll(), { title: t('record.allTitle') }))] });
 moreMenu.id = 'bar-more';
 const side = h('aside', { class: 'side', id: 'side' },
   h('h2', {}, t('main.sources')),
@@ -187,6 +189,7 @@ app.replaceChildren(
     h('div', { class: 'spacer' }),
     h('span', { class: 'fps', id: 'fps', title: t('main.fpsTitle') }),
     gpuWarn,
+    recordAllButton,
     freezeBtn,
     iconButton('⚙', t('common.settings'), () => openSettings(), { title: t('main.settingsTitle'), attrs: { id: 'settings-btn' } }),
     iconButton('⛶', t('main.full'), () => toggleFullscreen(), { title: t('main.fullTitle'), attrs: { id: 'full' } })),
@@ -317,6 +320,7 @@ registerSettingsSection({ id: 'audio', label: t('settings.audio'), order: 80, re
   field('', button(t('settings.audio.showGen'), () => { toggleSidebar(true); const g = $<HTMLDetailsElement>('#gen-wrap'); g.open = true; g.scrollIntoView({ block: 'nearest' }); })),
 ] });
 
+registerSettingsSection(recordSection(85, (window as unknown as { lzsDesktop?: { recordFolder?: () => Promise<{ name: string } | null> } }).lzsDesktop?.recordFolder));
 registerSettingsSection(keysSection(90));
 registerSettingsSection(aboutSection(100));
 // after a language switch the window reloads; bring the settings back where the user was
@@ -526,6 +530,8 @@ function renderSources() {
         s.transfer === 'hlg' ? select(String(s.hlgLw), HLG_PEAKS.map((n) => [String(n), t('main.src.hlgDisplay', { n })]), (v) => upd({ hlgLw: Number(v) }), t('main.src.hlgTitle')) : ''));
     if (s.kind !== 'audio') card.append(chainControls(s, upd));
     if (s.url === 'resolve:' && s.status === 'live') card.append(resolveRouteRow(s));
+    const rr = recordRow(s);
+    if (rr) card.append(rr);
     if (s.message) card.append(h('div', { class: 'msg', role: s.status === 'error' ? 'alert' : null }, s.message));
     if (s.kind === 'webcam' && s.status === 'live') card.append(row(chip('', { attrs: { 'data-srcfps': s.id } })));
     // LUT files dropped on a source card: LUT 1, with Shift LUT 2
@@ -1920,6 +1926,21 @@ function execute(c: Command): unknown {
       renderSources();
       return { sources: withAudio.map((x) => ({ name: x.name, paused: x.audio!.paused })) };
     }
+    case 'record': {
+      const list = c.source !== undefined ? [need(findSource(c.source), `Source ${c.source} not found`)] : sources;
+      const on = c.mode === 'toggle' ? !list.some(isRecording) : c.mode === 'on';
+      if (c.source !== undefined) { if (on) startRecording(list[0]); else stopRecording(list[0]); return recordingState(); }
+      recordAll(on);
+      return recordingState();
+    }
+    case 'record.mark': {
+      const list = c.source !== undefined ? [need(findSource(c.source), `Source ${c.source} not found`)] : undefined;
+      return { marked: markAll(typeof c.label === 'string' ? c.label : '', list) };
+    }
+    case 'record.event': {
+      const list = c.source !== undefined ? [need(findSource(c.source), `Source ${c.source} not found`)] : undefined;
+      return { recorded: eventAll(String(c.kind), c.data, list) };
+    }
     case 'setting': {
       const s = need(REMOTE_SETTINGS.find((x) => x.key === c.key), `Setting ${c.key} does not exist`);
       applySetting(s, c.value);
@@ -1999,6 +2020,8 @@ function controlState() {
     statsPerf: act ? { ...act.statsPerf } : null,
     audio: audioState(),
     generator: { running: generator.running, signal: generator.cfg.signal, level: generator.cfg.level, freq: generator.cfg.freq, channels: generator.cfg.channels ?? 2 },
+    /** local recordings (src/record/record.ts) */
+    recording: recordingState(),
     /** global settings (command "setting"): key, kind, value, choices or range */
     settings: describeSettings(REMOTE_SETTINGS),
   };
@@ -2025,6 +2048,8 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'f' || e.key === 'F') toggleFullscreen();
   else if (e.key === 's' || e.key === 'S') snapshot();
   else if (e.key === 'b' || e.key === 'B') toggleSidebar();
+  else if (e.key === 'r' || e.key === 'R') recordAll();
+  else if (e.key === 'm' || e.key === 'M') markAll();
   else if (e.key === 'c' || e.key === 'C') setStage(STAGES[(STAGES.indexOf(state.stage ?? 'signal') + 1) % STAGES.length]);
   else if (e.key === 'Escape') { if (narrowQuery.matches && drawerOpen) { toggleSidebar(false); $('#toggle-side').focus(); } else if (dock.api.hasMaximizedGroup()) dock.exitMaximized(); else { sources.forEach((s) => { s.probe = null; s.roi = null; s.faceMode = 'off'; }); refreshHeads(); } }
 });
@@ -2154,7 +2179,9 @@ sources.forEach((s) => { if (s.kind === 'stream' && s.url) s.connectStream(s.url
 
 // Resolve playback (#88): live window capture while the timeline plays
 Source.onResolve = (s, msg) => resolvePlayback.onResolve(s, msg);
-Source.onStop = (s) => resolvePlayback.onStop(s);
+Source.onStop = (s) => { resolvePlayback.onStop(s); sourceStopped(s); };
+Source.onRecord = (s, msg) => onBridgeRecord(s, msg);
+initRecording({ sources: () => sources, bridgeUrl, changed: () => renderSources(), hud: alertHud, latencyOf: (s) => s.latency.summary()?.total.mean ?? null });
 
 // running DaVinci Resolve on the bridge machine: one click to connect
 mountResolveLive($('#resolve-live'), {

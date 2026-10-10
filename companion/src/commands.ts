@@ -58,6 +58,8 @@ export function buildCommand(actionId: string, o: Options): Command {
       const freq = o.freq === undefined || o.freq === '' || Number(o.freq) === 0 ? undefined : Number(o.freq)
       return clean({ cmd: 'generator', mode: o.mode ?? 'toggle', signal: text(o.signal), freq, level, force: level !== undefined && level > -6 ? o.force === true || undefined : undefined })
     }
+    case 'record': return clean({ cmd: 'record', mode: o.mode ?? 'toggle', source: ref(o.source) })
+    case 'record_mark': return clean({ cmd: 'record.mark', label: text(o.label), source: ref(o.source) })
     case 'setting': return clean({ cmd: 'setting', key: text(o.key), value: settingValue(o.value) })
   }
   throw new Error(`Unbekannte Aktion ${actionId}`)

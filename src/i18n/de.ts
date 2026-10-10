@@ -9,6 +9,7 @@ import tools from './de/tools';
 import clock from './de/clock';
 import audio from './de/audio';
 import ui from './de/ui';
+import record from './de/record';
 
 import bridgeui from './de/bridgeui';
 import chain from './de/chain';
@@ -45,6 +46,7 @@ export const de: Record<Key, Msg> = {
   ...clock,
   ...audio,
   ...ui,
+  ...record,
   ...bridgeui,
   ...chain,
   ...color,

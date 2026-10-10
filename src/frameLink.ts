@@ -13,6 +13,8 @@ export interface FrameSocket {
   onerror: (() => void) | null;
   onclose: (() => void) | null;
   close(): void;
+  /** send a text message to the bridge (recording commands, server/recorder.mjs) */
+  send(text: string): void;
   /** true = reception and H.264 decoding run in the worker */
   readonly worker: boolean;
 }
@@ -31,6 +33,7 @@ export function openFrameSocket(url: string): FrameSocket {
   const sock: FrameSocket = {
     onmessage: null, onerror: null, onclose: null, worker: true,
     close: () => { w.postMessage({ type: 'close' }); setTimeout(() => w.terminate(), 1000); },
+    send: (data) => w.postMessage({ type: 'send', data }),
   };
   w.onmessage = (e: MessageEvent<Out>) => {
     const m = e.data;
@@ -51,7 +54,7 @@ export function openFrameSocket(url: string): FrameSocket {
 function plainSocket(url: string): FrameSocket {
   const ws = new WebSocket(url);
   ws.binaryType = 'arraybuffer';
-  const sock: FrameSocket = { onmessage: null, onerror: null, onclose: null, worker: false, close: () => ws.close() };
+  const sock: FrameSocket = { onmessage: null, onerror: null, onclose: null, worker: false, close: () => ws.close(), send: (d) => { if (ws.readyState === ws.OPEN) ws.send(d); } };
   let info: { width: number; height: number; depth: number; proto?: number } | null = null;
   ws.onmessage = (ev) => {
     if (typeof ev.data === 'string') {

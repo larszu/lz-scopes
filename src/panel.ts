@@ -38,6 +38,7 @@ import { GHOST_CSS, GHOST_TINT, deltaRows, ghostChannels, hasGhost, histOf, leve
 import { LUMA } from './color';
 import { PEAK_COLOURS, PEAK_DEFAULT, PeakHold, lumaPlane, measureRect, sharpness, type PeakColour, type Rect4 } from './focus';
 import { channelPlanes, measureNoise, noiseRows, quantFloorDb, type NoiseResult } from './noise';
+import { analyseShading, cellColour, cellDeviation, rampColour, shadingRows, type ShadingChannel, type ShadingResult } from './whiteShading';
 import { TILE_HEAD, sanitizeTiles, tileAspect, tileGrid, tileLabel, tileSources, type TileSettings } from './tiles';
 
 export interface PanelState {
@@ -112,6 +113,72 @@ export interface PanelState {
   peak?: { threshold?: number; colour?: PeakColour };
   /** noise meter (noise.ts): remove a fitted shading surface before measuring (default on) */
   noise?: { detrend?: boolean };
+  /** white-shading map (whiteShading.ts): mapped quantity, full scale in %, measuring frame only */
+  wshading?: { map?: ShadingChannel | 'colour'; scale?: number; roi?: boolean };
+}
+
+/** White-shading analysis of the whole picture (or the measuring frame), once per frame. */
+const shadingCache = new Map<string, { key: string; r: ShadingResult | null }>();
+export function shadingOf(src: Source, useRoi: boolean): ShadingResult | null {
+  const b = baseOf(src), f = b.cpuFrame();
+  if (!f) return null;
+  const roi = useRoi ? b.activeRois()[0] : undefined, sx = f.w / b.width, sy = f.h / b.height;
+  const rect: Rect4 = roi ? measureRect([roi[0] * sx, roi[1] * sy, roi[2] * sx, roi[3] * sy], f.w, f.h) : [0, 0, f.w, f.h];
+  const c = chainOf(src);
+  const key = `${b.frameSeq}:${rect.join(',')}:${f.w}:${b.colorspace}:${c?.sig ?? ''}`;
+  const hit = shadingCache.get(b.id);
+  if (hit?.key === key) return hit.r;
+  const { kr, kb } = LUMA[b.colorspace];
+  const decode = c ? ((px: ArrayLike<number>, i: number) => c.apply(f.decode(px, i)) as [number, number, number]) : f.decode;
+  const r = analyseShading(channelPlanes(f.px, f.w, decode, kr, kb, rect, 400_000));
+  shadingCache.set(b.id, { key, r });
+  return r;
+}
+
+function drawShadingPanel(ctx: CanvasRenderingContext2D, p: PanelState, src: Source, body: Rect) {
+  const o = p.wshading ?? {};
+  const map = o.map ?? 'Y', scale = (o.scale ?? 5) / 100;
+  const r = shadingOf(src, !!o.roi);
+  ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = '#d6d6d6';
+  if (!r) { ctx.fillText(t('noise.noData'), 12, 10); return; }
+  const rows = [t(map === 'colour' ? 'wshading.mapColour' : 'wshading.mapLevel', { ch: map === 'Y' ? 'Y′' : `${map}′`, scale: (scale * 100).toFixed(0) }), '', ...shadingRows(r, { flat: t('wshading.flat') }), '', t('wshading.read')];
+  // wide panel: map left, table right; narrow: map on top
+  const tableW = 360, wide = body.w > tableW + 260;
+  const area = wide ? { x: 8, y: 8, w: body.w - tableW - 24, h: body.h - 16 } : { x: 8, y: 8, w: body.w - 16, h: Math.max(60, body.h - rows.length * 15 - 28) };
+  const aspect = src.width && src.height ? src.width / src.height : 16 / 9;
+  let mw = area.w, mh = mw / aspect;
+  if (mh > area.h) { mh = area.h; mw = mh * aspect; }
+  const cw = mw / r.gx, ch = mh / r.gy;
+  for (let j = 0; j < r.gy; j++) for (let i = 0; i < r.gx; i++) {
+    const k = j * r.gx + i;
+    let rgb: [number, number, number];
+    if (map === 'colour') {
+      // cast of the cell against the field's own balance: R′ − G′ and B′ − G′, amplified to full scale
+      const [dr, db] = cellColour(r, k), a = 0.5 / scale;
+      rgb = [0.55 + dr * a, 0.55 - (dr + db) * a * 0.5, 0.55 + db * a].map((v) => Math.max(0, Math.min(1, v))) as [number, number, number];
+    } else rgb = rampColour(cellDeviation(r, map, k), scale);
+    ctx.fillStyle = `rgb(${rgb.map((v) => Math.round(v * 255)).join(',')})`;
+    ctx.fillRect(area.x + i * cw, area.y + j * ch, Math.ceil(cw), Math.ceil(ch));
+  }
+  if (map !== 'colour' && cw > 34 && ch > 14) {
+    ctx.fillStyle = 'rgba(10,10,12,0.85)'; ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let j = 0; j < r.gy; j++) for (let i = 0; i < r.gx; i++) {
+      const d = cellDeviation(r, map, j * r.gx + i) * 100;
+      ctx.fillText(`${d < -0.05 ? '−' : '+'}${Math.abs(d).toFixed(1)}`, area.x + (i + 0.5) * cw, area.y + (j + 0.5) * ch);
+    }
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1; ctx.strokeRect(area.x + 0.5, area.y + 0.5, mw - 1, mh - 1);
+  ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = '#d6d6d6';
+  const tx = wide ? area.x + mw + 16 : 12, ty = wide ? 10 : area.y + mh + 10;
+  // wrap long text lines (not the table) to the space beside or below the map
+  const maxW = (wide ? body.w - tx : body.w - 24) - 8;
+  const wrapped = rows.flatMap((l) => {
+    if (ctx.measureText(l).width <= maxW || l.startsWith('  ') || /^[YRGB]′/.test(l)) return [l];
+    const out: string[] = []; let cur = '';
+    for (const w of l.split(' ')) { const next = cur ? `${cur} ${w}` : w; if (ctx.measureText(next).width > maxW && cur) { out.push(cur); cur = w; } else cur = next; }
+    return [...out, cur];
+  });
+  wrapped.forEach((l, i) => ctx.fillText(l, tx, ty + i * 15));
 }
 
 /** Noise of the measuring frame (centre third without one), once per frame and setting. */
@@ -707,6 +774,8 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     if (p.audioBar !== false && src.audio) drawAudioBar(ctx, src.audio, frame);
   } else if (p.scope === 'match') {
     drawMatchPanel(ctx, body.w, body.h, p.match, src, matchCtx(o));
+  } else if (p.scope === 'wshading') {
+    drawShadingPanel(ctx, p, src, body);
   } else if (p.scope === 'noise') {
     drawNoisePanel(ctx, p, src);
   } else if (p.scope === 'stats') {

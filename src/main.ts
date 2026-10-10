@@ -1091,6 +1091,14 @@ function panelSettings(p: PanelState): Node[] {
       else if (s.faceTrack && faceMod?.faceStatus.delegate === 'CPU') row('', h('p', { class: 'hint' }, t('panel.facesCpu')));
     }
   }
+  if (p.scope === 'wshading') {
+    const ws = p.wshading ?? {};
+    const setW = (patch: NonNullable<PanelState['wshading']>) => { p.wshading = { ...p.wshading, ...patch }; save(); };
+    row(t('wshading.map'), select(ws.map ?? 'Y', [['Y', 'Y′'], ['R', 'R′'], ['G', 'G′'], ['B', 'B′'], ['colour', t('wshading.colour')]], (v) => setW({ map: v as 'Y' }), t('wshading.mapTitle')));
+    row(t('wshading.scale'), select(String(ws.scale ?? 5), [['2', '± 2 %'], ['5', '± 5 %'], ['10', '± 10 %'], ['20', '± 20 %']], (v) => setW({ scale: Number(v) })));
+    row(t('wshading.region'), checkbox(!!ws.roi, t('wshading.roiOnly'), (v) => setW({ roi: v }), t('wshading.roiTitle')));
+    rows.push(hint(t('wshading.hint')));
+  }
   if (p.scope === 'noise') {
     row(t('noise.detrend'), checkbox(p.noise?.detrend !== false, t('noise.detrendText'), (v) => { p.noise = { ...p.noise, detrend: v }; save(); }, t('noise.detrendTitle')));
     rows.push(hint(t('noise.hint')));

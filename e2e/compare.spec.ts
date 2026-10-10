@@ -124,6 +124,23 @@ test('Rauschmessung: Panel zeigt die Tabelle ohne Fehler', async () => {
   expect(errors).toEqual([]);
 });
 
+test('White-Shading-Karte: Grauverlauf links dunkler (blau), rechts heller (warm)', async () => {
+  expectOk(await a.control({ cmd: 'pattern.select', pattern: 'ramp' }));
+  await singlePanel(a, 'wshading');
+  const row = () => a.page.evaluate(() => {
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4)!;
+    const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
+    const dpr = c.width / c.getBoundingClientRect().width;
+    const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, Math.round(14 * dpr), c.width, 1).data;
+    const first = [d[Math.round(12 * dpr) * 4], d[Math.round(12 * dpr) * 4 + 2]];
+    let warm = false;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200 && d[i] > 200 && d[i + 2] < 120) warm = true;
+    return { blueFirst: first[1] > first[0] + 60, warm };
+  });
+  await until(async () => { const r = await row(); return r.blueFirst && r.warm; }, 30_000, 'Karte blau links, warm rechts')
+    .catch(async (e) => { console.log('Karte', await row()); throw e; });
+});
+
 test('STOP-Skala: Hauptlinie bei der Graukarte (SDR 40,9 %)', async () => {
   expectOk(await a.control({ cmd: 'pattern.select', pattern: 'steps11' }));
   await singlePanel(a, 'wf-luma');

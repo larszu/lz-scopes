@@ -28,6 +28,7 @@ import led from './en/led';
 import calib from './en/calib';
 import feedback from './en/feedback';
 import help from './en/help';
+import compare from './en/compare';
 
 
 import tools from './en/tools';
@@ -69,6 +70,7 @@ export const en = {
   ...calib,
   ...feedback,
   ...help,
+  ...compare,
 };
 
 export type Key = keyof typeof en;

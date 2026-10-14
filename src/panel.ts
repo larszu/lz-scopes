@@ -8,7 +8,7 @@ import {
   WAVE_ZOOMS, channelLayout, isAudio, isWaveform, plotRect, type WaveChannels, type WaveOpts, type WaveZoom, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
 import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/panels';
-import type { DisplayParams, PictureMode, PictureParams, Rect, Renderer, ScatterMode, SkinRange } from './renderer';
+import type { DisplayParams, PictureMode, PictureParams, Rect, Renderer, ScatterMode, ScatterParams, SkinRange } from './renderer';
 import type { Source } from './sources';
 import { barRefs, nearest, type DeRef } from './deltae';
 import { LUTS, applyLut } from './lut';
@@ -34,6 +34,8 @@ import { drawMatchPanel, matchSignature, type MatchSettings } from './match/pane
 import { drawLightPanel, isLight, lightSignature, type LightPanelOptions } from './opple/scopes';
 import { t } from './i18n';
 import { IDENTITY, isIdentity, viewRect, waveRange, type View, type ViewLimits } from './view';
+import { GHOST_CSS, GHOST_TINT, deltaRows, ghostChannels, hasGhost, histOf, levelDeltas, traceLevels } from './ghost';
+import { LUMA } from './color';
 
 export interface PanelState {
   scope: ScopeType; sourceId: string; gain: number; colorize: boolean; zoom: number;
@@ -99,6 +101,8 @@ export interface PanelState {
   light?: Partial<LightPanelOptions>;
   /** zoom/pan from gestures (#89, view.ts); the 3D volume keeps its view in `cube` */
   view?: View;
+  /** reference trace of the reference camera (ghost.ts) over this scope, with Δ levels */
+  ghost?: boolean;
 }
 
 // ------------------------------------------------------------------ zoom and pan (#89)
@@ -162,6 +166,52 @@ export interface DrawOptions {
   deRef?: string;
   /** resolves the B source of an A/B comparison */
   sourceById?: (id: string) => Source | null;
+  /** reference camera (ghost.ts); functions are left out of the panel signature, `sig` stands in */
+  ref?: RefDraw;
+}
+
+/** The reference as the panels see it. */
+export interface RefDraw {
+  source: () => Source | null;
+  /** frozen: renderer snapshot tag and the R′G′B′ samples taken at that moment */
+  snapshot?: string; samples?: () => number[][];
+  opacity: number; name: string; frozen: boolean;
+  /** changes whenever the reference picture changes (frame, freeze) */
+  sig: string;
+}
+
+/** R′G′B′ samples of a source frame for the Δ levels, once per frame and measuring frame. */
+const sampleCache = new Map<string, { key: string; px: number[][] }>();
+export function frameSamples(src: Source): number[][] {
+  const b = baseOf(src), key = `${b.frameSeq}:${b.statsVersion}:${b.width}x${b.height}:${b.activeRois().flat().join(',')}`;
+  const hit = sampleCache.get(b.id);
+  if (hit?.key === key) return hit.px;
+  const px = b.roiSamples(12000);
+  sampleCache.set(b.id, { key, px });
+  return px;
+}
+/** Samples as a panel at its measuring stage sees them (chain.ts). */
+const atStage = (src: Source, px: number[][]) => { const c = chainOf(src); return c ? px.map((v) => c.apply(v)) : px; };
+
+/** The reference source at the panel's stage; null when there is none or it would compare the source with itself live. */
+function refView(src: Source, p: PanelState, o: DrawOptions): Source | null {
+  if (!p.ghost || !o.ref || !hasGhost(p.scope)) return null;
+  const r = o.ref.source();
+  if (!r || !r.ready) return null;
+  if (!o.ref.frozen && baseOf(r).id === baseOf(src).id) return null;
+  return stageView(r, p.stage ?? o.stage ?? 'signal');
+}
+
+/** Δ box (live − reference) at the top left of the plot. */
+function drawGhostDeltas(ctx: CanvasRenderingContext2D, frame: Rect, scope: ScopeType, src: Source, ref: Source, o: DrawOptions) {
+  const rd = o.ref!;
+  const refPx = atStage(ref, rd.frozen && rd.samples ? rd.samples() : frameSamples(ref));
+  const cur = traceLevels(atStage(src, frameSamples(src)), LUMA[src.colorspace].kr, LUMA[src.colorspace].kb);
+  const rl = traceLevels(refPx, LUMA[ref.colorspace].kr, LUMA[ref.colorspace].kb);
+  const head = t('ghost.box.ref', { name: rd.name, mode: rd.frozen ? t('ghost.frozen') : t('ghost.live') });
+  const lines = cur && rl ? deltaRows(levelDeltas(cur, rl), ghostChannels(scope), { black: t('ghost.black'), median: t('ghost.median'), peak: t('ghost.peak') }) : [t('ghost.noData')];
+  drawTextBox(ctx, frame.x + 6, frame.y + 6, [head, ...lines]);
+  ctx.fillStyle = GHOST_CSS; ctx.fillRect(frame.x + 6, frame.y + 6, 3, 15);
 }
 
 export const DEFAULT_SKIN: SkinRange = { lo: 0.3, hi: 0.8, tol: 14 };
@@ -262,7 +312,8 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
   const { displayFps, ...rest } = o;
   // compact level bar on the picture: redraw at 20 Hz of audio time
   const bar = p.scope === 'picture' && p.audioBar !== false && src?.audio ? `${Math.floor(src.audio.frames / (src.audio.fs / 20))}:${src.audio.stale}` : '';
-  return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}${tick}|${bar}${abSig}`;
+  const refSig = p.ghost && o.ref && hasGhost(p.scope) ? `|R${o.ref.sig}:${src?.statsVersion}` : '';
+  return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}${tick}|${bar}${abSig}${refSig}`;
 }
 
 export const defaultPanel = (scope: ScopeType): PanelState => ({
@@ -341,10 +392,11 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   }
   const probeRgb = src.probe ? src.readPixel(src.probe.x, src.probe.y) : null;
   const mode = p.scope === 'cube' && p.cube?.lutOnly && p.cube?.lut ? undefined : SCATTER[p.scope];
+  const ref = refView(src, p, o);
   if (mode) {
     const crt = crtOf(p);
     const cube = p.scope === 'cube' ? { ...DEFAULT_CUBE, ...p.cube } : null;
-    renderer.drawScatter(key, src, abs, {
+    const params = (s: Source): ScatterParams => ({
       ...(crt ? { crt } : {}),
       ...(!crt && p.persist && !isWaveform(p.scope) ? { persist: p.persist } : {}),
       ...(p.scope === 'chplot' ? { pair: p.pair ?? 0 } : {}),
@@ -355,9 +407,15 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       } } : {}),
       ...(xv ? { view: [xv.z, xv.x, xv.y] as [number, number, number], density: xv.z * xv.z } : wz !== 1 ? { density: wz } : {}),
       mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: crt ? [...PHOSPHORS[crt.phosphor].color] as [number, number, number] : [...TINTS[o.tint]] as [number, number, number],
-      maxSamples: o.maxSamples, roi: src.activeRois(), skin: p.scope === 'wf-green' ? greenOf(o) : o.skin, cieUv: p.scope === 'cie' && !!p.cieUv,
+      maxSamples: o.maxSamples, roi: s.activeRois(), skin: p.scope === 'wf-green' ? greenOf(o) : o.skin, cieUv: p.scope === 'cie' && !!p.cieUv,
       ...(isWaveform(p.scope) ? { range: waveRangeOf(p), ...(({ sec, n }) => ({ sec, secN: n }))(channelLayout(p.scope, p.channels)) } : {}),
     });
+    renderer.drawScatter(key, src, abs, params(src));
+    if (ref) {
+      // reference trace: same geometry, mono, no beam look or persistence, added on top
+      const { crt: _c, persist: _p, ...rp } = params(ref);
+      renderer.drawScatter(`${key}#ref`, ref, abs, { ...rp, colorize: 0 }, true, o.ref!.opacity, { tint: GHOST_TINT, snapshot: o.ref!.frozen ? o.ref!.snapshot : undefined });
+    }
   }
   if (isWaveform(p.scope)) {
     const wo = waveOpts(p, src);
@@ -411,7 +469,8 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       }
     }
   } else if (p.scope === 'hist') {
-    drawHistogram(ctx, r, src, p.hist, p.log);
+    const rpx = ref ? atStage(ref, o.ref!.frozen && o.ref!.samples ? o.ref!.samples() : frameSamples(ref)) : null;
+    drawHistogram(ctx, r, src, p.hist, p.log, ref && rpx?.length ? { hist: histOf(rpx, LUMA[ref.colorspace].kr, LUMA[ref.colorspace].kb), color: GHOST_CSS, alpha: Math.min(1, 0.3 + o.ref!.opacity) } : undefined);
   } else if (p.scope === 'picture') {
     const pic = (s: Source, rgcOn = !!p.rgc): PictureParams => ({
       mode: p.picture, bands: FALSE_COLOR_PRESETS[o.falsePreset] ?? [], zebra: o.zebra, zebraLow: o.zebraLow,
@@ -524,4 +583,5 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     lines.forEach((l, i) => ctx.fillText(l, 12, 10 + i * 15));
   }
   if (xv) ctx.restore();
+  if (ref) drawGhostDeltas(ctx, p.scope === 'hist' ? { ...frame, y: frame.y + 16 } : frame, p.scope, src, ref, o);
 }

@@ -1,6 +1,6 @@
 # Kamera-Abgleich: Kameras übereinanderlegen, messen, aufzeichnen
 
-Stand 10.10.2026. Plan, noch nichts davon umgesetzt. Marktbild aus Herstellerseiten und Presse, Herstellerangaben nicht nachgeprüft.
+Stand 10.10.2026. Plan; Schritt 1 ist umgesetzt, die übrigen sind offen. Marktbild aus Herstellerseiten und Presse, Herstellerangaben nicht nachgeprüft.
 
 ## Ausgangslage in lz-scopes
 
@@ -31,6 +31,14 @@ Kameras sehen die Szene aus verschiedenen Winkeln. Verglichen werden deshalb **V
 ## Plan
 
 ### 1. Referenzkamera und Geisterspur (klein)
+
+**Umgesetzt** (`src/ghost.ts`, Renderer `snapshot()`/Ghost-Zeichnung, Tests `test/ghost.test.ts`, `e2e/compare.spec.ts`). Abweichungen vom Plan und Festlegungen:
+
+- Referenzspur in allen Waveforms außer Hautton/Grün/YCbCr, in Parade, YRGB, Vectorscope, Diamond und Histogramm (dort als Umriss). Farbe Magenta, unabhängig von Spurfarbe und Kanalfarben; Deckkraft 5–100 %.
+- Eingefroren wird eine Kopie des Quellbilds auf der GPU (gleiches Format wie die Live-Textur, 8/16 bit bzw. Y′CbCr), nicht der Akkumulations-Buffer: So bleibt die Referenz bei Panelgröße, Zoom und Messpunkt (Signal/CST/LUT) richtig. Die CST/LUT-Kette der Referenzquelle wird beim Zeichnen angewandt.
+- Kennzahlen sind eigene, robuste Festlegungen, keine Norm: Schwarz = Mittel der dunkelsten 1 % der Abtastwerte („Schwarzschwerpunkt“), Median = 50-%-Quantil, Spitzlicht = Mittel der hellsten 1 %, je Y′, R′, G′, B′, als live − Referenz in Prozentpunkten. Mittel statt Min/Max, damit einzelne Rausch- oder Fehlpixel nichts verschieben. Mit Messrahmen gelten sie nur für den Rahmen der jeweiligen Quelle.
+- Herleitung aus der Tektronix-App-Note 25W-27159 (S. 11, „Camera matching“, gelesen): „apply the reference camera input to the instrument and press the freeze button … The frozen image is then displayed as a yellow trace and the user can switch between Live, Frozen or Live and Frozen“; CaptureVu „will save a complete frame of video data … reconstituted into any one of the trace or picture displays“. lz-scopes hält ebenfalls ein ganzes Bild statt einer Bildschirmkopie, deshalb funktioniert die Referenz in jedem Scope.
+- Nur synthetisch geprüft (Testbilder, vitest mit bekannter Pegelverschiebung und Rot-Gain-Fehler); mit echten Kameras ungeprüft.
 
 - Global „Referenz = Quelle X“; jedes Waveform-, Parade-, Vectorscope-, Diamond- und Histogramm-Panel kann die Referenzspur einblenden.
 - Referenzspur in Zweitfarbe, Deckkraft einstellbar, **live oder eingefroren** („gestimmte Kamera als Vorlage“, Tektronix-App-Note).

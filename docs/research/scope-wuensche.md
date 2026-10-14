@@ -8,7 +8,7 @@ Durchgehender Befund: Zum Shading gibt es kaum Lernmaterial, Wissen wird „from
 
 | # | Wunsch | Quelle | Aufwand |
 |---|---|---|---|
-| 1 | Referenzspur einfrieren und über das Live-Signal legen (Waveform, Parade, Diamond) – gestimmte Kamera als Vorlage für die nächste | [Tektronix App-Note 25W-27159](https://www.telestream.net/pdfs/app-notes/Camera-Setup-Matching-and-Alignment-Application-Note-25W271590.pdf), empfohlen in [13ik5e1](https://www.reddit.com/r/VIDEOENGINEERING/comments/13ik5e1/video_shading/) | klein |
+| 1 | **Umgesetzt** (Referenzkamera und Geisterspur, [kamera-abgleich.md](kamera-abgleich.md) Schritt 1): Referenzspur einfrieren und über das Live-Signal legen (Waveform, Parade, Diamond) – gestimmte Kamera als Vorlage für die nächste | [Tektronix App-Note 25W-27159](https://www.telestream.net/pdfs/app-notes/Camera-Setup-Matching-and-Alignment-Application-Note-25W271590.pdf), empfohlen in [13ik5e1](https://www.reddit.com/r/VIDEOENGINEERING/comments/13ik5e1/video_shading/) | klein |
 | 2 | Kachelansicht: derselbe Scope für 4–8 Kameras mit Kamera-ID | [PRISM CAM/MULTI](https://blog.telestream.com/?p=12623), [Nobe Live Pack](https://digitalproduction.com/2026/03/11/nobe-omniscope-gets-live-pack-for-on-set-and-live-monitoring/) | klein–mittel |
 | 3 | Blendenskala (STOP) für jede Gamma, nicht nur Log | [PRISM STOP](https://blog.telestream.com/master-hdr-video-production-with-stop-monitoring/) | klein |
 | 4 | Fokushilfe: Peaking plus Schärfewert im Bereich | Leader LV5600 Focus Assist, Nobe Live Pack | klein–mittel |

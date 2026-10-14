@@ -14,7 +14,7 @@ import {
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
 import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
-import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, panelSignature, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
+import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, frameSamples, panelSignature, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
 import { attachGestures } from './gestures';
 import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
@@ -64,6 +64,7 @@ import { T as SHADING_T } from './shading/text';
 import { installFeedbackLog } from './feedback/log';
 import { checkGpu, openFeedback } from './feedback/dialog';
 import { hasHelp, helpCard, helpOn, setHelpOn } from './help/scopeHelp';
+import { hasGhost, sanitizeRef, type RefSettings } from './ghost';
 
 installFeedbackLog();
 declare const __APP_VERSION__: string | undefined;
@@ -104,6 +105,8 @@ interface Persisted {
   lowLatency?: boolean;
   /** global low-latency settings (src/lowLatency.ts) */
   ll?: Partial<LowLatencyConfig>;
+  /** reference camera for ghost traces and Δ levels (ghost.ts) */
+  ref?: RefSettings;
 }
 
 const DEFAULT_SCOPES: ScopeType[] = ['picture', 'wf-luma', 'vector', 'parade', 'hist', 'cie', 'stats', 'yrgb', 'ycbcr'];
@@ -123,6 +126,7 @@ function load(): Persisted {
 }
 
 const state = load();
+state.ref = sanitizeRef(state.ref);
 Source.globalLowLatency = !!state.lowLatency;
 Source.globalLowLatencyConfig = state.ll ?? {};
 // the render loop reports its draws to the latency meters (stamp → drawn, src/latency.ts)
@@ -252,6 +256,13 @@ const SET = {
   deRef: { key: 'deRef', kind: 'select', label: () => t('settings.stage.deAt'), title: () => t('settings.stage.deTitle'), hint: () => t('settings.stage.deHint'),
     options: () => [['off', t('common.off')], ['bars', t('settings.stage.deBars')], ['targets', t('settings.stage.deTargets')], ...state.targets.map((tg) => [`target:${tg.name}`, t('settings.stage.deTarget', { name: tg.name })] as Option)],
     get: () => state.deRef ?? 'off', set: (v) => { state.deRef = v; save(); } },
+  refSource: { key: 'refSource', kind: 'select', label: () => t('ghost.source'), title: () => t('ghost.sourceTitle'), hint: () => t('ghost.sourceHint'),
+    options: () => [['', t('common.off')], ...sources.filter((x) => x.kind !== 'audio').map((x, i) => [x.id, `${i + 1} ${x.name}`] as Option)],
+    get: () => refState().sourceId, set: (v) => setRef({ sourceId: v }) },
+  refMode: { key: 'refMode', kind: 'select', label: () => t('ghost.mode'), title: () => t('ghost.modeTitle'), hint: () => t('ghost.modeHint'),
+    options: () => [['live', t('ghost.live')], ['frozen', t('ghost.frozen')]], get: () => refState().mode, set: (v) => setRef({ mode: v === 'frozen' ? 'frozen' : 'live' }) },
+  refOpacity: { key: 'refOpacity', kind: 'number', label: () => t('ghost.opacity'), title: () => t('ghost.opacityTitle'), min: 5, max: 100, step: 5, unit: '%',
+    get: () => Math.round(refState().opacity * 100), set: (v) => setRef({ opacity: v / 100 }) },
   lowLatency: { key: 'lowLatency', kind: 'select', label: () => 'Low Latency', title: () => LOW_LATENCY_HINT,
     options: () => [['0', t('common.off')], ['1', t('settings.latency.onAll')]], get: () => (state.lowLatency ? '1' : '0'), set: (v) => setGlobalLowLatency(v === '1') },
 } satisfies Record<string, Setting>;
@@ -294,6 +305,12 @@ registerSettingsSection({ id: 'scopes', label: t('settings.scopes'), order: 30, 
 registerSettingsSection({ id: 'stage', label: t('settings.stage'), order: 40, render: () => [
   ...settingsForm([SET.stage, SET.deRef]),
   field('', button(t('main.lut.vendor'), () => showLutLibrary())),
+] });
+
+registerSettingsSection({ id: 'ref', label: t('ghost.section'), order: 45, render: () => [
+  ...settingsForm([SET.refSource, SET.refMode, SET.refOpacity]),
+  field('', button(t('ghost.refreeze'), () => setRef({ mode: 'frozen' }, true), { title: t('ghost.refreezeTitle') })),
+  hint(t('ghost.hint')),
 ] });
 
 registerSettingsSection({ id: 'latency', label: t('settings.latency'), order: 50, render: () => [
@@ -436,6 +453,7 @@ function addSource(kind: SourceKind, name?: string, url = '', settings?: Partial
 streamRoute.bindAdder((url, name) => { const s = addSource('stream', name, url); s.connectStream(url, bridgeUrl()); });
 
 function removeSource(s: Source) {
+  if (refState().sourceId === s.id) setRef({ sourceId: '' });
   s.stop();
   renderer.dropSource(s.id);
   sources.splice(sources.indexOf(s), 1);
@@ -944,6 +962,15 @@ function panelSettings(p: PanelState): Node[] {
     }
     row(t('panel.labels'), checkbox(p.names !== false, t('panel.labelsText'), (v) => { p.names = v; save(); }));
   }
+  if (hasGhost(p.scope)) {
+    row(t('ghost.trace'), checkbox(!!p.ghost, t('ghost.traceText'), (v) => { p.ghost = v; save(); refreshPanelSettings(p); }, t('ghost.traceTitle')));
+    if (p.ghost) {
+      global(SET.refSource);
+      global(SET.refMode);
+      global(SET.refOpacity);
+      if (refState().mode === 'frozen') row('', button(t('ghost.refreeze'), () => setRef({ mode: 'frozen' }, true), { small: true, title: t('ghost.refreezeTitle') }));
+    }
+  }
   if (p.scope === 'wf-skin') row(t('panel.skinRange'), check('skinBand', t('panel.skinBand'), true));
   if (p.scope === 'wf-green') row(t('panel.greenRange'), check('greenBand', t('panel.greenBand'), true));
   if (p.scope === 'match') return [...rows, ...matchPanelSettings(p, panelSource(p), matchUi(p))];
@@ -1419,6 +1446,8 @@ function drawAll(now: number) {
   if (now - lastStats > 100) {
     lastStats = now;
     const used = new Set(openViews().map((v) => panelSource(state.panels[v.idx])).filter(Boolean) as Source[]);
+    const refSrc = state.ref?.sourceId && state.panels.some((q) => q.ghost) ? sources.find((x) => x.id === state.ref!.sourceId) : undefined;
+    if (refSrc) used.add(refSrc);
     used.forEach((s) => {
       const every = s.kind === 'stream' && s.lowLatency ? s.llConfig.statsMs : 100;
       if (now - (statsAt.get(s) ?? -Infinity) < every - 1) return;
@@ -1547,7 +1576,48 @@ function drawOptions(): DrawOptions {
     stage: state.stage ?? 'signal',
     sourceById: (id) => sources.find((s) => s.id === id) ?? null,
     deRef: state.deRef ?? 'off',
+    ...refDraw(),
   };
+}
+
+// ---------------------------------------------------------------- reference camera (ghost.ts, #140 step 1)
+
+const refState = () => (state.ref ??= sanitizeRef(undefined));
+const REF_TAG = 'ref';
+/** Frozen reference: the renderer holds the frame, these are its R′G′B′ samples; seq counts freezes. */
+let refFrozen: { samples: number[][]; seq: number } | null = null;
+let refSeq = 0;
+
+/** Change the reference; switching to frozen (or `refreeze`) grabs the current picture. */
+function setRef(patch: Partial<RefSettings>, refreeze = false) {
+  const before = refState();
+  const next = sanitizeRef({ ...before, ...patch });
+  state.ref = next;
+  if (next.mode === 'live' || !next.sourceId) dropRefFreeze();
+  else if (refreeze || before.mode !== 'frozen' || before.sourceId !== next.sourceId) freezeRef();
+  save(); refreshSettings(); views.forEach((v) => { if (state.panels[v.idx].ghost) v.pop?.refresh(); }); needClear = true;
+}
+function dropRefFreeze() { renderer.dropSnapshot(REF_TAG); refFrozen = null; }
+/** Take the frozen reference from the reference source's current frame; false when it has none yet. */
+function freezeRef(): boolean {
+  const src = sources.find((x) => x.id === refState().sourceId);
+  if (!src?.ready || !renderer.snapshot(src, REF_TAG)) { dropRefFreeze(); return false; }
+  refFrozen = { samples: frameSamples(src).map((v) => [...v]), seq: ++refSeq };
+  return true;
+}
+function refDraw(): Pick<DrawOptions, 'ref'> {
+  const r = refState();
+  const src = r.sourceId ? sources.find((x) => x.id === r.sourceId) ?? null : null;
+  if (!src) return {};
+  // a frozen reference after a reload has no picture yet: take it as soon as the source delivers
+  if (r.mode === 'frozen' && !refFrozen) freezeRef();
+  const frozen = r.mode === 'frozen' && !!refFrozen;
+  const f = refFrozen;
+  return { ref: {
+    source: () => src, opacity: r.opacity, name: src.name, frozen,
+    ...(frozen && f ? { snapshot: REF_TAG, samples: () => f.samples } : {}),
+    sig: `${src.id}:${frozen ? `f${f?.seq}` : `${src.frameSeq}:${src.statsVersion}:${src.status}`}:${r.opacity}`,
+  } };
 }
 
 function setStage(st: Stage) {

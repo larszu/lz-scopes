@@ -30,12 +30,12 @@ export function chartCorners(s: Source, c: ChartSettings | undefined): { pts: Pt
   return { pts: [[0, 0], [1, 0], [1, 1], [0, 1]], from: 'whole' };
 }
 
-// patch medians per source, refreshed at most 4× a second (a frame copy per source is not free)
+// patch medians per source, once per new frame / stats update (a frame copy per source is not free)
 const cache = new Map<string, { key: string; at: number; p: CameraPatches }>();
 function patchesOf(s: Source, pts: Pt[]): CameraPatches | null {
   if (!s.ready) return null;
-  const key = `${pts.flat().join(',')}:${s.transfer}:${s.gamut}:${s.hlgLw}`, hit = cache.get(s.id), now = performance.now();
-  if (hit && hit.key === key && now - hit.at < 250) return hit.p;
+  const key = `${pts.flat().join(',')}:${s.transfer}:${s.gamut}:${s.hlgLw}:${s.frameSeq}:${s.statsVersion}`, hit = cache.get(s.id), now = performance.now();
+  if (hit && hit.key === key) return hit.p;
   const f = grabFrame(s);
   if (!f) return hit?.p ?? null;
   const p = { id: s.id, space: spaceOf(s), patches: patchMedians(f, toPixels(pts, f.width, f.height), CLASSIC_24) };
@@ -97,5 +97,5 @@ export function drawChartPanel(ctx: CanvasRenderingContext2D, w: number, h: numb
 }
 
 export function chartSignature(c: ChartSettings | undefined, list: Source[], refId: string | undefined) {
-  return `C|${list.map((s) => `${s.id}:${s.name}:${s.frameSeq}:${s.status}:${s.roi?.join(',')}`).join(';')}|${JSON.stringify(c)}|${refId ?? ''}`;
+  return `C|${list.map((s) => `${s.id}:${s.name}:${s.frameSeq}:${s.statsVersion}:${s.status}:${s.roi?.join(',')}`).join(';')}|${JSON.stringify(c)}|${refId ?? ''}`;
 }

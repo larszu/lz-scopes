@@ -179,7 +179,6 @@ describe.skipIf(!shippedFfmpeg || !existsSync(ffprobe))('recording with the ship
     } finally { ws.close(); bridge.close(); }
     const take = join(dir, 'take1');
     const j = JSON.parse(readFileSync(join(take, 'Bars.json'), 'utf8'));
-    if (j.start.utcMs === null) console.log('DEBUG', readdirSync(take), JSON.stringify(msgs.filter((m) => m.type === 'record')), JSON.stringify(j), (() => { try { return readFileSync(join(take, 'Bars.segments.csv'), 'utf8'); } catch (e) { return String(e); } })());
     expect(j).toMatchObject({ format: 'lz-scopes-recording', take: 'take1', latencyMs: 40, video: { mode: 'encode', codec: 'prores', audio: true }, end: { reason: 'user' } });
     expect(j.start.utcMs).toBeGreaterThan(0);
     expect(j.markers).toHaveLength(1);

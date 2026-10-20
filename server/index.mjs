@@ -666,7 +666,7 @@ async function startStream(ws, params) {
   /** end ffmpeg; gracefully (SIGINT: segment trailer written) while it records */
   const stopProc = (p, graceful) => {
     if (!graceful || p.exitCode !== null) return p.kill('SIGKILL');
-    if (own) p.stdin?.end(); else p.kill('SIGINT');
+    if (own) p.stdin?.end(); else if (p.quitByStdin) p.stdin?.end('q'); else p.kill('SIGINT');
     setTimeout(() => { if (p.exitCode === null && p.signalCode === null) p.kill('SIGKILL'); }, 5000).unref();
   };
   const restart = () => {
@@ -773,7 +773,11 @@ async function startStream(ws, params) {
       });
       return p;
     };
-    const main = spawnOne(args.main, fd3, pts, own ? 'pipe' : 'ignore', rec.pipes);
+    // Windows has no SIGINT for child processes (kill = TerminateProcess): while recording, ffmpeg
+    // reads `q` from stdin instead, so the segment trailer and the segment list are written
+    const quitByStdin = !own && rec.sessions.length > 0 && process.platform === 'win32';
+    const main = spawnOne(quitByStdin ? args.main.filter((x) => x !== '-nostdin') : args.main, fd3, pts, own || quitByStdin ? 'pipe' : 'ignore', rec.pipes);
+    main.quitByStdin = quitByStdin;
     current = main;
     if (rec.sessions.length) recorder.attach(main, rec);
     if (own) own.attach(main.stdin);

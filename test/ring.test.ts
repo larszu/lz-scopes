@@ -122,6 +122,7 @@ describe.skipIf(!shippedFfmpeg || !existsSync(ffprobe))('ring buffer with the sh
     expect(j).toMatchObject({ kind: 'ring', window: { preSeconds: 4, postSeconds: 1, complete: saved?.complete }, video: { codec: 'prores' } });
     expect(j.markers.map((m: { label: string }) => m.label)).toEqual(['in']);
     // the ring folder is removed after the ring stops
+    await until(() => readdirSync(join(dir, '.lzs-ring')).length === 0).catch(() => {});
     expect(readdirSync(join(dir, '.lzs-ring'))).toEqual([]);
   }, 60_000);
 });

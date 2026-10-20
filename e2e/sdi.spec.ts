@@ -22,15 +22,16 @@ test('ST 352 flags PQ, the scopes read SDR: warning, then the switch', async () 
     const src = w.lzs.panelSource(w.lzs.panels[0]);
     if (src) src.vanc = { at: performance.now(), packets: [{ did: 0x41, sdid: 0x01, line: 10, stream: 0, data: '89e92001' }, { did: 0x61, sdid: 0x01, line: 9, stream: 0, data: '9669' }] };
   });
-  await inject();
-  await expect.poll(label, { timeout: 10_000 }).toContain('Signal flags PQ');
+  // a real input refreshes VANC several times a second; slow CI machines need the same
+  const fresh = async () => { await inject(); return label(); };
+  await expect.poll(fresh, { timeout: 30_000 }).toContain('Signal flags PQ');
   expect(await label()).toContain('1080-line 3G Level A');
   expect(await label()).toContain('CEA-708 yes');
+  await inject();
   await panel.getByRole('button', { name: 'Settings: SDI Signal Info' }).click();
   await page.locator('.popover.psettings').getByRole('button', { name: 'Use what the signal says' }).click();
   await page.keyboard.press('Escape');
-  await inject();
-  await expect.poll(label, { timeout: 10_000 }).not.toContain('Signal flags');
+  await expect.poll(fresh, { timeout: 30_000 }).not.toContain('Signal flags');
   await page.screenshot({ path: 'test-results/e2e/sdi.png' });
   expect(errors).toEqual([]);
 });

@@ -1,4 +1,4 @@
-// "Lens fingerprint" panel (idea 9): live white shading of a flat white field (src/whiteShading.ts),
+// "Lens fingerprint" panel (idea 9): live white shading of a flat white field (src/lensShading.ts on the core src/surface.ts),
 // saved per lens and zoom position (src/lensprint.ts) and compared after a lens change.
 
 import { comparePrints, loadPrints, nearestZoom, printId, printOf, rankPrints, savePrints, storePrint, TERMS, type Ch, type LensPrint } from './lensprint';

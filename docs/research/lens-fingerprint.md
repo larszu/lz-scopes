@@ -1,6 +1,6 @@
 # Objektiv-Fingerabdruck
 
-Stand 10.10.2026. Idee 9 aus [scope-wuensche.md](scope-wuensche.md). Code: `src/whiteShading.ts` (wiederverwendbarer Rechenkern White Shading, ohne DOM), `src/lensprint.ts` (Fingerabdruck, Vergleich, Speicher), `src/lensPanel.ts` (Panel *Objektiv-Fingerabdruck*), Tests `test/lensprint.test.ts`, `e2e/lens.spec.ts`.
+Stand 10.10.2026. Idee 9 aus [scope-wuensche.md](scope-wuensche.md). Code: `src/lensShading.ts` (Raster und Terme je Kanal, ohne DOM; die Ausgleichsfläche ist der gemeinsame White-Shading-Kern `src/surface.ts`, den auch `src/whiteShading.ts` nutzt – der Diagonalterm x·y wird mitgefittet und nicht berichtet), `src/lensprint.ts` (Fingerabdruck, Vergleich, Speicher), `src/lensPanel.ts` (Panel *Objektiv-Fingerabdruck*), Tests `test/lensprint.test.ts`, `e2e/lens.spec.ts`.
 
 Zum Zeitpunkt der Umsetzung war keine White-Shading-Karte eines anderen Zweigs in `main` (geprüft mit `git fetch && git log origin/main`). Der Kern ist darum eigenständig geschnitten: `shadingGrid` (Zellmittel R/G/B) → `shadingFit` (Säge/Parabel je Kanal, Luma-Karte) → `centreColour`; eine spätere White-Shading-Karte kann ihn direkt nutzen.
 

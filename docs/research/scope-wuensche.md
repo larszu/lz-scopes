@@ -23,7 +23,7 @@ Diamond zum Mitteln der Schwärzen ([1qtm2oq](https://www.reddit.com/r/VIDEOENGI
 
 ## Ideen, die es so noch nicht gibt
 
-1. **Kamera-Match-Matrix:** N Kameras auf dieselbe Farbtafel, ΔE00 je Feld zur Referenzkamera, Vorschlag für die Multi-Matrix-Achsen. Canon bietet Abgleich nur statisch als LUT für eigene Kameras ([Canon](https://sg.canon/en/business/releases-free-pc-app-colour-matching-remote-and-main-cameras/news)), Sony beschreibt ihn manuell.
+1. **Kamera-Match-Matrix:** N Kameras auf dieselbe Farbtafel, ΔE00 je Feld zur Referenzkamera, Vorschlag für die Multi-Matrix-Achsen. Canon bietet Abgleich nur statisch als LUT für eigene Kameras ([Canon](https://sg.canon/en/business/releases-free-pc-app-colour-matching-remote-and-main-cameras/news)), Sony beschreibt ihn manuell. *Umgesetzt als Panel „Farbtafel-Match“ mit 3×3-Vorschlag, Multi-Matrix offen ([kamera-abgleich.md](kamera-abgleich.md#3-dasselbe-objekt-finden-mittel)).*
 2. **Hautton über alle Kameras** (umgesetzt als Panel *Hautton aller Kameras*, [kamera-messwerkzeuge.md](kamera-messwerkzeuge.md)): Gesichter je Kamera erkennen, Hautverteilungen farbig in einem Vectorscope überlagern. Nobe kann es nur je Quelle.
 3. **Drift-Wächter während der Show:** Schwarzboden und Neutralstatistik je Kamera verfolgen, Alarm bei Abweichung vom Gruppenmittel (LED-Licht, Wolken, [13ik5e1](https://www.reddit.com/r/VIDEOENGINEERING/comments/13ik5e1/video_shading/)).
 4. **Black-/Flare-Assistent:** Schwarz-Schwerpunkt bei geschlossener und offener Blende vergleichen, Differenz als Flare-Vektor ([1qtm2oq](https://www.reddit.com/r/VIDEOENGINEERING/comments/1qtm2oq/black_shading_question/)).

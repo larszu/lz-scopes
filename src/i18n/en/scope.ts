@@ -31,6 +31,7 @@ export default {
   'scope.name.noise': 'Noise Meter',
   'scope.name.wshading': 'White-Shading Map',
   'scope.name.skinall': 'Skin Tone All Cameras',
+  'scope.name.chart': "Colour Chart Match",
   'scope.name.simulcast': 'Simulcast Deviation',
   'scope.name.encoder': 'Encoder Confidence',
   'scope.name.lens': 'Lens Fingerprint',

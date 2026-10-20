@@ -1,6 +1,6 @@
 # Kamera-Abgleich: Kameras übereinanderlegen, messen, aufzeichnen
 
-Stand 10.10.2026. Plan; Schritt 1 und der Hautton-Teil von Schritt 3 sind umgesetzt, die übrigen sind offen. Marktbild aus Herstellerseiten und Presse, Herstellerangaben nicht nachgeprüft.
+Stand 20.10.2026. Plan; Schritte 1, 2, 3 und 5 sind umgesetzt (Multi-Matrix und automatische Tafelerkennung offen), Schritt 4 ist offen. Marktbild aus Herstellerseiten und Presse, Herstellerangaben nicht nachgeprüft.
 
 ## Ausgangslage in lz-scopes
 
@@ -53,6 +53,15 @@ Umgesetzt, siehe [aufzeichnung.md](aufzeichnung.md#gleichzeitig-einfrieren-schri
 - Baut auf dem Bildpuffer aus Schritt 5 auf, der ein paar Bilder je Quelle vorhält.
 
 ### 3. Dasselbe Objekt finden (mittel)
+
+**Umgesetzt** (Panel *Farbtafel-Match*, `src/match/chart.ts`, `chartPanel.ts`, `chartUi.ts`; A/B-Modi *Ausschnitte nebeneinander* und *Butterfly* im Bild-Panel, `src/match/crop.ts`; Tests `test/chart.test.ts`, `test/crop.test.ts`, `e2e/compare.spec.ts`). Festlegungen:
+
+- Tafel = ColorChecker Classic, 6 × 4 Felder, zeilenweise ab „dark skin“ oben links (Anordnung laut Hersteller-Datenblatt). Ecken je Quelle: geklickt (Dialog wie in der LED-Prüfung, als Bildbruchteile gespeichert), sonst Messrahmen, sonst ganzes Bild.
+- Je Feld Median über ein 7 × 7-Raster in der inneren Hälfte des Felds (Homographie aus `src/led/analysis.ts`); der Median ignoriert Fehlpixel und Feldränder.
+- ΔE00 bzw. ΔITP (PQ/HLG) im Signalraum der Referenz; Ampel grün ≤ 1, gelb ≤ Toleranz (Standard 3), rot darüber, wie im Farbabgleich-Panel.
+- Matrix: 3×3 per kleinster Quadrate im linearen Licht der Kamera (M = (AᵀA)⁻¹AᵀB je Zeile), angezeigt mit mittlerem ΔE vorher → nachher. Die lineare 3×3-Ausgleichsrechnung ist die Grundform der Farbkorrektur aus Tafelmessungen (Finlayson, Mackiewicz, Hurlbert, *Color Correction Using Root-Polynomial Regression*, IEEE TIP 24(5), 2015, Abschnitt II, gelesen als Abstract/Einleitung). **Offen**: Multi-Matrix-Achsen (herstellerspezifisch), automatische Tafelerkennung (OpenCV `mcc`), Anwenden über die Bridge (Schritt 4).
+- Butterfly: links die linke Hälfte des Messrahmens von A, rechts gespiegelt die linke Hälfte von B; B behält Höhe und Mitte seines Rahmens und bekommt das Seitenverhältnis von A (keine Verzerrung).
+- Nur synthetisch und mit Testbildern geprüft; mit echten Kameras und einer echten Tafel ungeprüft.
 
 - **Farbtafel**: vier Ecken je Kamera klicken (Homographie aus der LED-Prüfung), Median je Feld. Ergebnis: **Match-Matrix** Feld × Kamera mit ΔE00 zur Referenz, dazu ein per kleinster Quadrate gefitteter 3×3- bzw. Multi-Matrix-Vorschlag. Später automatische Tafelerkennung (OpenCV `mcc`).
 - **Hautton** (umgesetzt, Panel *Hautton aller Kameras*, [kamera-messwerkzeuge.md](kamera-messwerkzeuge.md)): Gesichter je Kamera (MediaPipe), Hautverteilungen aller Kameras farbig in einem Vectorscope.

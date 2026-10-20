@@ -15,6 +15,9 @@ import { ShadingSim, SIM_URL } from './sim';
 import { T } from './text';
 import { cameraDataRows } from './guide';
 import { cameraDataLabels, setLiveCamera } from './live';
+import { LUMA } from '../color';
+import { traceLevels } from '../ghost';
+import { LOOP_DEFAULTS, converged, loopErrors, loopStep, worstError } from '../match/loop';
 import { button, checkbox, disclosure, h, hint, iconButton, link, restoreFocus, row, select, textInput } from '../ui';
 
 const BRIDGE_DOWNLOAD = 'https://github.com/larszu/lz-camera-bridge/releases';
@@ -49,6 +52,10 @@ export interface ShadingHost {
   panelSource(p: PanelState): Source | null;
   hud(msg: string): void;
   redraw(): void;
+  /** closed loop (#150): picture of the target camera and of the reference camera */
+  loopPair?(): { cam: Source; ref: Source } | null;
+  /** paint change into the companion file of every running recording (record.ts eventAll) */
+  recordEvent?(kind: string, data: unknown): void;
 }
 
 const SUPPORTED: ScopeType[] = ['parade', 'yrgb', 'wf-luma', 'wf-color', 'vector'];
@@ -73,6 +80,10 @@ export class ShadingControl {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private bar: HTMLElement;
   private version = 0;
+  /** closed loop running (#150); set false to stop it after the current step */
+  looping = false;
+  /** source of the last flush: a gesture, the loop, undo or the stop button (companion file) */
+  private why: 'gesture' | 'loop' | 'undo' | 'stop' = 'gesture';
 
   constructor(private host: ShadingHost, mount: HTMLElement) {
     try { const s = JSON.parse(localStorage.getItem(STORE) ?? '{}'); if (typeof s.bridgeUrl === 'string') this.bridgeUrl = s.bridgeUrl; this.atTop = s.atTop === true; } catch { /* defaults */ }
@@ -175,6 +186,7 @@ export class ShadingControl {
   }
 
   deactivate() {
+    this.looping = false;
     this.flush();
     this.active = false;
     this.gesture = null;
@@ -186,6 +198,7 @@ export class ShadingControl {
     if (this.touched.size) {
       for (const f of this.touched) this.cur[f] = this.start[f];
       this.dirty = new Set(this.touched);
+      this.why = 'stop';
       this.flush();
       this.host.hud(T.restored(this.touched.size));
     }
@@ -198,6 +211,7 @@ export class ShadingControl {
     const prev = this.undoStack.pop();
     if (!prev) return;
     for (const f of Object.keys(prev) as PaintField[]) { this.cur[f] = prev[f]; this.dirty.add(f); }
+    this.why = 'undo';
     this.flush();
     this.bump();
   }
@@ -260,9 +274,65 @@ export class ShadingControl {
       if (error) { this.message = error === 'hue' ? T.hueNotOnBus : T.tripleUnknown(error === 'black' ? 'Black' : 'White'); this.render(); return; }
       for (const c of commands) if (!this.link.send(this.target, c.cmd, c.params)) { this.message = T.notConnected; break; }
     }
+    // every paint change goes into the companion file of running recordings (#146, #150)
+    const values: Paint = {};
+    for (const f of changed) values[f] = this.cur[f];
+    this.host.recordEvent?.('paint', { target: this.target, by: this.why, values });
+    this.why = 'gesture';
     this.version++;
     this.host.redraw();
     this.renderValues();
+  }
+
+  // ------------------------------------------------------------ closed loop (#150)
+
+  /**
+   * Measure the target camera against the reference camera, send one limited paint step, wait
+   * for new pictures, repeat until every error is inside the tolerance (match/loop.ts). Each step
+   * is one undo entry; the stop button puts everything back.
+   */
+  async matchToReference() {
+    if (this.looping) { this.looping = false; return; }
+    if (!this.active) this.activate();
+    if (!this.active) return;
+    const pair = this.host.loopPair?.();
+    if (!pair) { this.message = T.loopNoPair; this.render(); return; }
+    this.looping = true;
+    this.render();
+    const measure = (s: Source) => { const { kr, kb } = LUMA[s.colorspace]; return traceLevels(s.roiSamples(20000), kr, kb); };
+    const fresh = async (s: Source, n: number) => {
+      const seq = s.frameSeq, t0 = performance.now();
+      while (this.looping && s.frameSeq < seq + n && performance.now() - t0 < 2000) await new Promise((r) => setTimeout(r, 30));
+    };
+    let step = 0, result = '';
+    try {
+      while (this.looping) {
+        const cam = measure(pair.cam), ref = measure(pair.ref);
+        if (!cam || !ref) { result = T.loopNoPicture; break; }
+        const errs = loopErrors(cam, ref, { gamma: true });
+        if (converged(errs)) { result = T.loopDone(step, worstError(errs) * 100); break; }
+        if (step >= LOOP_DEFAULTS.maxSteps) { result = T.loopGaveUp(step, worstError(errs) * 100); break; }
+        const next = loopStep(errs, this.cur, this.start, this.mode() === 'sim' ? '' : this.mode());
+        const fields = Object.keys(next) as PaintField[];
+        if (!fields.length) { result = T.loopStuck(worstError(errs) * 100); break; }
+        const before: Paint = {};
+        for (const f of fields) { before[f] = this.cur[f]; this.cur[f] = next[f]; this.dirty.add(f); this.touched.add(f); }
+        this.undoStack.push(before);
+        this.why = 'loop';
+        this.flush();
+        step++;
+        this.message = T.loopStep(step, worstError(errs) * 100);
+        this.render();
+        // the change must reach the picture: a few new frames of the camera (latency of the path)
+        await fresh(pair.cam, 3);
+      }
+    } finally {
+      if (!result && !this.looping) result = T.loopStopped(step);
+      this.looping = false;
+      this.message = result;
+      this.host.hud(`Shading: ${result}`);
+      this.bump();
+    }
   }
 
   // ------------------------------------------------------------ gestures
@@ -477,6 +547,7 @@ export class ShadingControl {
       targetSel,
       ...(ready ? [button(T.camMenu, () => { void this.openCameras(); }, { title: T.camMenuTitle, attrs: { class: 'btn', 'data-shading-cameras': '' } })] : []),
       button(T.undo, () => this.undo(), { title: T.undoTitle, disabled: !this.undoStack.length || !this.active, attrs: { class: 'btn shading-undo' } }),
+      button(this.looping ? T.loopStop : T.loop, () => { void this.matchToReference(); }, { title: T.loopTitle, disabled: this.target === null, attrs: { class: 'btn shading-loop', 'data-shading-loop': '' } }),
       button(T.stop, () => this.emergencyStop(), { title: T.stopTitle, attrs: { class: 'btn shading-stop', 'data-shading-stop': '' } }),
       this.valuesEl,
       ...(setup ? [setup] : [disclosure('Bridge', [row(url), h('div', { class: 'hint' }, linkTxt), hint(T.help(LIMITS.step, LIMITS.span))], { cls: 'shading-more' })]),

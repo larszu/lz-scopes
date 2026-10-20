@@ -15,7 +15,7 @@ import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts }
 import { LUT_SOURCES } from './lutLibrary';
 import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
 import { inBox, legendPosAt, nearSplit, splitAt, splitPos } from './overlayDrag';
-import { DEFAULT_SKIN, ROI_CLOSE, contentRect, legendBoxes, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
+import { DEFAULT_SKIN, ROI_CLOSE, contentRect, legendBoxes, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, driftSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
 import { attachGestures, onChip } from './gestures';
 import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
@@ -1128,6 +1128,17 @@ function panelSettings(p: PanelState): Node[] {
     global(SET.skinHue);
     rows.push(hint(t('skinall.hint')));
   }
+  if (p.scope === 'drift') {
+    const dr = p.drift ?? {};
+    const chosen = new Set(dr.sources ?? []);
+    const video = sources.filter((s) => s.kind !== 'audio');
+    row(t('tiles.sources'), ...video.map((s) => checkbox(chosen.has(s.id), `${sources.indexOf(s) + 1} ${s.name}`, (on) => {
+      if (on) chosen.add(s.id); else chosen.delete(s.id);
+      p.drift = { ...p.drift, sources: video.filter((x) => chosen.has(x.id)).map((x) => x.id).slice(0, MAX_TILES) }; save();
+    })));
+    row(t('drift.tol'), select(String(dr.tol ?? 1), [['0.5', '0,5 %'], ['1', '1 %'], ['2', '2 %'], ['3', '3 %']], (v) => { p.drift = { ...p.drift, tol: Number(v) }; save(); }));
+    rows.push(hint(t('drift.hint')));
+  }
   if (p.scope === 'chart') {
     const ch = p.chart ?? {};
     const chosen = new Set(ch.sources ?? []);
@@ -1590,6 +1601,7 @@ function drawAll(now: number) {
       if (p.scope === 'tiles') for (const tl of tilePlan(p, { w: 1, h: 1 }, drawOptions()).tiles) used.add(tl.src);
       if (p.scope === 'skinall') for (const s of skinSources(p, drawOptions()).list) used.add(s);
       if (p.scope === 'chart') for (const s of chartSources(p, drawOptions()).list) used.add(s);
+      if (p.scope === 'drift') for (const s of driftSources(p, drawOptions()).list) used.add(s);
     }
     used.forEach((s) => {
       const every = s.kind === 'stream' && s.lowLatency ? s.llConfig.statsMs : 100;
@@ -2332,6 +2344,19 @@ const shading = new ShadingControl({
   panelSource,
   hud: alertHud,
   redraw: () => panelSigs.clear(),
+  // closed loop: reference camera against the target (simulator, else the most shown source that is not the reference)
+  loopPair: () => {
+    const ref = state.ref?.sourceId ? sources.find((x) => x.id === state.ref!.sourceId) : undefined;
+    if (!ref) return null;
+    let cam = shading.target === 'sim' ? sources.find((x) => x.url === SIM_URL) : undefined;
+    if (!cam) {
+      const count = new Map<Source, number>();
+      for (const v of openViews()) { const s = panelSource(state.panels[v.idx]); if (s && s !== ref) count.set(s, (count.get(s) ?? 0) + 1); }
+      cam = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    }
+    return cam && cam !== ref ? { cam, ref } : null;
+  },
+  recordEvent: (kind, data) => { eventAll(kind, data); },
 }, app);
 registerMenuCommand('scopes', { id: 'shading', label: SHADING_T.menu, title: SHADING_T.buttonTitle }, () => shading.toggleBar());
 registerMenuCommand('scopes', { id: 'cameras', label: SHADING_T.camMenu, title: SHADING_T.camMenuTitle }, () => { void shading.openCameras(); });

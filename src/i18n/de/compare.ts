@@ -92,4 +92,11 @@ export default {
   'chart.setCorners': "Tafelecken setzen",
   'chart.tol': "Toleranz ΔE",
   'chart.hint': "Einen ColorChecker Classic (24 Felder) in jede Kamera halten. Die Ecken kommen je Kamera aus den geklickten Punkten, sonst aus dem Messrahmen, sonst muss die Tafel das Bild füllen. Jede Zelle ist ein Feld: grün ≤ 1, gelb ≤ Toleranz, rot darüber. Die Matrix ist eine Ausgleichsrechnung (kleinste Quadrate) im linearen Licht, die die Kamera auf die Referenz bringt; in der Kamera oder einer CST eintragen, wo sich eine Matrix setzen lässt. Nur mit synthetischen Bildern und Testbildern geprüft, nicht mit echten Kameras.",
+  'drift.head': "Jede Kamera gegen das Mittel aller · Toleranz ±{tol} %",
+  'drift.cols': "      Kamera            Schwarz ΔSchw. ΔR−G   ΔB−G   Status",
+  'drift.noPicture': "kein Bild",
+  'drift.alarm': "abgedriftet",
+  'drift.ok': "ok",
+  'drift.tol': "Toleranz",
+  'drift.hint': "Schwarz = Mittel der dunkelsten 1 % (Y′), Neutralbalance = R′−G′ und B′−G′ des Medians, beides in % gegen das Mittel aller gewählten Kameras; rot, wenn eine Kamera die Toleranz verlässt. Die Kameras auf vergleichbaren Inhalt richten (oder in jeder einen Messrahmen auf dasselbe graue Objekt setzen); ein anderes Motiv ist keine Drift. Nur mit Testbildern und dem Shading-Simulator geprüft.",
 } satisfies Translation<typeof en>;

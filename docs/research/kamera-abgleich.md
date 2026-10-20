@@ -1,6 +1,6 @@
 # Kamera-Abgleich: Kameras übereinanderlegen, messen, aufzeichnen
 
-Stand 20.10.2026. Plan; Schritte 1, 2, 3 und 5 sind umgesetzt (Multi-Matrix und automatische Tafelerkennung offen), Schritt 4 ist offen. Marktbild aus Herstellerseiten und Presse, Herstellerangaben nicht nachgeprüft.
+Stand 20.10.2026. Plan; alle fünf Schritte sind umgesetzt; offen sind Multi-Matrix, automatische Tafelerkennung und jede Prüfung an echten Kameras. Marktbild aus Herstellerseiten und Presse, Herstellerangaben nicht nachgeprüft.
 
 ## Ausgangslage in lz-scopes
 
@@ -69,6 +69,16 @@ Umgesetzt, siehe [aufzeichnung.md](aufzeichnung.md#gleichzeitig-einfrieren-schri
 - Volle Bildüberlagerung mit Ausrichtung (Feature-Matching, Homographie) nur als Option für Kameras auf fast gleicher Achse.
 
 ### 4. Geschlossene Schleife über lz-camera-bridge (mittel)
+
+**Umgesetzt** (`src/match/loop.ts`, Knopf *An Referenz angleichen* in der Touch-Shading-Leiste, Panel *Drift-Wächter* `src/match/driftPanel.ts`; Tests `test/loop.test.ts`, `e2e/compare.spec.ts`, `e2e/shading.spec.ts`). Festlegungen:
+
+- Fehler je Paint-Wert aus den Pegeln der Geisterspur (`ghost.ts`): Black R/G/B aus den Schwarzschwerpunkten, White R/G/B aus den Spitzlichtern, Master Gamma aus dem Y′-Median, jeweils Referenz − Kamera.
+- Schritt: Fehler durch die Steigung des Touch-Shading-Modells (`shading/model.ts` `slope`, mal gemessener Steigung der Kamerafamilie), gedämpft mit 0,7, höchstens `LIMITS.step` Bus-Einheiten und innerhalb `LIMITS.span` um den Startwert – dieselben Schienen wie eine Geste. Toleranz 0,5 %, Totband 0,2 %, höchstens 25 Schritte. Zwischen den Schritten wird auf drei neue Bilder der Kamera gewartet.
+- Das Modell ist für eine echte Kamera nur eine Schätzung; weil nach jedem Schritt neu gemessen wird, konvergiert die Schleife, solange das Vorzeichen stimmt (vitest: Kamera reagiert 1,6× stärker als das Modell und konvergiert trotzdem).
+- Kamera = Simulator bzw. die am häufigsten gezeigte Quelle, die nicht die Referenz ist. Matrix-Werte gehen nicht über den Bus (der Bus kennt keine Matrix, siehe [touch-shading.md](touch-shading.md)); dafür steht der 3×3-Vorschlag im Panel *Farbtafel-Match*.
+- Jede Paint-Änderung (Geste, Schleife, Rückgängig, Stopp) geht als Ereignis `paint` mit Ziel, Auslöser und Werten in die Begleitdatei laufender Aufnahmen (`record.ts` `eventAll`, [aufzeichnung.md](aufzeichnung.md)).
+- Drift-Wächter: Schwarz = Y′-Schwarzschwerpunkt, Neutralbalance = R′−G′ und B′−G′ des Medians, jede Kamera gegen das Mittel der gewählten Kameras, Toleranz 1 % (einstellbar). Eigene Festlegung, keine Norm; Anlass ist die Praxisbeobachtung im Reddit-Faden [13ik5e1](https://www.reddit.com/r/VIDEOENGINEERING/comments/13ik5e1/video_shading/) (LED-Licht, Wolken).
+- Ungeprüft: jede echte Kamera über die Bridge (Latenz, Schrittweite, Rauschen), Drift über eine echte Show.
 
 - Abweichung in Schwarz, Weiß, Gamma, Matrix → Paint-Delta auf den Bus von Touch Shading, messen, wiederholen bis ΔE unter Toleranz. Schrittweite begrenzt, jeder Schritt sichtbar und rückgängig zu machen.
 - Danach **Drift-Wächter**: Schwarzboden und Neutralstatistik je Kamera gegen das Gruppenmittel, Meldung bei Abweichung.

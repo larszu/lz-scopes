@@ -32,6 +32,7 @@ export default {
   'scope.name.wshading': 'White-Shading Map',
   'scope.name.skinall': 'Skin Tone All Cameras',
   'scope.name.chart': "Colour Chart Match",
+  'scope.name.drift': 'Drift Guard',
   'scope.name.simulcast': 'Simulcast Deviation',
   'scope.name.encoder': 'Encoder Confidence',
   'scope.name.lens': 'Lens Fingerprint',

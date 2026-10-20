@@ -15,7 +15,7 @@ import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts }
 import { LUT_SOURCES } from './lutLibrary';
 import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
 import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
-import { attachGestures } from './gestures';
+import { attachGestures, onChip } from './gestures';
 import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
 import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } from './scene';
@@ -1375,7 +1375,7 @@ function attachPointer(p: PanelState, body: HTMLElement) {
   body.addEventListener('lzs-gesture-cancel', () => { const s = panelSource(p); if (start && s) s.roi = start.roi; start = null; });
   body.addEventListener('pointerdown', (e) => {
     const s = panelSource(p);
-    if (p.scope !== 'picture' || !s?.width || e.button !== 0) return;
+    if (p.scope !== 'picture' || !s?.width || e.button !== 0 || onChip(e)) return;
     if (s.roi && !s.faceTrack && hitRoiClose(e, s, body, p)) { s.roi = null; refreshHeads(); return; }
     const pt = toSrc(e, s, false);
     if (pt && s.faceTrack) {

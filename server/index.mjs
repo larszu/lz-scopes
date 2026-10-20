@@ -43,6 +43,7 @@ import { startOwnRtp } from './rtsp.mjs';
 import { announce } from './bonjour.mjs';
 import { recordRoots, freeBytes } from './record.mjs';
 import { StreamRecorder, handleUploadSocket } from './recorder.mjs';
+import { REC_URL, listRecordings, startPlayback } from './playback.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -87,6 +88,7 @@ export function validateInput(url) {
   if (/^decklink:\d{1,2}$/.test(url)) return null;
   if (/^ndi:[^\n\r\0]{1,200}$/.test(url) && !url.slice(4).startsWith('-')) return null;
   if (/^folder:[\w .-]{1,80}$/.test(url)) return null;
+  if (REC_URL.test(url)) return null;
   if (url.startsWith('-')) return bmsg('input.invalid', 'Invalid source');
   if (!ALLOWED.test(url)) return bmsg('input.scheme', 'Only rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s)://, resolve: or test:*');
   return null;
@@ -97,7 +99,7 @@ export function validateInput(url) {
  *   device:<avfoundation|dshow|v4l2>:<video name>[#audio=<audio name>][#ch=<n>]
  *   audio:<avfoundation|dshow|alsa>:<audio name>[#ch=<n>]
  * The audio API follows the video API (v4l2 → alsa). Names are passed as one argv element,
- * never through a shell; #ch only takes a number (dshow/alsa `-channels`).
+ * never through a shell; #ch only takes a number (dshow `-channels`, alsa `-ac`).
  * Dante: Dante Virtual Soundcard / Dante Via appear as normal system audio devices and
  * are picked up here like any other interface (no Dante protocol of our own).
  */
@@ -135,11 +137,14 @@ export function deviceArgs(url, rateOverride, opts = {}) {
   const d = parseDevice(url);
   if (!d) return null;
   const withAudio = opts.audio !== false && d.audio !== null;
-  const chArgs = d.ch && d.audioApi !== 'avfoundation' ? ['-channels', String(d.ch)] : [];
+  // dshow has its own `channels` option; ALSA only `ch_layout` (FFmpeg 7+), which ffmpeg's input
+  // option -ac fills with "<n>C" (an ffmpeg 6 ignores it and records 2 channels)
+  const chArgs = d.ch && d.audioApi === 'dshow' ? ['-channels', String(d.ch)] : [];
+  const alsaCh = d.ch ? ['-ac', String(d.ch)] : [];
   if (d.kind === 'audio') {
     if (d.api === 'avfoundation') return ['-f', 'avfoundation', '-i', `:${d.audio}`];
     if (d.api === 'dshow') return ['-f', 'dshow', ...chArgs, '-i', `audio=${d.audio}`];
-    return ['-f', 'alsa', ...chArgs, '-i', d.audio];
+    return ['-f', 'alsa', ...alsaCh, '-i', d.audio];
   }
   // the device's own capture rate; the analysis rate is limited later by the fps filter
   // explicit mode/pixel format: see server/devices.mjs
@@ -148,7 +153,7 @@ export function deviceArgs(url, rateOverride, opts = {}) {
   // sound of the same device in the same ffmpeg input (avfoundation, dshow) or as a second input (v4l2 + ALSA)
   if (d.api === 'avfoundation') return [...v.slice(0, -1), `${d.video}:${d.audio}`];
   if (d.api === 'dshow') return [...v.slice(0, -2), ...chArgs, '-i', `video=${d.video}:audio=${d.audio}`];
-  return [...v, '-f', 'alsa', ...chArgs, '-i', d.audio];
+  return [...v, '-f', 'alsa', ...alsaCh, '-i', d.audio];
 }
 
 /** Device URL without the #audio/#ch suffix (key of the rate and format caches). */
@@ -558,6 +563,11 @@ async function startStream(ws, params) {
   if (url.startsWith('decklink:')) return startDeckLink(ws, params, url);
   if (url.startsWith('ndi:')) return startNdi(ws, params, url);
   if (url.startsWith('folder:')) return startFolder(ws, params, url);
+  if (url.startsWith('rec:')) {
+    const ffmpeg = ffmpegCandidates()[0];
+    if (!ffmpeg) return fail(ws, bmsg('ffmpeg.missing', 'ffmpeg not found'));
+    return startPlayback(ws, params, url, { ffmpeg, ffprobe: ffprobeCandidates([ffmpeg])[0] ?? '', roots: () => RECORD_ROOTS, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions });
+  }
   const transport = params.get('transport') ?? 'tcp';
   // compressed transport for remote bridges (#16): 8 bit only, decoded by the browser; excludes the Y'CbCr path (#7)
   const h264 = params.get('codec') === 'h264';
@@ -642,7 +652,7 @@ async function startStream(ws, params) {
   // local recording (server/recorder.mjs): a second output of this ffmpeg; toggling restarts it
   let current = null, restarting = false, recAudio = null;
   const recorder = video ? new StreamRecorder({
-    url, ffmpeg, allowed: ws.recordAllowed === true, roots: () => RECORD_ROOTS, clock: clockNow,
+    url, ffmpeg, ffprobe: ffprobeCandidates([ffmpeg])[0] ?? '', allowed: ws.recordAllowed === true, roots: () => RECORD_ROOTS, clock: clockNow,
     send: (m) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); },
     restart: () => restart(),
     media: () => ({ width: info.width, height: info.height, fps: info.fps, codec: info.codec, audioMap: recAudio }),
@@ -809,6 +819,7 @@ async function startStream(ws, params) {
     if (packetizer) Object.assign(st, { audioSent: packetizer.packets, audioDropped: 0, audioGaps: 0, audioSplit: split, pts: !!pts });
     if (own) st.rtp = own.report();
     if (recorder?.active) st.rec = recorder.status();
+    if (recorder?.ringActive) st.ring = recorder.ringStatus();
     ws.send(JSON.stringify(st));
   }, 1000);
   own?.on('error', (e) => { stderr = (stderr + `\nOwn RTP reception: ${e.message}`).slice(-2000); });
@@ -1091,7 +1102,7 @@ function startNdi(ws, params, url) {
 /** Recorder factory for the helper inputs (DeckLink, NDI): encoded recording, no sound. */
 function helperRecorder(ws, url, ffmpeg) {
   return ({ restart, media }) => new StreamRecorder({
-    url, ffmpeg, allowed: ws.recordAllowed === true, roots: () => RECORD_ROOTS, clock: clockNow, restart, media,
+    url, ffmpeg, ffprobe: ffprobeCandidates([ffmpeg])[0] ?? '', allowed: ws.recordAllowed === true, roots: () => RECORD_ROOTS, clock: clockNow, restart, media,
     send: (m) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); },
   });
 }
@@ -1145,6 +1156,11 @@ const server = createServer((req, res) => {
     // names only – the paths stay on the bridge machine
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
     return res.end(JSON.stringify(WATCH_ROOTS.map((r) => ({ name: r.name, url: `folder:${r.name}` }))));
+  }
+  if (path === '/api/recordings') {
+    // takes in the released folders, names only (server/playback.mjs)
+    res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
+    return res.end(JSON.stringify(listRecordings(RECORD_ROOTS)));
   }
   if (path === '/api/record/roots') {
     // names and free space only – the paths stay on the bridge machine

@@ -14,7 +14,7 @@ import {
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
 import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
-import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, frameSamples, panelSignature, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
+import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
 import { attachGestures } from './gestures';
 import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
@@ -29,6 +29,9 @@ import type { GenConfig } from './audio/dsp/signals';
 import { audioPanelSettings, audioRow, audioSourceControls, mountGenerator } from './audio/ui';
 import { setClockHooks } from './clock/panel';
 import { genlockPanelSettings, setGenlockBridge } from './genlock';
+import { simulcastPanelSettings } from './simulcastPanel';
+import { encoderPanelSettings } from './encoderPanel';
+import { lensPanelSettings } from './lensPanel';
 import { clockPanelSettings } from './clock/ui';
 import { generator } from './audio/io';
 import { PATTERNS, RESOLUTIONS, patternById } from './patterns';
@@ -56,7 +59,9 @@ import { Source, type AudioInput, type SourceKind, type SourceSettings } from '.
 import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
 import { SOURCE_ITEMS, mountMenu, refreshMenu, registerMenuCommand, type MenuActions, type MenuState } from './menu/appMenu';
 import { openSettings, refreshSettings, registerSettingsSection } from './menu/settings';
-import { initRecording, isRecording, markAll, eventAll, onBridgeRecord, recordAll, recordAllButton, recordRow, recordSection, recordingState, sourceStopped, startRecording, stopRecording } from './record/record';
+import { initPlayback, onPlaybackMessage, openRecordingsDialog, playbackBar, sourceGone, transport as playbackTransport } from './record/playback';
+import { freezeMoment } from './record/sync';
+import { initRecording, isRecording, markAll, eventAll, onBridgeRecord, recordAll, recordAllButton, recordRow, recordSection, recordingState, ringOn, saveRingButton, saveRings, setRing, sourceStopped, startRecording, stopRecording } from './record/record';
 import { aboutSection, keysSection } from './menu/pages';
 import { LANG_NAMES, LANGS, lang, langPref, num, setLangPref, systemLang, t, type LangPref } from './i18n';
 import { ShadingControl, SIM_URL } from './shading/ui';
@@ -65,6 +70,8 @@ import { installFeedbackLog } from './feedback/log';
 import { checkGpu, openFeedback } from './feedback/dialog';
 import { hasHelp, helpCard, helpOn, setHelpOn } from './help/scopeHelp';
 import { hasGhost, sanitizeRef, type RefSettings } from './ghost';
+import { PEAK_COLOURS, PEAK_DEFAULT, type PeakColour } from './focus';
+import { MAX_TILES, TILE_SCOPES, sanitizeTiles, type TileSettings } from './tiles';
 
 installFeedbackLog();
 declare const __APP_VERSION__: string | undefined;
@@ -171,7 +178,7 @@ const freezeBtn = button(t('main.freeze'), () => toggleFreeze(), { title: t('mai
 const sideToggle = iconButton('◧', t('main.side.aria'), () => toggleSidebar(), { title: t('main.side.toggle'), attrs: { id: 'toggle-side' } });
 /** Header overflow (narrow windows): the same layout presets and scale as the header groups. */
 const moreMenu = popover({ label: '⋯', title: t('ui.more'), heading: t('ui.moreTitle'), cls: 'more-body', content: () => [field(t('ui.layouts'), layoutControl()), settingRow(SET.unit),
-  row(button(t('record.all'), () => recordAll(), { title: t('record.allTitle') }))] });
+  row(button(t('record.all'), () => recordAll(), { title: t('record.allTitle') }), button(t('ring.save'), () => saveRings(), { title: t('ring.saveTitle') }))] });
 moreMenu.id = 'bar-more';
 const side = h('aside', { class: 'side', id: 'side' },
   h('h2', {}, t('main.sources')),
@@ -194,6 +201,7 @@ app.replaceChildren(
     h('span', { class: 'fps', id: 'fps', title: t('main.fpsTitle') }),
     gpuWarn,
     recordAllButton,
+    saveRingButton,
     freezeBtn,
     iconButton('⚙', t('common.settings'), () => openSettings(), { title: t('main.settingsTitle'), attrs: { id: 'settings-btn' } }),
     iconButton('⛶', t('main.full'), () => toggleFullscreen(), { title: t('main.fullTitle'), attrs: { id: 'full' } })),
@@ -220,7 +228,7 @@ try {
 // in the settings window, in the panel ⚙ popovers that show it, and offered to the control API
 // (command "setting", docs/control-api.md).
 
-const UNIT_OPTIONS = (): Option[] => [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', t('settings.scopes.nitsScene')]];
+const UNIT_OPTIONS = (): Option[] => [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', t('settings.scopes.nitsScene')], ['stop', t('settings.scopes.stop')]];
 const TINT_OPTIONS = (): Option[] => [['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]];
 const SET = {
   lang: { key: 'lang', kind: 'select', label: () => t('lang.label'), title: () => t('lang.title'), hint: () => t('lang.hint'),
@@ -431,7 +439,12 @@ refreshFfmpegInfo();
 
 function toggleFreeze() {
   frozen = !frozen;
-  sources.forEach((s) => (s.frozen = frozen));
+  if (frozen) {
+    // all sources at the same moment of the scene: each one's measured latency is taken out (#140 step 2)
+    const lat = sources.map((s) => s.latency.summary()?.total.mean ?? null);
+    const scene = freezeMoment(Date.now(), lat);
+    sources.forEach((s, i) => s.freezeAt(scene, lat[i] ?? 0));
+  } else sources.forEach((s) => (s.frozen = false));
   freezeBtn.classList.toggle('on', frozen);
   freezeBtn.setAttribute('aria-pressed', String(frozen));
   freezeBtn.textContent = frozen ? t('main.resume') : t('main.freeze');
@@ -464,7 +477,8 @@ function removeSource(s: Source) {
 function classRow(cls: 'opts' | 'stack', ...kids: Parameters<typeof row>) { const r = row(...kids); r.classList.add(cls); return r; }
 
 function renderSources() {
-  $('#source-list').replaceChildren(...sources.map((s, i) => {
+  const pb = playbackBar();
+  $('#source-list').replaceChildren(...(pb ? [pb] : []), ...sources.map((s, i) => {
     const set = s.settings;
     const upd = (patch: Partial<SourceSettings>, reconnect = false) => {
       Object.assign(s.settings, patch); save();
@@ -802,6 +816,7 @@ $('#add').replaceChildren(
     ['webcam', t('main.add.webcam'), t('main.add.webcamTitle')], ['screen', t('main.add.screen'), t('main.add.screenTitle')], ['file', t('main.add.file'), ''],
     ['folder', t('main.add.folder'), t('main.add.folderTitle')], ['audio', 'Audio', t('main.add.audioTitle')],
   ] as const).map(([kind, label, title]) => button(label, () => addSourceOfKind(kind), { title })),
+  button(t('playback.add'), () => openRecordingsDialog(), { title: t('playback.addTitle') }),
 );
 
 /** Add an audio source and, if no audio panel is open, a pinned level/loudness panel for it. */
@@ -876,7 +891,7 @@ function fillHead(v: PanelView) {
       iconButton('⤢', t('panel.solo'), () => toggleSolo(idx)));
   }
   const [lead, opts] = [v.head.children[0] as HTMLElement, v.head.children[1] as HTMLElement];
-  const multi = sources.length > 1 && !isLight(p.scope);
+  const multi = sources.length > 1 && !isLight(p.scope) && p.scope !== 'tiles';
   lead.replaceChildren(...[
     select(p.scope, Object.entries(SCOPE_LABELS) as Option[], (val) => {
       p.scope = val as ScopeType; p.view = undefined; if (val === 'vector' || val === 'hls' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
@@ -903,7 +918,7 @@ function fillHead(v: PanelView) {
 
 /** Measuring stage in the panel head, honest about stages that have nothing to apply. */
 function stageChip(p: PanelState): HTMLElement | null {
-  if (isAudio(p.scope) || p.scope === 'clock' || p.scope === 'genlock' || isLight(p.scope)) return null;
+  if (isAudio(p.scope) || p.scope === 'clock' || p.scope === 'genlock' || p.scope === 'simulcast' || p.scope === 'encoder' || p.scope === 'lens' || isLight(p.scope)) return null;
   const n = stageNote(panelSource(p), p.stage ?? state.stage ?? 'signal');
   return n.text ? chip(n.text, { tone: n.warn ? 'warn' : undefined, cls: 'stagechip', title: t('panel.stageChipTitle') }) : null;
 }
@@ -924,13 +939,38 @@ function addScopePanel(scope: ScopeType = 'wf-luma') {
 /** Settings of one measuring tool, shown in its ⚙ menu. */
 /** Rebuild the rows of a panel's open ⚙ popover (rows appear or disappear). */
 function refreshPanelSettings(p: PanelState) {
+  p = innerOf.get(p) ?? p;
   const v = [...views.values()].find((x) => state.panels[x.idx] === p);
   if (v) { fillHead(v); v.pop?.refresh(); }
 }
 
+/** Tile panels show the settings of their inner scope through a view of the panel state (proxy → panel). */
+const innerOf = new WeakMap<PanelState, PanelState>();
+
+function tileSettings(p: PanelState): Node[] {
+  const ts = sanitizeTiles(p.tiles);
+  const setT = (patch: Partial<TileSettings>) => { p.tiles = { ...ts, ...patch }; Object.assign(ts, patch); save(); refreshPanelSettings(p); };
+  const video = sources.filter((s) => s.kind !== 'audio');
+  const rows: Node[] = [
+    field(t('tiles.scope'), select(ts.scope, TILE_SCOPES.map((sc) => [sc, SCOPE_LABELS[sc]] as Option), (v) => setT({ scope: v as TileSettings['scope'] }), t('tiles.scopeTitle'))),
+    field(t('tiles.sources'), ...video.map((s) => checkbox(ts.sources.includes(s.id), `${sources.indexOf(s) + 1} ${s.name}`, (on) => {
+      const want = new Set(ts.sources); if (on) want.add(s.id); else want.delete(s.id);
+      setT({ sources: video.filter((x) => want.has(x.id)).map((x) => x.id).slice(0, MAX_TILES) });
+    }))),
+    hint(t('tiles.hint', { max: MAX_TILES })),
+  ];
+  const inner = new Proxy(p, { get: (o, k) => (k === 'scope' ? ts.scope : Reflect.get(o, k)) });
+  innerOf.set(inner, p);
+  return [...rows, ...panelSettings(inner)];
+}
+
 function panelSettings(p: PanelState): Node[] {
+  if (p.scope === 'tiles') return tileSettings(p);
   if (isAudio(p.scope)) return audioPanelSettings(p, save);
   if (isLight(p.scope)) return lightPanelSettings(p, save);
+  if (p.scope === 'simulcast') return simulcastPanelSettings(p, save);
+  if (p.scope === 'encoder') return encoderPanelSettings(p, save, sources);
+  if (p.scope === 'lens') return lensPanelSettings(p, save, () => panelSource(p), () => refreshPanelSettings(p));
   if (p.scope === 'genlock') return genlockPanelSettings(p, save);
   if (p.scope === 'clock') return clockPanelSettings(p, save, sources, () => refreshPanelSettings(p));
   const rows: Node[] = [];
@@ -1067,11 +1107,40 @@ function panelSettings(p: PanelState): Node[] {
       else if (s.faceTrack && faceMod?.faceStatus.delegate === 'CPU') row('', h('p', { class: 'hint' }, t('panel.facesCpu')));
     }
   }
+  if (p.scope === 'skinall') {
+    const sk = p.skinall ?? {};
+    const chosen = new Set(sk.sources ?? []);
+    const video = sources.filter((s) => s.kind !== 'audio');
+    row(t('tiles.sources'), ...video.map((s) => checkbox(chosen.has(s.id), `${sources.indexOf(s) + 1} ${s.name}`, (on) => {
+      if (on) chosen.add(s.id); else chosen.delete(s.id);
+      p.skinall = { ...p.skinall, sources: video.filter((x) => chosen.has(x.id)).map((x) => x.id).slice(0, MAX_TILES) }; save();
+    })));
+    row(t('panel.vzoom'), select(String(sk.zoom ?? 2), [['1', '×1'], ['2', '×2'], ['5', '×5']], (v) => { p.skinall = { ...p.skinall, zoom: Number(v) }; save(); }));
+    row('', button(t('skinall.findFaces'), () => {
+      for (const s of skinSources(p, drawOptions()).list) s.faceMode = 'all';
+      faceLoadError = ''; refreshHeads();
+    }, { small: true, title: t('skinall.findFacesTitle') }));
+    global(SET.skinLuma);
+    global(SET.skinHue);
+    rows.push(hint(t('skinall.hint')));
+  }
+  if (p.scope === 'wshading') {
+    const ws = p.wshading ?? {};
+    const setW = (patch: NonNullable<PanelState['wshading']>) => { p.wshading = { ...p.wshading, ...patch }; save(); };
+    row(t('wshading.map'), select(ws.map ?? 'Y', [['Y', 'Y′'], ['R', 'R′'], ['G', 'G′'], ['B', 'B′'], ['colour', t('wshading.colour')]], (v) => setW({ map: v as 'Y' }), t('wshading.mapTitle')));
+    row(t('wshading.scale'), select(String(ws.scale ?? 5), [['2', '± 2 %'], ['5', '± 5 %'], ['10', '± 10 %'], ['20', '± 20 %']], (v) => setW({ scale: Number(v) })));
+    row(t('wshading.region'), checkbox(!!ws.roi, t('wshading.roiOnly'), (v) => setW({ roi: v }), t('wshading.roiTitle')));
+    rows.push(hint(t('wshading.hint')));
+  }
+  if (p.scope === 'noise') {
+    row(t('noise.detrend'), checkbox(p.noise?.detrend !== false, t('noise.detrendText'), (v) => { p.noise = { ...p.noise, detrend: v }; save(); }, t('noise.detrendTitle')));
+    rows.push(hint(t('noise.hint')));
+  }
   if (p.scope === 'stats') {
     row(t('panel.hdr10'), button(t('panel.hdr10Reset'), () => { panelSource(p)?.resetLightLevel(); }, { small: true, title: t('panel.hdr10Title') }));
   }
   if (p.scope === 'picture') {
-    row('Overlay', select(p.picture, [['normal', t('panel.ov.normal')], ['false', t('settings.scopes.falseColour')], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', t('panel.ov.skin')], ['green', t('panel.ov.green')], ['luma', 'Luma'], ['gamut', t('panel.ov.gamut')], ['r103', 'EBU R 103'], ['neutral', t('panel.ov.neutral')]], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
+    row('Overlay', select(p.picture, [['normal', t('panel.ov.normal')], ['false', t('settings.scopes.falseColour')], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', t('panel.ov.skin')], ['green', t('panel.ov.green')], ['luma', 'Luma'], ['gamut', t('panel.ov.gamut')], ['r103', 'EBU R 103'], ['neutral', t('panel.ov.neutral')], ['peaking', t('focus.overlay')]], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
     const ab = p.ab ?? { mode: 'off' as const, b: 'stage:cst', pos: 0.5, gain: 4 };
     const setAb = (patch: Partial<NonNullable<PanelState['ab']>>, rebuild = false) => {
       p.ab = { ...ab, ...patch }; Object.assign(ab, patch); save(); refreshHeads();
@@ -1095,6 +1164,13 @@ function panelSettings(p: PanelState): Node[] {
     if (p.picture === 'neutral') {
       row(t('panel.threshold'), select(String(p.neutral?.threshold ?? 5), [['2', '2 %'], ['5', '5 %'], ['10', '10 %']], (v) => { p.neutral = { ...p.neutral, threshold: Number(v) }; save(); }, t('panel.neutralTitle')));
       row(t('panel.range'), select(p.neutral?.range ?? 'all', [['all', t('panel.rangeAll')], ['shadows', t('panel.shadows')], ['mids', t('panel.mids')], ['highlights', t('panel.highlights')]], (v) => { p.neutral = { ...p.neutral, range: v as 'all' }; save(); }));
+    }
+    if (p.picture === 'peaking') {
+      const pk = { ...PEAK_DEFAULT, ...p.peak };
+      row(t('focus.threshold'), slider(pk.threshold, (v) => { p.peak = { ...p.peak, threshold: v }; save(); }, { min: 0.03, max: 0.5, step: 0.01, reset: PEAK_DEFAULT.threshold, title: t('focus.thresholdTitle') }));
+      row(t('focus.colour'), select(pk.colour, (Object.keys(PEAK_COLOURS) as PeakColour[]).map((c) => [c, t(`focus.colour.${c}`)] as Option), (v) => { p.peak = { ...p.peak, colour: v as PeakColour }; save(); }));
+      row('', button(t('focus.reset'), () => { const s = panelSource(p); if (s) resetFocusPeak(s.id); }, { small: true, title: t('focus.resetTitle') }));
+      rows.push(hint(t('focus.hint')));
     }
     if (p.picture === 'gamut') row(t('panel.tgtGamut'), select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, t('panel.tgtGamutTitle')));
     if (p.picture === 'false') global(SET.falseColour);
@@ -1448,6 +1524,12 @@ function drawAll(now: number) {
     const used = new Set(openViews().map((v) => panelSource(state.panels[v.idx])).filter(Boolean) as Source[]);
     const refSrc = state.ref?.sourceId && state.panels.some((q) => q.ghost) ? sources.find((x) => x.id === state.ref!.sourceId) : undefined;
     if (refSrc) used.add(refSrc);
+    // tile panels: every source they show
+    for (const v of openViews()) {
+      const p = state.panels[v.idx];
+      if (p.scope === 'tiles') for (const tl of tilePlan(p, { w: 1, h: 1 }, drawOptions()).tiles) used.add(tl.src);
+      if (p.scope === 'skinall') for (const s of skinSources(p, drawOptions()).list) used.add(s);
+    }
     used.forEach((s) => {
       const every = s.kind === 'stream' && s.lowLatency ? s.llConfig.statsMs : 100;
       if (now - (statsAt.get(s) ?? -Infinity) < every - 1) return;
@@ -1576,6 +1658,7 @@ function drawOptions(): DrawOptions {
     stage: state.stage ?? 'signal',
     sourceById: (id) => sources.find((s) => s.id === id) ?? null,
     deRef: state.deRef ?? 'off',
+    sourceList: () => sources,
     ...refDraw(),
   };
 }
@@ -1970,6 +2053,8 @@ function execute(c: Command): unknown {
       return { stopped };
     }
     case 'transport': {
+      // recordings (src/record/playback.ts) when no video file is meant
+      if (c.source === undefined && !activeVideo() && playbackTransport(String(c.op))) return { playback: true };
       const s = need(c.source !== undefined ? findSource(c.source) : activeVideo(), 'No video file open');
       const v = need(s.isVideoFile ? s.video : null, `${s.name} is not a video file`);
       const playing = !v.paused || !!s.reverseSpeed;
@@ -2002,6 +2087,17 @@ function execute(c: Command): unknown {
       if (c.source !== undefined) { if (on) startRecording(list[0]); else stopRecording(list[0]); return recordingState(); }
       recordAll(on);
       return recordingState();
+    }
+    case 'ring': {
+      const list = c.source !== undefined ? [need(findSource(c.source), `Source ${c.source} not found`)] : sources.filter((s) => s.kind === 'stream');
+      const on = c.mode === 'toggle' ? !list.some(ringOn) : c.mode === 'on';
+      for (const s of list) setRing(s, on);
+      return recordingState();
+    }
+    case 'ring.save': {
+      const n = saveRings({ pre: typeof c.pre === 'number' ? c.pre : undefined, post: typeof c.post === 'number' ? c.post : undefined });
+      if (!n) throw new Error('No ring buffer running');
+      return { saving: n };
     }
     case 'record.mark': {
       const list = c.source !== undefined ? [need(findSource(c.source), `Source ${c.source} not found`)] : undefined;
@@ -2103,11 +2199,12 @@ document.addEventListener('keydown', (e) => {
   if ((e.target as HTMLElement).closest('input, select, textarea')) return;
   const keys = Object.keys(PRESETS);
   if (/^[1-6]$/.test(e.key)) setLayout(keys[Number(e.key) - 1]);
-  else if (e.key === ' ') { e.preventDefault(); const v = activeVideo(); if (v) v.togglePlay(); else toggleFreeze(); }
+  else if (e.key === ' ') { e.preventDefault(); const v = activeVideo(); if (v) v.togglePlay(); else if (!playbackTransport('toggle')) toggleFreeze(); }
   else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-    const v = activeVideo(); if (!v) return;
-    e.preventDefault();
     const d = e.key === 'ArrowRight' ? 1 : -1;
+    const v = activeVideo();
+    if (!v) { if (playbackTransport(d > 0 ? (e.shiftKey ? 'forward' : 'next') : (e.shiftKey ? 'rewind' : 'prev'))) e.preventDefault(); return; }
+    e.preventDefault();
     if (e.shiftKey) v.seek((v.video?.currentTime ?? 0) + d); else v.step(d);
   }
   else if (e.key === 'j' || e.key === 'J') activeVideo()?.shuttle(-1);
@@ -2120,6 +2217,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'b' || e.key === 'B') toggleSidebar();
   else if (e.key === 'r' || e.key === 'R') recordAll();
   else if (e.key === 'm' || e.key === 'M') markAll();
+  else if (e.key === 'p' || e.key === 'P') saveRings();
   else if (e.key === 'c' || e.key === 'C') setStage(STAGES[(STAGES.indexOf(state.stage ?? 'signal') + 1) % STAGES.length]);
   else if (e.key === 'Escape') { if (narrowQuery.matches && drawerOpen) { toggleSidebar(false); $('#toggle-side').focus(); } else if (dock.api.hasMaximizedGroup()) dock.exitMaximized(); else { sources.forEach((s) => { s.probe = null; s.roi = null; s.faceMode = 'off'; }); refreshHeads(); } }
 });
@@ -2249,9 +2347,10 @@ sources.forEach((s) => { if (s.kind === 'stream' && s.url) s.connectStream(s.url
 
 // Resolve playback (#88): live window capture while the timeline plays
 Source.onResolve = (s, msg) => resolvePlayback.onResolve(s, msg);
-Source.onStop = (s) => { resolvePlayback.onStop(s); sourceStopped(s); };
-Source.onRecord = (s, msg) => onBridgeRecord(s, msg);
-initRecording({ sources: () => sources, bridgeUrl, changed: () => renderSources(), hud: alertHud, latencyOf: (s) => s.latency.summary()?.total.mean ?? null });
+Source.onStop = (s) => { resolvePlayback.onStop(s); sourceStopped(s); sourceGone(s); };
+Source.onRecord = (s, msg) => (msg.type === 'playback' ? onPlaybackMessage(s, msg) : onBridgeRecord(s, msg));
+initPlayback({ sources: () => sources, bridgeUrl, changed: () => renderSources(), hud: alertHud, addStream: (url, name) => { const s = addSource('stream', name, url); s.connectStream(url, bridgeUrl()); return s; } });
+initRecording({ sources: () => sources, bridgeUrl, changed: () => renderSources(), hud: alertHud, latencyOf: (s) => s.latency.summary()?.total.mean ?? null, save });
 
 // running DaVinci Resolve on the bridge machine: one click to connect
 mountResolveLive($('#resolve-live'), {

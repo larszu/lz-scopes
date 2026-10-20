@@ -1107,3 +1107,13 @@ Gemeinsamer Hinweis: Der Opple misst einen Wert an einer Stelle, kein Bild. Die 
 - YouTube-Transkripte (yxceiOl5VJ4, dnT-zRhWVK4, Playlist): nicht abrufbar (Untertitel-API leer, yt-dlp „page needs to be reloaded“). Nur Titel/Beschreibung/Kapitel.
 - Playlist von Lars `PL8rGYj3gFXdXAH92O6ja4xPp04YaUqnBK`: „The playlist does not exist“ (privat oder gelöscht); Einzelvideo tqjocBWkphU („Project 3 2“, Wayne Murray) ohne Beschreibung.
 - SMPTE RP 219 / ST 2084 / EG 1: kostenpflichtig, nicht geprüft; 75-%-Luma-Werte sind aus BT.709 berechnet.
+
+## Werkzeug-Karten im LED-Wand-Dialog
+
+Die Finder im LED-Wand-Dialog haben dieselbe „?“-Karte (`toolHelp` in `src/help/scopeHelp.ts`, Texte `help.led-*` in `src/i18n/*/wallcheck.ts`). Quellen je Werkzeug: Shutter-/Scanraten-Finder → [shutter-finder.md](shutter-finder.md), Moiré-Messer → [moire-meter.md](moire-meter.md).
+
+Panel *Simulcast-Abweichung* (`help.simulcast.*` in `help.ts`): Quellen und Grenzen in [simulcast-map.md](simulcast-map.md); die Aufgabe nutzt das Testbild „PQ-Verlauf mit Referenzweiß 203“ und eine CST nach Rec.709 mit Clip (geprüft in `e2e/simulcast.spec.ts`).
+
+Panel *Encoder-Konfidenz* (`help.encoder.*` in `help.ts`): Quellen und Grenzen in [encoder-confidence.md](encoder-confidence.md).
+
+Panel *Objektiv-Fingerabdruck* (`help.lens.*` in `help.ts`): Quellen und Grenzen in [lens-fingerprint.md](lens-fingerprint.md).

@@ -26,6 +26,33 @@ Quelle ──► ffmpeg der Quelle ──► Ausgang 1: Analysebild (rawvideo/H.
   Der HEVC-Encoder wird je ffmpeg einmal mit einer kurzen Testkodierung ausgewählt (`pickHevcEncoder`): ein gelisteter Hardware-Encoder kann ohne GPU oder Treiber trotzdem scheitern.
 - **Browser-Quellen** (`src/record/browser.ts`): MediaRecorder (WebM VP9/VP8 bzw. MP4), Teile je Segmentlänge über `ws://…/record-upload`. Der Testbild-Generator zeichnet in eine Canvas außerhalb des Dokuments; `canvas.captureStream()` liefert dafür keine Bilder (Chromium erfasst nur gemalte Canvas). Die Quelle füttert deshalb einen `MediaStreamTrackGenerator` Bild für Bild mit `VideoFrame`s.
 
+## Ringpuffer
+
+`server/ring.mjs`, dritter Ausgang desselben ffmpeg (nur Bridge-Quellen):
+
+- `-f segment -segment_time 2 -segment_wrap N -reset_timestamps 1`, Matroska, in `<Aufnahme-Ordner>/.lzs-ring/<Quelle>-<Zufall>/ring<Start>_%03d.mkv`. N = ⌈(Länge + Nachlauf + 10 s) / 2⌉ + 2: die 10 s Reserve halten die älteste benötigte Datei vom Überschreiben fern, solange sie kopiert wird. Jeder ffmpeg-Start (Aufnahme an/aus) bekommt eigene Dateinamen; Dateien früherer Starts fallen mit der Zeit aus dem Fenster und werden gelöscht. Beim Abschalten löscht die Bridge den Ordner.
+- Jedes Segment beginnt mit einem Keyframe: Kopie schneidet der Segment-Muxer an Keyframes, ProRes/DNxHR/FFV1 sind intra, HEVC bekommt `-force_key_frames expr:gte(t,n_forced*2)`.
+- Die Segmentzeile gibt jedem Segment seine Wanduhrzeit (wie oben). Eine neue Zeile für Datei *k* macht den alten Eintrag für *k* und für *k + 1* (wird als nächstes überschrieben) ungültig.
+- **Sichern** (`ring.save`, Taste `P`): ein Druck schickt allen Quellen dieselbe Zeitmarke `at` (Wanduhr der App; die Bridge nimmt ihre eigene, wenn beide mehr als 5 s auseinanderliegen). Fenster je Quelle in Ankunftszeit: [at − Länge + Latenz, at + Nachlauf + Latenz]. Die Bridge wartet, bis das Segment mit dem Fensterende fertig ist, kopiert die beteiligten Segmente beiseite (`copyFile` mit `COPYFILE_FICLONE`: auf APFS/Btrfs ein Klon ohne Datenkopie), sucht per ffprobe den letzten Keyframe vor dem Fensteranfang im ersten Segment und fügt mit dem concat-Demuxer zusammen (`inpoint` = dieser Keyframe, `outpoint` = Fensterende, `-c copy`).
+- Ergebnis: `<Datum-Uhrzeit>-ring/<Name>_ring.mkv` und `<Name>_ring.json` mit `kind: "ring"`, `window` (Zeitmarke, Länge, Nachlauf, Fenster in Wanduhr, `complete` = Ring reichte zurück bis zum Fensteranfang), Startzeit des ersten Bildes (= Keyframe) und den Markern im Fenster.
+- Platz: vor dem Start Platz für das ganze Fenster plus 1 GB. Richtwerte für 60 s: ProRes 422 HQ 1080p50 ≈ 3,2 GB mit Reserve, H.264 10 Mbit/s ≈ 90 MB.
+
+## Wiedergabe an einer gemeinsamen Uhr
+
+`server/playback.mjs`, `src/record/playback.ts`:
+
+- Eine Aufnahme ist eine Stream-Quelle `rec:<Ordner>/<Aufnahme>/<Name>`; die Bridge löst sie nur in freigegebenen Ordnern auf und spielt die Segmente der Begleitdatei über den concat-Demuxer. `/api/recordings` listet die Aufnahmen (nur Namen).
+- **Szenenzeit** T (Wanduhr des aufgezeichneten Augenblicks): Medienposition = (T − Startzeit + Latenz) / 1000. Die Seite hält eine Uhr (T₀ bei Wanduhr a₀) und schickt jeder Aufnahme `{type:'play', t: T₀, at: a₀}`, `pause` oder `seek`. Bild n nach dem Start an Position p₀ ist fällig bei a₀ + (Szenenzeit(p₀ + n/fps) − T₀) / Rate.
+- Die Bridge dekodiert ohne `-re` ab `-ss p₀`, liest höchstens ein paar Bilder voraus (stdout pausiert) und schickt jedes Bild zu seiner Fälligkeit; mehr als zwei Bilder zu spät wird übersprungen. Alle Aufnahmen hängen so an derselben Wanduhr statt an je eigenen ffmpeg-Startzeiten.
+- Pause und Sprung dekodieren genau ein Bild an der neuen Stelle.
+- Gemessen (Test `test/sync.test.ts`): zwei Aufnahmen, Szenenstart 1 s auseinander, gemeinsamer Start: erstes Bild der zweiten 1 s nach dem der ersten (± 120 ms Toleranz im Test), 25 fps getaktet.
+
+## Gleichzeitig einfrieren (Schritt 2)
+
+- Jede Bridge-Quelle hält ihre letzten Rohbilder mit Ankunftszeit vor (`FrameHistory`, bis 0,6 s bzw. 24 Bilder; die Puffer gehören ohnehin der Quelle, es wird nichts kopiert).
+- Gemeinsamer Augenblick = jetzt − größte gemessene Latenz (der jüngste Moment, den alle Quellen schon gezeigt haben). Jede Quelle nimmt das Bild, dessen Ankunft − Latenz am nächsten daran liegt (`pickFrame`).
+- Latenz = gemessene Latenz aus `src/latency.ts` (gestempelte Testbilder); ohne Messung zählt sie 0, dann frieren alle im selben Augenblick ihrer Ankunft ein. Browser-Quellen halten ihr aktuelles Bild.
+
 ## Zeitbezug
 
 - Die Segmentzeile kommt, wenn ffmpeg das nächste Segment beginnt, also wenn das Bild am Segmentende ankam. Wanduhr des Segmentanfangs = Zeitpunkt der Zeile − (Ende − Anfang). Der erste Wert ist der Start der Aufnahme (`start.utcMs`), dazu die PTP-Zeit desselben Augenblicks aus dem PTP-Monitor der Bridge (`start.ptp`, `start.clock` = `ptp` oder `system`).
@@ -69,12 +96,17 @@ Zugangsdaten werden aus der URL entfernt. `t` ist in Sekunden ab dem ersten Bild
 | `test:testsrc` → HEVC 10 bit | `hevc_videotoolbox`, Main 10, `yuv420p10le` |
 | ffmpeg mit SIGKILL mitten im 4. Segment (MOV) | Segmente 1–3 vollständig lesbar, Bildzahl = Dauer × 25 |
 | Desktop-App: Testbild-Generator per MediaRecorder | WebM, ffprobe liest es |
+| Ring 6 s + 2 s Nachlauf, `test:testsrc` → ProRes | 201 Bilder (8 s × 25 + 1), Beginn 9 ms vor dem Fensteranfang, Ring-Ordner danach leer |
+| Kopie H.264, Keyframe jede Sekunde, Fenster ab 1,3 s | Datei beginnt am Keyframe 1,0 s, 100 Bilder bis 5,0 s |
 
-Tests: `test/record.test.ts` (Zielordner, Argumente, Segmentliste, Begleitdatei, Platzprüfung, Steuerbefehle; mit dem mitgelieferten ffmpeg: Absturz kostet höchstens ein Segment, Bridge-Aufnahme mit lückenlosen Segmenten), `e2e/record.spec.ts` (Knopf der Quellenkarte, `record`/`record.mark` über die Steuer-API, Browser-Quelle).
+Tests: `test/record.test.ts` (Zielordner, Argumente, Segmentliste, Begleitdatei, Platzprüfung, Steuerbefehle; mit dem mitgelieferten ffmpeg: Absturz kostet höchstens ein Segment, Bridge-Aufnahme mit lückenlosen Segmenten), `test/sync.test.ts` (Einfrieren mit Latenzausgleich, Uhr, Medienposition, `rec:`-Auflösung; mit ffmpeg: zwei Aufnahmen an einer Uhr), `test/ring.test.ts` (Fenster mit Latenz, Segmentauswahl, Keyframe-Suche, concat-Liste, Überschreiben; mit ffmpeg: Kopie ab Keyframe, Bridge-Ring mit Nachlauf), `e2e/record.spec.ts` (Knopf der Quellenkarte, `record`/`record.mark`/`ring`/`ring.save` über die Steuer-API, Browser-Quelle).
 
 ## Ungeprüft
 
 - NVENC, Quick Sync, AMF und VAAPI (keine Hardware am Prüfplatz); die Auswahl per Testkodierung fällt dort auf libx265 bzw. ProRes zurück.
 - DeckLink- und NDI-Aufnahme mit echter Hardware bzw. echten Quellen im Netz. NDI kommt über den Helfer dekodiert an und wird neu kodiert; ein Kopieren von NDI|HX gibt es nicht.
 - Die Bridge unter Windows (Segmentliste per Datei, Stopp ohne SIGINT: das letzte MOV-Segment kann dort fehlen, Matroska bleibt lesbar).
+- Ringpuffer für Browser-Quellen (MediaRecorder) gibt es nicht.
+- Wiedergabe ohne Ton; Browser-Aufnahmen (WebM von MediaRecorder ohne feste Bildrate) laufen mit angenommenen 30 fps.
+- Latenzausgleich beim Einfrieren und in der Wiedergabe nur so gut wie die Latenzmessung; ohne gestempelte Testbilder gibt es keinen Messwert.
 - RTP-Eigenempfang und getrennter Tonprozess (`LZS_AUDIO_SPLIT`, Windows-Ersatzweg): Aufnahme nur mit Bild, weil der Ton in einem anderen Prozess liegt.

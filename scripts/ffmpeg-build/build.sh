@@ -6,21 +6,25 @@
 #     darwin-arm64   on an Apple Silicon Mac (macos-latest)
 #     darwin-x64     on an Intel Mac (macos-15-intel)
 #     win32-x64      on Linux with mingw-w64 (cross)
-#     linux-x64      on Linux (Linux app, x64; glibc of the build host)
+#     linux-x64      on Linux x64 (Linux app; glibc of the build host)
+#     linux-arm64    on Linux arm64 (Linux app for Raspberry Pi 5, Jetson; glibc of the build host)
 #
-# Needs: curl, tar, make, cmake, nasm (x86), pkg-config; mingw-w64 for win32-x64.
+# Linux: ALSA input device, linked dynamically against the system's libasound (LGPL-2.1; every
+# desktop with Electron has it). Everything else stays static.
+#
+# Needs: curl, tar, make, cmake, nasm (x86), pkg-config; mingw-w64 for win32-x64; libasound2-dev for Linux.
 # Result: <out>/ffmpeg-<version>-<target>.zip with ffmpeg, ffprobe, BUILD-INFO.txt.
 # Research and licence duties: docs/research/ffmpeg-lizenz.md
 set -euo pipefail
 
-TARGET="${1:?Ziel: darwin-arm64 | darwin-x64 | win32-x64 | linux-x64 | --sources-only}"
+TARGET="${1:?Ziel: darwin-arm64 | darwin-x64 | win32-x64 | linux-x64 | linux-arm64 | --sources-only}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BASE="${FFBUILD_DIR:-$PWD/ffbuild}"
 OUT="${2:-$BASE/out}"
 SRC="$BASE/sources"
 WORK="$BASE/$TARGET"
 PREFIX="$WORK/prefix"
-LZS_REV="lzs1" # bump when the build changes without a new FFmpeg version
+LZS_REV="lzs2" # bump when the build changes without a new FFmpeg version
 JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
@@ -68,8 +72,13 @@ case "$TARGET" in
     CMAKE_ARGS+=(-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0)
     FF_ARGS+=(--enable-avfoundation --enable-audiotoolbox --enable-videotoolbox --enable-bzlib)
     ;;
-  linux-x64)
-    export CC=gcc CXX=g++
+  linux-x64|linux-arm64)
+    want=$([[ $TARGET == linux-arm64 ]] && echo aarch64 || echo x86_64)
+    [[ "$(uname -m)" == "$want" ]] || { echo "$TARGET muss auf $want-Linux gebaut werden" >&2; exit 1; }
+    # CC/CXX from outside: linux-arm64 is built on Ubuntu 22.04 with GCC 12 (x265's SVE2 code needs -march=armv9-a)
+    export CC="${CC:-gcc}" CXX="${CXX:-g++}"
+    # ALSA: explicit despite --disable-autodetect; -lasound from the system (PKG_CONFIG_LIBDIR only sees $PREFIX)
+    FF_ARGS+=(--enable-alsa --cc="$CC" --cxx="$CXX")
     ;;
   win32-x64)
     HOST=x86_64-w64-mingw32

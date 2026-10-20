@@ -14,7 +14,7 @@ export const OVERLAY_SCOPES = ['wf-luma', 'wf-color', 'wf-skin', 'wf-rgb', 'para
 export const AUDIO_SCOPES = ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check'];
 /** Opple Light Master views (src/opple/scopes.ts) */
 export const LIGHT_SCOPES = ['light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch'];
-export const PANEL_SCOPES = ['picture', ...OVERLAY_SCOPES, 'wf-green', 'match', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'timeline', 'qclog', 'stats', ...AUDIO_SCOPES, 'clock', 'genlock', ...LIGHT_SCOPES];
+export const PANEL_SCOPES = ['picture', ...OVERLAY_SCOPES, 'wf-green', 'match', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'timeline', 'qclog', 'stats', 'simulcast', 'encoder', 'lens', 'tiles', 'noise', 'wshading', 'skinall', ...AUDIO_SCOPES, 'clock', 'genlock', ...LIGHT_SCOPES];
 export const OUTPUT_VIEWS = ['grid', 'panel', 'clean', 'overlay'];
 export const TRANSPORT_OPS = ['play', 'pause', 'toggle', 'stop', 'next', 'prev', 'forward', 'rewind', 'start', 'end'];
 const MODES = ['toggle', 'on', 'off'];
@@ -47,6 +47,8 @@ export const COMMANDS = {
   'audio.pause': 'Pause/resume I and LRA (Tech 3341): mode toggle|on|off, source (optional; none = all sources with sound)',
   'generator': 'Tone generator: mode toggle|on|off, signal (optional), freq (Hz, optional), level (dBFS, optional; above −6 only with force: true)',
   'record': 'Local recording: mode toggle|on|off, source (optional; none = all recordable sources, as "record all")',
+  'ring': 'Ring buffer on/off: mode toggle|on|off, source (optional; none = all bridge sources)',
+  'ring.save': 'Save the ring buffers of all sources with one time mark: pre (s, optional), post (s, optional)',
   'record.mark': 'Marker in the running recordings: label (optional), source (optional; none = all)',
   'record.event': 'Event in the companion file of the running recordings: kind (letters, digits, _ . -), data (JSON value), source (optional)',
   'setting': `Set a global setting: key (${SETTING_KEYS.join(', ')}), value (choice, number, true/false, or [lo, hi] for skinLuma); state.settings lists keys, values and choices`,
@@ -165,6 +167,14 @@ export function validateCommand(raw) {
       check(optRef('source'));
       break;
     case 'record': check(optMode()); check(optRef('source')); break;
+    case 'ring': check(optMode()); check(optRef('source')); break;
+    case 'ring.save':
+      for (const k of ['pre', 'post']) {
+        if (c[k] === undefined || c[k] === '') continue;
+        const v = Number(c[k]);
+        if (!Number.isFinite(v) || v < 0 || v > 600) errors.push(`${k}: 0 … 600 s`); else out[k] = v;
+      }
+      break;
     case 'record.mark':
       check(optRef('source'));
       if (c.label !== undefined && c.label !== '') { if (!isStr(c.label) || c.label.length > 200) errors.push('label: text up to 200 characters'); else out.label = c.label; }

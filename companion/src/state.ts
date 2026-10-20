@@ -30,7 +30,7 @@ export interface ScopesState {
   } | null
   generator?: { running: boolean; signal: string; level: number; freq: number; channels: number } | null
   /** local recordings: running count and which sources */
-  recording?: { active: number; sources: { name: string; id: string; seconds: number; take: string | null }[] } | null
+  recording?: { active: number; sources: { name: string; id: string; seconds: number; take: string | null }[]; ring?: { name: string; id: string; pre: number | null; buffered: number }[] } | null
   /** QC log: active events, total, latest event */
   qc?: { active: number; total: number; last: string } | null
 }
@@ -60,7 +60,7 @@ export function normalizeState(raw: unknown): ScopesState {
       paused: r.audio.paused === true, identProblems: arr(r.audio.identProblems),
     } : null,
     generator: r.generator && typeof r.generator === 'object' ? { ...r.generator, running: r.generator.running === true } : null,
-    recording: r.recording && typeof r.recording === 'object' ? { active: Number(r.recording.active) || 0, sources: arr(r.recording.sources) } : null,
+    recording: r.recording && typeof r.recording === 'object' ? { active: Number(r.recording.active) || 0, sources: arr(r.recording.sources), ring: arr(r.recording.ring) } : null,
     qc: r.qc && typeof r.qc === 'object' ? { active: Number(r.qc.active) || 0, total: Number(r.qc.total) || 0, last: String(r.qc.last ?? '') } : null,
   }
 }
@@ -162,6 +162,13 @@ export const checks = {
   loudness_paused: (s: ScopesState) => s.audio?.paused === true,
   true_peak_above: (s: ScopesState, o: Record<string, unknown>) => s.audio?.maxTP != null && s.audio.maxTP > Number(o.threshold ?? -1),
   ident_problem: (s: ScopesState) => (s.audio?.identProblems.length ?? 0) > 0,
+  ring_active: (s: ScopesState, o: Record<string, unknown>) => {
+    const list = s.recording?.ring ?? []
+    const want = String(o.source ?? '').trim()
+    if (!want || want === '0') return list.length > 0
+    const src = s.sources.find((x) => String(x.index) === want || x.id === want || same(x.name, want))
+    return list.some((x) => (src ? x.id === src.id : same(x.name, want)))
+  },
   recording: (s: ScopesState, o: Record<string, unknown>) => {
     const list = s.recording?.sources ?? []
     const want = String(o.source ?? '').trim()

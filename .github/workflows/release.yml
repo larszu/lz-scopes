@@ -1,7 +1,7 @@
 name: Release
 
 # Tag v* → Windows (NSIS + portable), macOS (universal dmg + zip) and Linux (AppImage + deb,
-# x64) plus the ffmpeg sources, attached directly to the GitHub release.
+# x64 and arm64) plus the ffmpeg sources, attached directly to the GitHub release.
 #
 # The release is created as a DRAFT first and published only when every asset is there
 # (job `publish`, scripts/release-check.mjs), so a release without installers is never
@@ -66,8 +66,12 @@ jobs:
             build_args: --mac --universal
             ffmpeg: darwin-universal
           - os: ubuntu-latest
-            build_args: --linux
+            build_args: --linux --x64
             ffmpeg: linux-x64
+          # glibc 2.35 (Ubuntu 22.04): Raspberry Pi OS 12, JetPack 6; same as the linux-arm64 ffmpeg
+          - os: ubuntu-22.04-arm
+            build_args: --linux --arm64
+            ffmpeg: linux-arm64
     runs-on: ${{ matrix.os }}
     env:
       # the ffmpeg tests must not be skipped here (test/shippedFfmpeg.ts)
@@ -134,11 +138,12 @@ jobs:
             lipo -archs "$res/app.asar.unpacked/helpers/bin/lz-decklink"
             test -f "$res/app.asar.unpacked/helpers/bin/lz-ndi"
           elif [ "$RUNNER_OS" = Linux ]; then
-            res="release/linux-unpacked/resources"
+            res="$(ls -d release/linux*-unpacked)/resources"
             dir="$res/ffmpeg"; exe="$dir/ffmpeg"
             test -x "$res/app.asar.unpacked/helpers/bin/lz-decklink"
             test -x "$res/app.asar.unpacked/helpers/bin/lz-ndi"
-            ls release/*.AppImage release/*.deb release/latest-linux.yml
+            ls release/*.AppImage release/*.deb release/latest-linux*.yml
+            "$exe" -hide_banner -devices | grep -E '^ D[E ] +alsa '
           else
             res="release/win-unpacked/resources"
             dir="$res/ffmpeg"; exe="$dir/ffmpeg.exe"

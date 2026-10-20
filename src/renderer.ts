@@ -21,9 +21,9 @@ export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector
 const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7, diamond: 8, cube: 9, satlum: 10, chplot: 11, hls: 12 };
 const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1, diamond: 2, cube: 1, satlum: 1, chplot: 1, hls: 1 };
 
-export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'green' | 'gamut' | 'r103' | 'neutral';
+export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'green' | 'gamut' | 'r103' | 'neutral' | 'peaking';
 // 'green' = the skin overlay with the green qualifier's range (panel.ts passes it as skin)
-const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5, green: 5, gamut: 6, r103: 7, neutral: 8 };
+const PICTURE_ID: Record<PictureMode, number> = { normal: 0, false: 1, zebra: 2, clip: 3, luma: 4, skin: 5, green: 5, gamut: 6, r103: 7, neutral: 8, peaking: 9 };
 
 /** Region of interest in source pixels [x0, y0, x1, y1) and skin-tone detection window. */
 export type Roi = [number, number, number, number] | null;
@@ -270,6 +270,7 @@ uniform ivec2 uSize; uniform int uMode; uniform vec2 uK;
 uniform vec4 uBand[12]; uniform int uBands;
 uniform float uZebra, uZebraLow;
 uniform vec4 uNeutral;
+uniform vec4 uPeak; // focus peaking (focus.ts): threshold, colour
 uniform int uDisp;
 uniform mat3 uGamut, uWarn, uTo2020, uFrom2020;
 uniform vec4 uSkin;
@@ -340,6 +341,15 @@ void main() {
         c = clamp(vec3(R, (yy - kr2 * R - kb2 * B) / (1.0 - kr2 - kb2), B), 0.0, 1.0);
       }
     }
+  } else if (uMode == 9) {
+    // focus peaking (focus.ts sharpness): Sobel gradient of Y′ at source resolution, 1 = full black→white step
+    vec3 kw = vec3(uK.x, 1.0 - uK.x - uK.y, uK.y);
+    ivec2 hi = uSize - 1;
+    #define YQ(dx, dy) dot(fetchRGB(clamp(p + ivec2(dx, dy), ivec2(0), hi)), kw)
+    float a = YQ(-1, -1), b = YQ(0, -1), cc = YQ(1, -1), d = YQ(-1, 0), f = YQ(1, 0), g = YQ(-1, 1), hh = YQ(0, 1), k = YQ(1, 1);
+    float gx = (cc + 2.0 * f + k - a - 2.0 * d - g) / 4.0, gy = (g + 2.0 * hh + k - a - 2.0 * b - cc) / 4.0;
+    c = vec3(dot(c, vec3(0.2126, 0.7152, 0.0722)) * 0.75);
+    if (length(vec2(gx, gy)) > uPeak.x) c = uPeak.yzw;
   } else if (uMode == 6) {
     // gamut warning: distance d = (max - c)/max in the target gamut; d > 1 = a channel is negative
     vec3 t = uWarn * rgcLin(toLinear(rgb));
@@ -398,6 +408,8 @@ export interface PictureParams {
   neutral?: { threshold: number; lo: number; hi: number };
   /** gamut warning: row-major 3×3 source linear → target gamut linear */
   warn?: number[];
+  /** focus peaking: gradient threshold (focus.ts) and colour */
+  peaking?: { threshold: number; colour: readonly [number, number, number] };
   /** ACES 1.3 RGC preview (rgc.ts): row-major source linear → AP1 and back */
   rgc?: { toAp1: number[]; fromAp1: number[] };
 }
@@ -566,6 +578,8 @@ export class Renderer {
   }
 
   dropPanel(key: string) {
+    // tile panels (tiles.ts) hold one sub-panel per tile
+    if (!key.includes('#t')) for (let i = 0; i < 8; i++) this.dropPanel(`${key}#t${i}`);
     for (const k of [key, `${key}#p0`, `${key}#p1`, `${key}#g0`, `${key}#g1`, `${key}#da`, `${key}#db`, `${key}#ref`]) {
       const a = this.accums.get(k);
       if (a) { this.gl.deleteTexture(a.tex); this.gl.deleteFramebuffer(a.fbo); this.accums.delete(k); }
@@ -905,6 +919,7 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
     gl.uniform2f(this.u(prog, 'uK'), kr, kb);
     gl.uniform1f(this.u(prog, 'uZebra'), p.zebra);
     gl.uniform1f(this.u(prog, 'uZebraLow'), p.zebraLow);
+    gl.uniform4f(this.u(prog, 'uPeak'), p.peaking?.threshold ?? 0.12, ...(p.peaking?.colour ?? [1, 0.15, 0.15]));
     gl.uniform4f(this.u(prog, 'uNeutral'), p.neutral?.threshold ?? 0.05, p.neutral?.lo ?? 0.02, p.neutral?.hi ?? 0.98, 0);
     if (r103) gl.uniform4f(this.u(prog, 'uR103'), R103.prefLo - R103.tol, R103.prefHi + R103.tol, R103.totalLo - R103.tol, R103.totalHi + R103.tol);
     this.linearUniforms(prog, src);

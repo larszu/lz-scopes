@@ -52,17 +52,18 @@ The desktop installers ship **ffmpeg and ffprobe** in `<resources>/ffmpeg/` and 
 | mbedTLS | 3.6.7 | Apache-2.0 |
 | zlib | 1.3.2 | Zlib |
 | Windows only: mingw-w64 winpthreads, GCC runtime (static) | Ubuntu 24.04 toolchain | MIT; GCC Runtime Library Exception |
-| Linux: glibc, libstdc++, libgcc_s (system libraries, dynamically linked, not shipped) | glibc 2.38+, GCC 13 runtime | LGPL-2.1-or-later; GCC Runtime Library Exception |
+| Linux: glibc, libstdc++, libgcc_s (system libraries, dynamically linked, not shipped) | x64: glibc 2.38+, GCC 13 runtime; arm64: glibc 2.35+, GCC 12 runtime | LGPL-2.1-or-later; GCC Runtime Library Exception |
+| Linux: alsa-lib `libasound.so.2` (system library, dynamically linked, not shipped) | as installed | LGPL-2.1-or-later |
 
 `.github/workflows/ffmpeg-build.yml` builds the following targets:
 - macOS arm64 and macOS x64; `scripts/ffmpeg-fetch.mjs` joins them into a universal binary with `lipo`.
 - Windows x64.
-- Linux x64, shipped in the Linux app (AppImage, deb). It links the system's glibc 2.38+ and libstdc++ (GCC 13) dynamically, so it needs Ubuntu 24.04, Debian 13, Fedora 39 or later. Input devices: v4l2; no ALSA (the build disables autodetected libraries).
+- Linux x64 and Linux arm64, shipped in the Linux app (AppImage, deb). They link the system's glibc, libstdc++ and alsa-lib dynamically: x64 needs glibc 2.38+ (Ubuntu 24.04, Debian 13, Fedora 39 or later), arm64 glibc 2.35+ (Ubuntu 22.04, JetPack 6, Raspberry Pi OS 12 or later). Input devices: v4l2 and ALSA (`--enable-alsa`; all other autodetected libraries stay off).
 
-It tests each build on its own OS: licence, SRT, and 10-bit HEVC/v210 over TCP and SRT. Then it publishes the zips together with **every source archive and the build script** as the pre-release [ffmpeg-9.0.2-lzs1](https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs1). [scripts/ffmpeg-builds.json](scripts/ffmpeg-builds.json) pins those zips by SHA-256. `scripts/ffmpeg-fetch.mjs` rejects any binary built with `--enable-nonfree` or lacking libsrt, x264 or x265.
+It tests each build on its own OS: licence, SRT, and 10-bit HEVC/v210 over TCP and SRT; on Linux also the ALSA input device, and linux-arm64 additionally encodes on an emulated ARMv8.0 CPU (QEMU Cortex-A72, a subset of the Raspberry Pi 5's Cortex-A76). Then it publishes the zips together with **every source archive and the build script** as the pre-release [ffmpeg-9.0.2-lzs2](https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs2). [scripts/ffmpeg-builds.json](scripts/ffmpeg-builds.json) pins those zips by SHA-256. `scripts/ffmpeg-fetch.mjs` rejects any binary built with `--enable-nonfree` or lacking libsrt, x264 or x265.
 
 - **Licence texts** (in the app under `ffmpeg/licenses/`, here in [licenses/ffmpeg/](licenses/ffmpeg/)): GPL-3.0, GPL-2.0, LGPL-3.0, LGPL-2.1, FFmpeg `LICENSE.md`, MPL-2.0 (libsrt), Apache-2.0 (mbedTLS), MIT (mingw-w64 winpthreads).
-- **Source code (GPLv3 §6d):** every GitHub release of LZ Scopes carries all source archives above, plus `build.sh` and `sources.txt`. The same files are attached to [ffmpeg-9.0.2-lzs1](https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs1). FFmpeg: <https://ffmpeg.org/download.html>, <https://ffmpeg.org/legal.html>. For questions, open an issue at <https://github.com/larszu/lz-scopes/issues>.
+- **Source code (GPLv3 §6d):** every GitHub release of LZ Scopes carries all source archives above, plus `build.sh` and `sources.txt`. The same files are attached to [ffmpeg-9.0.2-lzs2](https://github.com/larszu/lz-scopes/releases/tag/ffmpeg-9.0.2-lzs2). FFmpeg: <https://ffmpeg.org/download.html>, <https://ffmpeg.org/legal.html>. For questions, open an issue at <https://github.com/larszu/lz-scopes/issues>.
 - The web build contains no ffmpeg. `npm start` uses the fetched build (`npm run ffmpeg:fetch`), otherwise `$FFMPEG` or an ffmpeg from the `PATH`.
 - Research and duties: [docs/research/ffmpeg-lizenz.md](docs/research/ffmpeg-lizenz.md). Up to 0.1.0 the app used `ffmpeg-static`, whose macOS arm64 binary is built with `--enable-nonfree` and is not redistributable; 1.0.0 to 1.3.0 shipped third-party GPL builds (Martin Riedl for macOS, BtbN for Windows).
 

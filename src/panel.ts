@@ -32,10 +32,18 @@ import { clockOpts, drawClockOverlay, drawClockPanel, type ClockOptions } from '
 import { GREEN_DEFAULT, targetSignal } from './match/core';
 import { drawMatchPanel, matchSignature, type MatchSettings } from './match/panel';
 import { drawLightPanel, isLight, lightSignature, type LightPanelOptions } from './opple/scopes';
+import { drawSimulcastPanel, type SimulcastSettings } from './simulcastPanel';
+import { drawEncoderPanel, type EncoderSettings } from './encoderPanel';
+import { drawLensPanel, type LensSettings } from './lensPanel';
 import { t } from './i18n';
 import { IDENTITY, isIdentity, viewRect, waveRange, type View, type ViewLimits } from './view';
 import { GHOST_CSS, GHOST_TINT, deltaRows, ghostChannels, hasGhost, histOf, levelDeltas, traceLevels } from './ghost';
 import { LUMA } from './color';
+import { PEAK_COLOURS, PEAK_DEFAULT, PeakHold, lumaPlane, measureRect, sharpness, type PeakColour, type Rect4 } from './focus';
+import { channelPlanes, measureNoise, noiseRows, quantFloorDb, type NoiseResult } from './noise';
+import { analyseShading, cellColour, cellDeviation, rampColour, shadingRows, type ShadingChannel, type ShadingResult } from './whiteShading';
+import { CLOUD_COLOURS, cloudRow, skinCloud, type SkinCloud } from './skinTone';
+import { TILE_HEAD, sanitizeTiles, tileAspect, tileGrid, tileLabel, tileSources, type TileSettings } from './tiles';
 
 export interface PanelState {
   scope: ScopeType; sourceId: string; gain: number; colorize: boolean; zoom: number;
@@ -99,10 +107,213 @@ export interface PanelState {
   clockOverlay?: boolean;
   /** light scopes (Opple Light Master, src/opple/scopes.ts) */
   light?: Partial<LightPanelOptions>;
+  /** simulcast deviation map (simulcastPanel.ts): stages compared, colour scale */
+  simulcast?: SimulcastSettings;
+  /** encoder confidence (encoderPanel.ts): programme source against this panel's source (the return) */
+  encoder?: EncoderSettings;
+  /** lens fingerprint (lensPanel.ts): lens, zoom, compared print */
+  lens?: LensSettings;
   /** zoom/pan from gestures (#89, view.ts); the 3D volume keeps its view in `cube` */
   view?: View;
   /** reference trace of the reference camera (ghost.ts) over this scope, with Δ levels */
   ghost?: boolean;
+  /** tile view (tiles.ts): inner scope and sources */
+  tiles?: TileSettings;
+  /** picture 'peaking' overlay (focus.ts): gradient threshold and colour */
+  peak?: { threshold?: number; colour?: PeakColour };
+  /** noise meter (noise.ts): remove a fitted shading surface before measuring (default on) */
+  noise?: { detrend?: boolean };
+  /** white-shading map (whiteShading.ts): mapped quantity, full scale in %, measuring frame only */
+  wshading?: { map?: ShadingChannel | 'colour'; scale?: number; roi?: boolean };
+  /** skin tone of all cameras (skinTone.ts): sources (empty = first eight) and vectorscope zoom */
+  skinall?: { sources?: string[]; zoom?: number };
+}
+
+/** Sources of the skin-tone panel (same choice rule as the tiles). */
+export function skinSources(p: PanelState, o: DrawOptions) {
+  const all = o.sourceList?.() ?? [];
+  return { all, list: tileSources(all.filter((s) => s.kind !== 'audio'), p.skinall?.sources ?? []) };
+}
+/** Skin cloud of a source: faces (face tracking) or the measuring frame, else the whole picture. */
+const cloudCache = new Map<string, { key: string; c: SkinCloud | null }>();
+export function skinCloudOf(src: Source, q: SkinRange): SkinCloud | null {
+  const b = baseOf(src), key = `${b.frameSeq}:${b.statsVersion}:${b.activeRois().flat().join(',')}:${q.lo}:${q.hi}:${q.tol}:${b.colorspace}`;
+  const hit = cloudCache.get(b.id);
+  if (hit?.key === key) return hit.c;
+  const { kr, kb } = LUMA[b.colorspace];
+  const c = skinCloud(b.roiSamples(15000), kr, kb, q);
+  cloudCache.set(b.id, { key, c });
+  return c;
+}
+
+function drawSkinAllPanel(ctx: CanvasRenderingContext2D, p: PanelState, body: Rect, o: DrawOptions) {
+  const { all, list } = skinSources(p, o);
+  const zoom = p.skinall?.zoom ?? 2;
+  const cs = list[0]?.colorspace ?? '709';
+  // vectorscope square on the left (wide) or on top (narrow), legend beside or below
+  const legendW = 470, wide = body.w > legendW + 220;
+  const side = wide ? Math.min(body.h - 16, body.w - legendW - 24) : Math.min(body.w - 16, body.h - 16 - (list.length + 2) * 15 - 12);
+  const r = { x: 8, y: 8, w: Math.max(40, side), h: Math.max(40, side) };
+  drawVectorGraticule(ctx, r, cs, zoom, o.skin.tol);
+  const refId = o.ref?.source()?.id;
+  const clouds = list.map((s) => ({ s, c: s.ready ? skinCloudOf(s, o.skin) : null }));
+  const ref = clouds.find((x) => x.s.id === refId && x.c)?.c ?? clouds.find((x) => x.c)?.c ?? null;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
+  clouds.forEach(({ c }, i) => {
+    if (!c) return;
+    ctx.fillStyle = CLOUD_COLOURS[i % CLOUD_COLOURS.length]; ctx.globalAlpha = 0.45;
+    for (const [cb, cr] of c.pts) { const [x, y] = vectorPoint(r, cb, cr, zoom); ctx.fillRect(x - 1, y - 1, 2, 2); }
+  });
+  ctx.globalAlpha = 1;
+  clouds.forEach(({ c }, i) => {
+    if (!c) return;
+    const [x, y] = vectorPoint(r, c.cb, c.cr, zoom);
+    ctx.strokeStyle = '#111'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(x - 8, y); ctx.lineTo(x + 8, y); ctx.moveTo(x, y - 8); ctx.lineTo(x, y + 8); ctx.stroke();
+    ctx.strokeStyle = CLOUD_COLOURS[i % CLOUD_COLOURS.length]; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x - 8, y); ctx.lineTo(x + 8, y); ctx.moveTo(x, y - 8); ctx.lineTo(x, y + 8); ctx.stroke();
+  });
+  ctx.restore();
+  const lx = wide ? r.x + r.w + 16 : 12, ly = wide ? 10 : r.y + r.h + 10;
+  ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillStyle = '#d6d6d6';
+  const head = wrapText(ctx, t('skinall.head', { zoom }), (wide ? body.w - lx : body.w - 24) - 8);
+  head.forEach((l, i) => ctx.fillText(l, lx, ly + i * 15));
+  const top = ly + head.length * 15 + 4;
+  if (!list.length) ctx.fillText(o.emptyText ?? t('panel.draw.addSource'), lx, top);
+  clouds.forEach(({ s, c }, i) => {
+    const y = top + i * 15;
+    ctx.fillStyle = CLOUD_COLOURS[i % CLOUD_COLOURS.length]; ctx.fillRect(lx, y + 2, 8, 8);
+    ctx.fillStyle = '#d6d6d6';
+    const label = `${all.indexOf(s) + 1} ${s.name}`.slice(0, 14).padEnd(14);
+    const where = s.faceTrack ? t('skinall.faces', { n: s.activeRois().length }) : s.roi ? t('skinall.frame') : t('skinall.whole');
+    ctx.fillText(c ? `${cloudRow(label, c, ref)}  ${where}` : `${label}  ${t('skinall.none')}  ${where}`, lx + 14, y);
+  });
+}
+
+/** Split a text line into lines of at most `maxW` px at spaces. */
+function wrapText(ctx: CanvasRenderingContext2D, line: string, maxW: number): string[] {
+  if (ctx.measureText(line).width <= maxW) return [line];
+  const out: string[] = []; let cur = '';
+  for (const w of line.split(' ')) { const next = cur ? `${cur} ${w}` : w; if (ctx.measureText(next).width > maxW && cur) { out.push(cur); cur = w; } else cur = next; }
+  return [...out, cur];
+}
+
+/** White-shading analysis of the whole picture (or the measuring frame), once per frame. */
+const shadingCache = new Map<string, { key: string; r: ShadingResult | null }>();
+export function shadingOf(src: Source, useRoi: boolean): ShadingResult | null {
+  const b = baseOf(src), f = b.cpuFrame();
+  if (!f) return null;
+  const roi = useRoi ? b.activeRois()[0] : undefined, sx = f.w / b.width, sy = f.h / b.height;
+  const rect: Rect4 = roi ? measureRect([roi[0] * sx, roi[1] * sy, roi[2] * sx, roi[3] * sy], f.w, f.h) : [0, 0, f.w, f.h];
+  const c = chainOf(src);
+  const key = `${b.frameSeq}:${rect.join(',')}:${f.w}:${b.colorspace}:${c?.sig ?? ''}`;
+  const hit = shadingCache.get(b.id);
+  if (hit?.key === key) return hit.r;
+  const { kr, kb } = LUMA[b.colorspace];
+  const decode = c ? ((px: ArrayLike<number>, i: number) => c.apply(f.decode(px, i)) as [number, number, number]) : f.decode;
+  const r = analyseShading(channelPlanes(f.px, f.w, decode, kr, kb, rect, 400_000));
+  shadingCache.set(b.id, { key, r });
+  return r;
+}
+
+function drawShadingPanel(ctx: CanvasRenderingContext2D, p: PanelState, src: Source, body: Rect) {
+  const o = p.wshading ?? {};
+  const map = o.map ?? 'Y', scale = (o.scale ?? 5) / 100;
+  const r = shadingOf(src, !!o.roi);
+  ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = '#d6d6d6';
+  if (!r) { ctx.fillText(t('noise.noData'), 12, 10); return; }
+  const rows = [t(map === 'colour' ? 'wshading.mapColour' : 'wshading.mapLevel', { ch: map === 'Y' ? 'Y′' : `${map}′`, scale: (scale * 100).toFixed(0) }), '', ...shadingRows(r, { flat: t('wshading.flat') }), '', t('wshading.read')];
+  // wide panel: map left, table right; narrow: map on top
+  const tableW = 360, wide = body.w > tableW + 260;
+  const area = wide ? { x: 8, y: 8, w: body.w - tableW - 24, h: body.h - 16 } : { x: 8, y: 8, w: body.w - 16, h: Math.max(60, body.h - rows.length * 15 - 28) };
+  const aspect = src.width && src.height ? src.width / src.height : 16 / 9;
+  let mw = area.w, mh = mw / aspect;
+  if (mh > area.h) { mh = area.h; mw = mh * aspect; }
+  const cw = mw / r.gx, ch = mh / r.gy;
+  for (let j = 0; j < r.gy; j++) for (let i = 0; i < r.gx; i++) {
+    const k = j * r.gx + i;
+    let rgb: [number, number, number];
+    if (map === 'colour') {
+      // cast of the cell against the field's own balance: R′ − G′ and B′ − G′, amplified to full scale
+      const [dr, db] = cellColour(r, k), a = 0.5 / scale;
+      rgb = [0.55 + dr * a, 0.55 - (dr + db) * a * 0.5, 0.55 + db * a].map((v) => Math.max(0, Math.min(1, v))) as [number, number, number];
+    } else rgb = rampColour(cellDeviation(r, map, k), scale);
+    ctx.fillStyle = `rgb(${rgb.map((v) => Math.round(v * 255)).join(',')})`;
+    ctx.fillRect(area.x + i * cw, area.y + j * ch, Math.ceil(cw), Math.ceil(ch));
+  }
+  if (map !== 'colour' && cw > 34 && ch > 14) {
+    ctx.fillStyle = 'rgba(10,10,12,0.85)'; ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let j = 0; j < r.gy; j++) for (let i = 0; i < r.gx; i++) {
+      const d = cellDeviation(r, map, j * r.gx + i) * 100;
+      ctx.fillText(`${d < -0.05 ? '−' : '+'}${Math.abs(d).toFixed(1)}`, area.x + (i + 0.5) * cw, area.y + (j + 0.5) * ch);
+    }
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1; ctx.strokeRect(area.x + 0.5, area.y + 0.5, mw - 1, mh - 1);
+  ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = '#d6d6d6';
+  const tx = wide ? area.x + mw + 16 : 12, ty = wide ? 10 : area.y + mh + 10;
+  // long text lines (not the table rows) wrap to the space beside or below the map
+  const maxW = (wide ? body.w - tx : body.w - 24) - 8;
+  rows.flatMap((l) => (l.startsWith('  ') || /^[YRGB]′/.test(l) ? [l] : wrapText(ctx, l, maxW))).forEach((l, i) => ctx.fillText(l, tx, ty + i * 15));
+}
+
+/** Noise of the measuring frame (centre third without one), once per frame and setting. */
+const noiseCache = new Map<string, { key: string; r: NoiseResult | null; rect: Rect4; scaled: boolean; fw: number; sw: number }>();
+export function noiseOf(src: Source, detrend: boolean) {
+  const b = baseOf(src), f = b.cpuFrame();
+  if (!f) return null;
+  const roi = b.activeRois()[0], sx = f.w / b.width, sy = f.h / b.height;
+  const rect = measureRect(roi ? [roi[0] * sx, roi[1] * sy, roi[2] * sx, roi[3] * sy] : null, f.w, f.h);
+  const key = `${b.frameSeq}:${rect.join(',')}:${f.w}:${detrend}:${b.colorspace}`;
+  const hit = noiseCache.get(b.id);
+  if (hit?.key === key) return hit;
+  const { kr, kb } = LUMA[b.colorspace];
+  const c = chainOf(src);
+  const decode = c ? ((px: ArrayLike<number>, i: number) => c.apply(f.decode(px, i)) as [number, number, number]) : f.decode;
+  const out = { key, r: measureNoise(channelPlanes(f.px, f.w, decode, kr, kb, rect), detrend), rect, scaled: f.w < (b.info?.sourceWidth ?? b.width) || f.w < b.width, fw: f.w, sw: Math.max(b.width, b.info?.sourceWidth ?? 0) };
+  noiseCache.set(b.id, out);
+  return out;
+}
+
+function drawNoisePanel(ctx: CanvasRenderingContext2D, p: PanelState, src: Source) {
+  const detrend = p.noise?.detrend !== false;
+  const m = noiseOf(src, detrend);
+  const lines = [src.name];
+  if (!m?.r) lines.push(t('noise.noData'));
+  else {
+    const [x0, y0, x1, y1] = m.rect;
+    lines.push(t(src.activeRois().length ? 'noise.region' : 'noise.regionCentre', { w: x1 - x0, h: y1 - y0 }) + (detrend ? ` · ${t('noise.detrendOn')}` : ''), '');
+    lines.push(...noiseRows(m.r, { level: t('noise.level'), sigma: 'σ %' }), '');
+    lines.push(t('noise.snr', { db: Number.isFinite(m.r.Y.db) ? (-m.r.Y.db).toFixed(1) : '∞' }));
+    const floor = src.yuv ? quantFloorDb(src.yuv.bits, !src.yuv.full) : quantFloorDb(src.depth === 16 ? 16 : 8, false);
+    lines.push(t('noise.floor', { db: floor.toFixed(1) }));
+    if (m.scaled) lines.push(t('noise.scaled', { w: m.fw, src: m.sw }));
+  }
+  ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.fillStyle = '#d6d6d6'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  lines.forEach((l, i) => ctx.fillText(l, 12, 10 + i * 15));
+}
+
+/** Focus value per source: last frame's sharpness and the peak hold (focus.ts). */
+const focusState = new Map<string, { key: string; value: number; hold: PeakHold }>();
+/** Start the focus peak hold of a source over. */
+export function resetFocusPeak(id: string) { focusState.get(id)?.hold.reset(); }
+/** Sharpness of the measuring frame (centre third without one) and its peak since reset; region in source pixels. */
+export function focusOf(src: Source): { value: number; peak: number; rect: Rect4 } | null {
+  const b = baseOf(src), f = b.cpuFrame();
+  if (!f) return null;
+  const roi = b.activeRois()[0];
+  const sx = f.w / b.width, sy = f.h / b.height;
+  const rect = measureRect(roi ? [roi[0] * sx, roi[1] * sy, roi[2] * sx, roi[3] * sy] : null, f.w, f.h);
+  const st = focusState.get(b.id) ?? { key: '', value: 0, hold: new PeakHold() };
+  focusState.set(b.id, st);
+  const key = `${b.frameSeq}:${rect.join(',')}:${f.w}`;
+  if (st.key !== key) {
+    const { kr, kb } = LUMA[b.colorspace];
+    st.value = sharpness(lumaPlane(f.px, f.w, f.decode, kr, kb, rect));
+    st.key = key;
+  }
+  return { value: st.value, peak: st.hold.update(`${rect.join(',')}:${f.w}`, st.value), rect: [rect[0] / sx, rect[1] / sy, rect[2] / sx, rect[3] / sy] };
 }
 
 // ------------------------------------------------------------------ zoom and pan (#89)
@@ -168,6 +379,46 @@ export interface DrawOptions {
   sourceById?: (id: string) => Source | null;
   /** reference camera (ghost.ts); functions are left out of the panel signature, `sig` stands in */
   ref?: RefDraw;
+  /** all sources in list order (tile view: which sources, camera numbers) */
+  sourceList?: () => Source[];
+}
+
+/** Sources of a tile panel with their camera number (index in the source list). */
+export function tilePlan(p: PanelState, body: { w: number; h: number }, o: DrawOptions) {
+  const ts = sanitizeTiles(p.tiles);
+  const all = o.sourceList?.() ?? [];
+  const list = tileSources(all.filter((s) => s.kind !== 'audio'), ts.sources);
+  const cells = tileGrid(list.length, body.w, body.h, tileAspect(ts.scope));
+  return { ts, cells, tiles: list.map((s, i) => ({ src: s, no: all.indexOf(s), cell: cells[i], sub: { ...p, scope: ts.scope, sourceId: s.id, tiles: undefined, view: undefined } as PanelState })) };
+}
+/** Body rect of one tile's scope (below its ID strip), absolute like `body`. */
+const tileBody = (body: Rect, c: Rect): Rect => ({ x: body.x + c.x, y: body.y + c.y + TILE_HEAD, w: c.w, h: Math.max(1, c.h - TILE_HEAD) });
+
+function drawTiles(renderer: Renderer, ctx: CanvasRenderingContext2D, key: string, p: PanelState, body: Rect, o: DrawOptions) {
+  renderer.clearRect(body);
+  const { tiles } = tilePlan(p, body, o);
+  if (!tiles.length) {
+    ctx.fillStyle = '#6b7078'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(o.emptyText ?? t('panel.draw.addSource'), body.w / 2, body.h / 2);
+    return;
+  }
+  tiles.forEach(({ src, no, cell, sub }, i) => {
+    const inner = tileBody(body, cell);
+    renderer.clearRect(inner, [0.043, 0.047, 0.055]);
+    ctx.save();
+    ctx.translate(cell.x, cell.y + TILE_HEAD);
+    ctx.beginPath(); ctx.rect(0, 0, inner.w, inner.h); ctx.clip();
+    drawPanel(renderer, ctx, `${key}#t${i}`, sub, src, inner, o);
+    ctx.restore();
+    // camera ID strip
+    ctx.fillStyle = '#1c1f24'; ctx.fillRect(cell.x, cell.y, cell.w, TILE_HEAD);
+    ctx.fillStyle = '#e8e8e8'; ctx.font = '600 11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const label = tileLabel(no, src.name);
+    let text = label;
+    while (text.length > 4 && ctx.measureText(text).width > cell.w - 12) text = `${text.slice(0, -2)}…`;
+    ctx.fillText(text, cell.x + 6, cell.y + TILE_HEAD / 2 + 0.5);
+    if (src.status !== 'live' && !src.ready) { ctx.fillStyle = '#c8892b'; ctx.fillRect(cell.x + cell.w - 8, cell.y + 6, 5, 5); }
+  });
 }
 
 /** The reference as the panels see it. */
@@ -293,11 +544,25 @@ function drawAbLabels(ctx: CanvasRenderingContext2D, r: Rect, ab: NonNullable<Pa
   ctx.restore();
 }
 
-export function panelSignature(p: PanelState, src: Source | null, body: Rect, o: DrawOptions) {
+export function panelSignature(p: PanelState, src: Source | null, body: Rect, o: DrawOptions): string {
+  if (p.scope === 'skinall') {
+    const { all, list } = skinSources(p, o);
+    return `K|${list.map((s) => `${all.indexOf(s)}:${s.name}:${s.id}:${s.frameSeq}:${s.statsVersion}:${s.status}:${s.faceMode}:${s.activeRois().flat().join(',')}`).join(';')}|${JSON.stringify(p)}|${JSON.stringify(o.skin)}|${o.ref?.source()?.id ?? ''}|${body.x},${body.y},${body.w},${body.h}`;
+  }
+  if (p.scope === 'tiles') {
+    const plan = tilePlan(p, body, o);
+    return `T|${plan.tiles.map(({ src: s, no, cell, sub }) => `${no}:${s.name}:${panelSignature(sub, s, tileBody(body, cell), o)}`).join('||')}|${body.w}x${body.h}`;
+  }
   // clocks run: redraw at 25 Hz
   const tick = p.scope === 'clock' || (p.scope === 'picture' && p.clockOverlay) ? `|t${Math.floor(performance.now() / 40)}`
     // QC log: new events, and the durations of active ones once a second
     : p.scope === 'genlock' ? `|g${Math.floor(Date.now() / 250)}`
+    // simulcast map: chain settings of other stages can change without a new frame
+    : p.scope === 'simulcast' ? `|s${Math.floor(Date.now() / 500)}`
+    // encoder confidence samples programme and return while it is drawn: 25 Hz
+    : p.scope === 'encoder' ? `|e${Math.floor(Date.now() / 40)}`
+    // lens fingerprint: stored prints can change without a new frame
+    : p.scope === 'lens' ? `|l${Math.floor(Date.now() / 500)}`
     : p.scope === 'qclog' ? `|q${qcLog.version}:${Math.floor(Date.now() / 1000)}` : '';
   if (p.scope === 'clock') return `C|${src?.id}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}${tick}`;
   if (isLight(p.scope)) return `${lightSignature(p.scope, p.light, body.w, body.h)}|${body.x},${body.y}`;
@@ -365,6 +630,23 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   if (isLight(p.scope)) {
     renderer.clearRect(body);
     drawLightPanel(ctx, p.scope, p.light, body.w, body.h);
+    return;
+  }
+  if (p.scope === 'tiles') { drawTiles(renderer, ctx, key, p, body, o); return; }
+  if (p.scope === 'skinall') { renderer.clearRect(body); drawSkinAllPanel(ctx, p, body, o); return; }
+  if (p.scope === 'lens') {
+    renderer.clearRect(body);
+    drawLensPanel(ctx, body.w, body.h, p.lens, src, o.emptyText ?? t('panel.draw.addSource'));
+    return;
+  }
+  if (p.scope === 'encoder') {
+    renderer.clearRect(body);
+    drawEncoderPanel(ctx, body.w, body.h, p.encoder, src, o.sourceById ?? (() => null), o.emptyText ?? t('panel.draw.addSource'));
+    return;
+  }
+  if (p.scope === 'simulcast') {
+    renderer.clearRect(body);
+    drawSimulcastPanel(ctx, body.w, body.h, p.simulcast, src, o.emptyText ?? t('panel.draw.addSource'));
     return;
   }
   if (src) src = stageView(src, p.stage ?? o.stage ?? 'signal');
@@ -476,6 +758,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       mode: p.picture, bands: FALSE_COLOR_PRESETS[o.falsePreset] ?? [], zebra: o.zebra, zebraLow: o.zebraLow,
       roi: s.activeRois(), skin: p.picture === 'green' ? greenOf(o) : o.skin, display: displayParams(s, o.display, o.hdrPreview), warn: warnMatrix(s, p.gamutTarget),
       ...(p.picture === 'neutral' ? { neutral: neutralParams(p) } : {}),
+      ...(p.picture === 'peaking' ? { peaking: { threshold: p.peak?.threshold ?? PEAK_DEFAULT.threshold, colour: PEAK_COLOURS[p.peak?.colour ?? PEAK_DEFAULT.colour] } } : {}),
       ...(rgcOn ? { rgc: { toAp1: gamutConvert(GAMUTS[s.gamut], GAMUTS.ap1), fromAp1: gamutConvert(GAMUTS.ap1, GAMUTS[s.gamut]) } } : {}),
     });
     const ab = p.ab && p.ab.mode !== 'off' ? p.ab : null;
@@ -546,6 +829,24 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
         ctx.fillStyle = '#ddd'; ctx.fillText(label, frame.x + 18, y);
       });
     }
+    if (p.picture === 'peaking') {
+      const fv = focusOf(src);
+      if (fv) {
+        if (!src.activeRois().length) {
+          // the centre third that is measured without a measuring frame
+          const [x0, y0, x1, y1] = fv.rect;
+          ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+          ctx.strokeRect(r.x + (x0 / src.width) * r.w, r.y + (y0 / src.height) * r.h, ((x1 - x0) / src.width) * r.w, ((y1 - y0) / src.height) * r.h);
+          ctx.setLineDash([]);
+        }
+        const lines = [t('focus.value', { value: fv.value.toFixed(1), peak: fv.peak.toFixed(1), pct: fv.peak > 0 ? Math.round((fv.value / fv.peak) * 100) : 0 })];
+        drawTextBox(ctx, frame.x + 6, frame.y + frame.h - 6 - lines.length * 15 - 8, lines);
+        // bar: current value against the peak hold
+        const bw = 120, bx = frame.x + 6, by = frame.y + frame.h - 6 - lines.length * 15 - 16;
+        ctx.fillStyle = 'rgba(8,9,11,0.78)'; ctx.fillRect(bx, by, bw, 6);
+        ctx.fillStyle = '#e8e8e8'; ctx.fillRect(bx, by, fv.peak > 0 ? (bw * fv.value) / fv.peak : 0, 6);
+      } else drawTextBox(ctx, frame.x + 6, frame.y + frame.h - 29, [t('panel.draw.noCpu')]);
+    }
     if (p.picture === 'neutral') {
       const np = neutralParams(p), nc = src.neutralCast(np.threshold, np.lo, np.hi);
       const lines = [t('panel.draw.nearNeutral', { sat: (np.threshold * 100).toFixed(0), lo: (np.lo * 100).toFixed(0), hi: (np.hi * 100).toFixed(0) }),
@@ -576,6 +877,10 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     if (p.audioBar !== false && src.audio) drawAudioBar(ctx, src.audio, frame);
   } else if (p.scope === 'match') {
     drawMatchPanel(ctx, body.w, body.h, p.match, src, matchCtx(o));
+  } else if (p.scope === 'wshading') {
+    drawShadingPanel(ctx, p, src, body);
+  } else if (p.scope === 'noise') {
+    drawNoisePanel(ctx, p, src);
   } else if (p.scope === 'stats') {
     const lines = statsLines(src, o.displayFps);
     if (probeRgb) lines.push('', t('settings.stage.point'), ...[...probeLines(src, probeRgb, o.unit), ...deLines(src, probeRgb, o)]);

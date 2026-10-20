@@ -58,7 +58,9 @@ describe('bridge: PTS and local audio devices (#24)', () => {
     expect(deviceArgs('audio:avfoundation:MacBook Pro-Mikrofon')).toEqual(['-f', 'avfoundation', '-i', ':MacBook Pro-Mikrofon']);
     expect(deviceArgs('audio:dshow:Dante Virtual Soundcard (x64)#ch=16')).toEqual(['-f', 'dshow', '-channels', '16', '-i', 'audio=Dante Virtual Soundcard (x64)']);
     expect(deviceArgs('device:dshow:Decklink#audio=Decklink Audio', '25')).toContain('video=Decklink:audio=Decklink Audio');
-    expect(deviceArgs('device:v4l2:/dev/video0#audio=hw:1,0#ch=8', '25')).toEqual(['-f', 'v4l2', '-framerate', '25', '-i', '/dev/video0', '-f', 'alsa', '-channels', '8', '-i', 'hw:1,0']);
+    expect(deviceArgs('device:v4l2:/dev/video0#audio=hw:1,0#ch=8', '25')).toEqual(['-f', 'v4l2', '-framerate', '25', '-i', '/dev/video0', '-f', 'alsa', '-ac', '8', '-i', 'hw:1,0']);
+    // FFmpeg 7+ ALSA has no `channels` option any more, only ch_layout (filled by -ac)
+    expect(deviceArgs('audio:alsa:hw:1,0#ch=8')).toEqual(['-f', 'alsa', '-ac', '8', '-i', 'hw:1,0']);
     expect(audioMap('device:v4l2:/dev/video0#audio=hw:1,0')).toBe('1:a:0');
     expect(audioMap('device:avfoundation:X#audio=Y')).toBe('0:a:0');
     expect(parseDevice('audio:alsa:hw:1,0')?.audio).toBe('hw:1,0');
@@ -77,7 +79,7 @@ describe('bridge: PTS and local audio devices (#24)', () => {
   it('reads the input devices of an ffmpeg (-devices): ALSA only offered when the build has it', async () => {
     // @ts-expect-error plain JS module
     const { parseInputDevices } = await import('../server/index.mjs');
-    // layout of `ffmpeg -hide_banner -devices` (9.0.2, stdout); the shipped Linux build lists fbdev and v4l2, no alsa
+    // layout of `ffmpeg -hide_banner -devices` (9.0.2, stdout) of a build without ALSA (e.g. $FFMPEG pointing elsewhere)
     const out = 'Devices:\n D. = Demuxing supported\n .E = Muxing supported\n ---\n DE fbdev           Linux framebuffer\n D  lavfi           Libavfilter virtual input device\n DE video4linux2,v4l2 Video4Linux2 output device\n  E audiotoolbox    AudioToolbox output device\n';
     const d = parseInputDevices(out);
     expect([...d].sort()).toEqual(['fbdev', 'lavfi', 'v4l2', 'video4linux2']);

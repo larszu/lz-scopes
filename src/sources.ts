@@ -15,6 +15,7 @@ import { meanLuma } from './luma';
 import { t } from './i18n';
 import { bridgeMessage } from './i18n/bridgeMessage';
 import { streamRoute } from './streamRoute';
+import { FrameHistory, pickFrame } from './record/sync';
 
 export { meanLuma };
 
@@ -60,6 +61,8 @@ export interface SourceSettings {
   lowLatency?: boolean;
   /** this source's own low-latency settings; missing fields follow the global ones */
   ll?: Partial<LowLatencyConfig>;
+  /** bridge: keep a ring buffer for "save the last … s" (src/record/record.ts) */
+  ring?: boolean;
 }
 
 export interface StreamInfo {
@@ -496,8 +499,9 @@ export class Source {
           this.rtpStats = msg.rtp ?? null;
           this.phase = msg.phase ?? null;
           if (msg.rec) Source.onRecord?.(this, msg.rec);
+          if (msg.ring) Source.onRecord?.(this, msg.ring);
           if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', bridgeMessage(msg));
-        } else if (msg.type === 'record') {
+        } else if (msg.type === 'record' || msg.type === 'ring' || msg.type === 'playback') {
           // local recording in the bridge (server/recorder.mjs)
           Source.onRecord?.(this, msg);
         } else if (msg.type === 'resolve') {
@@ -538,6 +542,7 @@ export class Source {
         }
         if (this.frozen) return;
         this.data = px;
+        this.held.push(px);
         this.tick();
         this.latency.onFrame(ev.meta);
         Source.onArrive?.(this);
@@ -545,6 +550,7 @@ export class Source {
       }
       if (this.frozen) return;
       this.data = this.depth === 16 ? new Uint16Array(buf) : new Uint8Array(buf);
+      this.held.push(this.data);
       this.tick();
       this.latency.onFrame(ev.meta);
       Source.onArrive?.(this);
@@ -557,6 +563,17 @@ export class Source {
   resolveRoute: ResolveRoute | null = null;
   /** a 'resolve' message of the bridge arrived (main.ts → src/resolvePlayback.ts) */
   static onResolve: ((s: Source, msg: { state: 'playing' | 'paused'; played?: boolean; project?: string | null }) => void) | null = null;
+  /** last raw frames with their arrival time, for "freeze all" with latency compensation (#140 step 2) */
+  readonly held = new FrameHistory<Uint8Array | Uint16Array>();
+  /**
+   * Freeze on the held frame closest to scene moment `scene` (wall ms); this source shows the
+   * scene `latencyMs` late. Element sources (camera, files in the page) freeze on their current picture.
+   */
+  freezeAt(scene: number, latencyMs: number) {
+    const f = this.data ? pickFrame(this.held.frames, scene, latencyMs) : null;
+    if (f && f.frame !== this.data && f.frame.length === this.data!.length) { this.data = f.frame; this.frameSeq++; }
+    this.frozen = true;
+  }
   /** a recording message of the bridge arrived (src/record/record.ts) */
   static onRecord: ((s: Source, msg: Record<string, unknown>) => void) | null = null;
   /** Send a text message on this source's bridge connection; false without one. */
@@ -916,6 +933,7 @@ export class Source {
     if (this.videoEl) { this.videoEl.pause(); this.videoEl.srcObject = null; this.videoEl = null; }
     if (this.objectUrl) { URL.revokeObjectURL(this.objectUrl); this.objectUrl = null; }
     this.history.clear();
+    this.held.clear();
     this.element = null; this.data = null; this.yuv = null; this.info = null; this.tc = null; this.width = 0; this.height = 0; this.stats = null;
     this.fps = 0; this.dropped = 0;
     if (this.status !== 'idle') this.set('idle');

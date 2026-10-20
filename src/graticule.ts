@@ -12,14 +12,15 @@ import type { Source } from './sources';
 import { CUBE_SPACE_LABELS, SIGNAL_SPACES, cubeProject, cubeRotation, cubeWireframe, qFromChl, qFromHsv, qFromIctcp, qFromLab, qFromRgb, qFromXyz, qFromYcc, type CubeSettings } from './cube';
 import { t, type Key } from './i18n';
 import { bridgeText } from './i18n/bridgeMessage';
+import { stopLabel, stopTicks, stopsOf } from './stops';
 
-export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'hls' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats'
-  | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock' | 'genlock'
+export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'hls' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats' | 'tiles' | 'noise' | 'wshading' | 'skinall'
+  | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock' | 'genlock' | 'simulcast' | 'encoder' | 'lens'
   | 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map' | 'light-spectrum' | 'light-swatch';
-export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits';
+export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits' | 'stop';
 
 const SCOPE_IDS: ScopeType[] = [
-  'picture', 'wf-luma', 'wf-color', 'wf-skin', 'wf-green', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'hls', 'cie', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'qclog', 'timeline', 'hist', 'stats', 'match',
+  'picture', 'wf-luma', 'wf-color', 'wf-skin', 'wf-green', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'hls', 'cie', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'qclog', 'timeline', 'hist', 'stats', 'match', 'simulcast', 'encoder', 'lens', 'tiles', 'noise', 'wshading', 'skinall',
   'audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check', 'clock', 'genlock',
   // Opple Light Master (src/opple/scopes.ts, LIGHT_LABELS)
   'light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch',
@@ -107,6 +108,7 @@ export function channelLayout(scope: ScopeType, ch: WaveChannels = {}): { sec: n
 
 export function waveTicks(unit: Unit, transfer: Transfer, lw = 1000, range: WaveRange = WAVE_ZOOMS.full): { level: number; label: string; major: boolean }[] {
   const [lo, hi] = range, inRange = (t: { level: number }) => t.level >= lo - 1e-9 && t.level <= hi + 1e-9;
+  if (unit === 'stop') return stopTicks(transfer, range);
   if (hi - lo < 0.5) {
     // zoomed: fine ticks
     if (unit === 'nits') {
@@ -212,7 +214,7 @@ export function drawWaveGraticule(ctx: CanvasRenderingContext2D, scope: ScopeTyp
   }
   ctx.fillStyle = LABEL; ctx.textAlign = 'right';
   const nits = isLog(transfer) ? t('scope.unitScene') : `cd/m² ${transferLabel(transfer)}${transfer === 'hlg' && (o.lw ?? 1000) !== 1000 ? ` ${o.lw}` : ''}`;
-  ctx.fillText(unit === 'nits' ? nits : unit === 'percent' ? '%' : unit === 'bit8' ? '8 bit' : '10 bit', r.x + r.w - 4, r.y + 2);
+  ctx.fillText(unit === 'nits' ? nits : unit === 'stop' ? t('scope.unitStop', { curve: transferLabel(transfer) }) : unit === 'percent' ? '%' : unit === 'bit8' ? '8 bit' : '10 bit', r.x + r.w - 4, r.y + 2);
 }
 
 /** Luma window of the skin waveform (or, with green = true, of the green qualifier). */
@@ -605,7 +607,7 @@ const pct = (v: number) => `${(v * 100).toFixed(1)} %`;
 export function probeLines(src: Source, rgb: [number, number, number], unit: Unit): string[] {
   const { y, cb, cr } = ycbcr(rgb[0], rgb[1], rgb[2], src.colorspace);
   const bits = unit === 'bit8' ? 8 : 10;
-  const fmt = (v: number) => (unit === 'percent' || unit === 'nits' ? (v * 100).toFixed(1) : Math.round(codeValue(v, bits)).toString());
+  const fmt = (v: number) => (unit === 'percent' || unit === 'nits' || unit === 'stop' ? (v * 100).toFixed(1) : Math.round(codeValue(v, bits)).toString());
   const lines = [
     `x ${src.probe!.x}  y ${src.probe!.y}`,
     `R ${fmt(rgb[0])}  G ${fmt(rgb[1])}  B ${fmt(rgb[2])}`,
@@ -613,6 +615,7 @@ export function probeLines(src: Source, rgb: [number, number, number], unit: Uni
     hexLine(rgb, src),
   ];
   if (!isGamma(src.transfer) || unit === 'nits') lines.push(`≈ ${levelText(y, src.transfer, src.hlgLw)}`);
+  if (unit === 'stop') lines.push(t('scope.probeStop', { stops: stopLabel(stopsOf(y, src.transfer)) }));
   return lines;
 }
 

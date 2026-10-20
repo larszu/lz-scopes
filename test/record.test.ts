@@ -20,7 +20,7 @@ const ffmpeg = shippedFfmpeg ?? '';
 const ffprobe = ffmpeg.replace(/ffmpeg(\.exe)?$/, (m) => m.replace('ffmpeg', 'ffprobe'));
 const tmp: string[] = [];
 const tempDir = () => { const d = mkdtempSync(join(tmpdir(), 'lzs-rec-')); tmp.push(d); return d; };
-afterAll(() => { for (const d of tmp) rmSync(d, { recursive: true, force: true }); });
+afterAll(() => { for (const d of tmp) rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); });
 
 describe('target folders', () => {
   it('released roots: unique names, flags and environment', () => {

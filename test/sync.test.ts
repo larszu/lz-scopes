@@ -12,7 +12,7 @@ import { shippedFfmpeg } from './shippedFfmpeg';
 
 const tmp: string[] = [];
 const tempDir = () => { const d = mkdtempSync(join(tmpdir(), 'lzs-sync-')); tmp.push(d); return d; };
-afterAll(() => { for (const d of tmp) rmSync(d, { recursive: true, force: true }); });
+afterAll(() => { for (const d of tmp) rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); });
 
 describe('freeze all with latency compensation', () => {
   it('common moment = now − the largest latency; unknown latency counts as 0', () => {
@@ -122,7 +122,8 @@ describe('recordings as sources', () => {
       for (const ws of [a, b]) ws.send(JSON.stringify({ type: 'play', t: 10_000, at }));
       await new Promise((r) => setTimeout(r, 3800));
       // A: 3 s from `at`; B: its scene starts 1 s later, so its first frame comes 1 s after A's
-      expect(Math.abs(arrivals.a[0] - at)).toBeLessThan(120);
+      // absolute start: Windows needs noticeably longer to launch the decoding ffmpeg
+      expect(Math.abs(arrivals.a[0] - at)).toBeLessThan(process.platform === 'win32' ? 400 : 120);
       expect(Math.abs(arrivals.b[0] - arrivals.a[0] - 1000)).toBeLessThan(120);
       // paced at 25 fps, not as fast as ffmpeg decodes
       expect(arrivals.a.length).toBeGreaterThan(65);

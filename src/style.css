@@ -386,3 +386,15 @@ button.rec.on::before { content: ''; display: inline-block; width: 8px; height: 
 .pb-bar .pb-pos { width: 100%; }
 .pb-time { color: var(--text-muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .pb-take { border-top: 1px solid var(--line-1); padding: 6px 0; display: flex; flex-direction: column; gap: 4px; }
+
+/* A/V offset from a clip (#153) */
+.avclip-drop { display: grid; justify-items: center; gap: 12px; padding: 24px 16px; border: 1.5px dashed var(--line, currentColor); border-radius: var(--radius-l, 20px); text-align: center; }
+.avclip-drop.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.avclip-out { margin-top: 16px; }
+.avclip-out progress { width: 100%; }
+.avclip-card { padding: 16px; border-radius: var(--radius-l, 20px); border-left: 4px solid var(--accent); }
+.avclip-card.ok { border-left-color: var(--ok); }
+.avclip-card.warn { border-left-color: var(--warn); }
+.avclip-card.bad { border-left-color: var(--err); }
+.avclip-verdict { font-weight: 650; font-size: 1.125rem; margin: 0; }
+.avclip-big { font-size: clamp(1.5rem, 2vw + 1rem, 2rem); font-weight: 700; font-variant-numeric: tabular-nums; margin: 4px 0 8px; }

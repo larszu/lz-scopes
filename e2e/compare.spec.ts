@@ -126,6 +126,30 @@ test('Rauschmessung: Panel zeigt die Tabelle ohne Fehler', async () => {
   expect(errors).toEqual([]);
 });
 
+test('Shading-Assistent: Ablauf mit Schritten, Weiter hakt ab', async () => {
+  const errors: string[] = [];
+  a.page.on('pageerror', (e) => errors.push(e.message));
+  expectOk(await a.control({ cmd: 'pattern.select', pattern: 'black' }));
+  await singlePanel(a, 'shguide');
+  const rows = () => a.page.evaluate(() => {
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4)!;
+    const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
+    const dpr = c.width / c.getBoundingClientRect().width;
+    const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, Math.round(300 * dpr), Math.round(300 * dpr)).data;
+    const w = Math.round(300 * dpr), lit = new Set<number>();
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 128) lit.add(Math.floor((i >> 2) / w / (15 * dpr)));
+    return lit.size;
+  });
+  // camera line, progress, seven steps, instruction, values, state
+  await until(async () => (await rows()) >= 12, 30_000, 'Zeilen des Ablaufs');
+  await a.page.locator('.panel .pop-trigger:not(.help-trigger) >> visible=true').first().click();
+  await a.page.locator('.panel .popover:popover-open [data-shguide-next]').click();
+  await a.page.keyboard.press('Escape');
+  const st = await a.page.evaluate(() => JSON.stringify(localStorage));
+  expect(st).toContain('blackBal');
+  expect(errors).toEqual([]);
+});
+
 test('White-Shading-Karte: Grauverlauf links dunkler (blau), rechts heller (warm)', async () => {
   expectOk(await a.control({ cmd: 'pattern.select', pattern: 'ramp' }));
   await singlePanel(a, 'wshading');

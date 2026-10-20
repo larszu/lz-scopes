@@ -277,5 +277,11 @@ export default {
   'help.lens.try': "Camera on an evenly lit white card or diffuser (fill the frame, slightly defocused), enter lens and zoom in ⚙, \"Store fingerprint\". Zoom in, store a second one, then zoom back.",
   'help.lens.check': "back at the first zoom the panel picks that fingerprint and the Δ rows are near 0.",
   'help.lens.pitfall': "Uneven light looks like lens shading – the field has to be even to a fraction of a percent (Tektronix: ±0.5 % typical with a diffuser).",
+  'help.shguide.one': "Guided shading sequence with live measurement: black, black balance, flare, grey scale, white, knee, matrix – plus the camera data of the Touch Shading target.",
+  'help.shguide.what': "For whoever shades without a mentor: each step says what to put in front of the lens, measures the measuring frame and names the control to turn and in which direction.",
+  'help.shguide.read': "Y′ and R′−G′ / B′−G′ in the measuring frame; knee: peak and clipped share of the whole picture; flare: ΔY′ and chroma shift between black with iris closed and open.",
+  'help.shguide.try': "\"Black\" test pattern, step 1, then \"Grey 50 %\" for step 4.",
+  'help.shguide.check': "With \"Black\" step 2 reads ✓ (R′−G′ and B′−G′ +0.0 %); with \"Grey 50 %\" step 4 reads Y′ about 50 % and ✓.",
+  'help.shguide.pitfall': "The flare step needs a really black object; a dark grey shows as flare.",
   // --- end scope texts ---
 } satisfies Messages;

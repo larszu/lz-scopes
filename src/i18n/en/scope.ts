@@ -96,4 +96,5 @@ export default {
   'scope.chplot.diagonal': 'diagonal = equal channels',
   'gesture.chipTitle': 'Zoomed view. Click here or double-click the scope to reset. Wheel or pinch = zoom; ⇧ or middle button + drag, two-finger scroll = pan',
   'scope.satlum.axes': 'Saturation % (|CbCr|)  vs  luma Y′ %',
+  'scope.name.shguide': "Shading Assistant",
 } as const satisfies Messages;

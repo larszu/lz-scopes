@@ -97,4 +97,5 @@ export default {
   'scope.chplot.diagonal': 'Diagonale = gleiche Kanäle',
   'gesture.chipTitle': 'Vergrößerte Ansicht. Hier klicken oder im Scope doppelklicken zum Zurücksetzen. Rad oder Pinch = Zoom; ⇧ oder mittlere Taste + ziehen, Zwei-Finger-Scroll = schieben',
   'scope.satlum.axes': 'Sättigung % (|CbCr|)  über  Luma Y′ %',
+  'scope.name.shguide': "Shading-Assistent",
 } satisfies Translation<typeof en>;

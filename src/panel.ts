@@ -41,6 +41,7 @@ import { t } from './i18n';
 import { IDENTITY, isIdentity, viewRect, waveRange, type View, type ViewLimits } from './view';
 import { GHOST_CSS, GHOST_TINT, deltaRows, ghostChannels, hasGhost, histOf, levelDeltas, traceLevels } from './ghost';
 import { LUMA } from './color';
+import { drawGuidePanel, type GuideState } from './shading/guidePanel';
 import { PEAK_COLOURS, PEAK_DEFAULT, PeakHold, lumaPlane, measureRect, sharpness, type PeakColour, type Rect4 } from './focus';
 import { channelPlanes, measureNoise, noiseRows, quantFloorDb, type NoiseResult } from './noise';
 import { analyseShading, cellColour, cellDeviation, rampColour, shadingRows, type ShadingChannel, type ShadingResult } from './whiteShading';
@@ -131,6 +132,8 @@ export interface PanelState {
   skinall?: { sources?: string[]; zoom?: number };
   /** colour-chart match matrix (match/chartPanel.ts): sources, corners per source, tolerance */
   chart?: ChartSettings;
+  /** shading assistant (src/shading/guidePanel.ts, #151) */
+  shguide?: GuideState;
 }
 
 /** Sources of the skin-tone panel (same choice rule as the tiles). */
@@ -202,7 +205,7 @@ function drawSkinAllPanel(ctx: CanvasRenderingContext2D, p: PanelState, body: Re
 }
 
 /** Split a text line into lines of at most `maxW` px at spaces. */
-function wrapText(ctx: CanvasRenderingContext2D, line: string, maxW: number): string[] {
+export function wrapText(ctx: CanvasRenderingContext2D, line: string, maxW: number): string[] {
   if (ctx.measureText(line).width <= maxW) return [line];
   const out: string[] = []; let cur = '';
   for (const w of line.split(' ')) { const next = cur ? `${cur} ${w}` : w; if (ctx.measureText(next).width > maxW && cur) { out.push(cur); cur = w; } else cur = next; }
@@ -908,6 +911,8 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     drawShadingPanel(ctx, p, src, body);
   } else if (p.scope === 'noise') {
     drawNoisePanel(ctx, p, src);
+  } else if (p.scope === 'shguide') {
+    drawGuidePanel(ctx, p.shguide ?? {}, src, body.w, wrapText);
   } else if (p.scope === 'stats') {
     const lines = statsLines(src, o.displayFps);
     if (probeRgb) lines.push('', t('settings.stage.point'), ...[...probeLines(src, probeRgb, o.unit), ...deLines(src, probeRgb, o)]);

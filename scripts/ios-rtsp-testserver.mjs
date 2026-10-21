@@ -36,17 +36,25 @@ const procs = [spawn(MTX, [join(dir, 'mediamtx.yml')], { cwd: dir, stdio: 'inher
 const stop = () => { for (const p of procs) p.kill('SIGKILL'); rmSync(dir, { recursive: true, force: true }); process.exit(0); };
 process.on('SIGINT', stop); process.on('SIGTERM', stop);
 
-const src = ['-hide_banner', '-loglevel', 'error', '-re', '-f', 'lavfi', '-i', `smptehdbars=size=${size}:rate=25`,
+// Encode a short loop once and publish it by stream copy: live x265 at 25 fps did not keep up on
+// the CI runner next to the booting simulators, mediamtx dropped the publisher (broken pipe) and
+// /hevc answered 404 for whole stretches. Copying costs no CPU, so the streams stay up.
+const src = ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', `smptehdbars=size=${size}:rate=25:duration=4`,
   '-vf', 'setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709', '-pix_fmt', 'yuv420p', '-g', '25', '-bf', '0'];
 const enc = {
   h264: ['-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency'],
   hevc: ['-c:v', 'libx265', '-preset', 'ultrafast', '-tune', 'zerolatency', '-x265-params', 'log-level=error:bframes=0'],
 };
+for (const codec of ['h264', 'hevc']) {
+  const r = spawnSync(FFMPEG, [...src, ...enc[codec], '-y', join(dir, `${codec}.mkv`)], { stdio: 'inherit' });
+  if (r.status !== 0) { console.error(`encoding the ${codec} loop failed`); stop(); }
+}
 setTimeout(() => {
   for (const [path, codec] of [['h264', 'h264'], ['hevc', 'hevc'], ['auth', 'h264']]) {
     // restart a publisher that dies (mediamtx not ready yet)
     const run = () => {
-      const p = spawn(FFMPEG, [...src, ...enc[codec], '-f', 'rtsp', '-rtsp_transport', 'tcp', `rtsp://127.0.0.1:${port}/${path}`], { stdio: 'inherit' });
+      const p = spawn(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-re', '-stream_loop', '-1', '-i', join(dir, `${codec}.mkv`),
+        '-c', 'copy', '-f', 'rtsp', '-rtsp_transport', 'tcp', `rtsp://127.0.0.1:${port}/${path}`], { stdio: 'inherit' });
       procs.push(p);
       p.on('exit', () => setTimeout(run, 1000));
     };

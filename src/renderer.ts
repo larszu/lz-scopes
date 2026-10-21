@@ -404,6 +404,8 @@ export interface DisplayParams {
 }
 export interface PictureParams {
   mode: PictureMode; bands: FalseColorBand[]; zebra: number; zebraLow: number; roi: Rois; skin: SkinRange; display: DisplayParams;
+  /** draw flipped left/right (butterfly split of the A/B comparison, match/crop.ts) */
+  mirror?: boolean;
   /** neutral overlay: chroma threshold (|CbCr|/0.5) and Y′ range */
   neutral?: { threshold: number; lo: number; hi: number };
   /** gamut warning: row-major 3×3 source linear → target gamut linear */
@@ -909,7 +911,9 @@ precision highp float; uniform vec4 uColor; out vec4 o; void main() { o = uColor
     const prog = this.program(`picture${kind}${r103 ? 'r103' : ''}`, PICTURE_VS, PICTURE_FS(kind, r103));
     gl.useProgram(prog);
     // visible part in picture coordinates (vUv: origin bottom left)
-    gl.uniform4f(this.u(prog, 'uUv'), (vis.x - rect.x) / rect.w, (rect.y + rect.h - vis.y - vis.h) / rect.h, vis.w / rect.w, vis.h / rect.h);
+    const ux = (vis.x - rect.x) / rect.w, uw = vis.w / rect.w;
+    // mirrored (butterfly split): the visible part read right to left
+    gl.uniform4f(this.u(prog, 'uUv'), p.mirror ? 1 - ux : ux, (rect.y + rect.h - vis.y - vis.h) / rect.h, p.mirror ? -uw : uw, vis.h / rect.h);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, t.tex);
     const { kr, kb } = LUMA[src.colorspace];

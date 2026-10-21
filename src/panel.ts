@@ -31,6 +31,8 @@ import { STAGE_LABELS, autoPeaks, baseOf, chainOf, stageView, type Stage } from 
 import { clockOpts, drawClockOverlay, drawClockPanel, type ClockOptions } from './clock/panel';
 import { GREEN_DEFAULT, targetSignal } from './match/core';
 import { drawMatchPanel, matchSignature, type MatchSettings } from './match/panel';
+import { cropPlan, regionOf } from './match/crop';
+import { chartSignature, drawChartPanel, type ChartSettings } from './match/chartPanel';
 import { drawLightPanel, isLight, lightSignature, type LightPanelOptions } from './opple/scopes';
 import { drawSimulcastPanel, type SimulcastSettings } from './simulcastPanel';
 import { drawEncoderPanel, type EncoderSettings } from './encoderPanel';
@@ -100,7 +102,7 @@ export interface PanelState {
    * picture: A/B comparison. `b` = 'stage:signal|cst|lut' (same source) or 'src:<id>';
    * split = divider at 50 %, wipe = divider at `pos`, diff = max |A − B| × `gain`.
    */
-  ab?: { mode: 'off' | 'split' | 'wipe' | 'diff'; b: string; pos?: number; gain?: number };
+  ab?: { mode: 'off' | 'split' | 'wipe' | 'diff' | 'crop' | 'butterfly'; b: string; pos?: number; gain?: number };
   /** picture: ACES 1.3 reference gamut compression as a preview (picture and gamut warning, not the scopes) */
   rgc?: boolean;
   /** picture: compact time of day / source time code in the corner */
@@ -127,12 +129,19 @@ export interface PanelState {
   wshading?: { map?: ShadingChannel | 'colour'; scale?: number; roi?: boolean };
   /** skin tone of all cameras (skinTone.ts): sources (empty = first eight) and vectorscope zoom */
   skinall?: { sources?: string[]; zoom?: number };
+  /** colour-chart match matrix (match/chartPanel.ts): sources, corners per source, tolerance */
+  chart?: ChartSettings;
 }
 
 /** Sources of the skin-tone panel (same choice rule as the tiles). */
 export function skinSources(p: PanelState, o: DrawOptions) {
   const all = o.sourceList?.() ?? [];
   return { all, list: tileSources(all.filter((s) => s.kind !== 'audio'), p.skinall?.sources ?? []) };
+}
+/** Sources of the colour-chart panel (same choice rule as the tiles). */
+export function chartSources(p: PanelState, o: DrawOptions) {
+  const all = o.sourceList?.() ?? [];
+  return { all, list: tileSources(all.filter((s) => s.kind !== 'audio'), p.chart?.sources ?? []) };
 }
 /** Skin cloud of a source: faces (face tracking) or the measuring frame, else the whole picture. */
 const cloudCache = new Map<string, { key: string; c: SkinCloud | null }>();
@@ -535,7 +544,7 @@ function drawAbLabels(ctx: CanvasRenderingContext2D, r: Rect, ab: NonNullable<Pa
   if (!b || !b.ready) tag(t('panel.draw.bNoData', { b: abLabel(ab.b, b) }), r.x + 4, 'left');
   else if (ab.mode === 'diff') tag(`|A − B| × ${ab.gain ?? 4} · A ${aName} · B ${abLabel(ab.b, b)}`, r.x + 4, 'left');
   else {
-    const x = r.x + r.w * (ab.mode === 'split' ? 0.5 : Math.max(0, Math.min(1, ab.pos ?? 0.5)));
+    const x = r.x + r.w * (ab.mode === 'wipe' ? Math.max(0, Math.min(1, ab.pos ?? 0.5)) : 0.5);
     ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(Math.round(x) + 0.5, r.y); ctx.lineTo(Math.round(x) + 0.5, r.y + r.h); ctx.stroke();
     tag(`A ${aName}`, x - 4, 'right');
@@ -548,6 +557,10 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
   if (p.scope === 'skinall') {
     const { all, list } = skinSources(p, o);
     return `K|${list.map((s) => `${all.indexOf(s)}:${s.name}:${s.id}:${s.frameSeq}:${s.statsVersion}:${s.status}:${s.faceMode}:${s.activeRois().flat().join(',')}`).join(';')}|${JSON.stringify(p)}|${JSON.stringify(o.skin)}|${o.ref?.source()?.id ?? ''}|${body.x},${body.y},${body.w},${body.h}`;
+  }
+  if (p.scope === 'chart') {
+    const { list } = chartSources(p, o);
+    return `${chartSignature(p.chart, list, o.ref?.source()?.id)}|${body.x},${body.y},${body.w},${body.h}`;
   }
   if (p.scope === 'tiles') {
     const plan = tilePlan(p, body, o);
@@ -634,6 +647,12 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   }
   if (p.scope === 'tiles') { drawTiles(renderer, ctx, key, p, body, o); return; }
   if (p.scope === 'skinall') { renderer.clearRect(body); drawSkinAllPanel(ctx, p, body, o); return; }
+  if (p.scope === 'chart') {
+    renderer.clearRect(body);
+    const { all, list } = chartSources(p, o);
+    drawChartPanel(ctx, body.w, body.h, p.chart, all, list, o.ref?.source()?.id, o.emptyText ?? t('panel.draw.addSource'));
+    return;
+  }
   if (p.scope === 'lens') {
     renderer.clearRect(body);
     drawLensPanel(ctx, body.w, body.h, p.lens, src, o.emptyText ?? t('panel.draw.addSource'));
@@ -768,6 +787,12 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     if (ab && bSrc?.ready) {
       if (ab.mode === 'diff') {
         if (!renderer.drawPictureDiff(key, src, pic(src), bSrc, picB(bSrc), absV, ab.gain ?? 4, abs)) renderer.drawPicture(src, absV, pic(src), abs);
+      } else if (ab.mode === 'crop' || ab.mode === 'butterfly') {
+        // measuring frame (or first face) of A and of B, scaled into the panel (match/crop.ts)
+        const ba = baseOf(src), bb = baseOf(bSrc);
+        const plan = cropPlan(ab.mode, abs, regionOf(ba.activeRois(), ba.width, ba.height), [ba.width, ba.height], regionOf(bb.activeRois(), bb.width, bb.height), [bb.width, bb.height]);
+        renderer.drawPicture(src, plan.a.rect, pic(src), plan.a.clip);
+        renderer.drawPicture(bSrc, plan.b.rect, { ...picB(bSrc), mirror: plan.b.mirror }, plan.b.clip);
       } else {
         const pos = ab.mode === 'split' ? 0.5 : Math.max(0, Math.min(1, ab.pos ?? 0.5));
         renderer.drawPicture(src, absV, pic(src), { x: abs.x, y: abs.y, w: abs.w * pos, h: abs.h });
@@ -775,7 +800,9 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       }
     } else renderer.drawPicture(src, absV, pic(src), abs);
     if (ab) drawAbLabels(ctx, frame, ab, src, bSrc);
-    if (src.faceTrack) {
+    // crop/butterfly show only the regions: face and frame marks would sit in the wrong place
+    const cropped = ab?.mode === 'crop' || ab?.mode === 'butterfly';
+    if (cropped) { /* regions fill the panel */ } else if (src.faceTrack) {
       // detected faces, numbered left to right; active ones highlighted
       src.faces.forEach(({ id, box: f }, i) => {
         const on = src.faceMode === 'all' || src.faceSel.has(id);

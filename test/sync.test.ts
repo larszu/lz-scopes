@@ -12,7 +12,8 @@ import { shippedFfmpeg } from './shippedFfmpeg';
 
 const tmp: string[] = [];
 const tempDir = () => { const d = mkdtempSync(join(tmpdir(), 'lzs-sync-')); tmp.push(d); return d; };
-afterAll(() => { for (const d of tmp) rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); });
+// Windows: a file the virus scanner still holds cannot be removed; the runner's temp folder goes anyway
+afterAll(() => { for (const d of tmp) try { rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* still held */ } });
 
 describe('freeze all with latency compensation', () => {
   it('common moment = now − the largest latency; unknown latency counts as 0', () => {

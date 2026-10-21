@@ -45,17 +45,22 @@ async function readFrames(file: File, onProgress: (p: number) => void) {
       for (let i = 0; i < d.length; i += 4) s += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
       return s / (64 * 36 * 255);
     };
+    /** Luma of the current frame (CPU copy via WebCodecs, else canvas) and its timestamp in s (NaN if unknown). */
+    const luma = async (): Promise<{ y: number; ts: number }> => {
+      let vf: VideoFrame | null = null;
+      try { vf = typeof VideoFrame === 'function' ? new VideoFrame(v) : null; } catch { vf = null; }
+      if (!vf) return { y: viaCanvas(), ts: NaN };
+      try { return { y: (await frameLuma(vf)) ?? viaCanvas(), ts: vf.timestamp / 1e6 }; }
+      catch { return { y: viaCanvas(), ts: vf.timestamp / 1e6 }; }
+      finally { vf.close(); }
+    };
     await new Promise<void>((ok, bad) => {
       const grab = (_: number, md: VideoFrameCallbackMetadata) => {
         // Read the decoded frame on the CPU (WebCodecs) where possible: drawing a <video> into a
         // 2D canvas reads back from the GPU, which gives a constant (black) picture under a
         // software GL such as SwiftShader – no flash would ever be seen.
-        let vf: VideoFrame | null = null;
-        try { vf = typeof VideoFrame === 'function' ? new VideoFrame(v) : null; } catch { vf = null; }
         const tMedia = md.mediaTime;
-        pending.push((vf ? frameLuma(vf).finally(() => vf!.close()) : Promise.resolve(null))
-          .then((y) => { frames.push({ t: tMedia, y: y ?? viaCanvas() }); })
-          .catch(() => { frames.push({ t: tMedia, y: viaCanvas() }); }));
+        pending.push(luma().then(({ y }) => { frames.push({ t: tMedia, y }); }));
         onProgress(v.duration ? tMedia / v.duration : 0);
         if (!v.ended) v.requestVideoFrameCallback(grab);
       };
@@ -64,8 +69,39 @@ async function readFrames(file: File, onProgress: (p: number) => void) {
       v.play().catch(bad);
     });
     await Promise.all(pending);
+    // Playback only reports the frames that were presented. Without a compositor running at
+    // the video rate (hidden/occluded window, software GL in CI: 6 callbacks for a 6 s clip)
+    // the flash is never seen. Then step through the clip frame by frame with seeks instead
+    // (slower, but independent of presentation).
+    if (frames.length < v.duration * 10) return await stepFrames(v, luma, onProgress);
     return frames;
   } finally { URL.revokeObjectURL(url); }
+}
+
+/** Frame-by-frame reading with seeks; the frame time comes from the decoded frame's timestamp. */
+async function stepFrames(v: HTMLVideoElement, luma: () => Promise<{ y: number; ts: number }>, onProgress: (p: number) => void) {
+  v.pause();
+  const at = async (time: number) => {
+    await new Promise<void>((ok) => { v.addEventListener('seeked', () => ok(), { once: true }); v.currentTime = time; });
+    const r = await luma();
+    return { y: r.y, ts: Number.isFinite(r.ts) ? r.ts : time };
+  };
+  const frames: { t: number; y: number }[] = [];
+  let cur = await at(0);
+  frames.push({ t: cur.ts, y: cur.y });
+  // frame duration: smallest step that reaches the next frame
+  let dur = 0;
+  for (let d = 0.004; d < 0.1 && !dur; d += 0.004) { const n = await at(cur.ts + d); if (n.ts > cur.ts + 1e-4) { dur = n.ts - cur.ts; frames.push({ t: n.ts, y: n.y }); cur = n; } }
+  if (!dur) return frames;
+  while (cur.ts + dur < v.duration) {
+    let n = await at(cur.ts + dur * 1.25);
+    if (n.ts <= cur.ts + 1e-4) n = await at(cur.ts + dur * 2); // variable frame rate: a longer frame
+    if (n.ts <= cur.ts + 1e-4) break;
+    frames.push({ t: n.ts, y: n.y });
+    cur = n;
+    onProgress(cur.ts / v.duration);
+  }
+  return frames;
 }
 
 async function readAudio(file: File) {

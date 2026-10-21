@@ -38,6 +38,9 @@ test('shutter finder records consecutive frames and shows exposures of whole cyc
   await expect(finder).toContainText('Frame rate used', { timeout: 60_000 });
   await expect(finder.locator('table')).toContainText('1/100 s');
   await expect(finder.locator('.pop-trigger')).toHaveCount(1);
+  // the result stands; stop the animated source so the screenshots below do not wait for a frame
+  // from a renderer saturated by SwiftShader (page.screenshot timed out on CI)
+  expectOk(await a.control({ cmd: 'freeze', mode: 'on' }));
   await page.screenshot({ path: 'test-results/e2e/ledfinder-flicker.png' });
   await phoneFits(finder);
   expect(errors).toEqual([]);
@@ -47,6 +50,7 @@ test('moiré meter: grid frequency from the placed corners and the spectrum of t
   const { page } = a;
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  expectOk(await a.control({ cmd: 'freeze', mode: 'off' }));
   expectOk(await a.control({ cmd: 'pattern.select', pattern: 'led-moire' }));
   const dlg = page.locator('dialog.ledtool');
   if (!(await dlg.isVisible())) await menuClick(a, 'led');

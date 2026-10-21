@@ -91,4 +91,11 @@ export default {
   'chart.setCorners': "Set chart corners",
   'chart.tol': "Tolerance ΔE",
   'chart.hint': "Hold a ColorChecker Classic (24 patches) into every camera. Per camera the corners come from the clicked points, otherwise from the measuring frame, otherwise the chart must fill the picture. Each cell is one patch: green ≤ 1, yellow ≤ tolerance, red above. The matrix is a least-squares fit in linear light that brings the camera onto the reference; enter it in the camera or a CST where a matrix can be set. Only tested with synthetic pictures and test patterns, not with real cameras.",
+  'drift.head': "Each camera against the mean of all · tolerance ±{tol} %",
+  'drift.cols': "      camera            black  Δblack  ΔR−G   ΔB−G   status",
+  'drift.noPicture': "no picture",
+  'drift.alarm': "drifted",
+  'drift.ok': "ok",
+  'drift.tol': "Tolerance",
+  'drift.hint': "Black = mean of the darkest 1 % (Y′), neutral balance = R′−G′ and B′−G′ of the median, both in % against the mean of all chosen cameras; red when a camera leaves the tolerance. Point the cameras at comparable content (or set a measuring frame on the same grey object in each); a different scene is not drift. Only tested with test patterns and the shading simulator.",
 } as const satisfies Messages;

@@ -33,6 +33,7 @@ import { clockOpts, drawClockOverlay, drawClockPanel, type ClockOptions } from '
 import { GREEN_DEFAULT, targetSignal } from './match/core';
 import { drawMatchPanel, matchSignature, type MatchSettings } from './match/panel';
 import { cropPlan, regionOf } from './match/crop';
+import { drawDriftPanel, driftSignature, type DriftSettings } from './match/driftPanel';
 import { chartSignature, drawChartPanel, type ChartSettings } from './match/chartPanel';
 import { drawLightPanel, isLight, lightSignature, type LightPanelOptions } from './opple/scopes';
 import { drawSimulcastPanel, type SimulcastSettings } from './simulcastPanel';
@@ -137,6 +138,8 @@ export interface PanelState {
   chart?: ChartSettings;
   /** shading assistant (src/shading/guidePanel.ts, #151) */
   shguide?: GuideState;
+  /** drift guard (match/driftPanel.ts): sources, tolerance */
+  drift?: DriftSettings;
 }
 
 /** Sources of the skin-tone panel (same choice rule as the tiles). */
@@ -148,6 +151,11 @@ export function skinSources(p: PanelState, o: DrawOptions) {
 export function chartSources(p: PanelState, o: DrawOptions) {
   const all = o.sourceList?.() ?? [];
   return { all, list: tileSources(all.filter((s) => s.kind !== 'audio'), p.chart?.sources ?? []) };
+}
+/** Sources of the drift guard (same choice rule as the tiles). */
+export function driftSources(p: PanelState, o: DrawOptions) {
+  const all = o.sourceList?.() ?? [];
+  return { all, list: tileSources(all.filter((s) => s.kind !== 'audio'), p.drift?.sources ?? []) };
 }
 /** Skin cloud of a source: faces (face tracking) or the measuring frame, else the whole picture. */
 const cloudCache = new Map<string, { key: string; c: SkinCloud | null }>();
@@ -580,6 +588,7 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
     const { all, list } = skinSources(p, o);
     return `K|${list.map((s) => `${all.indexOf(s)}:${s.name}:${s.id}:${s.frameSeq}:${s.statsVersion}:${s.status}:${s.faceMode}:${s.activeRois().flat().join(',')}`).join(';')}|${JSON.stringify(p)}|${JSON.stringify(o.skin)}|${o.ref?.source()?.id ?? ''}|${body.x},${body.y},${body.w},${body.h}`;
   }
+  if (p.scope === 'drift') return `${driftSignature(p.drift, driftSources(p, o).list)}|${body.x},${body.y},${body.w},${body.h}`;
   if (p.scope === 'chart') {
     const { list } = chartSources(p, o);
     return `${chartSignature(p.chart, list, o.ref?.source()?.id)}|${body.x},${body.y},${body.w},${body.h}`;
@@ -669,6 +678,12 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
   }
   if (p.scope === 'tiles') { drawTiles(renderer, ctx, key, p, body, o); return; }
   if (p.scope === 'skinall') { renderer.clearRect(body); drawSkinAllPanel(ctx, p, body, o); return; }
+  if (p.scope === 'drift') {
+    renderer.clearRect(body);
+    const { all, list } = driftSources(p, o);
+    drawDriftPanel(ctx, body.w, body.h, p.drift, all, list, o.emptyText ?? t('panel.draw.addSource'));
+    return;
+  }
   if (p.scope === 'chart') {
     renderer.clearRect(body);
     const { all, list } = chartSources(p, o);

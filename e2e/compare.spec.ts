@@ -193,6 +193,32 @@ test('Farbtafel-Match: zwei gleiche Tafeln grün, eine andere rot', async () => 
     .catch(async (e) => { console.log('Zellen', await cells()); throw e; });
 });
 
+test('Drift-Wächter: gleiche Bilder grün, ein anderes Bild rot', async () => {
+  if ((await a.state()).sources.length < 2) await a.page.getByRole('button', { name: 'Testbild', exact: true }).click();
+  const st = await until(async () => { const s = await a.state(); return s.sources.length >= 2 ? s : false; }, 30_000, 'zweite Testbild-Quelle');
+  const [s1, s2] = st.sources;
+  for (const s of [s1, s2]) expectOk(await a.control({ cmd: 'pattern.select', source: s.id, pattern: 'macbeth' }));
+  await singlePanel(a, 'drift');
+  // status squares of the rows (match/driftPanel.ts): green ok, red drifted
+  const marks = () => a.page.evaluate(() => {
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === 'drift')!;
+    const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
+    const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data;
+    let green = 0, red = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] < 200) continue;
+      if (d[i + 1] > d[i] + 60 && d[i + 1] > d[i + 2] + 40) green++;
+      if (d[i] > d[i + 1] + 60 && d[i] > d[i + 2] + 60) red++;
+    }
+    return { green, red };
+  });
+  await until(async () => { const c = await marks(); return c.green > 20 && c.red === 0; }, 30_000, 'beide grün')
+    .catch(async (e) => { console.log('Marken', await marks()); throw e; });
+  expectOk(await a.control({ cmd: 'pattern.select', source: s2.id, pattern: 'gray50' })); // black floor 50 % instead of ≈ 10 %
+  await until(async () => { const c = await marks(); return c.red > 20; }, 30_000, 'Drift erkannt')
+    .catch(async (e) => { console.log('Marken', await marks()); throw e; });
+});
+
 test('Hautton aller Kameras: zwei Quellen als zwei farbige Wolken', async () => {
   if ((await a.state()).sources.length < 2) await a.page.getByRole('button', { name: 'Testbild', exact: true }).click();
   const st = await until(async () => { const s = await a.state(); return s.sources.length >= 2 ? s : false; }, 30_000, 'zweite Testbild-Quelle');

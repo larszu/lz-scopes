@@ -33,6 +33,7 @@ export default {
   'scope.name.wshading': 'White-Shading-Karte',
   'scope.name.skinall': 'Hautton aller Kameras',
   'scope.name.chart': "Farbtafel-Match",
+  'scope.name.drift': 'Drift-Wächter',
   'scope.name.simulcast': 'Simulcast-Abweichung',
   'scope.name.encoder': 'Encoder-Konfidenz',
   'scope.name.lens': 'Objektiv-Fingerabdruck',

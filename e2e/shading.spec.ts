@@ -90,6 +90,15 @@ test('Vectorscope: drehen = Hue, radial = Sättigung (Simulator)', async () => {
   await expect(page.locator('[data-field="saturation"]')).toHaveText(/128 \(\+0\)/);
 });
 
+test('Angleichen an die Referenz: ohne Referenzkamera eine Erklärung statt eines Schritts', async () => {
+  const { page } = a;
+  if (!(await page.locator('.shading-bar').isVisible())) await menuClick(a, 'shading');
+  await page.selectOption('[data-shading-target]', 'sim');
+  await page.click('[data-shading-loop]');
+  await expect(page.locator('[data-shading-msg]')).toContainText('Referenzkamera');
+  await expect(page.locator('[data-field="blackR"]')).toHaveText(/\(\+0\)/);
+});
+
 test('Kamera-Bridge eingebaut: startet mit Touch Shading, Kamera anlegen, als Ziel wählen', async () => {
   const { page } = a;
   await menuClick(a, 'shading');

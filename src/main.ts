@@ -65,9 +65,11 @@ import { initPlayback, onPlaybackMessage, openRecordingsDialog, playbackBar, sou
 import { freezeMoment } from './record/sync';
 import { initRecording, isRecording, markAll, eventAll, onBridgeRecord, recordAll, recordAllButton, recordRow, recordSection, recordingState, ringOn, saveRingButton, saveRings, setRing, sourceStopped, startRecording, stopRecording } from './record/record';
 import { aboutSection, keysSection } from './menu/pages';
-import { LANG_NAMES, LANGS, lang, langPref, num, setLangPref, systemLang, t, type LangPref } from './i18n';
+import { LANG_NAMES, LANGS, lang, langPref, num, setLangPref, systemLang, t, type Key, type LangPref } from './i18n';
 import { ShadingControl, SIM_URL } from './shading/ui';
 import { T as SHADING_T } from './shading/text';
+import { guideMeasure, type GuideState } from './shading/guidePanel';
+import { GUIDE_STEPS, type GuideStep } from './shading/guide';
 import { installFeedbackLog } from './feedback/log';
 import { checkGpu, openFeedback } from './feedback/dialog';
 import { hasHelp, helpCard, helpOn, setHelpOn } from './help/scopeHelp';
@@ -1149,6 +1151,20 @@ function panelSettings(p: PanelState): Node[] {
     row(t('wshading.scale'), select(String(ws.scale ?? 5), [['2', '± 2 %'], ['5', '± 5 %'], ['10', '± 10 %'], ['20', '± 20 %']], (v) => setW({ scale: Number(v) })));
     row(t('wshading.region'), checkbox(!!ws.roi, t('wshading.roiOnly'), (v) => setW({ roi: v }), t('wshading.roiTitle')));
     rows.push(hint(t('wshading.hint')));
+  }
+  if (p.scope === 'shguide') {
+    const g = p.shguide ?? {}, step = g.step ?? 'black', done = g.done ?? [];
+    const setG = (patch: Partial<GuideState>) => { p.shguide = { ...p.shguide, ...patch }; save(); refreshPanelSettings(p); };
+    const idx = GUIDE_STEPS.indexOf(step);
+    row(t('shguide.stepLabel'), select(step, GUIDE_STEPS.map((s, i) => [s, `${i + 1} ${t(`shguide.step.${s}` as Key)}`] as [string, string]), (v) => setG({ step: v as GuideStep })));
+    row('', button(t('shguide.back'), () => setG({ step: GUIDE_STEPS[Math.max(0, idx - 1)] }), { small: true, disabled: idx === 0 }),
+      button(t('shguide.next'), () => setG({ done: [...new Set([...done, step])], step: GUIDE_STEPS[Math.min(GUIDE_STEPS.length - 1, idx + 1)] }), { attrs: { 'data-shguide-next': '' } }));
+    if (step === 'black' || step === 'blackBal' || step === 'flare') row(t('shguide.closedLabel'), button(t('shguide.remember'), () => {
+      const s = panelSource(p), m = s ? guideMeasure(s) : null;
+      if (m?.area) setG({ closed: { r: m.area.r, g: m.area.g, b: m.area.b, y: m.area.y } });
+    }, { small: true, title: t('shguide.rememberTitle') }), h('span', { class: 'hint' }, g.closed ? t('shguide.closedSet', { y: (g.closed.y * 100).toFixed(1) }) : t('shguide.closedNone')));
+    row('', button(t('shguide.restart'), () => setG({ step: 'black', done: [], closed: undefined }), { small: true }));
+    rows.push(hint(t('shguide.hint')));
   }
   if (p.scope === 'noise') {
     row(t('noise.detrend'), checkbox(p.noise?.detrend !== false, t('noise.detrendText'), (v) => { p.noise = { ...p.noise, detrend: v }; save(); }, t('noise.detrendTitle')));

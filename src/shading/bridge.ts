@@ -4,6 +4,7 @@
 
 import { capsKey, type Paint, type PaintField } from './model';
 import { T } from './text';
+import { cameraDataOf, tallyOf, type CameraData } from './guide';
 
 export interface BridgeCamera {
   cameraNumber: number;
@@ -29,6 +30,8 @@ export class CameraBridgeLink {
   cameraErrors = new Map<number, string>();
   private listeners = new Set<() => void>();
   states = new Map<number, CameraPaintState>();
+  /** iris, gain, ND, shutter, colour temperature and tally per camera (shading assistant, #151) */
+  data = new Map<number, CameraData>();
   status: 'off' | 'connecting' | 'open' | 'closed' = 'off';
   lastError = '';
   private ws: WebSocket | null = null;
@@ -100,6 +103,12 @@ export class CameraBridgeLink {
       const paint: Paint = { ...prev.paint };
       for (const f of FIELDS_OF_STATE) if (typeof st[f] === 'number') paint[f] = st[f] as number;
       this.states.set(n, { paint, origins: { ...prev.origins, ...((m.origins ?? {}) as CameraPaintState['origins']) } });
+      this.data.set(n, { ...this.data.get(n), ...cameraDataOf(st) });
+    } else if (m.type === 'cameraTally' && m.tally && typeof m.tally === 'object') {
+      for (const [k, v] of Object.entries(m.tally as Record<string, unknown>)) {
+        const n = Number(k), t = tallyOf(v);
+        if (Number.isFinite(n) && t) this.data.set(n, { ...this.data.get(n), tally: t });
+      }
     } else if (m.type === 'error') {
       this.lastError = String(m.message ?? T.error);
       if (typeof m.cameraNumber === 'number') this.cameraErrors.set(m.cameraNumber, this.lastError);

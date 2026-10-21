@@ -14,7 +14,8 @@ import {
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
 import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
-import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
+import { inBox, legendPosAt, nearSplit, splitAt, splitPos } from './overlayDrag';
+import { DEFAULT_SKIN, ROI_CLOSE, contentRect, legendBoxes, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
 import { attachGestures, onChip } from './gestures';
 import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
@@ -64,9 +65,11 @@ import { initPlayback, onPlaybackMessage, openRecordingsDialog, playbackBar, sou
 import { freezeMoment } from './record/sync';
 import { initRecording, isRecording, markAll, eventAll, onBridgeRecord, recordAll, recordAllButton, recordRow, recordSection, recordingState, ringOn, saveRingButton, saveRings, setRing, sourceStopped, startRecording, stopRecording } from './record/record';
 import { aboutSection, keysSection } from './menu/pages';
-import { LANG_NAMES, LANGS, lang, langPref, num, setLangPref, systemLang, t, type LangPref } from './i18n';
+import { LANG_NAMES, LANGS, lang, langPref, num, setLangPref, systemLang, t, type Key, type LangPref } from './i18n';
 import { ShadingControl, SIM_URL } from './shading/ui';
 import { T as SHADING_T } from './shading/text';
+import { guideMeasure, type GuideState } from './shading/guidePanel';
+import { GUIDE_STEPS, type GuideStep } from './shading/guide';
 import { installFeedbackLog } from './feedback/log';
 import { checkGpu, openFeedback } from './feedback/dialog';
 import { hasHelp, helpCard, helpOn, setHelpOn } from './help/scopeHelp';
@@ -1149,6 +1152,20 @@ function panelSettings(p: PanelState): Node[] {
     row(t('wshading.region'), checkbox(!!ws.roi, t('wshading.roiOnly'), (v) => setW({ roi: v }), t('wshading.roiTitle')));
     rows.push(hint(t('wshading.hint')));
   }
+  if (p.scope === 'shguide') {
+    const g = p.shguide ?? {}, step = g.step ?? 'black', done = g.done ?? [];
+    const setG = (patch: Partial<GuideState>) => { p.shguide = { ...p.shguide, ...patch }; save(); refreshPanelSettings(p); };
+    const idx = GUIDE_STEPS.indexOf(step);
+    row(t('shguide.stepLabel'), select(step, GUIDE_STEPS.map((s, i) => [s, `${i + 1} ${t(`shguide.step.${s}` as Key)}`] as [string, string]), (v) => setG({ step: v as GuideStep })));
+    row('', button(t('shguide.back'), () => setG({ step: GUIDE_STEPS[Math.max(0, idx - 1)] }), { small: true, disabled: idx === 0 }),
+      button(t('shguide.next'), () => setG({ done: [...new Set([...done, step])], step: GUIDE_STEPS[Math.min(GUIDE_STEPS.length - 1, idx + 1)] }), { attrs: { 'data-shguide-next': '' } }));
+    if (step === 'black' || step === 'blackBal' || step === 'flare') row(t('shguide.closedLabel'), button(t('shguide.remember'), () => {
+      const s = panelSource(p), m = s ? guideMeasure(s) : null;
+      if (m?.area) setG({ closed: { r: m.area.r, g: m.area.g, b: m.area.b, y: m.area.y } });
+    }, { small: true, title: t('shguide.rememberTitle') }), h('span', { class: 'hint' }, g.closed ? t('shguide.closedSet', { y: (g.closed.y * 100).toFixed(1) }) : t('shguide.closedNone')));
+    row('', button(t('shguide.restart'), () => setG({ step: 'black', done: [], closed: undefined }), { small: true }));
+    rows.push(hint(t('shguide.hint')));
+  }
   if (p.scope === 'noise') {
     row(t('noise.detrend'), checkbox(p.noise?.detrend !== false, t('noise.detrendText'), (v) => { p.noise = { ...p.noise, detrend: v }; save(); }, t('noise.detrendTitle')));
     rows.push(hint(t('noise.hint')));
@@ -1163,7 +1180,7 @@ function panelSettings(p: PanelState): Node[] {
       p.ab = { ...ab, ...patch }; Object.assign(ab, patch); save(); refreshHeads();
       if (rebuild) refreshPanelSettings(p);
     };
-    row(t('panel.ab'), select(ab.mode, [['off', t('common.off')], ['split', 'Split 50 %'], ['wipe', 'Wipe'], ['diff', t('panel.abDiff')], ['crop', t('panel.abCrop')], ['butterfly', t('panel.abButterfly')]], (v) => setAb({ mode: v as 'off' }, true),
+    row(t('panel.ab'), select(ab.mode === 'wipe' ? 'split' : ab.mode, [['off', t('common.off')], ['split', t('panel.abSplit')], ['diff', t('panel.abDiff')], ['crop', t('panel.abCrop')], ['butterfly', t('panel.abButterfly')]], (v) => setAb({ mode: v as 'off' }, true),
       t('panel.abTitle')));
     if (ab.mode !== 'off') {
       const own = panelSource(p);
@@ -1173,8 +1190,8 @@ function panelSettings(p: PanelState): Node[] {
         ...sources.filter((s) => s !== own && s.kind !== 'audio').map((s) => [`src:${s.id}`, s.name] as [string, string]),
       ], (v) => setAb({ b: v })));
       if (ab.mode === 'crop' || ab.mode === 'butterfly') rows.push(hint(t('panel.abCropHint')));
-      if (ab.mode === 'wipe') {
-        row(t('panel.wipePos'), slider(ab.pos ?? 0.5, (v) => setAb({ pos: v }), { min: 0, max: 1, step: 0.01, reset: 0.5 }));
+      if (ab.mode === 'split' || ab.mode === 'wipe') {
+        row(t('panel.wipePos'), slider(splitPos(ab), (v) => setAb({ pos: v }), { min: 0, max: 1, step: 0.01, reset: 0.5, title: t('panel.wipeDrag') }));
       }
       if (ab.mode === 'diff') row(t('panel.gainAb'), select(String(ab.gain ?? 4), [['1', '×1'], ['4', '×4'], ['16', '×16'], ['64', '×64']], (v) => setAb({ gain: Number(v) }), t('panel.gainAbTitle')));
     }
@@ -1192,7 +1209,10 @@ function panelSettings(p: PanelState): Node[] {
     }
     if (p.picture === 'gamut') row(t('panel.tgtGamut'), select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, t('panel.tgtGamutTitle')));
     if (p.picture === 'false') global(SET.falseColour);
-    if (p.picture === 'zebra') global(SET.zebra, t('panel.zebraFrom'));
+    if (p.picture === 'zebra') {
+      row(t('panel.zebraFrom'), slider(Math.round(state.zebra * 100), (v) => { state.zebra = v / 100; save(); }, { min: 50, max: 109, step: 1, reset: 95, number: true, unit: '%', title: t('panel.zebraTitle') }));
+      row(t('panel.zebraLow'), slider(Math.round(state.zebraLow * 100), (v) => { state.zebraLow = v / 100; save(); }, { min: 0, max: 100, step: 1, reset: 0, number: true, unit: '%', title: t('panel.zebraLowTitle') }));
+    }
     row(t('panel.clock'), checkbox(!!p.clockOverlay, t('panel.clockText'), (v) => { p.clockOverlay = v; save(); }, t('panel.clockTitle')));
     global(SET.display);
     global(SET.hdrPreview);
@@ -1389,11 +1409,33 @@ function attachPointer(p: PanelState, body: HTMLElement) {
     return { x: Math.min(s.width - 1, Math.floor(fx * s.width)), y: Math.min(s.height - 1, Math.floor(fy * s.height)) };
   };
   let start: { x: number; y: number; cx: number; cy: number; roi: Source['roi'] } | null = null;
+  // drag the A/B split line or the overlay legend instead of probe / ROI
+  let drag: { kind: 'split' } | { kind: 'legend'; dx: number; dy: number; w: number; h: number } | null = null;
+  const local = (e: PointerEvent) => { const b = body.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top, b }; };
+  const frameOf = (s: Source, b: DOMRect) => plotRect(p.scope, b.width, b.height, s.width / s.height);
+  const startOverlayDrag = (e: PointerEvent, s: Source) => {
+    const { x, y, b } = local(e);
+    const lb = legendBoxes.get(p);
+    if (lb && inBox(lb, x, y)) drag = { kind: 'legend', dx: x - lb.x, dy: y - lb.y, w: lb.w, h: lb.h };
+    else if (p.ab && (p.ab.mode === 'split' || p.ab.mode === 'wipe') && nearSplit(x, frameOf(s, b), splitPos(p.ab))) drag = { kind: 'split' };
+    else return false;
+    try { body.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
+    return true;
+  };
+  body.addEventListener('pointermove', (e) => {
+    const s = panelSource(p);
+    if (!drag || !s) return;
+    const { x, y, b } = local(e), f = frameOf(s, b);
+    if (drag.kind === 'split' && p.ab) p.ab = { ...p.ab, mode: 'split', pos: splitAt(x, f) };
+    else if (drag.kind === 'legend') p.legendPos = legendPosAt(f, drag.w, drag.h, x - drag.dx, y - drag.dy);
+  });
+  body.addEventListener('pointerup', () => { if (drag) { drag = null; save(); } });
   // a pinch began after the first finger: put the ROI back as it was, no probe
   body.addEventListener('lzs-gesture-cancel', () => { const s = panelSource(p); if (start && s) s.roi = start.roi; start = null; });
   body.addEventListener('pointerdown', (e) => {
     const s = panelSource(p);
     if (p.scope !== 'picture' || !s?.width || e.button !== 0 || onChip(e)) return;
+    if (startOverlayDrag(e, s)) return;
     if (s.roi && !s.faceTrack && hitRoiClose(e, s, body, p)) { s.roi = null; refreshHeads(); return; }
     const pt = toSrc(e, s, false);
     if (pt && s.faceTrack) {

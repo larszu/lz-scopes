@@ -39,9 +39,14 @@ jobs:
       # the NDI helper builds without any SDK (helpers/ndi/ndi-min.h); run it once without runtime
       - run: node scripts/build-helpers.mjs ndi && helpers/bin/lz-ndi --list && helpers/bin/lz-ndi --selftest
 
+  # The suite runs serially (one app per test, SwiftShader): split into shards so each job stays well under the limit
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     env:
       MEDIAMTX_VERSION: v1.21.1
     steps:
@@ -69,7 +74,7 @@ jobs:
           path: vendor/lz-camera-bridge
           sparse-checkout: packages/bridge
       # Electron downloads its binary on first use; WebGL runs in SwiftShader (slow, see e2e/playwright.config.ts)
-      - run: xvfb-run -a npm run test:e2e
+      - run: xvfb-run -a npm run test:e2e -- --shard=${{ matrix.shard }}/3
 
   # The ffmpeg builds the installers ship, run on their own OS: licence (no nonfree), SRT,
   # v210/HEVC 10 over TCP and SRT (test/ffmpeg.test.ts, test/out10.test.ts).

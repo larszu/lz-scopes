@@ -17,6 +17,10 @@ test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'lzs-e2e-rec-'));
   process.env.LZS_RECORD_DEFAULT = dir;
   a = await launchApp();
+  // one-minute segments: the bridge refuses to start below two segments of free space plus 1 GB
+  // (ProRes HQ 1080p25 ≈ 22 MB/s → 14.5 GB at the default 5 min, more than a CI runner has free)
+  await a.page.evaluate(() => localStorage.setItem('lz-scopes.record', JSON.stringify({ segmentMin: 1 })));
+  await a.page.reload();
 });
 test.afterAll(async () => { await a?.close(); delete process.env.LZS_RECORD_DEFAULT; if (dir) rmSync(dir, { recursive: true, force: true }); });
 

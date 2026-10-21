@@ -1,7 +1,8 @@
 // Lens fingerprint (idea 9, docs/research/lens-fingerprint.md): white shading and centre colour of
 // a lens at a zoom position, stored and compared after a lens change – the measured counterpart to
 // the camera's lens file (Sony, The Basics of Camera Technology p. 34; V modulation per zoom
-// position p. 45). Pure functions plus localStorage; the shading core is src/whiteShading.ts.
+// position p. 45). Pure functions plus localStorage; grid and terms in src/lensShading.ts, fitted
+// with the white-shading core src/surface.ts (shared with src/whiteShading.ts).
 
 import { centreColour, type ChannelShading, type ShadingFit } from './lensShading';
 

@@ -1,6 +1,7 @@
 // Draws one scope panel (WebGL trace + 2D overlay). Shared by the full app and the
 // embeddable ScopeView (src/embed.ts).
 
+import { legendBox, splitPos, type Box } from './overlayDrag';
 import { drawGenlockPanel, type GenlockOptions } from './genlock';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, mul3, rgbToXyzMatrix, bandRange, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId, type HdrPreview } from './color';
 import {
@@ -41,6 +42,7 @@ import { t } from './i18n';
 import { IDENTITY, isIdentity, viewRect, waveRange, type View, type ViewLimits } from './view';
 import { GHOST_CSS, GHOST_TINT, deltaRows, ghostChannels, hasGhost, histOf, levelDeltas, traceLevels } from './ghost';
 import { LUMA } from './color';
+import { drawGuidePanel, type GuideState } from './shading/guidePanel';
 import { PEAK_COLOURS, PEAK_DEFAULT, PeakHold, lumaPlane, measureRect, sharpness, type PeakColour, type Rect4 } from './focus';
 import { channelPlanes, measureNoise, noiseRows, quantFloorDb, type NoiseResult } from './noise';
 import { analyseShading, cellColour, cellDeviation, rampColour, shadingRows, type ShadingChannel, type ShadingResult } from './whiteShading';
@@ -100,9 +102,11 @@ export interface PanelState {
   cube?: Partial<CubeSettings>;
   /**
    * picture: A/B comparison. `b` = 'stage:signal|cst|lut' (same source) or 'src:<id>';
-   * split = divider at 50 %, wipe = divider at `pos`, diff = max |A − B| × `gain`.
+   * split = divider at `pos` (drag it in the picture; 'wipe' = older saved name), diff = max |A − B| × `gain`.
    */
   ab?: { mode: 'off' | 'split' | 'wipe' | 'diff' | 'crop' | 'butterfly'; b: string; pos?: number; gain?: number };
+  /** picture: overlay legend position (fractions of the free space, default bottom-left) */
+  legendPos?: { x: number; y: number };
   /** picture: ACES 1.3 reference gamut compression as a preview (picture and gamut warning, not the scopes) */
   rgc?: boolean;
   /** picture: compact time of day / source time code in the corner */
@@ -131,6 +135,8 @@ export interface PanelState {
   skinall?: { sources?: string[]; zoom?: number };
   /** colour-chart match matrix (match/chartPanel.ts): sources, corners per source, tolerance */
   chart?: ChartSettings;
+  /** shading assistant (src/shading/guidePanel.ts, #151) */
+  shguide?: GuideState;
 }
 
 /** Sources of the skin-tone panel (same choice rule as the tiles). */
@@ -202,7 +208,7 @@ function drawSkinAllPanel(ctx: CanvasRenderingContext2D, p: PanelState, body: Re
 }
 
 /** Split a text line into lines of at most `maxW` px at spaces. */
-function wrapText(ctx: CanvasRenderingContext2D, line: string, maxW: number): string[] {
+export function wrapText(ctx: CanvasRenderingContext2D, line: string, maxW: number): string[] {
   if (ctx.measureText(line).width <= maxW) return [line];
   const out: string[] = []; let cur = '';
   for (const w of line.split(' ')) { const next = cur ? `${cur} ${w}` : w; if (ctx.measureText(next).width > maxW && cur) { out.push(cur); cur = w; } else cur = next; }
@@ -532,6 +538,22 @@ export function abSource(b: string, a: Source, p: PanelState, o: DrawOptions): S
 
 export const abLabel = (b: string, s: Source | null) => (b === 'rgc' ? t('panel.draw.rgcSwitched') : b.startsWith('stage:') ? STAGE_LABELS[b.slice(6) as Stage] ?? b : s?.name ?? t('panel.draw.missing'));
 
+/** Last drawn overlay legend per panel (panel coordinates) — the pointer handler drags it. */
+export const legendBoxes = new WeakMap<PanelState, Box>();
+
+/** Overlay legend (false colour, R 103, gamut): colour swatch + label rows, draggable. */
+function drawLegend(ctx: CanvasRenderingContext2D, frame: Rect, p: PanelState, rows: [string, string][], w: number) {
+  const b = legendBox(frame, w, rows.length * 14, p.legendPos);
+  legendBoxes.set(p, b);
+  ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  rows.forEach(([col, label], i) => {
+    const y = b.y + 7 + i * 14;
+    ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(b.x, y - 7, w, 14);
+    ctx.fillStyle = col; ctx.fillRect(b.x + 2, y - 4, 8, 8);
+    ctx.fillStyle = '#ddd'; ctx.fillText(label, b.x + 14, y);
+  });
+}
+
 function drawAbLabels(ctx: CanvasRenderingContext2D, r: Rect, ab: NonNullable<PanelState['ab']>, a: Source, b: Source | null) {
   ctx.save();
   ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'top';
@@ -544,7 +566,7 @@ function drawAbLabels(ctx: CanvasRenderingContext2D, r: Rect, ab: NonNullable<Pa
   if (!b || !b.ready) tag(t('panel.draw.bNoData', { b: abLabel(ab.b, b) }), r.x + 4, 'left');
   else if (ab.mode === 'diff') tag(`|A − B| × ${ab.gain ?? 4} · A ${aName} · B ${abLabel(ab.b, b)}`, r.x + 4, 'left');
   else {
-    const x = r.x + r.w * (ab.mode === 'wipe' ? Math.max(0, Math.min(1, ab.pos ?? 0.5)) : 0.5);
+    const x = r.x + r.w * (ab.mode === 'split' || ab.mode === 'wipe' ? splitPos(ab) : 0.5);
     ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(Math.round(x) + 0.5, r.y); ctx.lineTo(Math.round(x) + 0.5, r.y + r.h); ctx.stroke();
     tag(`A ${aName}`, x - 4, 'right');
@@ -773,6 +795,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     const rpx = ref ? atStage(ref, o.ref!.frozen && o.ref!.samples ? o.ref!.samples() : frameSamples(ref)) : null;
     drawHistogram(ctx, r, src, p.hist, p.log, ref && rpx?.length ? { hist: histOf(rpx, LUMA[ref.colorspace].kr, LUMA[ref.colorspace].kb), color: GHOST_CSS, alpha: Math.min(1, 0.3 + o.ref!.opacity) } : undefined);
   } else if (p.scope === 'picture') {
+    legendBoxes.delete(p);
     const pic = (s: Source, rgcOn = !!p.rgc): PictureParams => ({
       mode: p.picture, bands: FALSE_COLOR_PRESETS[o.falsePreset] ?? [], zebra: o.zebra, zebraLow: o.zebraLow,
       roi: s.activeRois(), skin: p.picture === 'green' ? greenOf(o) : o.skin, display: displayParams(s, o.display, o.hdrPreview), warn: warnMatrix(s, p.gamutTarget),
@@ -794,7 +817,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
         renderer.drawPicture(src, plan.a.rect, pic(src), plan.a.clip);
         renderer.drawPicture(bSrc, plan.b.rect, { ...picB(bSrc), mirror: plan.b.mirror }, plan.b.clip);
       } else {
-        const pos = ab.mode === 'split' ? 0.5 : Math.max(0, Math.min(1, ab.pos ?? 0.5));
+        const pos = splitPos(ab);
         renderer.drawPicture(src, absV, pic(src), { x: abs.x, y: abs.y, w: abs.w * pos, h: abs.h });
         renderer.drawPicture(bSrc, absV, picB(bSrc), { x: abs.x + abs.w * pos, y: abs.y, w: abs.w * (1 - pos), h: abs.h });
       }
@@ -834,12 +857,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
       const text = bands.map((bd) => `${bandRange(bd)} % ${bd.label}`);
       const bw = Math.max(150, ...text.map((s) => ctx.measureText(s).width + 20));
-      bands.forEach((bd, i) => {
-        const y = frame.y + frame.h - 12 - (bands.length - 1 - i) * 14;
-        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(frame.x + 4, y - 7, bw, 14);
-        ctx.fillStyle = bd.color; ctx.fillRect(frame.x + 6, y - 4, 8, 8);
-        ctx.fillStyle = '#ddd'; ctx.fillText(text[i], frame.x + 18, y);
-      });
+      drawLegend(ctx, frame, p, bands.map((bd, i) => [bd.color, text[i]]), bw);
     }
     if (p.picture === 'r103') {
       const q = src.r103Stats();
@@ -848,13 +866,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
         ['#ff1a33', `${t('panel.draw.r103Total')}${q ? ` · ${(q.total * 100).toFixed(2)} %` : ''}`],
       ];
       if (!src.yuv) legend.push(['#888', t('panel.draw.rgbClipped')]);
-      ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-      legend.forEach(([col, label], i) => {
-        const y = frame.y + frame.h - 12 - (legend.length - 1 - i) * 14;
-        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(frame.x + 4, y - 7, 250, 14);
-        ctx.fillStyle = col; ctx.fillRect(frame.x + 6, y - 4, 8, 8);
-        ctx.fillStyle = '#ddd'; ctx.fillText(label, frame.x + 18, y);
-      });
+      drawLegend(ctx, frame, p, legend, 250);
     }
     if (p.picture === 'peaking') {
       const fv = focusOf(src);
@@ -884,13 +896,7 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       const legend: [string, string][] = [
         ['#ffe61a', t('panel.draw.justOutside', { gamut: GAMUTS[p.gamutTarget ?? '709'].name })], ['#ff730d', t('panel.draw.outside')], ['#ff1abf', t('panel.draw.farOutside')],
       ];
-      ctx.font = '10px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-      legend.forEach(([col, label], i) => {
-        const y = frame.y + frame.h - 12 - (legend.length - 1 - i) * 14;
-        ctx.fillStyle = 'rgba(8,9,11,0.75)'; ctx.fillRect(frame.x + 4, y - 7, 200, 14);
-        ctx.fillStyle = col; ctx.fillRect(frame.x + 6, y - 4, 8, 8);
-        ctx.fillStyle = '#ddd'; ctx.fillText(label, frame.x + 18, y);
-      });
+      drawLegend(ctx, frame, p, legend, 200);
     }
     if (src.probe && probeRgb) {
       const x = r.x + ((src.probe.x + 0.5) / src.width) * r.w, y = r.y + ((src.probe.y + 0.5) / src.height) * r.h;
@@ -908,6 +914,8 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     drawShadingPanel(ctx, p, src, body);
   } else if (p.scope === 'noise') {
     drawNoisePanel(ctx, p, src);
+  } else if (p.scope === 'shguide') {
+    drawGuidePanel(ctx, p.shguide ?? {}, src, body.w, wrapText);
   } else if (p.scope === 'stats') {
     const lines = statsLines(src, o.displayFps);
     if (probeRgb) lines.push('', t('settings.stage.point'), ...[...probeLines(src, probeRgb, o.unit), ...deLines(src, probeRgb, o)]);

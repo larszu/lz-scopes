@@ -13,6 +13,8 @@ import {
 } from './model';
 import { ShadingSim, SIM_URL } from './sim';
 import { T } from './text';
+import { cameraDataRows } from './guide';
+import { cameraDataLabels, setLiveCamera } from './live';
 import { button, checkbox, disclosure, h, hint, iconButton, link, restoreFocus, row, select, textInput } from '../ui';
 
 const BRIDGE_DOWNLOAD = 'https://github.com/larszu/lz-camera-bridge/releases';
@@ -75,6 +77,11 @@ export class ShadingControl {
   constructor(private host: ShadingHost, mount: HTMLElement) {
     try { const s = JSON.parse(localStorage.getItem(STORE) ?? '{}'); if (typeof s.bridgeUrl === 'string') this.bridgeUrl = s.bridgeUrl; this.atTop = s.atTop === true; } catch { /* defaults */ }
     this.link = new CameraBridgeLink(() => this.bridgeUrl, () => { this.syncFromBridge(); this.render(); });
+    setLiveCamera(() => {
+      if (typeof this.target !== 'number') return null;
+      const c = this.link.cameras.find((x) => x.cameraNumber === this.target);
+      return { n: this.target, label: c?.label ?? T.camN(this.target), connected: !!c?.connected, data: this.link.data.get(this.target) };
+    });
     this.bar = h('div', { class: 'shading-bar hidden', role: 'region', 'aria-label': 'Touch Shading' });
     mount.append(this.bar);
     // Esc in the bar closes it like ✕ (while a finger is down Esc stays the emergency stop below)
@@ -424,7 +431,11 @@ export class ShadingControl {
     if (!this.valuesEl) return;
     const mode = this.mode();
     const fields = (Object.keys(FIELDS) as PaintField[]).filter((f) => fieldAvailable(f, mode) && (this.active ? this.cur[f] !== undefined : true));
-    this.valuesEl.replaceChildren(...fields.map((f) => {
+    // camera data beside the paint values (#151): only what the bridge reported
+    const data = typeof this.target === 'number'
+      ? cameraDataRows(this.link.data.get(this.target), cameraDataLabels()).filter(([, v]) => v !== '–').map(([k, v]) => h('span', { class: 'shv cam', 'data-camdata': k }, `${k} ${v}`))
+      : [];
+    this.valuesEl.replaceChildren(...data, ...fields.map((f) => {
       const v = this.active ? this.cur[f] : this.targetPaint()[f];
       const changed = this.active && this.cur[f] !== this.start[f];
       return h('span', { class: `shv${changed ? ' changed' : ''}`, 'data-field': f }, `${FIELDS[f].label} ${formatValue(f, v, this.active ? this.start[f] : undefined)}`);

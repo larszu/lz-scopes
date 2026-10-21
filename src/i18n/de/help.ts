@@ -277,5 +277,11 @@ export default {
   'help.lens.try': "Kamera auf eine gleichmäßig beleuchtete Weißkarte oder einen Diffusor (bildfüllend, leicht unscharf), im ⚙ Objektiv und Zoom eintragen, „Fingerabdruck speichern“. Hineinzoomen, einen zweiten speichern, dann zurückzoomen.",
   'help.lens.check': "zurück am ersten Zoom wählt das Panel diesen Fingerabdruck, und die Δ-Zeilen liegen nahe 0.",
   'help.lens.pitfall': "Ungleichmäßiges Licht sieht aus wie Objektiv-Shading – die Fläche muss auf Bruchteile eines Prozents gleichmäßig sein (Tektronix: ±0,5 % mit Diffusor üblich).",
+  'help.shguide.one': "Geführter Shading-Ablauf mit Live-Messung: Schwarz, Black Balance, Flare, Graukeil, Weiß, Knie, Matrix – dazu die Kameradaten des Touch-Shading-Ziels.",
+  'help.shguide.what': "Für alle, die ohne Mentor shaden: Jeder Schritt sagt, was vors Objektiv gehört, misst den Messrahmen und nennt den Regler und die Richtung.",
+  'help.shguide.read': "Y′ und R′−G′ / B′−G′ im Messrahmen; Knie: Spitze und geclippter Anteil im ganzen Bild; Flare: ΔY′ und Farbverschiebung zwischen Schwarz bei Blende zu und offen.",
+  'help.shguide.try': "Testbild „Schwarz“, Schritt 1, dann „Grau 50 %“ für Schritt 4.",
+  'help.shguide.check': "Mit „Schwarz“ zeigt Schritt 2 ✓ (R′−G′ und B′−G′ +0,0 %); mit „Grau 50 %“ zeigt Schritt 4 Y′ etwa 50 % und ✓.",
+  'help.shguide.pitfall': "Der Flare-Schritt braucht ein wirklich schwarzes Objekt; ein dunkles Grau erscheint als Flare.",
   // --- end scope texts ---
 } satisfies Translation<typeof en>;

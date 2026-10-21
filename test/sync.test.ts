@@ -13,7 +13,7 @@ import { shippedFfmpeg } from './shippedFfmpeg';
 const tmp: string[] = [];
 const tempDir = () => { const d = mkdtempSync(join(tmpdir(), 'lzs-sync-')); tmp.push(d); return d; };
 // Windows: a file the virus scanner still holds cannot be removed; the runner's temp folder goes anyway
-afterAll(() => { for (const d of tmp) try { rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* still held */ } });
+afterAll(() => { for (const d of tmp) try { rmSync(d, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); } catch { /* still held */ } }, 60_000);
 
 describe('freeze all with latency compensation', () => {
   it('common moment = now − the largest latency; unknown latency counts as 0', () => {
@@ -129,6 +129,8 @@ describe('recordings as sources', () => {
       expect(arrivals.a.length).toBeGreaterThan(65);
       expect(arrivals.a.length).toBeLessThanOrEqual(76);
       // seek while paused: exactly one picture
+      b.send(JSON.stringify({ type: 'pause', t: 11_500 }));
+      await new Promise((r) => setTimeout(r, 1000));
       const n = arrivals.b.length;
       b.send(JSON.stringify({ type: 'seek', t: 12_000 }));
       await new Promise((r) => setTimeout(r, 1500));

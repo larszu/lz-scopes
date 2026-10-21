@@ -17,7 +17,7 @@ const ffprobe = ffmpeg.replace(/ffmpeg(\.exe)?$/, (m) => m.replace('ffmpeg', 'ff
 const tmp: string[] = [];
 const tempDir = () => { const d = mkdtempSync(join(tmpdir(), 'lzs-ring-')); tmp.push(d); return d; };
 // Windows: a file the virus scanner still holds cannot be removed; the runner's temp folder goes anyway
-afterAll(() => { for (const d of tmp) try { rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* still held */ } });
+afterAll(() => { for (const d of tmp) try { rmSync(d, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); } catch { /* still held */ } }, 60_000);
 
 type Entry = { file: string; startMs: number; endMs: number; gen: number };
 const seg = (i: number, gen = 1, len = 2000, t0 = 0): Entry => ({ file: `ring${gen}_${String(i).padStart(3, '0')}.mkv`, startMs: t0 + i * len, endMs: t0 + (i + 1) * len, gen });

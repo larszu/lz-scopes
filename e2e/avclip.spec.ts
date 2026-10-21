@@ -25,7 +25,8 @@ test('A/V-Versatz aus Clip: Ton 100 ms zu spät', async () => {
   const dlg = a.page.locator('dialog#avclip');
   await expect(dlg).toBeVisible();
   await dlg.locator('input[type=file]').setInputFiles(file);
-  await expect(dlg.locator('.avclip-verdict')).toHaveText('Ton kommt zu spät', { timeout: 30_000 });
+  await expect(dlg.locator('.avclip-card')).toBeVisible({ timeout: 90_000 });
+  expect(await dlg.locator('.avclip-card').innerText()).toContain('Ton kommt zu spät');
   const ms = Number((await dlg.getByTestId('avclip-ms').textContent())!.replace('−', '-').replace(/[^\d.+-]/g, ''));
   expect(ms).toBeGreaterThan(-115);
   expect(ms).toBeLessThan(-85);

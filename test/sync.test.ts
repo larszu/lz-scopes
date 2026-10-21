@@ -1,6 +1,6 @@
 // Common time base (#140 steps 2 and 5): freeze all sources at one moment of the scene with
 // latency compensation, and play several recordings on one clock (server/playback.mjs).
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -122,8 +122,7 @@ describe('recordings as sources', () => {
       for (const ws of [a, b]) ws.send(JSON.stringify({ type: 'play', t: 10_000, at }));
       await new Promise((r) => setTimeout(r, 3800));
       // A: 3 s from `at`; B: its scene starts 1 s later, so its first frame comes 1 s after A's
-      // absolute start: Windows needs noticeably longer to launch the decoding ffmpeg
-      expect(Math.abs(arrivals.a[0] - at)).toBeLessThan(process.platform === 'win32' ? 400 : 120);
+      expect(Math.abs(arrivals.a[0] - at)).toBeLessThan(120);
       expect(Math.abs(arrivals.b[0] - arrivals.a[0] - 1000)).toBeLessThan(120);
       // paced at 25 fps, not as fast as ffmpeg decodes
       expect(arrivals.a.length).toBeGreaterThan(65);
@@ -133,7 +132,11 @@ describe('recordings as sources', () => {
       b.send(JSON.stringify({ type: 'seek', t: 12_000 }));
       await new Promise((r) => setTimeout(r, 1500));
       expect(arrivals.b.length - n).toBe(1);
-    } finally { a.close(); b.close(); bridge.close(); }
+    } finally { bridge.close(); }
+    // closing the bridge ends the decoders of both players, also with the clients still connected
+    await until(() => childFfmpeg() === 0, 10_000).catch(() => {});
+    expect(childFfmpeg()).toBe(0);
+    a.close(); b.close();
   }, 60_000);
 });
 
@@ -143,4 +146,12 @@ async function until(f: () => boolean, ms = 10_000) {
     if (Date.now() - t0 > ms) throw new Error('timeout');
     await new Promise((r) => setTimeout(r, 50));
   }
+}
+
+/** ffmpeg/ffprobe processes started by this test process. */
+function childFfmpeg(): number {
+  const out = process.platform === 'win32'
+    ? execFileSync('powershell', ['-NoProfile', '-Command', `(Get-CimInstance Win32_Process -Filter "ParentProcessId=${process.pid}" | Where-Object { $_.Name -match '^ff(mpeg|probe)' }).Count`], { encoding: 'utf8' })
+    : (() => { try { return execFileSync('pgrep', ['-P', String(process.pid), 'ff'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean).length.toString(); } catch { return '0'; } })();
+  return Number(out.trim()) || 0;
 }

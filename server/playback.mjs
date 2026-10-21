@@ -139,18 +139,23 @@ export async function startPlayback(ws, params, url, ctx) {
     clearInterval(timer); timer = null; queue = [];
     if (ff) { const p = ff; ff = null; p.stdout.removeAllListeners('data'); p.kill('SIGKILL'); }
   };
-  /** decode from scene time `t`; `frames` = 1 for a still (pause, seek) */
-  const decode = (t, frames = 0) => {
+  /**
+   * Decode from scene time `t`. Paused (`still`): the first picture goes out at once and the
+   * decoder stays, a few pictures read ahead, so a play from here starts without ffmpeg's start-up
+   * time (seek, first decode: 0.3 s on Windows) – otherwise the first pictures would come late.
+   */
+  const decode = (t, still = false) => {
     stop();
     pos0 = Math.max(0, Math.min(duration, mediaPosition(t, rec.startUtcMs, rec.latencyMs)));
     n = 0;
     const vf = `scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}`;
     const a = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-ss', pos0.toFixed(3), '-f', 'concat', '-safe', '0', '-i', list, '-map', '0:v:0', '-an', '-vf', vf,
-      ...(frames ? ['-frames:v', String(frames)] : []), '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-f', 'rawvideo', 'pipe:1'];
+      '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-f', 'rawvideo', 'pipe:1'];
     const p = spawn(ctx.ffmpeg, a, { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
     ff = p;
+    let shown = !still;
     asm = new FrameAssembler(bytes, (f) => {
-      if (frames) { if (ws.readyState === ws.OPEN) { ws.send(f, { binary: true }); sent++; } return; }
+      if (!shown) { shown = true; if (ws.readyState === ws.OPEN) { ws.send(f, { binary: true }); sent++; } }
       queue.push(f);
       // read ahead a little, never more: the pace comes from the clock, not from ffmpeg
       if (queue.length > 6) p.stdout.pause();
@@ -181,18 +186,20 @@ export async function startPlayback(ws, params, url, ctx) {
     if (!Number.isFinite(t)) return;
     if (m.type === 'play') {
       const at = Number.isFinite(Number(m.at)) ? Number(m.at) : Date.now();
-      decode(t);
+      // paused at this very picture: the waiting decoder plays on, else a new one from `t`
+      const want = Math.max(0, Math.min(duration, mediaPosition(t, rec.startUtcMs, rec.latencyMs)));
+      if (!(ff && !clock && n === 0 && Math.abs(want - pos0) < 0.5 / info.fps)) decode(t);
       clock = { t0: t, at0: at, rate: Math.min(4, Math.max(0.1, Number(m.rate) || 1)) };
       timer = setInterval(pump, 4);
       state('playing', t);
     } else if (m.type === 'pause' || m.type === 'seek') {
       clock = null;
-      decode(t, 1);
+      decode(t, true);
       state('paused', t);
     }
   });
   // first picture: the start of the recording
-  decode(startUtc, 1);
+  decode(startUtc, true);
   state('paused', startUtc);
   const stats = setInterval(() => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'stats', sent, dropped })); }, 1000);
   ws.on('close', () => { closed = true; clearInterval(stats); stop(); rm(tmp, { recursive: true, force: true }).catch(() => {}); });

@@ -1512,7 +1512,11 @@ export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false
       const p = server.address().port;
       // the iPhone/iPad app finds a bridge that listens on the network via Bonjour (server/bonjour.mjs)
       const mdns = await announce({ port: p, host });
-      ok({ port: p, bonjour: mdns?.name ?? null, close: () => { mdns?.stop(); server.close(); } });
+      ok({ port: p, bonjour: mdns?.name ?? null, close: () => {
+        mdns?.stop(); server.close();
+        // open sockets end too, and with them their ffmpeg processes (stream, playback, recording)
+        for (const w of [wss, outWss, clockWss, meterWss, uploadWss, ctlWss]) for (const c of w.clients) c.terminate();
+      } });
     });
   });
 }

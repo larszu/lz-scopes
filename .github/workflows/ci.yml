@@ -39,6 +39,23 @@ jobs:
       # the NDI helper builds without any SDK (helpers/ndi/ndi-min.h); run it once without runtime
       - run: node scripts/build-helpers.mjs ndi && helpers/bin/lz-ndi --list && helpers/bin/lz-ndi --selftest
 
+  # the Windows app spawns and stops ffmpeg differently (no SIGINT, pipes, drive letters): unit
+  # tests with the shipped win32-x64 ffmpeg
+  check-windows:
+    runs-on: windows-latest
+    env:
+      LZS_FFMPEG_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: node scripts/ffmpeg-fetch.mjs win32-x64
+      - run: npx tsc --noEmit
+      - run: npm test
+
   # The suite runs serially (one app per test, SwiftShader): split into shards so each job stays well under the limit
   e2e:
     runs-on: ubuntu-latest

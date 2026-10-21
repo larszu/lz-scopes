@@ -131,3 +131,23 @@ describe('lang-check guard (scripts/lang-check.mjs)', () => {
     }
   });
 });
+
+describe('embed language (useLang)', () => {
+  it('relabels patterns and scope names in place, keeps <html lang>', async () => {
+    const { useLang, setLang } = await import('../src/i18n');
+    const { PATTERNS, patternById } = await import('../src/patterns');
+    const { SCOPE_LABELS } = await import('../src/graticule');
+    setLang('en');
+    useLang('en');
+    const arr = PATTERNS, n = PATTERNS.length;
+    const enRed = patternById('red').name, enVector = SCOPE_LABELS.vector;
+    useLang('de');
+    expect(PATTERNS).toBe(arr);
+    expect(PATTERNS.length).toBe(n);
+    expect(patternById('red').name).not.toBe(enRed);
+    expect(SCOPE_LABELS.vector).toBeTruthy();
+    useLang('en');
+    expect(patternById('red').name).toBe(enRed);
+    expect(SCOPE_LABELS.vector).toBe(enVector);
+  });
+});

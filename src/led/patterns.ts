@@ -184,9 +184,9 @@ function patch(ctx: Ctx, W: number, H: number, t: number) {
   }
 }
 
-export const LED_GROUP = t('led.pat.group');
-
-export const LED_PATTERNS: PatternDef[] = [
+export function ledPatterns(): PatternDef[] {
+  const LED_GROUP = t('led.pat.group');
+  return [
   { id: 'led-cabinet-grid', name: t('led.pn.cabinetGrid'), group: LED_GROUP, draw: (c, w, h) => cabinetGrid(c, w, h, false) },
   { id: 'led-module-grid', name: t('led.pn.moduleGrid'), group: LED_GROUP, draw: (c, w, h) => cabinetGrid(c, w, h, true) },
   { id: 'led-pixelmap', name: t('led.pn.pixelmap'), group: LED_GROUP, draw: pixelMap },
@@ -197,4 +197,7 @@ export const LED_PATTERNS: PatternDef[] = [
   { id: 'led-shutter', name: t('led.pn.shutter'), group: LED_GROUP, animated: true, draw: shutter },
   { id: 'led-moire', name: t('led.pn.moire'), group: LED_GROUP, draw: moire },
   { id: 'led-patch', name: t('led.pn.patch'), group: LED_GROUP, animated: true, draw: patch },
-];
+  ];
+}
+
+export const LED_PATTERNS = ledPatterns();

@@ -71,8 +71,9 @@ export function takeName(d = new Date()) {
 export function resolveTarget(roots, rootName, take, name) {
   const root = roots.find((r) => r.name === rootName) ?? (rootName ? null : roots[0]);
   if (!root || !validTake(take)) return null;
-  const dir = resolve(root.dir, take);
-  if (!dir.startsWith(root.dir + sep)) return null;
+  const rootDir = resolve(root.dir);
+  const dir = resolve(rootDir, take);
+  if (!dir.startsWith(rootDir + sep)) return null;
   const base = safeName(name);
   return { root, dir, base };
 }
@@ -286,20 +287,19 @@ function testEncode(ffmpeg, enc) {
 
 /** Follows a growing text file; `stop()` reads the rest once more. */
 export function tailFile(file, onText, everyMs = 100) {
-  let pos = 0, busy = false, stopped = false;
-  const read = () => new Promise((ok) => {
-    if (busy) return ok();
-    busy = true;
+  let pos = 0, busy = null, stopped = false;
+  const read = () => busy ?? (busy = new Promise((ok) => {
     stat(file).then((st) => {
-      if (st.size <= pos) { busy = false; return ok(); }
+      if (st.size <= pos) return ok();
       const s = createReadStream(file, { start: pos, end: st.size - 1, encoding: 'utf8' });
       s.on('data', (d) => onText(d));
-      s.on('close', () => { pos = st.size; busy = false; ok(); });
-      s.on('error', () => { busy = false; ok(); });
-    }, () => { busy = false; ok(); });
-  });
+      s.on('close', () => { pos = st.size; ok(); });
+      s.on('error', () => ok());
+    }, () => ok());
+  }).finally(() => { busy = null; }));
   const timer = setInterval(() => { if (!stopped) read(); }, everyMs);
-  return { stop: async () => { stopped = true; clearInterval(timer); await read(); } };
+  // a read still running would miss the last lines: wait for it, then read the rest
+  return { stop: async () => { stopped = true; clearInterval(timer); await busy; await read(); } };
 }
 
 export const ensureDir = (dir) => mkdir(dir, { recursive: true });

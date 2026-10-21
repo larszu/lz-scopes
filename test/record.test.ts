@@ -4,7 +4,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   LineSplitter, Sidecar, escapePattern, estimateRate, hevcBitrate, parseSegmentLine, pickHevcEncoder, recordMode, recordRoots,
@@ -20,7 +20,8 @@ const ffmpeg = shippedFfmpeg ?? '';
 const ffprobe = ffmpeg.replace(/ffmpeg(\.exe)?$/, (m) => m.replace('ffmpeg', 'ffprobe'));
 const tmp: string[] = [];
 const tempDir = () => { const d = mkdtempSync(join(tmpdir(), 'lzs-rec-')); tmp.push(d); return d; };
-afterAll(() => { for (const d of tmp) rmSync(d, { recursive: true, force: true }); });
+// Windows: a file the virus scanner still holds cannot be removed; the runner's temp folder goes anyway
+afterAll(() => { for (const d of tmp) try { rmSync(d, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); } catch { /* still held */ } }, 60_000);
 
 describe('target folders', () => {
   it('released roots: unique names, flags and environment', () => {
@@ -29,7 +30,7 @@ describe('target folders', () => {
   });
   it('names are sanitised and never leave the root', () => {
     const roots = [{ name: 'Rec', dir: '/data/Rec' }];
-    expect(resolveTarget(roots, 'Rec', '20261010-120000', 'Kamera 1 / A')).toMatchObject({ dir: '/data/Rec/20261010-120000', base: 'Kamera_1_A' });
+    expect(resolveTarget(roots, 'Rec', '20261010-120000', 'Kamera 1 / A')).toMatchObject({ dir: resolve('/data/Rec', '20261010-120000'), base: 'Kamera_1_A' });
     expect(resolveTarget(roots, '', 'take', 'x')?.root.name).toBe('Rec');
     expect(resolveTarget(roots, 'Other', 'take', 'x')).toBeNull();
     for (const bad of ['..', '../x', 'a/b', '', '.hidden/..', 'a\\b']) expect(resolveTarget(roots, 'Rec', bad, 'x')).toBeNull();

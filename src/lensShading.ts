@@ -1,4 +1,5 @@
-// White shading of a flat white field, reusable core (idea 9, docs/research/lens-fingerprint.md).
+// White shading of a flat white field for the lens fingerprint; the least-squares fit is the
+// shared white-shading core (surface.ts, as in whiteShading.ts) (idea 9, docs/research/lens-fingerprint.md).
 // Pure functions, no DOM:
 //   shadingGrid   cell means of R, G, B over the picture (or a region)
 //   shadingFit    per channel, relative to the centre: saw H/V (linear) and parabola H/V
@@ -8,6 +9,7 @@
 // Values are linear light when `linear` is passed (inverse BT.709 OETF), else code values.
 
 import { bt709InverseOetf } from './color';
+import { fitSurface, norm } from './surface';
 
 export interface ShadingGrid { nx: number; ny: number; /** nx·ny·3 means, row-major, R G B */ rgb: Float32Array }
 
@@ -36,34 +38,22 @@ export interface ChannelShading {
 }
 export interface ShadingFit { r: ChannelShading; g: ChannelShading; b: ChannelShading; /** luma deviation from the centre per cell, % */ map: Float32Array; nx: number; ny: number }
 
-/** Solve the 5×5 normal equations (Gaussian elimination). */
-function solve5(A: number[][], b: number[]) {
-  const n = 5, M = A.map((r, i) => [...r, b[i]]);
-  for (let c = 0; c < n; c++) {
-    let p = c;
-    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
-    [M[c], M[p]] = [M[p], M[c]];
-    if (Math.abs(M[c][c]) < 1e-12) return [0, 0, 0, 0, 0];
-    for (let r = 0; r < n; r++) if (r !== c) { const f = M[r][c] / M[c][c]; for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; }
-  }
-  return M.map((r, i) => r[n] / r[i]);
-}
-
-/** Least-squares fit v = a + b·x + c·y + d·x² + e·y², x and y from −1 (left/top) to +1 over the cell centres. */
+/**
+ * Fit of one channel with the shared white-shading core (surface.ts, also behind whiteShading.ts):
+ * v = c0 + c1·x + c2·y + c3·x² + c4·y² + c5·x·y over the cell centres, x and y from −1 (left/top)
+ * to +1. Reported relative to the centre level c0; c5 (diagonal) counts into the rest.
+ */
 function fitChannel(g: ShadingGrid, ch: number): ChannelShading {
-  const A = Array.from({ length: 5 }, () => [0, 0, 0, 0, 0]), b = [0, 0, 0, 0, 0];
-  const pts: { f: number[]; v: number }[] = [];
-  for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) {
-    const x = g.nx > 1 ? (2 * (i + 0.5)) / g.nx - 1 : 0, y = g.ny > 1 ? (2 * (j + 0.5)) / g.ny - 1 : 0;
-    const f = [1, x, y, x * x, y * y], v = g.rgb[(j * g.nx + i) * 3 + ch];
-    pts.push({ f, v });
-    for (let r = 0; r < 5; r++) { b[r] += f[r] * v; for (let c = 0; c < 5; c++) A[r][c] += f[r] * f[c]; }
-  }
-  const [a, sx, sy, px, py] = solve5(A, b);
-  const pct = (v: number) => (a > 1e-9 ? (v / a) * 100 : NaN);
+  const v = new Float32Array(g.nx * g.ny);
+  for (let k = 0; k < v.length; k++) v[k] = g.rgb[k * 3 + ch];
+  const s = fitSurface(v, g.nx, g.ny) ?? [0, 0, 0, 0, 0, 0];
+  const a = s[0], pct = (x: number) => (a > 1e-9 ? (x / a) * 100 : NaN);
   let ss = 0;
-  for (const p of pts) { const m = p.f.reduce((s, fi, k) => s + fi * [a, sx, sy, px, py][k], 0); ss += (p.v - m) ** 2; }
-  return { centre: a, sawH: pct(sx), sawV: pct(sy), parH: pct(px), parV: pct(py), rest: pct(Math.sqrt(ss / pts.length)) };
+  for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) {
+    const x = norm(i, g.nx), y = norm(j, g.ny), m = s[0] + s[1] * x + s[2] * y + s[3] * x * x + s[4] * y * y;
+    ss += (v[j * g.nx + i] - m) ** 2;
+  }
+  return { centre: a, sawH: pct(s[1]), sawV: pct(s[2]), parH: pct(s[3]), parV: pct(s[4]), rest: pct(Math.sqrt(ss / v.length)) };
 }
 
 export function shadingFit(g: ShadingGrid): ShadingFit {

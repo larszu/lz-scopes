@@ -47,7 +47,7 @@ export default {
   'avclip.reading': "Lese {name} …",
   'avclip.noVideo': "Die Datei lässt sich nicht als Video abspielen",
   'avclip.failed': "Analyse fehlgeschlagen: {msg}",
-  'avclip.none': "Kein Blitz/Piep-Paar gefunden ({flashes} Blitze, {beeps} Pieps).",
+  'avclip.none': "Kein Blitz/Piep-Paar gefunden ({flashes} Blitze, {beeps} Pieps; {frames} Bilder, Helligkeitsspanne {span} %).",
   'avclip.fps': "Bildrate: {fps} fps",
   'avclip.howTo': "Bildschirm gut sichtbar, Piep deutlich hörbar, Clip mindestens 3 s lang.",
   'avclip.early': "Ton kommt zu früh",

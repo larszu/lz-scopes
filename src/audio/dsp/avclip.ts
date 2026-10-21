@@ -21,6 +21,9 @@ export interface ClipResult {
   pairs: number;
   flashes: number;
   beeps: number;
+  /** frames read and their luma range (max − min, 0…1) – tells a missing flash from a missing picture */
+  frameCount: number;
+  lumaSpan: number;
   /** spread of the pairs (max − min) in ms */
   spreadMs: number | null;
 }
@@ -51,6 +54,7 @@ export function analyzeClip(frames: ClipFrame[], audio: Float32Array[], fs: numb
   return {
     fps, frameMs, offsetMs: off, frames: inFrames,
     verdict: inFrames === null ? null : Math.abs(inFrames) < 0.5 ? 'sync' : inFrames > 0 ? 'early' : 'late',
+    frameCount: fr.length, lumaSpan: Number.isFinite(hi - lo) ? hi - lo : 0,
     pairs: r.pairs.length, flashes: r.flashes, beeps: r.beeps,
     spreadMs: r.minMs !== null && r.maxMs !== null ? r.maxMs - r.minMs : null,
   };

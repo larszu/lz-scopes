@@ -55,5 +55,7 @@ describe('A/V offset of a dropped clip (#153)', () => {
     expect(r.fps).toBe(25);
     expect(r.offsetMs).toBeNull();
     expect(r.verdict).toBeNull();
+    expect(r.frameCount).toBe(3);
+    expect(r.lumaSpan).toBe(1);
   });
 });

@@ -46,7 +46,7 @@ export default {
   'avclip.reading': "Reading {name} …",
   'avclip.noVideo': "The file cannot be played as video",
   'avclip.failed': "Analysis failed: {msg}",
-  'avclip.none': "No flash/beep pair found ({flashes} flashes, {beeps} beeps).",
+  'avclip.none': "No flash/beep pair found ({flashes} flashes, {beeps} beeps; {frames} frames, brightness range {span} %).",
   'avclip.fps': "Frame rate: {fps} fps",
   'avclip.howTo': "The screen should be clearly visible, the beep clearly audible, the clip at least 3 s long.",
   'avclip.early': "Sound is early",

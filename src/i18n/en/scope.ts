@@ -36,6 +36,7 @@ export default {
   'scope.name.simulcast': 'Simulcast Deviation',
   'scope.name.encoder': 'Encoder Confidence',
   'scope.name.lens': 'Lens Fingerprint',
+  'scope.name.sdi': 'SDI Signal Info',
   'scope.name.audio-meter': 'Audio Level & Loudness',
   'scope.name.audio-loudness': 'Audio Loudness History',
   'scope.name.audio-spectrum': 'Audio Spectrum',

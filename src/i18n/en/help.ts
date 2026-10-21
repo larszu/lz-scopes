@@ -289,5 +289,11 @@ export default {
   'help.shguide.try': "\"Black\" test pattern, step 1, then \"Grey 50 %\" for step 4.",
   'help.shguide.check': "With \"Black\" step 2 reads ✓ (R′−G′ and B′−G′ +0.0 %); with \"Grey 50 %\" step 4 reads Y′ about 50 % and ✓.",
   'help.shguide.pitfall': "The flare step needs a really black object; a dark grey shows as flare.",
+  'help.sdi.one': "What the SDI signal says about itself: ST 352 payload ID, HDR metadata, timecode, captions and audio packets from a DeckLink input.",
+  'help.sdi.what': "SDI carries ancillary packets beside the picture. The ST 352 payload ID names format, rate, sampling, bit depth, colorimetry and transfer (SDR, HLG, PQ); ST 2108-1 carries mastering display and MaxCLL; ST 12-2 carries LTC/VITC timecode. The panel decodes them and warns when the signal is flagged differently from what the scopes read.",
+  'help.sdi.read': "Top: ST 352 bytes and their meaning. Yellow line: the flag disagrees with the transfer or matrix of the source – ⚙ offers the switch.\nBelow: HDR metadata, timecode, AFD, presence of CEA-708/608 and ST 299 audio groups, then every packet type with line, DID/SDID, count and data in hex.",
+  'help.sdi.try': "Add a DeckLink input (Sources → DeckLink…) with an SDI signal and open this panel.",
+  'help.sdi.check': "the ST 352 line shows the format the source outputs (for example 1080p50, 4:2:2, 10 bit) and no yellow line once transfer and matrix agree.",
+  'help.sdi.pitfall': "Converters and recorders often rewrite or drop ST 352 – a missing or wrong flag says more about the chain than about the camera. Not yet tested with a card (#116).",
   // --- end scope texts ---
 } satisfies Messages;

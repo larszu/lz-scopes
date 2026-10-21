@@ -39,6 +39,7 @@ import { drawLightPanel, isLight, lightSignature, type LightPanelOptions } from 
 import { drawSimulcastPanel, type SimulcastSettings } from './simulcastPanel';
 import { drawEncoderPanel, type EncoderSettings } from './encoderPanel';
 import { drawLensPanel, type LensSettings } from './lensPanel';
+import { drawSdiPanel } from './sdiPanel';
 import { t } from './i18n';
 import { IDENTITY, isIdentity, viewRect, waveRange, type View, type ViewLimits } from './view';
 import { GHOST_CSS, GHOST_TINT, deltaRows, ghostChannels, hasGhost, histOf, levelDeltas, traceLevels } from './ghost';
@@ -607,6 +608,8 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
     : p.scope === 'encoder' ? `|e${Math.floor(Date.now() / 40)}`
     // lens fingerprint: stored prints can change without a new frame
     : p.scope === 'lens' ? `|l${Math.floor(Date.now() / 500)}`
+    // SDI signal info: VANC records arrive beside the frames and go stale
+    : p.scope === 'sdi' ? `|v${src?.vanc?.at ?? 0}:${Math.floor(Date.now() / 1000)}`
     : p.scope === 'qclog' ? `|q${qcLog.version}:${Math.floor(Date.now() / 1000)}` : '';
   if (p.scope === 'clock') return `C|${src?.id}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}${tick}`;
   if (isLight(p.scope)) return `${lightSignature(p.scope, p.light, body.w, body.h)}|${body.x},${body.y}`;
@@ -688,6 +691,11 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
     renderer.clearRect(body);
     const { all, list } = chartSources(p, o);
     drawChartPanel(ctx, body.w, body.h, p.chart, all, list, o.ref?.source()?.id, o.emptyText ?? t('panel.draw.addSource'));
+    return;
+  }
+  if (p.scope === 'sdi') {
+    renderer.clearRect(body);
+    drawSdiPanel(ctx, body.w, body.h, src, o.emptyText ?? t('panel.draw.addSource'));
     return;
   }
   if (p.scope === 'lens') {

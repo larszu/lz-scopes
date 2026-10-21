@@ -221,6 +221,11 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
       try { tcm = JSON.parse(payload.toString('utf8')); } catch { return; }
       lastDf = !!tcm.df;
       if (typeof tcm.tc === 'string' && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'tc', tc: tcm.tc, kind: label.toLowerCase(), fps: lastFps || null, df: lastDf }));
+    } else if (tag === 'VANC') {
+      // SDI ancillary packets (DeckLink, #160): forwarded as they are, decoded in the browser (src/vanc.ts)
+      let v;
+      try { v = JSON.parse(payload.toString('utf8')); } catch { return; }
+      if (Array.isArray(v.packets) && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'vanc', packets: v.packets.slice(0, 64) }));
     } else if (tag === 'FRAM') {
       if (phase && ctx.now) { const n = ctx.now(); phase.add(n.seconds, n.ref); }
       if (!ff || !fmt) return;

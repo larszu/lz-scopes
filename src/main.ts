@@ -14,7 +14,8 @@ import {
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
 import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
-import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
+import { inBox, legendPosAt, nearSplit, splitAt, splitPos } from './overlayDrag';
+import { DEFAULT_SKIN, ROI_CLOSE, contentRect, legendBoxes, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
 import { attachGestures, onChip } from './gestures';
 import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
@@ -1163,7 +1164,7 @@ function panelSettings(p: PanelState): Node[] {
       p.ab = { ...ab, ...patch }; Object.assign(ab, patch); save(); refreshHeads();
       if (rebuild) refreshPanelSettings(p);
     };
-    row(t('panel.ab'), select(ab.mode, [['off', t('common.off')], ['split', 'Split 50 %'], ['wipe', 'Wipe'], ['diff', t('panel.abDiff')], ['crop', t('panel.abCrop')], ['butterfly', t('panel.abButterfly')]], (v) => setAb({ mode: v as 'off' }, true),
+    row(t('panel.ab'), select(ab.mode === 'wipe' ? 'split' : ab.mode, [['off', t('common.off')], ['split', t('panel.abSplit')], ['diff', t('panel.abDiff')], ['crop', t('panel.abCrop')], ['butterfly', t('panel.abButterfly')]], (v) => setAb({ mode: v as 'off' }, true),
       t('panel.abTitle')));
     if (ab.mode !== 'off') {
       const own = panelSource(p);
@@ -1173,8 +1174,8 @@ function panelSettings(p: PanelState): Node[] {
         ...sources.filter((s) => s !== own && s.kind !== 'audio').map((s) => [`src:${s.id}`, s.name] as [string, string]),
       ], (v) => setAb({ b: v })));
       if (ab.mode === 'crop' || ab.mode === 'butterfly') rows.push(hint(t('panel.abCropHint')));
-      if (ab.mode === 'wipe') {
-        row(t('panel.wipePos'), slider(ab.pos ?? 0.5, (v) => setAb({ pos: v }), { min: 0, max: 1, step: 0.01, reset: 0.5 }));
+      if (ab.mode === 'split' || ab.mode === 'wipe') {
+        row(t('panel.wipePos'), slider(splitPos(ab), (v) => setAb({ pos: v }), { min: 0, max: 1, step: 0.01, reset: 0.5, title: t('panel.wipeDrag') }));
       }
       if (ab.mode === 'diff') row(t('panel.gainAb'), select(String(ab.gain ?? 4), [['1', '×1'], ['4', '×4'], ['16', '×16'], ['64', '×64']], (v) => setAb({ gain: Number(v) }), t('panel.gainAbTitle')));
     }
@@ -1192,7 +1193,10 @@ function panelSettings(p: PanelState): Node[] {
     }
     if (p.picture === 'gamut') row(t('panel.tgtGamut'), select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']], (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, t('panel.tgtGamutTitle')));
     if (p.picture === 'false') global(SET.falseColour);
-    if (p.picture === 'zebra') global(SET.zebra, t('panel.zebraFrom'));
+    if (p.picture === 'zebra') {
+      row(t('panel.zebraFrom'), slider(Math.round(state.zebra * 100), (v) => { state.zebra = v / 100; save(); }, { min: 50, max: 109, step: 1, reset: 95, number: true, unit: '%', title: t('panel.zebraTitle') }));
+      row(t('panel.zebraLow'), slider(Math.round(state.zebraLow * 100), (v) => { state.zebraLow = v / 100; save(); }, { min: 0, max: 100, step: 1, reset: 0, number: true, unit: '%', title: t('panel.zebraLowTitle') }));
+    }
     row(t('panel.clock'), checkbox(!!p.clockOverlay, t('panel.clockText'), (v) => { p.clockOverlay = v; save(); }, t('panel.clockTitle')));
     global(SET.display);
     global(SET.hdrPreview);
@@ -1389,11 +1393,33 @@ function attachPointer(p: PanelState, body: HTMLElement) {
     return { x: Math.min(s.width - 1, Math.floor(fx * s.width)), y: Math.min(s.height - 1, Math.floor(fy * s.height)) };
   };
   let start: { x: number; y: number; cx: number; cy: number; roi: Source['roi'] } | null = null;
+  // drag the A/B split line or the overlay legend instead of probe / ROI
+  let drag: { kind: 'split' } | { kind: 'legend'; dx: number; dy: number; w: number; h: number } | null = null;
+  const local = (e: PointerEvent) => { const b = body.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top, b }; };
+  const frameOf = (s: Source, b: DOMRect) => plotRect(p.scope, b.width, b.height, s.width / s.height);
+  const startOverlayDrag = (e: PointerEvent, s: Source) => {
+    const { x, y, b } = local(e);
+    const lb = legendBoxes.get(p);
+    if (lb && inBox(lb, x, y)) drag = { kind: 'legend', dx: x - lb.x, dy: y - lb.y, w: lb.w, h: lb.h };
+    else if (p.ab && (p.ab.mode === 'split' || p.ab.mode === 'wipe') && nearSplit(x, frameOf(s, b), splitPos(p.ab))) drag = { kind: 'split' };
+    else return false;
+    try { body.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
+    return true;
+  };
+  body.addEventListener('pointermove', (e) => {
+    const s = panelSource(p);
+    if (!drag || !s) return;
+    const { x, y, b } = local(e), f = frameOf(s, b);
+    if (drag.kind === 'split' && p.ab) p.ab = { ...p.ab, mode: 'split', pos: splitAt(x, f) };
+    else if (drag.kind === 'legend') p.legendPos = legendPosAt(f, drag.w, drag.h, x - drag.dx, y - drag.dy);
+  });
+  body.addEventListener('pointerup', () => { if (drag) { drag = null; save(); } });
   // a pinch began after the first finger: put the ROI back as it was, no probe
   body.addEventListener('lzs-gesture-cancel', () => { const s = panelSource(p); if (start && s) s.roi = start.roi; start = null; });
   body.addEventListener('pointerdown', (e) => {
     const s = panelSource(p);
     if (p.scope !== 'picture' || !s?.width || e.button !== 0 || onChip(e)) return;
+    if (startOverlayDrag(e, s)) return;
     if (s.roi && !s.faceTrack && hitRoiClose(e, s, body, p)) { s.roi = null; refreshHeads(); return; }
     const pt = toSrc(e, s, false);
     if (pt && s.faceTrack) {

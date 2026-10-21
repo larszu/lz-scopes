@@ -42,8 +42,11 @@ export interface GestureHost {
 
 type Mode = 'pan' | 'rotate' | 'pinch';
 
-/** The zoom chip inside the body is a button of its own: no gesture, no probe, no shading. */
-export const onChip = (e: Event) => !!(e.target as HTMLElement | null)?.closest?.('.zoomchip');
+/**
+ * Controls inside the body (zoom chip, the "track this face?" prompt) are buttons of their own:
+ * no gesture, no probe, no ROI drag – a pointer capture on the body would swallow their click (#154).
+ */
+export const onChip = (e: Event) => !!(e.target as HTMLElement | null)?.closest?.('.zoomchip, .ask');
 
 /** Double tap: two taps within 300 ms and 30 px. */
 const TAP_MS = 300, TAP_PX = 30;

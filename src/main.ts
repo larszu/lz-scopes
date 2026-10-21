@@ -14,8 +14,8 @@ import {
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
 import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
-import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
-import { attachGestures } from './gestures';
+import { DEFAULT_SKIN, ROI_CLOSE, contentRect, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
+import { attachGestures, onChip } from './gestures';
 import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
 import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } from './scene';
@@ -46,6 +46,7 @@ import { ledSettings, pictureSize } from './led/wall';
 import { Renderer, type PictureMode, type SkinRange } from './renderer';
 import { GREEN_DEFAULT } from './match/core';
 import { greenSettings, matchPanelSettings, targetEditor, type MatchUi } from './match/ui';
+import { openChartCorners } from './match/chartUi';
 import { bindBridgeField, normaliseBridge } from './bridgeField';
 import { streamRoute } from './streamRoute';
 import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
@@ -1124,6 +1125,22 @@ function panelSettings(p: PanelState): Node[] {
     global(SET.skinHue);
     rows.push(hint(t('skinall.hint')));
   }
+  if (p.scope === 'chart') {
+    const ch = p.chart ?? {};
+    const chosen = new Set(ch.sources ?? []);
+    const video = sources.filter((s) => s.kind !== 'audio');
+    row(t('tiles.sources'), ...video.map((s) => checkbox(chosen.has(s.id), `${sources.indexOf(s) + 1} ${s.name}`, (on) => {
+      if (on) chosen.add(s.id); else chosen.delete(s.id);
+      p.chart = { ...p.chart, sources: video.filter((x) => chosen.has(x.id)).map((x) => x.id).slice(0, MAX_TILES) }; save();
+    })));
+    row(t('chart.setCorners'), ...chartSources(p, drawOptions()).list.map((s) => button(`${sources.indexOf(s) + 1} ${s.name}`, () => openChartCorners(s, p.chart?.corners?.[s.id], (pts) => {
+      const corners = { ...p.chart?.corners };
+      if (pts) corners[s.id] = pts; else delete corners[s.id];
+      p.chart = { ...p.chart, corners }; save();
+    }), { small: true })));
+    row(t('chart.tol'), select(String(ch.tol ?? 3), [['1', '1'], ['2', '2'], ['3', '3'], ['5', '5']], (v) => { p.chart = { ...p.chart, tol: Number(v) }; save(); }));
+    rows.push(hint(t('chart.hint')));
+  }
   if (p.scope === 'wshading') {
     const ws = p.wshading ?? {};
     const setW = (patch: NonNullable<PanelState['wshading']>) => { p.wshading = { ...p.wshading, ...patch }; save(); };
@@ -1146,7 +1163,7 @@ function panelSettings(p: PanelState): Node[] {
       p.ab = { ...ab, ...patch }; Object.assign(ab, patch); save(); refreshHeads();
       if (rebuild) refreshPanelSettings(p);
     };
-    row(t('panel.ab'), select(ab.mode, [['off', t('common.off')], ['split', 'Split 50 %'], ['wipe', 'Wipe'], ['diff', t('panel.abDiff')]], (v) => setAb({ mode: v as 'off' }, true),
+    row(t('panel.ab'), select(ab.mode, [['off', t('common.off')], ['split', 'Split 50 %'], ['wipe', 'Wipe'], ['diff', t('panel.abDiff')], ['crop', t('panel.abCrop')], ['butterfly', t('panel.abButterfly')]], (v) => setAb({ mode: v as 'off' }, true),
       t('panel.abTitle')));
     if (ab.mode !== 'off') {
       const own = panelSource(p);
@@ -1155,6 +1172,7 @@ function panelSettings(p: PanelState): Node[] {
         ['rgc', p.rgc ? t('panel.abRgcOff') : t('panel.abRgcOn')],
         ...sources.filter((s) => s !== own && s.kind !== 'audio').map((s) => [`src:${s.id}`, s.name] as [string, string]),
       ], (v) => setAb({ b: v })));
+      if (ab.mode === 'crop' || ab.mode === 'butterfly') rows.push(hint(t('panel.abCropHint')));
       if (ab.mode === 'wipe') {
         row(t('panel.wipePos'), slider(ab.pos ?? 0.5, (v) => setAb({ pos: v }), { min: 0, max: 1, step: 0.01, reset: 0.5 }));
       }
@@ -1375,7 +1393,7 @@ function attachPointer(p: PanelState, body: HTMLElement) {
   body.addEventListener('lzs-gesture-cancel', () => { const s = panelSource(p); if (start && s) s.roi = start.roi; start = null; });
   body.addEventListener('pointerdown', (e) => {
     const s = panelSource(p);
-    if (p.scope !== 'picture' || !s?.width || e.button !== 0) return;
+    if (p.scope !== 'picture' || !s?.width || e.button !== 0 || onChip(e)) return;
     if (s.roi && !s.faceTrack && hitRoiClose(e, s, body, p)) { s.roi = null; refreshHeads(); return; }
     const pt = toSrc(e, s, false);
     if (pt && s.faceTrack) {
@@ -1529,6 +1547,7 @@ function drawAll(now: number) {
       const p = state.panels[v.idx];
       if (p.scope === 'tiles') for (const tl of tilePlan(p, { w: 1, h: 1 }, drawOptions()).tiles) used.add(tl.src);
       if (p.scope === 'skinall') for (const s of skinSources(p, drawOptions()).list) used.add(s);
+      if (p.scope === 'chart') for (const s of chartSources(p, drawOptions()).list) used.add(s);
     }
     used.forEach((s) => {
       const every = s.kind === 'stream' && s.lowLatency ? s.llConfig.statsMs : 100;

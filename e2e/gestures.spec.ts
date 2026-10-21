@@ -161,6 +161,23 @@ test('Bild: Pinch statt Messpunkt, Schwenken mit mittlerer Taste', async () => {
   await until(async () => (await savedView(page)) === null, 10_000, 'Chip setzt zurück');
 });
 
+test('Bild: Knopf der Verfolgen-Frage im Bild bekommt den Klick (#154)', async () => {
+  const { page } = a;
+  await singlePanel(a, 'picture');
+  // the prompt appears inside the body after drawing a frame around a face; its buttons must not
+  // start a ROI drag whose pointer capture swallows the click
+  await page.evaluate(() => {
+    const body = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4)!.querySelector('.body')!;
+    const ask = document.createElement('div'); ask.className = 'ask';
+    const b = document.createElement('button'); b.className = 'btn'; b.id = 'e2e-track'; b.textContent = 'track';
+    b.onclick = () => { b.dataset.hit = '1'; };
+    ask.append(b); body.append(ask);
+  });
+  await page.locator('#e2e-track').click();
+  await expect(page.locator('#e2e-track')).toHaveAttribute('data-hit', '1');
+  await page.evaluate(() => document.querySelector('#e2e-track')?.parentElement?.remove());
+});
+
 test('Touch Shading aktiv: Finger gehören der Kamera, Rad/Pinch zoomt weiter', async () => {
   const { page } = a;
   expectOk(await a.control({ cmd: 'layout.preset', preset: 1 }));

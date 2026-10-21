@@ -32,6 +32,5 @@ test('ST 352 flags PQ, the scopes read SDR: warning, then the switch', async () 
   await page.locator('.popover.psettings').getByRole('button', { name: 'Use what the signal says' }).click();
   await page.keyboard.press('Escape');
   await expect.poll(fresh, { timeout: 30_000 }).not.toContain('Signal flags');
-  await page.screenshot({ path: 'test-results/e2e/sdi.png' });
   expect(errors).toEqual([]);
 });

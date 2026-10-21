@@ -37,6 +37,7 @@ import { clockPanelSettings } from './clock/ui';
 import { generator } from './audio/io';
 import { PATTERNS, RESOLUTIONS, patternById } from './patterns';
 import { addUserImages, favouritePatterns, isFavourite, loadUserPatterns, onUserPatternsChange, setFavourite } from './userPatterns';
+import { openAvClip } from './avClip';
 import { openTestImages, openTestVideos, type TestMediaHost } from './testMedia';
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
@@ -2359,6 +2360,7 @@ const shading = new ShadingControl({
   recordEvent: (kind, data) => { eventAll(kind, data); },
 }, app);
 registerMenuCommand('scopes', { id: 'shading', label: SHADING_T.menu, title: SHADING_T.buttonTitle }, () => shading.toggleBar());
+registerMenuCommand('scopes', { id: 'avclip', label: t('avclip.menu'), title: t('avclip.menuTitle') }, openAvClip);
 registerMenuCommand('scopes', { id: 'cameras', label: SHADING_T.camMenu, title: SHADING_T.camMenuTitle }, () => { void shading.openCameras(); });
 const dock = createDock($('#dock'), {
   element: panelElement,

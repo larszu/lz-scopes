@@ -246,8 +246,9 @@ export class Source {
     const key = `${this.cpuSeq}:${set}`;
     const now = performance.now();
     if (this.gamutCache.key === key) return this.gamutCache.v;
-    // only a new picture: at most five times a second
-    if (this.gamutCache.set === set && now - this.gamutCache.at < 200) return this.gamutCache.v;
+    // only a new picture: at most twice a second. It is a QC number, and on a busy machine the
+    // main thread has better things to do than linearise the same frame again.
+    if (this.gamutCache.set === set && now - this.gamutCache.at < 500) return this.gamutCache.v;
     const f = this.cpuFrame();
     const ys = rgbToXyzMatrix(GAMUTS[this.gamut]).slice(3, 6);
     const v = f ? gamutShare(f.px, f.w, f.h, f.decode, gamutConvert(GAMUTS[this.gamut], GAMUTS[target]), (rgb) => signalToLinear(rgb, this.transfer, this.hlgLw, ys)) : null;

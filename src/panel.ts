@@ -612,8 +612,8 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
     // lens fingerprint: stored prints can change without a new frame
     : p.scope === 'lens' ? `|l${Math.floor(Date.now() / 500)}`
     : p.scope === 'qclog' ? `|q${qcLog.version}:${Math.floor(Date.now() / 1000)}`
-    // CIE: the share outside the target gamut is counted a few times a second (#181)
-    : p.scope === 'cie' && p.gamutShare !== false ? `|c${Math.floor(Date.now() / 250)}` : '';
+    // CIE: the share outside the target gamut is counted twice a second (#181)
+    : p.scope === 'cie' && p.gamutShare !== false ? `|c${Math.floor(Date.now() / 500)}` : '';
   if (p.scope === 'clock') return `C|${src?.id}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}${tick}`;
   if (isLight(p.scope)) return `${lightSignature(p.scope, p.light, body.w, body.h)}|${body.x},${body.y}`;
   if (isAudio(p.scope)) {

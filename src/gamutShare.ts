@@ -22,7 +22,7 @@ export interface GamutShare {
 }
 
 /** At most this many samples; the step is widened until the picture fits. */
-const MAX_SAMPLES = 25_000;
+const MAX_SAMPLES = 12_000;
 
 /**
  * @param m    row-major 3×3, source linear → target gamut linear

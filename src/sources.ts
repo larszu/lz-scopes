@@ -471,7 +471,12 @@ export class Source {
   get ready() { return this.width > 0 && (this.data !== null || this.element !== null); }
 
   private set(status: Source['status'], message = '') {
-    this.status = status; this.message = message; this.onChange();
+    const moved = this.status !== status;
+    this.status = status; this.message = message;
+    // only a changed status rebuilds the card. The bridge reports dropped frames and bitrate with
+    // every statistics message, and a card rebuilt once a second cannot be clicked on a busy
+    // machine. The text itself is written in place by updateSourceText() (src/main.ts).
+    if (moved) this.onChange();
   }
 
   private tick() {

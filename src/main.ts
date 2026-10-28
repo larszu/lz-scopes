@@ -21,7 +21,7 @@ import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
 import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } from './scene';
 import { connectRemote } from './remote';
-import { DEFAULT_QC, QC_LABELS, QC_TYPES, evaluate as evaluateQc, frameFingerprint, qcLog, toCsv, type QcSettings } from './qclog';
+import { DEFAULT_ALARM, DEFAULT_QC, QC_LABELS, QC_TYPES, evaluate as evaluateQc, frameFingerprint, qcLog, toCsv, type AlarmSettings, type QcSettings } from './qclog';
 import { GRIDS } from './history';
 import { CUBE_SPACE_LABELS, DEFAULT_CUBE, type CubeSettings, type CubeSpace } from './cube';
 import { DEFAULT_CRT, PERSIST_CHOICES, PHOSPHORS, type CrtSettings, type Phosphor } from './crt';
@@ -1124,6 +1124,23 @@ function panelSettings(p: PanelState): Node[] {
     row('', button(t('panel.qc.csv'), () => download(`lz-scopes-qc-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`, toCsv(qcLog.events, p.qcTypes ?? QC_TYPES), 'text/csv;charset=utf-8'), { small: true }),
       button(t('panel.qc.clear'), () => qcLog.clear(), { small: true }));
   }
+  // alarm frame (#182): which QC conditions of this panel's source light it up
+  if (!isAudio(p.scope) && p.scope !== 'qclog') {
+    const a = p.alarm ?? { on: false };
+    const setA = (patch: Partial<AlarmSettings>) => { p.alarm = { ...a, ...patch }; save(); refreshPanelSettings(p); };
+    row(t('panel.alarm.frame'), checkbox(a.on, t('panel.alarm.frameText'), (v) => setA({ on: v }), t('panel.alarm.frameTitle')));
+    if (a.on) {
+      const shown = new Set(a.types ?? QC_TYPES);
+      rows.push(field('', ...QC_TYPES.map((qt) => checkbox(shown.has(qt), QC_LABELS[qt], (v) => {
+        if (v) shown.add(qt); else shown.delete(qt);
+        setA({ types: QC_TYPES.filter((x) => shown.has(x)) });
+      }))));
+      row(t('panel.alarm.hold'), numberInput((a.hold ?? DEFAULT_ALARM.hold) / 1000, (v) => setA({ hold: Math.max(0, v) * 1000 }), { min: 0, max: 120, size: 's' }), 's',
+        numberInput(a.width ?? DEFAULT_ALARM.width, (v) => setA({ width: v }), { min: 1, max: 16, size: 's' }), t('panel.alarm.px'));
+      row('', checkbox(a.green !== false, t('panel.alarm.green'), (v) => setA({ green: v }), t('panel.alarm.greenTitle')));
+      rows.push(hint(t('panel.alarm.hint')));
+    }
+  }
   if (p.scope === 'timeline') {
     row(t('panel.tl.span'), select(String(p.span ?? 10), [['10', '10 s'], ['60', '1 min'], ['300', '5 min']], (v) => { p.span = Number(v) as PanelState['span']; save(); }));
     row(t('panel.tl.sampling'), checkbox(!!p.everyFrame, t('panel.tl.everyFrame'), (v) => { p.everyFrame = v; save(); }, t('panel.tl.samplingTitle')));
@@ -1555,14 +1572,14 @@ function activeVideo(): Source | null {
 
 function transportControls(s: Source): Node[] {
   const range = slider(0, (val) => { const d = s.duration; if (d) { s.pause(); s.seek((val / 1000) * d); } }, { min: 0, max: 1000, step: 1, title: 'Playhead', attrs: { class: 'playhead', 'data-src': s.id } });
-  const btn = (label: string, title: string, fn: () => void) => iconButton(label, title, fn, { small: true });
+  const btn = (label: string, title: string, fn: () => void, attrs: Record<string, string> = {}) => iconButton(label, title, fn, { small: true, attrs });
   return [
     row(range),
     h('div', { class: 'row transport', role: 'toolbar', 'aria-label': 'Transport' },
       btn('⏮', t('main.tp.start'), () => s.seek(0)),
       btn('◀◀', t('main.tp.rev'), () => s.shuttle(-1)),
       btn('◀|', t('main.tp.back'), () => s.step(-1)),
-      btn(s.playing ? '❚❚' : '▶', t('main.tp.play'), () => s.togglePlay()),
+      btn(s.playing ? '❚❚' : '▶', t('main.tp.play'), () => s.togglePlay(), { 'data-play': s.id }),
       btn('|▶', t('main.tp.fwdFrame'), () => s.step(1)),
       btn('▶▶', t('main.tp.fwd'), () => s.shuttle(1)),
       h('span', { class: 'tc', 'data-tc': s.id }, s.timecode())),
@@ -1574,6 +1591,10 @@ function updateTransport() {
   for (const s of sources) {
     if (!s.hasTransport) continue;
     const pos = s.position(), dur = s.duration;
+    // the play button follows without rebuilding the card: a clip reports its playhead every
+    // second, and a card rebuilt that often cannot be clicked on a busy machine
+    const pb = document.querySelector<HTMLElement>(`button[data-play="${s.id}"] span`);
+    if (pb) pb.textContent = s.playing ? '❚❚' : '▶';
     const r = document.querySelector<HTMLInputElement>(`input.playhead[data-src="${s.id}"]`);
     if (r && document.activeElement !== r && dur) r.value = String(Math.round((pos / dur) * 1000));
     const tc = document.querySelector<HTMLElement>(`[data-tc="${s.id}"]`);

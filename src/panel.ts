@@ -17,7 +17,7 @@ import { lutVolume } from './cube';
 
 /** LUT volume of the last drawn cube panel (recomputed when LUT, version or lattice change). */
 let lutVolCache: { key: string; pts: { inp: number[]; out: number[] }[] } = { key: '', pts: [] };
-import { QC_TYPES, drawQcLog, qcLog, type QcType } from './qclog';
+import { DEFAULT_ALARM, QC_TYPES, alarmColor, drawQcLog, qcLog, type AlarmSettings, type AlarmState, type QcType } from './qclog';
 import { castName, drawMinMax } from './minmax';
 
 const NEUTRAL_RANGES = { all: [0.02, 0.98], shadows: [0.02, 0.3], mids: [0.3, 0.7], highlights: [0.7, 0.98] } as const;
@@ -60,6 +60,8 @@ export interface PanelState {
   /** vectorscope by tonal range (#180): the two boundaries in % Y′, and which circle is shown alone (0 = all three) */
   bands?: [number, number];
   big?: 0 | 1 | 2 | 3;
+  /** coloured frame while the QC conditions of this source hold (#182) */
+  alarm?: AlarmSettings;
   /** Pinned panels keep their source when another panel switches. */
   pin?: boolean;
   /** waveforms: EBU R 103 −5/105 % lines (off by default) and reference marks (BT.2408 / 18 % grey, on by default) */
@@ -617,6 +619,8 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
     const a = src?.audio;
     return `A|${src?.id}:${a ? `${a.version}:${a.paused}:${a.stale}` : `${src?.status}:${src?.message}`}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}`;
   }
+  // the frame has to be redrawn when the state changes, even if nothing else did (#182)
+  const alarm = p.alarm?.on ? `|A${alarmOf(p, src)}` : '';
   if (src) src = stageView(src, p.stage ?? o.stage ?? 'signal');
   const s = src ? `${chainOf(src)?.sig ?? ''}:${src.id}:${src.frameSeq}:${src.status}:${src.message}:${src.width}x${src.height}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${src.probe?.x},${src.probe?.y}:${src.roi?.join(',')}:${src.faceMode}:${src.faces.map((f) => f.id + '/' + f.box.join(',')).join(';')}:${[...src.faceSel].join(',')}:${p.scope === 'hist' || p.scope === 'stats' ? src.statsVersion : ''}${p.scope === 'timeline' ? `h${src.history.version}` : ''}${p.scope === 'match' ? matchSignature(p.match, src, matchCtx(o)) : ''}` : '-';
   const bs = p.scope === 'picture' && src && p.ab && p.ab.mode !== 'off' ? abSource(p.ab.b, src, p, o) : null;
@@ -625,7 +629,7 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
   // compact level bar on the picture: redraw at 20 Hz of audio time
   const bar = p.scope === 'picture' && p.audioBar !== false && src?.audio ? `${Math.floor(src.audio.frames / (src.audio.fs / 20))}:${src.audio.stale}` : '';
   const refSig = p.ghost && o.ref && hasGhost(p.scope) ? `|R${o.ref.sig}:${src?.statsVersion}` : '';
-  return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}${tick}|${bar}${abSig}${refSig}`;
+  return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}${tick}${alarm}|${bar}${abSig}${refSig}`;
 }
 
 export const defaultPanel = (scope: ScopeType): PanelState => ({
@@ -643,6 +647,25 @@ const SCATTER: Partial<Record<ScopeType, ScatterMode>> = {
  * @param ctx  2D context of the panel overlay, already scaled to CSS px and cleared
  */
 export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key: string, p: PanelState, src: Source | null, body: Rect, o: DrawOptions) {
+  drawPanelBody(renderer, ctx, key, p, src, body, o);
+  // alarm frame over everything the panel drew (#182)
+  const col = p.alarm?.on ? alarmColor(alarmOf(p, src), p.alarm) : '';
+  if (col) {
+    const w = Math.max(1, Math.min(16, p.alarm?.width ?? DEFAULT_ALARM.width));
+    ctx.save();
+    ctx.strokeStyle = col; ctx.lineWidth = w;
+    ctx.strokeRect(w / 2, w / 2, Math.max(0, body.w - w), Math.max(0, body.h - w));
+    ctx.restore();
+  }
+}
+
+/** State of the panel's source for the alarm frame; 'ok' without a source. */
+export function alarmOf(p: PanelState, src: Source | null, now = Date.now()): AlarmState {
+  if (!src) return 'ok';
+  return qcLog.alarm(src.id, p.alarm?.types ?? QC_TYPES, Math.max(0, p.alarm?.hold ?? DEFAULT_ALARM.hold), now);
+}
+
+function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: string, p: PanelState, src: Source | null, body: Rect, o: DrawOptions) {
   if (isAudio(p.scope)) {
     const empty = src ? (src.kind === 'stream' && src.settings.audio === false ? t('panel.draw.audioOff')
       : src.status === 'live' ? t('panel.draw.noAudio') : (src.message || t('panel.draw.noData'))) : (o.emptyText ?? t('panel.draw.addSource'));

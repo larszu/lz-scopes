@@ -32,6 +32,7 @@ lz-decklink --reference <index>       → {"ok":true,"hasReference":true,"refere
 - Y′CbCr-Signale: `v210` (10 bit, Voreinstellung) oder `uyvy422` (8 bit) unverändert.
 - RGB-4:4:4-Signale: `bmdFormat10BitRGB` (`r210`, laut SDK-Header „SMPTE video levels (64-960)“) → im Helfer auf volle 16 bit gespreizt (`rgb48le`, Werte außerhalb 64…940 werden abgeschnitten).
 - `INFO` enthält Matrix (aus den Modus-Flags bzw. `bmdDeckLinkFrameMetadataColorspace`), HDR-EOTF (CEA-861.3: 2 = PQ, 3 = HLG) und Timecode (RP 188, erster gültiger).
+- `VANC`: alle Zusatzpakete des Bildes (`IDeckLinkVideoFrameAncillaryPackets`, DID/SDID, Zeile, Datenstrom, Nutzdaten als Hex), bei Änderung bzw. höchstens 4/s (#160). Ausgewertet im Browser (`src/vanc.ts`, Panel *SDI-Signalinfo*). Mit Hardware ungeprüft (#116).
 - Kein Ton (noch nicht umgesetzt).
 
 ## Lizenz

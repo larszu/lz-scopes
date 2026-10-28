@@ -1,4 +1,6 @@
-import { LUMA, detectColorspace, detectTransfer, isLog, pqDecode, transferSignalled, type Colorspace, type GamutId, type Transfer } from './color';
+import { GAMUTS, LUMA, detectColorspace, detectTransfer, gamutConvert, isLog, pqDecode, rgbToXyzMatrix, signalToLinear, transferSignalled, type Colorspace, type GamutId, type Transfer } from './color';
+import { gamutShare, type GamutShare } from './gamutShare';
+import type { VancPacket } from './vanc';
 import { LOG_CURVES } from './camera';
 import type { ChainSettings, Compiled } from './chain';
 import { patternById, renderPattern } from './patterns';
@@ -159,6 +161,8 @@ export class Source {
   info: StreamInfo | null = null;
   /** time code of the source (bridge showinfo / Resolve), see src/clock/source.ts */
   tc: SourceTc | null = null;
+  /** SDI ancillary packets of the newest VANC record (DeckLink helper, #160; src/vanc.ts) */
+  vanc: { packets: VancPacket[]; at: number } | null = null;
   width = 0;
   height = 0;
   depth: 8 | 16 = 8;
@@ -232,6 +236,27 @@ export class Source {
     const seq = `${this.cpuSeq}:${this.colorspace}`;
     if (this.extremes.seq !== seq) this.extremes = { seq, v: f ? lineExtremes(f.px, f.w, f.h, f.decode, this.colorspace) : null };
     return this.extremes.v;
+  }
+  private gamutCache: { key: string; set: string; at: number; v: GamutShare | null } = { key: '', set: '', at: 0, v: null };
+  /**
+   * Share of the picture outside `target` (#181, src/gamutShare.ts), computed from the
+   * statistics frame. Recomputed when that frame changes, at most five times a second: it is a
+   * QC number, not a trace, and for browser-decoded sources the frame costs a read-back.
+   */
+  gamutOutside(target: GamutId): GamutShare | null {
+    // what is counted (target, source gamut, curve) – a change here is answered at once
+    const set = `${target}:${this.gamut}:${this.transfer}:${this.hlgLw}`;
+    const key = `${this.cpuSeq}:${set}`;
+    const now = performance.now();
+    if (this.gamutCache.key === key) return this.gamutCache.v;
+    // only a new picture: at most twice a second. It is a QC number, and on a busy machine the
+    // main thread has better things to do than linearise the same frame again.
+    if (this.gamutCache.set === set && now - this.gamutCache.at < 500) return this.gamutCache.v;
+    const f = this.cpuFrame();
+    const ys = rgbToXyzMatrix(GAMUTS[this.gamut]).slice(3, 6);
+    const v = f ? gamutShare(f.px, f.w, f.h, f.decode, gamutConvert(GAMUTS[this.gamut], GAMUTS[target]), (rgb) => signalToLinear(rgb, this.transfer, this.hlgLw, ys)) : null;
+    this.gamutCache = { key, set, at: now, v };
+    return v;
   }
   private neutral: { key: string; v: NeutralCast | null } = { key: '', v: null };
   /** Mean cast of the near-neutral pixels (minmax.ts), once per frame and setting. */
@@ -507,6 +532,8 @@ export class Source {
           // (src/main.ts) keeps slider, time code and the play button up to date on every frame.
         } else if (msg.type === 'tc') {
           this.tc = { ...msg, at: performance.now() };
+        } else if (msg.type === 'vanc') {
+          this.vanc = { packets: Array.isArray(msg.packets) ? msg.packets : [], at: performance.now() };
         } else if (msg.type === 'apts') {
           // PTS anchor of the sound: sample `index` has presentation time `pts` (s)
           this.audioAnchor = { index: msg.index, pts: msg.pts };
@@ -964,7 +991,7 @@ export class Source {
     this.history.clear();
     this.held.clear();
     this.clip = null;
-    this.element = null; this.data = null; this.yuv = null; this.info = null; this.tc = null; this.width = 0; this.height = 0; this.stats = null;
+    this.element = null; this.data = null; this.yuv = null; this.info = null; this.tc = null; this.vanc = null; this.width = 0; this.height = 0; this.stats = null;
     this.fps = 0; this.dropped = 0;
     if (this.status !== 'idle') this.set('idle');
   }

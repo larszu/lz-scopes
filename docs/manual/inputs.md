@@ -7,6 +7,7 @@ How a picture gets into LZ Scopes. All inputs are in the **Sources** sidebar on 
 | DaVinci Resolve (scripting) | 16 bit (paused), 8 bit (playback) | graded picture from the Resolve viewer, no extra hardware |
 | Clean feed via capture card | 10 bit | Resolve outputs through a DeckLink/UltraStudio, LZ Scopes captures it with a card |
 | Clean feed or window via screen capture | 8 bit | quick, no hardware; the display alters colours and levels |
+| File | 8 bit (browser), up to 16 bit (bridge) | a clip or a still from disk |
 | Folder | 8 bit (browser), 16 bit (bridge) | stills from Lightroom, Capture One, Resolve |
 | Capture card, DeckLink, NDI® | 8–16 bit | cameras, switchers, routers |
 
@@ -77,6 +78,17 @@ Resolve can output the viewer picture without UI: **Workspace → Video Clean Fe
 4. Click **✂ Zuschnitt = Rahmen** (crop = rectangle) in the source card. From then on only the viewer is measured. **Zuschnitt aus** removes the crop.
 
 As with screen capture: 8 bit, and window contents pass through the system's colour management. Use this for composition, exposure and rough levels, not for colour approval.
+
+## File (ProRes, DNxHR, 10 bit)
+
+A file can reach the scopes two ways. Pick one under **Weg** in the source card.
+
+- **Bridge · up to 16 bit** (desktop app): ffmpeg decodes the file, so ProRes, DNxHR, v210, MXF, 10-bit HEVC and 16-bit TIFF/DPX/EXR all work – and the file's depth really arrives. The file loops; pause, seek and single frames are not on this path yet. Analysis width, frame rate and depth (8 bit, 16 bit, 16 bit Y′CbCr) are set as for a stream; 16 bit Y′CbCr measures unclipped, with sub-black and super-white.
+- **Browser · 8 bit**: the file plays in the page's `<video>` element. Only what the browser can decode (H.264, VP9, AV1, HEVC depending on the system), and the picture always arrives as 8-bit R′G′B′ – even from a 10-bit file. In exchange there is transport: play, pause, frame step, shuttle and crop.
+
+How to spot an 8-bit path: zoom into the vectorscope and look at the dots. A regular lattice of three families of lines is the 8-bit R′G′B′ grid. No scope resolution removes it – only more bits on the way in.
+
+With `npm start` instead of the desktop app, release a file at startup: `--media-file <file>`. Only files named explicitly are readable, and the page only ever learns their name, never a path.
 
 ## Folder (Lightroom, Capture One, Resolve stills)
 

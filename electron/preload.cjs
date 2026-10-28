@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld('lzsDesktop', {
   },
   /** Release a folder to the bridge's watch-folder input (native dialog); → { name, url } or null. */
   watchFolder: () => ipcRenderer.invoke('lzs:watch-folder'),
+  /** Release a file to the bridge's file input (native dialog); → { name, url, file } or null. */
+  mediaFile: () => ipcRenderer.invoke('lzs:media-file'),
   /** Release one more recording folder (native dialog); → { name } or null. */
   recordFolder: () => ipcRenderer.invoke('lzs:record-folder'),
   /** Test videos (#52): status, download (checked SHA-256), cancel, delete; progress events. */

@@ -1,7 +1,7 @@
 // 2D overlays per panel: graticules, labels, histogram, statistics, probe read-outs.
 
 import {
-  GAMUTS, LUMA, SKIN_LINE_DEG, isGamma, SPECTRAL_LOCUS, barTargets, codeValue, gamutConvert, hlgFromNits, isLog, levelText, nitsToSignal, pqEncode,
+  GAMUTS, HLG_SURROUND_REF, LUMA, SKIN_LINE_DEG, getHlgSurround, isGamma, SPECTRAL_LOCUS, barTargets, codeValue, gamutConvert, hlgFromNits, isLog, levelText, nitsToSignal, pqEncode,
   sceneToSignal, transferLabel, xyToUv, ycbcr,
   type Colorspace, type GamutId, type Transfer,
 } from './color';
@@ -10,7 +10,7 @@ import { CIE_VIEW, CIE_VIEW_UV, WAVE_MAX, WAVE_MIN, type Rect } from './renderer
 import { latencyLines, rtpLines } from './latency';
 import type { Source } from './sources';
 import { CUBE_SPACE_LABELS, SIGNAL_SPACES, cubeProject, cubeRotation, cubeWireframe, qFromChl, qFromHsv, qFromIctcp, qFromLab, qFromRgb, qFromXyz, qFromYcc, type CubeSettings } from './cube';
-import { onLangChange, t, type Key } from './i18n';
+import { num, onLangChange, t, type Key } from './i18n';
 import { bridgeText } from './i18n/bridgeMessage';
 import { stopLabel, stopTicks, stopsOf } from './stops';
 
@@ -219,7 +219,10 @@ export function drawWaveGraticule(ctx: CanvasRenderingContext2D, scope: ScopeTyp
     ctx.textBaseline = 'top';
   }
   ctx.fillStyle = LABEL; ctx.textAlign = 'right';
-  const nits = isLog(transfer) ? t('scope.unitScene') : `cd/m² ${transferLabel(transfer)}${transfer === 'hlg' && (o.lw ?? 1000) !== 1000 ? ` ${o.lw}` : ''}`;
+  // HLG in a room other than the reference 5 cd/m² (#201): the scale says so, because the
+  // reading then rests on an assumption about the surround
+  const surround = transfer === 'hlg' && getHlgSurround() !== HLG_SURROUND_REF ? ` · ${t('scope.surround', { ls: num(getHlgSurround(), 1) })}` : '';
+  const nits = isLog(transfer) ? t('scope.unitScene') : `cd/m² ${transferLabel(transfer)}${transfer === 'hlg' && (o.lw ?? 1000) !== 1000 ? ` ${o.lw}` : ''}${surround}`;
   ctx.fillText(unit === 'nits' ? nits : unit === 'stop' ? t('scope.unitStop', { curve: transferLabel(transfer) }) : unit === 'percent' ? '%' : unit === 'bit8' ? '8 bit' : '10 bit', r.x + r.w - 4, r.y + 2);
 }
 

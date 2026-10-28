@@ -514,7 +514,10 @@ function renderSources() {
           ...bridgeQualitySelects(s, upd),
           select(set.transport, [['tcp', 'TCP'], ['udp', 'UDP']], (v) => upd({ transport: v as 'tcp' | 'udp' }, true), t('main.src.transportTitle')),
           select(set.audio === false ? '0' : '1', [['1', t('main.src.audio')], ['0', t('main.src.noAudio')]], (v) => upd({ audio: v === '1' }, true), t('main.src.audioTitle')),
-          select(set.codec ?? 'raw', [['raw', t('main.src.raw')], ['h264', 'H.264 · 8 bit']], (v) => upd({ codec: v as 'raw' | 'h264' }, true), t('main.src.codecTitle'))),
+          select(set.codec ?? 'raw', [['raw', t('main.src.raw')], ['h264', 'H.264 · 8 bit']], (v) => upd({ codec: v as 'raw' | 'h264' }, true), t('main.src.codecTitle')),
+          // QC metrics from the bridge (#202): costs CPU there, so it is a switch per source
+          select(set.signalStats ? '1' : '0', [['0', t('tools.qc.signalOff')], ['1', t('tools.qc.signalOn')]],
+            (v) => upd({ signalStats: v === '1' }, true), t('tools.qc.signalTitle'))),
         row(
           select(set.lowLatency === undefined ? '' : set.lowLatency ? '1' : '0', [['', t('main.src.llGlobal', { mode: state.lowLatency ? 'Low Latency' : t('main.normal') })], ['1', 'Low Latency'], ['0', t('main.src.llNormal')]],
             (v) => { upd({ lowLatency: v === '' ? undefined : v === '1' }, true); refreshHeads(); }, LOW_LATENCY_HINT),
@@ -1140,6 +1143,11 @@ function panelSettings(p: PanelState): Node[] {
     row(t('panel.qc.black'), qcNum(q.black * 100, 0.5, 10, (v) => setQc({ black: v / 100 })), '% Y′');
     row(t('panel.qc.silence'), qcNum(-q.silenceDb, 30, 90, (v) => setQc({ silenceDb: -v })), '−dBFS');
     row(t('panel.qc.freeze'), qcNum(q.freezeMs / 1000, 0.5, 30, (v) => setQc({ freezeMs: v * 1000 })), 's');
+    // thresholds of the bridge metrics (#202); the values come from ffmpeg signalstats
+    row(t('tools.qc.tout'), qcNum(q.tout * 100, 0.001, 5, (v) => setQc({ tout: v / 100 })), t('panel.qc.ofPixels'));
+    row(t('tools.qc.vrep'), qcNum(q.vrep * 100, 0.1, 50, (v) => setQc({ vrep: v / 100 })), t('tools.qc.ofLinesShort'));
+    row(t('tools.qc.brng'), qcNum(q.brng * 100, 0.1, 50, (v) => setQc({ brng: v / 100 })), t('panel.qc.ofPixels'));
+    rows.push(hint(t('tools.qc.signalHint')));
     row('', button(t('panel.qc.csv'), () => download(`lz-scopes-qc-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`, toCsv(qcLog.events, p.qcTypes ?? QC_TYPES), 'text/csv;charset=utf-8'), { small: true }),
       button(t('panel.qc.clear'), () => qcLog.clear(), { small: true }));
   }
@@ -1653,7 +1661,10 @@ function runQc(now: number) {
     let peak: number | null = null;
     if (a) { let tp = 0; for (let c = 0; c < a.channels; c++) tp = Math.max(tp, a.level.truePeakOver(c, s0.silenceMs)); peak = tp > 0 ? 20 * Math.log10(tp) : -Infinity; }
     // R 103 only means something on the unclipped Y′CbCr path (R′G′B′ sources are clipped to 0–100 %)
-    const cond = evaluateQc({ stats: s.stats, r103: s.yuv ? s.r103Stats() : null, peakDb: peak, unchangedMs: now - (qcFreeze.get(s.id)?.since ?? now), freezeApplies: live && !s.frozen }, s0);
+    // QC metrics of the bridge (#202) count as fresh for two seconds; afterwards the source is
+    // not delivering them any more and the conditions must not keep standing on an old value
+    const sig = s.signal && performance.now() - s.signal.at < 2000 ? s.signal : null;
+    const cond = evaluateQc({ stats: s.stats, r103: s.yuv ? s.r103Stats() : null, peakDb: peak, unchangedMs: now - (qcFreeze.get(s.id)?.since ?? now), freezeApplies: live && !s.frozen, signal: sig }, s0);
     qcLog.update(s.id, s.name, cond, s.tc?.tc ?? null);
   }
 }

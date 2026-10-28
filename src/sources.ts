@@ -135,6 +135,12 @@ export function bridgeInputParams(url: string, set: SourceSettings): Record<stri
  * 'window' = live capture of the Resolve viewer (playing), 'none' = playing without a live
  * picture (`why` says why).
  */
+/**
+ * Transport state of a clip the bridge decodes (#191, server/clip.mjs): `pos` is the playhead
+ * at wall time `at`, so the page can run it on itself between two messages.
+ */
+export interface ClipState { state: 'playing' | 'paused'; pos: number; duration: number; fps: number; rate: number; loop: boolean; at: number }
+
 export interface ResolveRoute { route: 'still' | 'window' | 'none'; why?: 'remote' | 'browser' | 'noWindow' | 'noViewer' | 'denied' | 'starting'; playing: boolean }
 
 /** Element sources (camera, capture, files): CPU readbacks per second at most (cpuFrame; debug switch cpuFrameHz). */
@@ -377,6 +383,8 @@ export class Source {
   }
   /** Estimated frame duration of a video file (from presented frames). */
   frameDuration = 1 / 25;
+  /** Transport of a clip through the bridge (#191, server/clip.mjs); null without one. */
+  clip: ClipState | null = null;
   private probeCache = { key: '', rgb: null as [number, number, number] | null };
   onChange: () => void = () => {};
 
@@ -502,12 +510,20 @@ export class Source {
         if (msg.type === 'info') {
           this.info = msg; this.width = msg.width; this.height = msg.height; this.depth = msg.depth;
           this.yuv = yuvOf(msg);
+          // a file through the bridge brings its transport along (server/clip.mjs)
+          this.clip = msg.clip ? { state: 'playing', pos: 0, duration: Number(msg.clip.duration) || 0, fps: Number(msg.clip.fps) || 25, rate: 1, loop: msg.clip.loop !== false, at: performance.now() } : null;
+          if (this.clip) this.frameDuration = 1 / this.clip.fps;
           const a = msg.audio as AudioStreamInfo | null | undefined;
           this.monitor?.close(); this.monitor = null; this.audioAnchor = null;
           this.audio = a ? new AudioAnalysis(a.sampleRate, a.channels, a.layout) : null;
           if (this.audio && a) this.audio.label = `Bridge · ${a.codec ?? ''} ${a.sampleRate / 1000} kHz`.replace('  ', ' ');
           const pic = msg.width ? `${msg.sourceWidth}×${msg.sourceHeight} ${msg.codec ?? ''}`.trim() : t('source.status.soundOnly');
           this.set('live', a ? `${pic} · ${t('source.status.sound', { codec: a.codec ?? '', khz: a.sampleRate / 1000, ch: a.channels })}` : msg.proto === 2 ? `${pic} · ${t('source.status.noSound')}` : pic);
+        } else if (msg.type === 'clip') {
+          // playhead of the clip; between two messages the page runs it on itself (clipPosition)
+          this.clip = { state: msg.state === 'paused' ? 'paused' : 'playing', pos: Number(msg.pos) || 0, duration: Number(msg.duration) || 0, fps: Number(msg.fps) || 25, rate: Number(msg.rate) || 1, loop: msg.loop !== false, at: performance.now() };
+          this.frameDuration = 1 / this.clip.fps;
+          this.onChange();
         } else if (msg.type === 'tc') {
           this.tc = { ...msg, at: performance.now() };
         } else if (msg.type === 'apts') {
@@ -966,23 +982,79 @@ export class Source {
     if (this.objectUrl) { URL.revokeObjectURL(this.objectUrl); this.objectUrl = null; }
     this.history.clear();
     this.held.clear();
+    this.clip = null;
     this.element = null; this.data = null; this.yuv = null; this.info = null; this.tc = null; this.width = 0; this.height = 0; this.stats = null;
     this.fps = 0; this.dropped = 0;
     if (this.status !== 'idle') this.set('idle');
   }
 
-  // ---- transport (video files), Resolve-style
+  // ---- transport (video files and clips through the bridge), Resolve-style
   get isVideoFile() { return this.kind === 'file' && this.video !== null; }
-  togglePlay() { const v = this.video; if (!v) return; if (v.paused && !this.reverseTimer) { v.playbackRate = 1; v.play(); } else this.shuttle(0); }
-  pause() { this.video?.pause(); }
-  play() { this.video?.play(); }
+  /** Play, pause and step: a video file in the browser, or a clip the bridge decodes (#191). */
+  get hasTransport() { return this.isVideoFile || this.clip !== null; }
+  /** Length of the open clip (s), 0 when it is not known. */
+  get duration() { return this.clip ? this.clip.duration : this.video?.duration || 0; }
+  get playing() { return this.clip ? this.clip.state === 'playing' : !!this.video && !this.video.paused; }
+  /** Playback rate; reverse runs through reverseSpeed, not through this one. */
+  get rate() { return this.clip ? this.clip.rate : this.video?.playbackRate ?? 1; }
+  /**
+   * Playhead (s). The bridge reports it once a second and at every command, in between the page
+   * runs it on itself – otherwise the time code would step only once a second.
+   */
+  position(now = performance.now()) {
+    const c = this.clip;
+    if (!c) return this.video?.currentTime ?? 0;
+    const t = c.state === 'playing' ? c.pos + ((now - c.at) / 1000) * c.rate : c.pos;
+    return Math.max(0, c.duration ? Math.min(c.duration, t) : t);
+  }
+  /** Transport command to the bridge; the playhead moves at once, the picture follows. */
+  private clipCmd(op: string, extra: Record<string, unknown> = {}, local: Partial<ClipState> = {}) {
+    const c = this.clip;
+    if (!c) return;
+    this.sendBridge({ type: 'clip', op, ...extra });
+    this.clip = { ...c, ...local, at: performance.now() };
+    this.onChange();
+  }
+  togglePlay() {
+    if (this.clip) { if (this.playing || this.reverseTimer) this.shuttle(0); else this.shuttle(1); return; }
+    const v = this.video;
+    if (!v) return;
+    if (v.paused && !this.reverseTimer) { v.playbackRate = 1; v.play(); } else this.shuttle(0);
+  }
+  pause() {
+    if (this.clip) { this.shuttle(0); return; }
+    this.video?.pause();
+  }
+  play() {
+    if (this.clip) { this.clipCmd('play', { pos: this.position(), rate: 1 }, { state: 'playing', rate: 1, pos: this.position() }); return; }
+    this.video?.play();
+  }
   private reverseTimer: ReturnType<typeof setInterval> | null = null;
   /** Resolve J/K/L: dir 1 = forward (repeated: faster), -1 = reverse (repeated: faster), 0 = stop. */
   shuttle(dir: -1 | 0 | 1) {
-    const v = this.video;
-    if (!v) return;
     const reversing = this.reverseTimer !== null;
     if (this.reverseTimer) { clearInterval(this.reverseTimer); this.reverseTimer = null; }
+    if (this.clip) {
+      if (dir === 0) { this.reverseSpeed = 0; this.clipCmd('pause', { pos: this.position() }, { state: 'paused', pos: this.position() }); return; }
+      if (dir === 1) {
+        this.reverseSpeed = 0;
+        const rate = this.playing && this.clip.rate >= 1 ? Math.min(8, this.clip.rate * 2) : 1;
+        this.clipCmd('play', { pos: this.position(), rate }, { state: 'playing', rate, pos: this.position() });
+        return;
+      }
+      // Reverse: ffmpeg decodes forwards only, so the page steps back itself. Each step is a new
+      // decoder start – the pace is what the file allows, not a smooth ×1 (all-intra is quickest).
+      this.reverseSpeed = reversing ? Math.min(8, this.reverseSpeed * 2) : 1;
+      const back = () => {
+        if (this.position() <= 0) { this.shuttle(0); return; }
+        this.step(-this.reverseSpeed);
+      };
+      back();
+      this.reverseTimer = setInterval(back, Math.max(100, this.frameDuration * 1000));
+      return;
+    }
+    const v = this.video;
+    if (!v) return;
     if (dir === 0) { v.pause(); v.playbackRate = 1; this.reverseSpeed = 0; return; }
     if (dir === 1) {
       this.reverseSpeed = 0;
@@ -999,9 +1071,19 @@ export class Source {
     }, this.frameDuration * 1000);
   }
   reverseSpeed = 0;
-  seek(t: number) { const v = this.video; if (v) v.currentTime = Math.max(0, Math.min(v.duration || 0, t)); }
+  seek(t: number) {
+    const to = Math.max(0, this.duration ? Math.min(this.duration, t) : t);
+    if (this.clip) { this.clipCmd('seek', { pos: to }, { pos: to }); return; }
+    const v = this.video;
+    if (v) v.currentTime = to;
+  }
   /** Step n frames (paused). Lands in the middle of the target frame to avoid rounding onto the neighbour. */
   step(n: number) {
+    if (this.clip) {
+      const f = this.frameDuration, pos = Math.max(0, (Math.floor(this.position() / f + 1e-6) + n + 0.5) * f);
+      this.clipCmd('step', { frames: n }, { state: 'paused', pos: this.duration ? Math.min(this.duration, pos) : pos });
+      return;
+    }
     const v = this.video;
     if (!v) return;
     if (this.reverseTimer) this.shuttle(0);
@@ -1009,7 +1091,7 @@ export class Source {
     const f = this.frameDuration, idx = Math.round(v.currentTime / f) + n;
     this.seek(idx * f + f / 2);
   }
-  timecode(t = this.video?.currentTime ?? 0) {
+  timecode(t = this.position()) {
     const fps = Math.max(1, Math.round(1 / this.frameDuration));
     const fr = Math.floor(t * fps + 1e-6), ff = fr % fps, s = Math.floor(fr / fps);
     const p2 = (n: number) => String(n).padStart(2, '0');

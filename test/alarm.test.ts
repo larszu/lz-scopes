@@ -2,12 +2,12 @@
 // it, green when clean. The hold time is the point of the whole thing – a flash that is over
 // before anyone looks up must still be visible.
 import { describe, expect, it } from 'vitest';
-import { QcLog, alarmColor, type QcCondition, type QcType } from '../src/qclog';
+import { QC_TYPES, QcLog, alarmColor, type QcCondition, type QcType } from '../src/qclog';
 
 const off: QcCondition = { on: false, value: 0, detail: '' };
+// every type, so a new condition cannot make this helper lie
 const cond = (on: Partial<Record<QcType, boolean>>) => Object.fromEntries(
-  (['r103', 'r103total', 'clip', 'superwhite', 'subblack', 'black', 'freeze', 'silence'] as QcType[])
-    .map((k) => [k, on[k] ? { on: true, value: 1, detail: '' } : off]),
+  QC_TYPES.map((k) => [k, on[k] ? { on: true, value: 1, detail: '' } : off]),
 ) as Record<QcType, QcCondition>;
 
 describe('alarm frame', () => {

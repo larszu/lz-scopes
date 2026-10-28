@@ -29,7 +29,7 @@ Ergebnis: **keine Geheimnisse, keine Zugangsdaten, keine privaten IPs, keine Anl
 3. **Pages aktivieren:** Repo-Einstellungen, *Pages*, *Source*: **GitHub Actions**. Der `GITHUB_TOKEN` darf keine Pages-Site anlegen, deshalb geht das nur von Hand. Bis dahin läuft `pages.yml` grün durch, baut, und überspringt das Deploy mit einer Warnung.
 4. **Pages auslösen:** Actions, *Deploy Web (GitHub Pages)*, *Run workflow* (oder ein Push auf `main`). Danach ist die Web-Fassung unter <https://larszu.github.io/lz-scopes/> erreichbar.
 5. **Erster Release:** `git tag v0.1.0 && git push origin v0.1.0` auf `main`. `release.yml` baut Windows und macOS (Node 24, Version aus dem Tag) und hängt die Installer ans Release. Vorher lokal `npm run dist:mac` prüfen; der Windows-Build ist noch ungetestet (Issue #13).
-6. **Nach dem Veröffentlichen:** Release-Dateinamen gegen die Tabelle in der README prüfen (`LZ Scopes-<version>-universal.dmg`, `-x64.exe`, `-portable.exe`), Badges und Download-Links testen.
+6. **Nach dem Veröffentlichen:** Release-Dateinamen gegen die Tabelle in [details.de.md](details.de.md#download-und-installation) prüfen (`LZ Scopes-<version>-universal.dmg`, `-x64.exe`, `-portable.exe`), Badges und Download-Links testen.
 
 ## Kosten
 

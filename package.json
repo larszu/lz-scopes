@@ -25,7 +25,8 @@
     "companion:build": "npm --prefix companion run build",
     "ios:sync": "npm run build && cap sync ios",
     "ios:open": "cap open ios",
-    "build:camera-bridge": "node scripts/build-camera-bridge.mjs"
+    "build:camera-bridge": "node scripts/build-camera-bridge.mjs",
+    "luts:fetch": "node scripts/luts-fetch.mjs"
   },
   "engines": {
     "node": ">=20"

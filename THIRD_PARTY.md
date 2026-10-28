@@ -99,6 +99,8 @@ The licences do not cover the logos and trademarks of Blender Foundation or Netf
 
 TypeScript, Vite, Vitest, electron-builder, concurrently, `@types/*`: MIT or Apache-2.0, see `package-lock.json`.
 
+**LUT files for the tests** (`test/fixtures/luts/`, read only by the tests, not shipped): seven files from [djieff/prism](https://github.com/djieff/prism) and [lifeart/openrv-web](https://github.com/lifeart/openrv-web), both **MIT**. They prove that our parsers read what other tools actually write. Source and purpose per file: `test/fixtures/luts/README.md`. `node scripts/luts-fetch.mjs` fetches the larger files of the same collection into `vendor/luts/` on demand; they are not part of the repository.
+
 ## Own works
 
 - **Logo and trademark of Lars Zumpe Medienproduktion** (`docs/brand/`, `src/brand/`, `build/icon.png`, `public/icons/`): signet, logo and app icon, unchanged files from the Brand Kit 2.0. Own trademark of Lars Zumpe, **not free to use**: no permission of the licence covers them (see [LICENSE](LICENSE), section 10).

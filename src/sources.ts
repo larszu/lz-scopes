@@ -50,6 +50,8 @@ export interface SourceSettings {
   transport: 'tcp' | 'udp';
   /** bridge streams: request the sound as well (protocol 2) */
   audio?: boolean;
+  /** QC metrics of the bridge (TOUT, VREP, broadcast range; #202) – costs CPU in the bridge */
+  signalStats?: boolean;
   /** bridge capture devices (device:…): explicit mode and raw pixel format, e.g. 1920x1080 / 50 / yuv422p10le */
   device?: { size?: string; rate?: string; pixfmt?: string };
   /** bridge: Y′CbCr → R′G′B′ matrix and range of the ffmpeg conversion ('auto' = tags, else BT.709 above SD) */
@@ -140,6 +142,15 @@ export function bridgeInputParams(url: string, set: SourceSettings): Record<stri
  * Transport state of a clip the bridge decodes (#191, server/clip.mjs): `pos` is the playhead
  * at wall time `at`, so the page can run it on itself between two messages.
  */
+/** One frame's QC metrics from ffmpeg signalstats (#202); shares 0…1, levels as 8-bit codes. */
+export interface SignalStats {
+  frame: number; at: number;
+  yMin?: number; yLow?: number; yAvg?: number; yHigh?: number; yMax?: number;
+  uAvg?: number; vAvg?: number; satAvg?: number; satMax?: number; hueMed?: number;
+  /** temporal outliers, vertical line repetition, share outside the broadcast range */
+  tout?: number; vrep?: number; brng?: number; yDif?: number;
+}
+
 export interface ClipState { state: 'playing' | 'paused'; pos: number; duration: number; fps: number; rate: number; loop: boolean; at: number }
 
 export interface ResolveRoute { route: 'still' | 'window' | 'none'; why?: 'remote' | 'browser' | 'noWindow' | 'noViewer' | 'denied' | 'starting'; playing: boolean }
@@ -389,6 +400,8 @@ export class Source {
   frameDuration = 1 / 25;
   /** Transport of a clip through the bridge (#191, server/clip.mjs); null without one. */
   clip: ClipState | null = null;
+  /** QC metrics of the bridge (#202, server/signalstats.mjs); null when they are not requested */
+  signal: SignalStats | null = null;
   private probeCache = { key: '', rgb: null as [number, number, number] | null };
   onChange: () => void = () => {};
 
@@ -495,6 +508,8 @@ export class Source {
     if (this.settings.codec === 'h264' && workerAvailable()) q.set('codec', 'h264');
     else if (this.settings.yuv) { q.set('format', 'yuv'); q.set('depth', '16'); }
     if (this.lowLatency && ll.ownRtp) q.set('rtp', 'own');
+    // QC metrics from ffmpeg (#202): costs about 6 ms per 1080p frame in the bridge, so only on request
+    if (this.settings.signalStats) q.set('signal', '1');
     this.rtpStats = null;
     this.phase = null;
     this.connectFrames(`${bridge}/stream?${q}`, false);
@@ -523,6 +538,9 @@ export class Source {
           if (this.audio && a) this.audio.label = `Bridge · ${a.codec ?? ''} ${a.sampleRate / 1000} kHz`.replace('  ', ' ');
           const pic = msg.width ? `${msg.sourceWidth}×${msg.sourceHeight} ${msg.codec ?? ''}`.trim() : t('source.status.soundOnly');
           this.set('live', a ? `${pic} · ${t('source.status.sound', { codec: a.codec ?? '', khz: a.sampleRate / 1000, ch: a.channels })}` : msg.proto === 2 ? `${pic} · ${t('source.status.noSound')}` : pic);
+        } else if (msg.type === 'signal') {
+          // QC metrics of the bridge (server/signalstats.mjs); `at` tells the QC check how old they are
+          this.signal = { ...msg, at: performance.now() };
         } else if (msg.type === 'clip') {
           // playhead of the clip; between two messages the page runs it on itself (clipPosition)
           this.clip = { state: msg.state === 'paused' ? 'paused' : 'playing', pos: Number(msg.pos) || 0, duration: Number(msg.duration) || 0, fps: Number(msg.fps) || 25, rate: Number(msg.rate) || 1, loop: msg.loop !== false, at: performance.now() };
@@ -991,6 +1009,7 @@ export class Source {
     this.history.clear();
     this.held.clear();
     this.clip = null;
+    this.signal = null;
     this.element = null; this.data = null; this.yuv = null; this.info = null; this.tc = null; this.vanc = null; this.width = 0; this.height = 0; this.stats = null;
     this.fps = 0; this.dropped = 0;
     if (this.status !== 'idle') this.set('idle');

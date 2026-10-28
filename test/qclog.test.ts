@@ -6,7 +6,8 @@ const stats = (o: Partial<{ yMin: number; yMax: number; clip: number }>) => ({
   hist: [], yMin: o.yMin ?? 0.1, yMax: o.yMax ?? 0.9, yAvg: 0.4, rgbAvg: [0.4, 0.4, 0.4] as [number, number, number],
   clipLow: [0, 0, 0], clipHigh: [o.clip ?? 0, 0, 0], samples: 100,
 });
-const input = (o: Partial<QcInput>): QcInput => ({ stats: stats({}), r103: null, peakDb: null, unchangedMs: 0, freezeApplies: true, ...o });
+const input = (o: Partial<QcInput>): QcInput => ({
+  signal: null, stats: stats({}), r103: null, peakDb: null, unchangedMs: 0, freezeApplies: true, ...o });
 
 describe('QC conditions', () => {
   it('detects black frame, clipping, super-white, sub-black, silence and freeze by their thresholds', () => {
@@ -48,5 +49,27 @@ describe('QC log', () => {
     const d = rgbDecoder(1);
     expect(frameFingerprint(a, 32, 32, d)).toBe(frameFingerprint(a.slice(), 32, 32, d));
     expect(frameFingerprint(a, 32, 32, d)).not.toBe(frameFingerprint(b, 32, 32, d));
+  });
+});
+
+describe('QC metrics of the bridge (#202)', () => {
+  it('TOUT, VREP and the broadcast range trip at their thresholds', () => {
+    const under = evaluate(input({ signal: { tout: 0.0001, vrep: 0.001, brng: 0.001 } }), DEFAULT_QC);
+    expect(under.tout.on).toBe(false);
+    expect(under.vrep.on).toBe(false);
+    expect(under.brng.on).toBe(false);
+    const over = evaluate(input({ signal: { tout: 0.01, vrep: 0.2, brng: 0.3 } }), DEFAULT_QC);
+    expect(over.tout.on).toBe(true);
+    expect(over.vrep.on).toBe(true);
+    expect(over.brng.on).toBe(true);
+    expect(over.brng.detail).toContain('30');
+  });
+
+  it('without the metrics the conditions simply do not hold', () => {
+    const c = evaluate(input({ signal: null }), DEFAULT_QC);
+    for (const k of ['tout', 'vrep', 'brng'] as const) {
+      expect(c[k].on).toBe(false);
+      expect(c[k].detail).toBe('');
+    }
   });
 });

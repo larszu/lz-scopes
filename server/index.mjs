@@ -30,6 +30,7 @@ import { resolveStatus } from './resolve.mjs';
 import { createPlaybackWatch } from './resolveWatch.mjs';
 import { handleMeterSocket, meterInfo } from './meter.mjs';
 import { ClipTransport } from './clip.mjs';
+import { SIGNALSTATS_VF, SignalstatsTracker } from './signalstats.mjs';
 import { MEDIA_URL, STILL_FPS, addMediaFile, inputPath, mediaFile, mediaInputArgs } from './media.mjs';
 import { PtpMonitor, RtpMonitor, ipv4Interfaces, isMulticastV4, nowUtcNs } from './ptp.mjs';
 import { taiMinusUtc } from './leap.mjs';
@@ -637,6 +638,11 @@ async function startStream(ws, params) {
   // time code of every source frame (before scale/fps): showinfo side data, see ShowinfoTracker
   const wantTc = video && params.get('tc') !== '0';
   if (wantTc) vf.unshift('showinfo=checksum=0');
+  // QC metrics (#202, server/signalstats.mjs): on the full Y′CbCr picture, before the scaler –
+  // afterwards it would be R′G′B′ and the broadcast range meaningless. Costs about 6 ms per
+  // 1080p frame, therefore only on request.
+  const wantSignal = video && params.get('signal') === '1';
+  if (wantSignal) vf.unshift(SIGNALSTATS_VF);
   // srt:// needs an ffmpeg with libsrt (the shipped one has it)
   const ffmpeg = await ffmpegFor(url);
   if (!ffmpeg) return fail(ws, noFfmpegMessage(url));
@@ -805,7 +811,7 @@ async function startStream(ws, params) {
     const fd3 = mode === 'fd3' && video && !!sound;
     recAudio = own ? null : recordAudioMap(url, { soundInProcess: fd3 });
     const rec = recorder?.outputs(4) ?? { args: [], pipes: 0, sessions: [] };
-    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: sound ? mode : 'none', pts: withPts, device, pixFmt: yp?.yuv ? 'ayuv64le' : '', log: wantTc ? 'level+info' : 'error',
+    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: sound ? mode : 'none', pts: withPts, device, pixFmt: yp?.yuv ? 'ayuv64le' : '', log: wantTc || wantSignal ? 'level+info' : 'error',
       codec: h264 ? 'h264' : 'raw', gop: Math.max(10, Math.round((fpsLimit || info.fps || 25) * 2)), ownInput: own?.inputArgs ?? null, extra: rec.args, clip: clipIn });
     pts = withPts ? new PtsTracker(audioInfo.sampleRate, (index, t) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'apts', index, pts: t })); }) : null;
     const t0 = Date.now();
@@ -819,14 +825,17 @@ async function startStream(ws, params) {
       procs.add(p);
       // time code (#28): showinfo side data; PTS (#24): PtsTracker; errors go to the stderr tail
       const tc = wantTc ? new ShowinfoTracker((m) => { recorder?.onTc(m.tc); if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); }, (e) => { stderr = (stderr + '\n' + e).slice(-2000); }) : null;
+      const sig = wantSignal ? new SignalstatsTracker((m) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'signal', ...m })); }) : null;
       p.stderr.on('data', (d) => {
         const text = String(d);
         tc?.push(text);
+        // the metadata lines are ours; what is left over is an error and belongs in the tail
+        const rest = sig ? sig.push(text).join('\n') : text;
         if (tracker) {
-          const other = tracker.feed(text);
+          const other = tracker.feed(rest);
           if (!tc && other.length) stderr = (stderr + '\n' + other.join('\n')).slice(-2000);
           flushWaiting();
-        } else if (!tc) stderr = (stderr + text).slice(-2000);
+        } else if (!tc && rest.trim()) stderr = (stderr + rest).slice(-2000);
       });
       return p;
     };

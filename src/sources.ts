@@ -502,7 +502,9 @@ export class Source {
           // playhead of the clip; between two messages the page runs it on itself (clipPosition)
           this.clip = { state: msg.state === 'paused' ? 'paused' : 'playing', pos: Number(msg.pos) || 0, duration: Number(msg.duration) || 0, fps: Number(msg.fps) || 25, rate: Number(msg.rate) || 1, loop: msg.loop !== false, at: performance.now() };
           this.frameDuration = 1 / this.clip.fps;
-          this.onChange();
+          // no onChange() here: the playhead arrives every second, and rebuilding the source list
+          // that often tears the transport buttons out from under the pointer. updateTransport()
+          // (src/main.ts) keeps slider, time code and the play button up to date on every frame.
         } else if (msg.type === 'tc') {
           this.tc = { ...msg, at: performance.now() };
         } else if (msg.type === 'apts') {
@@ -992,7 +994,6 @@ export class Source {
     if (!c) return;
     this.sendBridge({ type: 'clip', op, ...extra });
     this.clip = { ...c, ...local, at: performance.now() };
-    this.onChange();
   }
   togglePlay() {
     if (this.clip) { if (this.playing || this.reverseTimer) this.shuttle(0); else this.shuttle(1); return; }

@@ -40,7 +40,7 @@ import { drawSimulcastPanel, type SimulcastSettings } from './simulcastPanel';
 import { drawEncoderPanel, type EncoderSettings } from './encoderPanel';
 import { drawLensPanel, type LensSettings } from './lensPanel';
 import { drawSdiPanel } from './sdiPanel';
-import { t } from './i18n';
+import { num, t } from './i18n';
 import { IDENTITY, isIdentity, viewRect, waveRange, type View, type ViewLimits } from './view';
 import { GHOST_CSS, GHOST_TINT, deltaRows, ghostChannels, hasGhost, histOf, levelDeltas, traceLevels } from './ghost';
 import { LUMA } from './color';
@@ -58,6 +58,10 @@ export interface PanelState {
   paradeColor?: 'mono' | 'channel' | 'source';
   /** vectorscope: gamut boundaries to show */
   gamuts?: ('709' | 'p3' | '2020')[];
+  /** scale of this panel instead of the global unit (#179) */
+  unit?: Unit;
+  /** signal low-pass before the measurement (#179): 0 off, 1 = 3×3, 2 = 5×5 */
+  smooth?: 0 | 1 | 2;
   /** CIE diagram: share of the picture outside gamutTarget below the diagram (#181), on by default */
   gamutShare?: boolean;
   /** vectorscope by tonal range (#180): the two boundaries in % Y′, and which circle is shown alone (0 = all three) */
@@ -758,7 +762,7 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
   if (!src || !src.ready) {
     ctx.fillStyle = '#6b7078'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(src ? (src.message || t('panel.draw.noData')) : (o.emptyText ?? t('panel.draw.addSource')), body.w / 2, body.h / 2);
-    if (isWaveform(p.scope)) drawWaveGraticule(ctx, p.scope, r, o.unit, src?.transfer ?? 'sdr', waveOpts(p, src));
+    if (isWaveform(p.scope)) drawWaveGraticule(ctx, p.scope, r, p.unit ?? o.unit, src?.transfer ?? 'sdr', waveOpts(p, src));
     return;
   }
   if (xv) {
@@ -774,7 +778,8 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
     const cube = p.scope === 'cube' ? { ...DEFAULT_CUBE, ...p.cube } : null;
     const params = (s: Source): ScatterParams => ({
       ...(crt ? { crt } : {}),
-      ...(!crt && p.persist && !isWaveform(p.scope) ? { persist: p.persist } : {}),
+      ...(!crt && p.persist ? { persist: p.persist } : {}),
+      ...(p.smooth ? { smooth: p.smooth } : {}),
       ...(p.scope === 'chplot' ? { pair: p.pair ?? 0 } : {}),
       ...(cube ? { cube: {
         space: CUBE_SPACE_ID[cube.space], rot: cubeRotation(cube.yaw, cube.pitch), to2020: gamutConvert(GAMUTS[src.gamut], GAMUTS['2020']),
@@ -810,7 +815,7 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
   }
   if (isWaveform(p.scope)) {
     const wo = waveOpts(p, src);
-    drawWaveGraticule(ctx, p.scope, r, o.unit, src.transfer, wo);
+    drawWaveGraticule(ctx, p.scope, r, p.unit ?? o.unit, src.transfer, wo);
     if (p.scope === 'wf-skin' && p.skinBand !== false) drawSkinRange(ctx, r, o.skin, wo.range);
     if (p.scope === 'wf-green' && p.greenBand !== false) drawSkinRange(ctx, r, greenOf(o), wo.range, true);
     if (probeRgb) drawWaveProbe(ctx, p.scope, r, src, probeRgb, wo);
@@ -995,7 +1000,7 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
       ctx.strokeStyle = '#00dcff'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(x - 10, y); ctx.lineTo(x - 3, y); ctx.moveTo(x + 3, y); ctx.lineTo(x + 10, y);
       ctx.moveTo(x, y - 10); ctx.lineTo(x, y - 3); ctx.moveTo(x, y + 3); ctx.lineTo(x, y + 10); ctx.stroke();
-      drawTextBox(ctx, frame.x + frame.w - 6, frame.y + 6, [...probeLines(src, probeRgb, o.unit), ...deLines(src, probeRgb, o)], 'right');
+      drawTextBox(ctx, frame.x + frame.w - 6, frame.y + 6, [...probeLines(src, probeRgb, p.unit ?? o.unit), ...deLines(src, probeRgb, o)], 'right');
     }
     if (o.frozen) drawTextBox(ctx, frame.x + 6, frame.y + 6, [t('panel.draw.frozen')]);
     if (p.clockOverlay) drawClockOverlay(ctx, clockOpts(p.clock), src, frame.x + frame.w - 6, frame.y + frame.h - 6);
@@ -1010,10 +1015,28 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
     drawGuidePanel(ctx, p.shguide ?? {}, src, body.w, wrapText);
   } else if (p.scope === 'stats') {
     const lines = statsLines(src, o.displayFps);
-    if (probeRgb) lines.push('', t('settings.stage.point'), ...[...probeLines(src, probeRgb, o.unit), ...deLines(src, probeRgb, o)]);
+    if (probeRgb) lines.push('', t('settings.stage.point'), ...[...probeLines(src, probeRgb, p.unit ?? o.unit), ...deLines(src, probeRgb, o)]);
     ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.fillStyle = '#d6d6d6'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     lines.forEach((l, i) => ctx.fillText(l, 12, 10 + i * 15));
   }
   if (xv) ctx.restore();
+  // smoothing changes what is measured, so the panel says it (#179)
+  const note = smoothNote(p);
+  if (note) {
+    ctx.fillStyle = '#ffb300'; ctx.font = FONT; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+    ctx.fillText(note, body.w - 6, body.h - 6);
+  }
   if (ref) drawGhostDeltas(ctx, p.scope === 'hist' ? { ...frame, y: frame.y + 16 } : frame, p.scope, src, ref, o);
+}
+
+/**
+ * What the panel has to admit about its own reading (#179): a signal low-pass averages noise
+ * away – and a real single-pixel spike with it – and a smoothed trace is older than this frame.
+ * Empty when nothing is smoothed; the CRT look is a look, not a filter, and says so itself.
+ */
+export function smoothNote(p: PanelState): string {
+  const parts: string[] = [];
+  if (p.smooth) parts.push(t('panel.sig.noteSignal', { grid: p.smooth === 2 ? '5×5' : '3×3' }));
+  if (p.persist && !p.crt?.on) parts.push(t('panel.sig.noteTrace', { s: p.persist < 0 ? '∞' : num(p.persist / 1000, 1) }));
+  return parts.length ? `${t('panel.sig.note')} ${parts.join(' · ')}` : '';
 }

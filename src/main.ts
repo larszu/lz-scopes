@@ -1042,6 +1042,23 @@ function panelSettings(p: PanelState): Node[] {
   if (scatter) {
     row(t('panel.brightness'), slider(Math.log2(p.gain), (v) => { p.gain = 2 ** v; save(); }, { min: -3, max: 3, step: 0.1, reset: 0, title: t('panel.gainTitle') }));
   }
+  // signal and display of this panel (#179): its own scale, and the two ways to smooth
+  if (scatter || p.scope === 'hist' || p.scope === 'picture') {
+    if (isWaveform(p.scope)) {
+      const units = UNIT_OPTIONS();
+      row(t('panel.sig.scale'), select(p.unit ?? '', [['', t('panel.sig.scaleGlobal', { unit: String(units.find(([u]) => u === state.unit)?.[1] ?? state.unit) })], ...units],
+        (v) => { p.unit = (v || undefined) as Unit | undefined; save(); }, t('panel.sig.scaleTitle')));
+    }
+    if (scatter && !p.crt?.on) {
+      row(t('panel.sig.signal'), select(String(p.smooth ?? 0), [['0', t('common.off')], ['1', '3×3'], ['2', '5×5']],
+        (v) => { p.smooth = Number(v) as PanelState['smooth']; save(); refreshPanelSettings(p); }, t('panel.sig.signalTitle')));
+      if (isWaveform(p.scope)) {
+        row(t('panel.sig.trace'), select(String(p.persist ?? 0), [['0', t('common.off')], ['300', `${num(0.3, 1)} s`], ['1000', '1 s'], ['3000', '3 s']],
+          (v) => { p.persist = Number(v); save(); refreshPanelSettings(p); }, t('panel.sig.traceTitle')));
+      }
+      if (p.smooth || (p.persist && isWaveform(p.scope))) rows.push(hint(t('panel.sig.hint')));
+    }
+  }
   if (p.scope === 'parade' || p.scope === 'yrgb' || p.scope === 'wf-rgb') {
     row(t('panel.colour'), select(p.paradeColor ?? (p.scope === 'wf-rgb' || p.colorize ? 'channel' : 'mono'),
       [['mono', 'Mono'], ['channel', t('panel.channelColours')], ['source', t('panel.sourceColours')]], (v) => { p.paradeColor = v as PanelState['paradeColor']; save(); }));

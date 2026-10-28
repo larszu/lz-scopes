@@ -5,7 +5,7 @@ import {
 } from './ui';
 import './style.css';
 import { DEFAULT_SCHEME, DEFAULT_THEME, SCHEMES, THEMES, applyScheme, applyTheme, currentSignet, isScheme, isTheme, type SchemePref, type UiTheme } from './theme';
-import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, falseColorName, GAMUTS, HDR_PREVIEW_LABELS, HLG_PEAKS, LUMA, detectDisplay, transferLabel, type DisplaySpace, type GamutId, type HdrPreview } from './color';
+import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, falseColorName, GAMUTS, HDR_PREVIEW_LABELS, HLG_PEAKS, HLG_SURROUND_REF, LUMA, detectDisplay, setHlgSurround, transferLabel, type DisplaySpace, type GamutId, type HdrPreview } from './color';
 import { CAMERA_GAMUTS, LOG_CURVES } from './camera';
 import {
   CAMERA_PRESETS, CST_TARGETS, DEFAULT_CST, STAGES, STAGE_LABELS, TONEMAP_LABELS, autoPeaks, stageNote,
@@ -93,6 +93,8 @@ interface Persisted {
   green?: SkinRange;
   /** picture view: HDR/log → SDR down-mapping */
   hdrPreview?: HdrPreview;
+  /** surround luminance of the room in cd/m² for the HLG system gamma (#201, BT.2390 §6.2) */
+  surround?: number;
   /** UI skin (Oberfläche); chrome only, never the measurement colours */
   theme: UiTheme;
   /** light or dark chrome (src/theme.ts); the scopes stay dark */
@@ -140,6 +142,8 @@ function load(): Persisted {
 
 const state = load();
 state.ref = sanitizeRef(state.ref);
+// surround luminance of the room (#201): one value for every HLG calculation
+if (state.surround) setHlgSurround(state.surround);
 Source.globalLowLatency = !!state.lowLatency;
 Source.globalLowLatencyConfig = state.ll ?? {};
 // the render loop reports its draws to the latency meters (stamp → drawn, src/latency.ts)
@@ -251,6 +255,9 @@ const SET = {
     get: () => state.display, set: (v) => setDisplaySpace(v as Persisted['display']) },
   hdrPreview: { key: 'hdrPreview', kind: 'select', label: () => t('settings.display.hdrPreview'), title: () => t('settings.display.hdrTitle'), hint: () => t('settings.display.hdrHint'),
     options: () => Object.entries(HDR_PREVIEW_LABELS) as Option[], get: () => state.hdrPreview ?? 'bt2408', set: (v) => { state.hdrPreview = v as HdrPreview; save(); renderHeader(); } },
+  surround: { key: 'surround', kind: 'number', label: () => t('settings.display.surround'), title: () => t('settings.display.surroundTitle'), hint: () => t('settings.display.surroundHint'),
+    min: 0.1, max: 1000, step: 0.1, unit: 'cd/m²',
+    get: () => state.surround ?? HLG_SURROUND_REF, set: (v) => { state.surround = v; setHlgSurround(v); save(); needClear = true; renderHeader(); } },
   unit: { key: 'unit', kind: 'select', label: () => t('settings.scopes.scale'), title: () => t('main.unitTitle'),
     options: UNIT_OPTIONS, get: () => state.unit, set: (v) => { state.unit = v as Unit; save(); renderHeader(); } },
   tint: { key: 'tint', kind: 'select', label: () => t('settings.scopes.tint'), options: TINT_OPTIONS, get: () => state.tint, set: (v) => { state.tint = v as Tint; save(); } },
@@ -306,7 +313,7 @@ function renderHeader() {
 registerSettingsSection({ id: 'ui', label: t('settings.ui'), order: 10, render: () => settingsForm([SET.lang, SET.theme, SET.scheme, SET.sidebar]) });
 
 registerSettingsSection({ id: 'display', label: t('settings.display'), order: 20, render: () => [
-  ...settingsForm([SET.display, SET.hdrPreview]),
+  ...settingsForm([SET.display, SET.hdrPreview, SET.surround]),
   field('', button(t('settings.display.calib'), openCalibrationDialog, { title: t('settings.display.calibTitle') })),
   ...(sysProfileAvailable() ? [sysProfileSection(() => (state.display === 'auto' ? null : state.display))] : []),
 ] });
@@ -574,7 +581,9 @@ function renderSources() {
     if (s.url === 'resolve:' && s.status === 'live') card.append(resolveRouteRow(s));
     const rr = recordRow(s);
     if (rr) card.append(rr);
-    if (s.message) card.append(h('div', { class: 'msg', role: s.status === 'error' ? 'alert' : null }, s.message));
+    // always there, empty when there is nothing to say (CSS hides it): the status text changes
+    // with every statistics message and is updated in place instead of rebuilding the card
+    card.append(h('div', { class: 'msg', 'data-msg': s.id, role: s.status === 'error' ? 'alert' : null }, s.message));
     if (s.kind === 'webcam' && s.status === 'live') card.append(row(chip('', { attrs: { 'data-srcfps': s.id } })));
     // LUT files dropped on a source card: LUT 1, with Shift LUT 2
     card.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); card.classList.add('drop'); } });
@@ -1624,6 +1633,14 @@ function transportControls(s: Source): Node[] {
   ];
 }
 
+/** Write the status text of every source into its card without re-rendering the list. */
+function updateSourceText() {
+  for (const s of sources) {
+    const el = document.querySelector<HTMLElement>(`[data-msg="${s.id}"]`);
+    if (el && el.textContent !== s.message) el.textContent = s.message;
+  }
+}
+
 /** Move playheads and timecodes without re-rendering the source list. */
 function updateTransport() {
   for (const s of sources) {
@@ -1716,7 +1733,7 @@ function drawAll(now: number) {
   if (renderer.resize(g.width, g.height, dpr)) needClear = true;
   renderer.beginFrame(needClear);
   if (needClear) { panelSigs.clear(); needClear = false; }
-  updateTransport();
+  updateTransport(); updateSourceText();
 
   // CPU statistics every 100 ms; low-latency sources at their own rate (fewer main-thread stalls)
   if (now - lastQc > 250) { lastQc = now; runQc(now); }

@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { type App, WAVE_MAX, WAVE_MIN, expectOk, launchApp, menuClick, until, waveLevels } from './app';
 
@@ -99,7 +101,15 @@ test('Angleichen an die Referenz: ohne Referenzkamera eine Erklärung statt eine
   await expect(page.locator('[data-field="blackR"]')).toHaveText(/\(\+0\)/);
 });
 
+/**
+ * The built-in camera bridge is bundled from larszu/lz-camera-bridge, which is private: without
+ * the source (CAMERA_BRIDGE_TOKEN in the CI, #190) the app runs without it and says so – then
+ * there is nothing here to test.
+ */
+const bridgeBundle = fileURLToPath(new URL('../electron/camera-bridge.cjs', import.meta.url));
+
 test('Kamera-Bridge eingebaut: startet mit Touch Shading, Kamera anlegen, als Ziel wählen', async () => {
+  test.skip(!existsSync(bridgeBundle), 'ohne eingebaute Kamera-Bridge gebaut (electron/camera-bridge.cjs fehlt)');
   const { page } = a;
   await menuClick(a, 'shading');
   if (!(await page.locator('.shading-bar').isVisible())) await menuClick(a, 'shading');

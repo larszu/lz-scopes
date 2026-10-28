@@ -15,9 +15,11 @@
 // need the LZ Camera Bridge app).
 //
 // Without a source: --required (release builds, CI) fails, otherwise a warning – the app then
-// starts without the built-in bridge and says so.
+// starts without the built-in bridge and says so. --optional (or LZS_CAMERA_BRIDGE_OPTIONAL=1)
+// turns the CI's own --required off again: larszu/lz-camera-bridge is private, so a workflow
+// run without the CAMERA_BRIDGE_TOKEN secret has no source to bundle (#190) and still has to
+// build the rest of the app.
 
-import * as esbuild from 'esbuild';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -25,7 +27,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const pin = JSON.parse(readFileSync(join(root, 'scripts', 'camera-bridge.json'), 'utf8'));
-const required = process.argv.includes('--required') || process.env.CI === 'true';
+const optional = process.argv.includes('--optional') || process.env.LZS_CAMERA_BRIDGE_OPTIONAL === '1';
+const required = !optional && (process.argv.includes('--required') || process.env.CI === 'true');
 const out = join(root, 'electron', 'camera-bridge.cjs');
 
 const candidates = [process.env.LZS_CAMERA_BRIDGE_DIR, join(root, 'vendor', 'lz-camera-bridge'), join(root, '..', 'lz-camera-bridge')].filter(Boolean);
@@ -51,6 +54,16 @@ try {
     console.warn(`warning: ${msg}`);
   }
 } catch { version = `${pin.ref} (copy without git)`; }
+
+// esbuild only now: a checkout without dev dependencies (or without the bridge source above)
+// must not fail at an import – the app simply starts without the built-in bridge then
+let esbuild;
+try { esbuild = await import('esbuild'); } catch {
+  const msg = 'esbuild is missing (npm install)';
+  if (required) { console.error(`error: ${msg}`); process.exit(1); }
+  console.warn(`warning: ${msg}\n  the desktop app starts without the built-in camera bridge`);
+  process.exit(0);
+}
 
 await esbuild.build({
   entryPoints: [join(dir, pin.entry)],

@@ -25,7 +25,8 @@ test('Statistik einer Videodatei: GPU = CPU, Kosten im Hauptthread', async () =>
   expect(r.status).toBe(0);
   const { page } = a;
   const chooser = page.waitForEvent('filechooser');
-  await page.locator('#add button', { hasText: /^Datei$/ }).click();
+  // the browser path on purpose: this test compares GPU and CPU statistics of a <video> element
+  await page.locator('#add button', { hasText: /^Datei im Browser$/ }).click();
   await (await chooser).setFiles(file);
   const st = await until(async () => { const s = await a.state(); return s.sources.find((x) => x.kind === 'file' && x.status === 'live') ? s : false; }, 60_000, 'Video läuft');
   expectOk(await a.control({ cmd: 'source.select', source: st.sources.find((x) => x.kind === 'file')!.index }));

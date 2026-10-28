@@ -13,7 +13,7 @@ import {
 } from './chain';
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
-import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
+import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, vectorBands, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
 import { inBox, legendPosAt, nearSplit, splitAt, splitPos } from './overlayDrag';
 import { DEFAULT_SKIN, ROI_CLOSE, contentRect, legendBoxes, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, driftSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
 import { attachGestures, onChip } from './gestures';
@@ -33,6 +33,7 @@ import { genlockPanelSettings, setGenlockBridge } from './genlock';
 import { simulcastPanelSettings } from './simulcastPanel';
 import { encoderPanelSettings } from './encoderPanel';
 import { lensPanelSettings } from './lensPanel';
+import { sdiPanelSettings } from './sdiPanel';
 import { clockPanelSettings } from './clock/ui';
 import { generator } from './audio/io';
 import { PATTERNS, RESOLUTIONS, patternById } from './patterns';
@@ -973,7 +974,7 @@ function fillHead(v: PanelView) {
 
 /** Measuring stage in the panel head, honest about stages that have nothing to apply. */
 function stageChip(p: PanelState): HTMLElement | null {
-  if (isAudio(p.scope) || p.scope === 'clock' || p.scope === 'genlock' || p.scope === 'simulcast' || p.scope === 'encoder' || p.scope === 'lens' || isLight(p.scope)) return null;
+  if (isAudio(p.scope) || p.scope === 'clock' || p.scope === 'genlock' || p.scope === 'simulcast' || p.scope === 'encoder' || p.scope === 'lens' || p.scope === 'sdi' || isLight(p.scope)) return null;
   const n = stageNote(panelSource(p), p.stage ?? state.stage ?? 'signal');
   return n.text ? chip(n.text, { tone: n.warn ? 'warn' : undefined, cls: 'stagechip', title: t('panel.stageChipTitle') }) : null;
 }
@@ -1026,6 +1027,7 @@ function panelSettings(p: PanelState): Node[] {
   if (p.scope === 'simulcast') return simulcastPanelSettings(p, save);
   if (p.scope === 'encoder') return encoderPanelSettings(p, save, sources);
   if (p.scope === 'lens') return lensPanelSettings(p, save, () => panelSource(p), () => refreshPanelSettings(p));
+  if (p.scope === 'sdi') { const sr = panelSource(p); return sdiPanelSettings(sr, (patch) => { if (!sr) return; Object.assign(sr.settings, patch); save(); renderSources(); renderPanels(); refreshPanelSettings(p); }); }
   if (p.scope === 'genlock') return genlockPanelSettings(p, save);
   if (p.scope === 'clock') return clockPanelSettings(p, save, sources, () => refreshPanelSettings(p));
   const rows: Node[] = [];
@@ -1036,7 +1038,7 @@ function panelSettings(p: PanelState): Node[] {
     (v) => { p.stage = v === 'auto' ? undefined : v as Stage; save(); refreshHeads(); }, t('panel.stageTitle')));
   const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv' | 'skinBand' | 'greenBand' | 'greenWedge', label: string, dflt = false) =>
     checkbox(p[key] ?? dflt, label, (v) => { p[key] = v; save(); refreshHeads(); });
-  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'hls' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot';
+  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'vector3' || p.scope === 'hls' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot';
   if (scatter) {
     row(t('panel.brightness'), slider(Math.log2(p.gain), (v) => { p.gain = 2 ** v; save(); }, { min: -3, max: 3, step: 0.1, reset: 0, title: t('panel.gainTitle') }));
   }
@@ -1093,6 +1095,23 @@ function panelSettings(p: PanelState): Node[] {
     row(t('panel.minmax.targetLines'), textInput((p.minmax?.targets ?? []).join(', '), (val) => { p.minmax = { ...p.minmax, targets: val.split(/[,; ]+/).map(Number).filter((v) => Number.isFinite(v)).slice(0, 4) }; save(); }, { placeholder: t('panel.minmax.targets') }));
   }
   if (p.scope === 'satlum') row(t('panel.colour'), check('colorize', t('panel.dotsInColour')));
+  if (p.scope === 'vector3') {
+    // the two boundaries between shadows, mids and highlights, and which circle is shown alone
+    const b = p.bands ?? [30, 70];
+    const setBand = (i: 0 | 1, v: number) => {
+      const n: [number, number] = [...b] as [number, number];
+      n[i] = v;
+      // vectorBands keeps the two in order and apart – the drawing uses exactly the same rule
+      const [low, mid] = vectorBands(n);
+      p.bands = [Math.round(low[1] * 100), Math.round(mid[1] * 100)];
+      save(); refreshPanelSettings(p);
+    };
+    row(t('panel.vec3.limits'), numberInput(b[0], (v) => setBand(0, v), { min: 1, max: 98, size: 's' }), '%',
+      numberInput(b[1], (v) => setBand(1, v), { min: 2, max: 99, size: 's' }), '% Y′');
+    row(t('panel.vec3.big'), select(String(p.big ?? 0), [['0', t('panel.vec3.all')], ['1', t('panel.vec3.low')], ['2', t('panel.vec3.mid')], ['3', t('panel.vec3.high')]],
+      (v) => { p.big = Number(v) as PanelState['big']; save(); }, t('panel.vec3.limitsTitle')));
+    rows.push(hint(t('panel.vec3.hint')));
+  }
   if (p.scope === 'qclog') {
     const q = { ...DEFAULT_QC, ...state.qc };
     const setQc = (patch: Partial<QcSettings>) => { state.qc = { ...q, ...patch }; Object.assign(q, patch); save(); };
@@ -1131,7 +1150,7 @@ function panelSettings(p: PanelState): Node[] {
     row('', button(t('panel.tl.clear'), () => panelSource(p)?.history.clear(), { small: true }));
     rows.push(hint(t('panel.tl.hint')));
   }
-  if ((p.scope === 'vector' || p.scope === 'hls' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot') && !p.crt?.on) {
+  if ((p.scope === 'vector' || p.scope === 'vector3' || p.scope === 'hls' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot') && !p.crt?.on) {
     row(t('panel.persist'), select(String(p.persist ?? 0), [['0', t('common.off')], ['300', `${num(0.3, 1)} s`], ['1000', '1 s'], ['3000', '3 s'], ['10000', '10 s'], ['-1', t('panel.infinite')]], (v) => { p.persist = Number(v); save(); },
       t('panel.persistTitle')));
   }
@@ -2125,7 +2144,7 @@ function execute(c: Command): unknown {
       const i = panelIndex(c.panel), p = state.panels[i];
       p.scope = c.scope as ScopeType;
       p.view = undefined;
-      if (p.scope === 'vector' || p.scope === 'hls' || p.scope === 'cie') p.colorize = true;
+      if (p.scope === 'vector' || p.scope === 'vector3' || p.scope === 'hls' || p.scope === 'cie') p.colorize = true;
       save(); const v = views.get(i); if (v) fillHead(v); dock.setTitle(i); needClear = true;
       return { panel: i + 1, scope: p.scope };
     }

@@ -1,5 +1,6 @@
 import { GAMUTS, LUMA, detectColorspace, detectTransfer, gamutConvert, isLog, pqDecode, rgbToXyzMatrix, signalToLinear, transferSignalled, type Colorspace, type GamutId, type Transfer } from './color';
 import { gamutShare, type GamutShare } from './gamutShare';
+import type { VancPacket } from './vanc';
 import { LOG_CURVES } from './camera';
 import type { ChainSettings, Compiled } from './chain';
 import { patternById, renderPattern } from './patterns';
@@ -160,6 +161,8 @@ export class Source {
   info: StreamInfo | null = null;
   /** time code of the source (bridge showinfo / Resolve), see src/clock/source.ts */
   tc: SourceTc | null = null;
+  /** SDI ancillary packets of the newest VANC record (DeckLink helper, #160; src/vanc.ts) */
+  vanc: { packets: VancPacket[]; at: number } | null = null;
   width = 0;
   height = 0;
   depth: 8 | 16 = 8;
@@ -529,6 +532,8 @@ export class Source {
           // (src/main.ts) keeps slider, time code and the play button up to date on every frame.
         } else if (msg.type === 'tc') {
           this.tc = { ...msg, at: performance.now() };
+        } else if (msg.type === 'vanc') {
+          this.vanc = { packets: Array.isArray(msg.packets) ? msg.packets : [], at: performance.now() };
         } else if (msg.type === 'apts') {
           // PTS anchor of the sound: sample `index` has presentation time `pts` (s)
           this.audioAnchor = { index: msg.index, pts: msg.pts };
@@ -986,7 +991,7 @@ export class Source {
     this.history.clear();
     this.held.clear();
     this.clip = null;
-    this.element = null; this.data = null; this.yuv = null; this.info = null; this.tc = null; this.width = 0; this.height = 0; this.stats = null;
+    this.element = null; this.data = null; this.yuv = null; this.info = null; this.tc = null; this.vanc = null; this.width = 0; this.height = 0; this.stats = null;
     this.fps = 0; this.dropped = 0;
     if (this.status !== 'idle') this.set('idle');
   }

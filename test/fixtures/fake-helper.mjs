@@ -22,7 +22,12 @@ const rec = (tag, body) => {
   const h = Buffer.alloc(8); h.write(tag.padEnd(4, ' '), 0, 'ascii'); h.writeUInt32LE(b.length, 4);
   process.stdout.write(Buffer.concat([h, b]));
 };
-if (mode === '--ndi-stats') {
+if (mode === '--vanc') {
+  // one VANC record in the shape lz-decklink sends (#160): ST 352 1080p50 3G-A, PQ, Rec.2020
+  rec('VANC', { packets: [{ did: 0x41, sdid: 0x01, line: 10, stream: 0, data: '89e92001' }] });
+  rec('VANC', 'not json');
+  setTimeout(() => process.exit(0), 100);
+} else if (mode === '--ndi-stats') {
   const st = (p) => rec('STAT', { code: 'ndi.stats', message: 'NDI counters', params: { fps: 25, received: 25, queue: 0, connections: 1, ...p } });
   st({ ndiDropped: 0, skipped: 0 }); st({ ndiDropped: 3, skipped: 2 }); st({ ndiDropped: 0, skipped: 0 });
   setTimeout(() => process.exit(0), 100);

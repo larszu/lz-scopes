@@ -183,6 +183,7 @@ class Capture : public IDeckLinkInputCallback {
     void* bytes = nullptr;
     if (frame->GetBytes(&bytes) != S_OK || !bytes) return S_OK;
     sendInfoIfChanged(frame);
+    sendVanc(frame);
     const uint8_t* src = static_cast<const uint8_t*>(bytes);
     if (pixel_ == bmdFormat10BitRGB) {
       // r210: big-endian 2:10:10:10, SMPTE levels 64–940 → full-range 16 bit (clipped)
@@ -228,6 +229,41 @@ class Capture : public IDeckLinkInputCallback {
   }
 
  private:
+  // VANC (#160): every ancillary packet of the frame as JSON, at most 4 times a second or when the
+  // set of packets changes. data = user data words, lower 8 bits (bmdAncillaryPacketFormatUInt8).
+  // NEVER RUN WITH HARDWARE (#116).
+  void sendVanc(IDeckLinkVideoInputFrame* frame) {
+    IDeckLinkVideoFrameAncillaryPackets* anc = nullptr;
+    if (frame->QueryInterface(IID_IDeckLinkVideoFrameAncillaryPackets, (void**)&anc) != S_OK || !anc) return;
+    IDeckLinkAncillaryPacketIterator* it = nullptr;
+    std::string list, sig;
+    if (anc->GetPacketIterator(&it) == S_OK && it) {
+      IDeckLinkAncillaryPacket* pk = nullptr;
+      int n = 0;
+      while (n < 64 && it->Next(&pk) == S_OK && pk) {
+        const void* data = nullptr; uint32_t size = 0;
+        std::string hex;
+        if (pk->GetBytes(bmdAncillaryPacketFormatUInt8, &data, &size) == S_OK && data) {
+          const uint8_t* b = static_cast<const uint8_t*>(data);
+          char x[3];
+          for (uint32_t i = 0; i < size && i < 255; i++) { snprintf(x, sizeof x, "%02x", b[i]); hex += x; }
+        }
+        char head[96];
+        snprintf(head, sizeof head, "{\"did\":%u,\"sdid\":%u,\"line\":%u,\"stream\":%u,\"data\":\"",
+          (unsigned)pk->GetDID(), (unsigned)pk->GetSDID(), (unsigned)pk->GetLineNumber(), (unsigned)pk->GetDataStreamIndex());
+        list += (n ? "," : "") + std::string(head) + hex + "\"}";
+        sig += std::to_string(pk->GetDID()) + "/" + std::to_string(pk->GetSDID()) + "/" + std::to_string(pk->GetLineNumber()) + ";";
+        pk->Release(); pk = nullptr; n++;
+      }
+      it->Release();
+    }
+    anc->Release();
+    const auto now = std::chrono::steady_clock::now();
+    if (sig == lastVancSig_ && now - lastVanc_ < std::chrono::milliseconds(250)) return;
+    lastVancSig_ = sig; lastVanc_ = now;
+    writeText("VANC", "{\"packets\":[" + list + "]}");
+  }
+
   void sendInfoIfChanged(IDeckLinkVideoInputFrame* frame) {
     std::string matrix, transfer = "unknown", primaries = "unknown", tc;
     {
@@ -277,7 +313,8 @@ class Capture : public IDeckLinkInputCallback {
   bool interlaced_ = false;
   BMDPixelFormat pixel_ = bmdFormat10BitYUV;
   std::vector<uint8_t> buf_;
-  std::chrono::steady_clock::time_point lastNoSignal_{};
+  std::chrono::steady_clock::time_point lastNoSignal_{}, lastVanc_{};
+  std::string lastVancSig_ = "-";
 };
 
 // ERR as JSON {code, message, params?}: the UI translates the code (server/messages.mjs); texts contain no quotes

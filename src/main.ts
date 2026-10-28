@@ -1272,6 +1272,10 @@ function panelSettings(p: PanelState): Node[] {
       p.chart = { ...p.chart, corners }; save();
     }), { small: true })));
     row(t('chart.tol'), select(String(ch.tol ?? 3), [['1', '1'], ['2', '2'], ['3', '3'], ['5', '5']], (v) => { p.chart = { ...p.chart, tol: Number(v) }; save(); }));
+    // reference: another camera, or the chart's own reference values (#200)
+    row(t('chart.refMode'), select(ch.reference ?? 'camera', [['camera', t('chart.refModeCamera')], ['values', t('chart.refModeValues')]],
+      (v) => { p.chart = { ...p.chart, reference: v as 'camera' | 'values' }; save(); refreshPanelSettings(p); }, t('chart.refModeTitle')));
+    if (ch.reference === 'values') rows.push(hint(t('chart.refHint')));
     rows.push(hint(t('chart.hint')));
   }
   if (p.scope === 'wshading') {

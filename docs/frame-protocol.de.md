@@ -145,6 +145,15 @@ Für entfernte Bridges mit wenig Bandbreite: `/stream?url=…&codec=h264` (erzwi
 - Kommt der Browser nicht hinterher, verwirft die Bridge bis zum nächsten Keyframe.
 - Der Browser dekodiert mit WebCodecs im Worker (`src/frameWorker.ts`) und wandelt Y′CbCr selbst mit `decodeMatrix` in R′G′B′ (`src/yuv.ts`), nicht über ein Canvas mit Farbmanagement. Ergebnis: 8 bit, verlustbehaftet – für exakte Messungen `roh` verwenden.
 
+## Datei-Transport (`file:<Name>`)
+
+Eine von der App freigegebene Datei (`file:<Name>`, `server/media.mjs`) wird von der Seite abgespielt, angehalten und bildweise bewegt (`server/clip.mjs`). `info` trägt dann `"clip":{"duration":12.5,"fps":25,"loop":true}` – `duration` 0 heißt: Länge unbekannt.
+
+- Client → Server: `{"type":"clip","op":"play"|"pause"|"seek"|"step"|"rate"|"loop","pos":<s>,"frames":<n>,"rate":<x>,"loop":<bool>}`. `pos` ist eine Position in Sekunden (optional: der Abspielkopf, wo er steht), `frames` der Schritt von `step` (negativ = zurück), `rate` 0,1 … 16.
+- Server → Client: `{"type":"clip","state":"playing"|"paused","pos":<s>,"duration":<s>,"fps":<n>,"rate":<x>,"loop":<bool>}` bei jedem Befehl, am Ende der Datei und einmal pro Sekunde mit der Statistik; dazwischen führt der Client den Abspielkopf selbst weiter.
+
+Jeder Befehl startet ein neues ffmpeg: spielend `-ss <pos> -readrate <rate>`, angehalten `-ss <pos>` mit `-frames:v 1`, so geht genau ein Bild hinaus und bleibt in den Scopes stehen. Befehle, die während eines Anlaufs eintreffen, fallen zusammen. Rückwärts spielt die Seite selbst (wiederholtes `step`) – ffmpeg decodiert nur vorwärts. Am Ende der Datei bleibt die Verbindung offen: mit `loop` läuft sie von vorn, sonst steht sie auf dem letzten Bild.
+
 ## iOS-App: RTSP direkt (Loopback)
 
 Die iPhone/iPad-App bedient dasselbe Protokoll für `rtsp://`-Quellen selbst (#90, `ios/LzRtsp/Sources/LzRtsp/FrameServer.swift`): `ws://127.0.0.1:<port>/rtsp?token=…&url=rtsp://…&transport=tcp|udp&width=…&wc=h264,hevc`, nur Loopback, mit Zufalls-Token je App-Start, ohne Zugangsdaten in der URL (Schlüsselbund). Protokoll 2 ohne Ton. Steht der Codec des Streams in `wc` (was WebCodecs der WebView dekodiert) und ist er 8 bit: `info` mit `"transport":"h264"|"hevc"`, dann `video` und `LZHK`/`LZHD` wie oben (HEVC: Codec-String `hvc1.…`, ISO/IEC 14496-15 Anhang E). Sonst dekodiert VideoToolbox in der App, und es kommen `LZV1`-Bilder R′G′B′A 8 bit in `width`. `info.direct` ist `"webcodecs"` oder `"videotoolbox"`; `stats` trägt `rtp` wie beim eigenen RTP-Empfang der Bridge.

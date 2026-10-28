@@ -295,5 +295,11 @@ export default {
   'help.shguide.try': "Testbild „Schwarz“, Schritt 1, dann „Grau 50 %“ für Schritt 4.",
   'help.shguide.check': "Mit „Schwarz“ zeigt Schritt 2 ✓ (R′−G′ und B′−G′ +0,0 %); mit „Grau 50 %“ zeigt Schritt 4 Y′ etwa 50 % und ✓.",
   'help.shguide.pitfall': "Der Flare-Schritt braucht ein wirklich schwarzes Objekt; ein dunkles Grau erscheint als Flare.",
+  'help.sdi.one': "Was das SDI-Signal über sich selbst sagt: ST-352-Payload-ID, HDR-Metadaten, Timecode, Untertitel- und Audiopakete eines DeckLink-Eingangs.",
+  'help.sdi.what': "SDI trägt neben dem Bild Zusatzpakete. Die ST-352-Payload-ID nennt Format, Bildrate, Abtastung, Bittiefe, Farbraum und Übertragung (SDR, HLG, PQ); ST 2108-1 trägt Mastering-Display und MaxCLL; ST 12-2 trägt LTC/VITC-Timecode. Das Panel liest sie aus und warnt, wenn das Signal anders gekennzeichnet ist, als die Scopes es lesen.",
+  'help.sdi.read': "Oben: ST-352-Bytes und ihre Bedeutung. Gelbe Zeile: Die Kennung widerspricht Übertragung oder Matrix der Quelle – ⚙ bietet das Umschalten an.\nDarunter: HDR-Metadaten, Timecode, AFD, ob CEA-708/608 und ST-299-Audiogruppen da sind, dann jeder Pakettyp mit Zeile, DID/SDID, Anzahl und Daten in Hex.",
+  'help.sdi.try': "Einen DeckLink-Eingang hinzufügen (Quellen → DeckLink…) mit SDI-Signal und dieses Panel öffnen.",
+  'help.sdi.check': "die ST-352-Zeile zeigt das Format, das die Quelle ausgibt (etwa 1080p50, 4:2:2, 10 bit), und keine gelbe Zeile, sobald Übertragung und Matrix übereinstimmen.",
+  'help.sdi.pitfall': "Wandler und Recorder schreiben ST 352 oft um oder lassen es weg – eine fehlende oder falsche Kennung sagt mehr über die Kette als über die Kamera. Noch nicht mit einer Karte getestet (#116).",
   // --- end scope texts ---
 } satisfies Translation<typeof en>;

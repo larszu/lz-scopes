@@ -149,6 +149,22 @@ describe('helper protocol (DeckLink/NDI helpers)', () => {
     expect(stats[0]).toMatchObject({ dropped: 5, params: { lost: 5, ndi: 3, helper: 2 }, helper: { skipped: 2 } });
   });
 
+  it('VANC records are forwarded as {type:"vanc"}, broken ones dropped (#160)', async () => {
+    const msgs: Record<string, unknown>[] = [];
+    await new Promise<void>((done) => {
+      const ws = Object.assign(new EventEmitter(), {
+        OPEN: 1, readyState: 1, bufferedAmount: 0,
+        send(d: Buffer | string) { if (typeof d === 'string') msgs.push(JSON.parse(d)); },
+        close() { ws.readyState = 3; ws.emit('close'); done(); },
+      });
+      startHelperStream(ws, {
+        bin: process.execPath, args: [fake, '--vanc'], label: 'DeckLink', params: new URLSearchParams(''),
+        ctx: { ffmpeg: 'ffmpeg', fail: () => ws.close(), outputSize, decodeParams, applyDecodeOverride, deviceOptions },
+      });
+    });
+    expect(msgs.filter((m) => m.type === 'vanc')).toEqual([{ type: 'vanc', packets: [{ did: 0x41, sdid: 0x01, line: 10, stream: 0, data: '89e92001' }] }]);
+  });
+
   const helperBin = fileURLToPath(new URL(`../helpers/bin/lz-ndi${process.platform === 'win32' ? '.exe' : ''}`, import.meta.url));
   it.skipIf(!existsSync(helperBin))('lz-ndi --selftest: box-filter reduction of UYVY and P216', async () => {
     const out = await new Promise<string>((res) => { import('node:child_process').then(({ execFile }) => execFile(helperBin, ['--selftest'], (_e, o) => res(String(o)))); });

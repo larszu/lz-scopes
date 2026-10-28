@@ -63,12 +63,17 @@ export async function launchApp(opts: { profile?: string; port?: number; lang?: 
     const r = await fetch(`${base}/api/control`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cmd) });
     return { status: r.status, body: await r.json() };
   };
-  // The bridge gives the window 4 s per command. In CI (software WebGL) the window can be
-  // busy longer, above all while it boots: retry timeouts (504) instead of failing.
+  // The bridge gives the window 4 s per command. In CI (software WebGL) the window can be busy
+  // longer – a heavy panel such as the simulcast map blocks the main thread for a moment, and
+  // the command then comes back with "Main window does not answer" instead of a 504. Both mean
+  // the same thing: ask again, with a short pause, instead of failing the test.
+  const busy = (r: { status: number; body: { ok?: boolean; error?: string } }) =>
+    r.status === 504 || (r.body?.ok === false && /does not answer|antwortet nicht/i.test(r.body.error ?? ''));
   const control = async (cmd: Record<string, unknown>) => {
     for (let i = 0; ; i++) {
       const r = await post(cmd);
-      if (r.status !== 504 || i >= 5) return r.body;
+      if (!busy(r) || i >= 5) return r.body;
+      await new Promise((res) => setTimeout(res, 500));
     }
   };
   // the main window connects to /control?role=app once it has booted, then answers commands

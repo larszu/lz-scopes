@@ -8,11 +8,12 @@ import type { R103Result } from './ycbcr';
 import type { Stats } from './sources';
 import { lang, t } from './i18n';
 
-export type QcType = 'r103' | 'r103total' | 'clip' | 'superwhite' | 'subblack' | 'black' | 'freeze' | 'silence';
-export const QC_TYPES: QcType[] = ['r103', 'r103total', 'clip', 'superwhite', 'subblack', 'black', 'freeze', 'silence'];
+export type QcType = 'r103' | 'r103total' | 'clip' | 'superwhite' | 'subblack' | 'black' | 'freeze' | 'silence' | 'tout' | 'vrep' | 'brng';
+export const QC_TYPES: QcType[] = ['r103', 'r103total', 'clip', 'superwhite', 'subblack', 'black', 'freeze', 'silence', 'tout', 'vrep', 'brng'];
 export const QC_LABELS: Record<QcType, string> = {
   r103: t('tools.qc.r103'), r103total: t('tools.qc.r103total'), clip: t('tools.qc.clip'),
   superwhite: t('tools.qc.superwhite'), subblack: t('tools.qc.subblack'), black: t('tools.qc.black'), freeze: t('tools.qc.freeze'), silence: t('tools.qc.silence'),
+  tout: t('tools.qc.tout'), vrep: t('tools.qc.vrep'), brng: t('tools.qc.brng'),
 };
 
 export interface QcSettings {
@@ -25,11 +26,15 @@ export interface QcSettings {
   silenceDb: number; silenceMs: number;
   /** picture unchanged for this long = frozen */
   freezeMs: number;
+  /** ffmpeg signalstats (#202): share of pixels that are temporal outliers / repeated lines / outside 16–235 */
+  tout: number; vrep: number; brng: number;
 }
-export const DEFAULT_QC: QcSettings = { on: true, clip: 0.005, black: 0.02, silenceDb: -60, silenceMs: 2000, freezeMs: 2000 };
+export const DEFAULT_QC: QcSettings = { on: true, clip: 0.005, black: 0.02, silenceDb: -60, silenceMs: 2000, freezeMs: 2000, tout: 0.0005, vrep: 0.01, brng: 0.02 };
 
 export interface QcInput {
   stats: Stats | null;
+  /** QC metrics of the bridge (#202); null when the source does not deliver them */
+  signal: { tout?: number; vrep?: number; brng?: number } | null;
   r103: R103Result | null;
   /** highest true peak of all channels over `silenceMs` in dBFS; null = no sound */
   peakDb: number | null;
@@ -55,6 +60,10 @@ export function evaluate(i: QcInput, s: QcSettings): Record<QcType, QcCondition>
     black: c(!!st && st.samples > 0 && st.yMax < s.black, st?.yMax ?? 0, st ? `Y′ max ${pct(st.yMax)}` : ''),
     freeze: c(i.freezeApplies && i.unchangedMs >= s.freezeMs, i.unchangedMs, t('tools.qc.unchanged', { s: (i.unchangedMs / 1000).toFixed(1) })),
     silence: c(i.peakDb !== null && i.peakDb < s.silenceDb, i.peakDb ?? 0, i.peakDb !== null ? t('tools.qc.peak', { db: Number.isFinite(i.peakDb) ? i.peakDb.toFixed(1) : '−∞' }) : ''),
+    // from the bridge (#202); without the metrics the conditions simply do not hold
+    tout: c((i.signal?.tout ?? 0) > s.tout, i.signal?.tout ?? 0, i.signal?.tout !== undefined ? t('tools.qc.ofPixels', { v: pct(i.signal.tout) }) : ''),
+    vrep: c((i.signal?.vrep ?? 0) > s.vrep, i.signal?.vrep ?? 0, i.signal?.vrep !== undefined ? t('tools.qc.ofLines', { v: pct(i.signal.vrep) }) : ''),
+    brng: c((i.signal?.brng ?? 0) > s.brng, i.signal?.brng ?? 0, i.signal?.brng !== undefined ? t('tools.qc.ofPixels', { v: pct(i.signal.brng) }) : ''),
   };
 }
 

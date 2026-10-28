@@ -96,6 +96,7 @@ uniform mat3 uToXYZ;
 uniform vec4 uCie;
 ${ROI_GLSL}
 uniform vec4 uSkin;
+uniform vec2 uLumaWin; // tonal window Y′ lo…hi (vectorscope by tonal range, #180); everything outside is not drawn
 uniform vec3 uTint;
 out vec3 vColor;
 out float vW;
@@ -118,6 +119,8 @@ bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
   // the pixel's own colour, brightness normalised so dark pixels stay visible
   vec3 srcCol = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
   col = mono;
+  // only one band of the picture (#180): shadows, mids or highlights of the same frame
+  if (Y < uLumaWin.x || Y > uLumaWin.y) return false;
 
   if (uMode == 7) {
     pos = vec2(x * 2.0 - 1.0, waveY(Y));
@@ -395,6 +398,8 @@ export interface ScatterParams {
   view?: [number, number, number];
   /** trace weight factor, so zoomed traces keep their brightness (z² in 2D, z for waveforms) */
   density?: number;
+  /** only samples whose Y′ lies in this window (vectorscope by tonal range, #180) */
+  luma?: [number, number];
 }
 /** How the picture view maps the signal to the screen. */
 export interface DisplayParams {
@@ -753,6 +758,7 @@ export class Renderer {
       gl.uniform4f(this.u(prog, 'uCie'), cv.x0, cv.x1, cv.y0, cv.y1);
       this.setRois(prog, p.roi);
       gl.uniform4f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol, p.skin.hue ?? 123);
+      gl.uniform2f(this.u(prog, 'uLumaWin'), p.luma?.[0] ?? -1e3, p.luma?.[1] ?? 1e3);
       gl.uniform3fv(this.u(prog, 'uTint'), p.tint);
       if (p.cube) {
         gl.uniform1i(this.u(prog, 'uCube'), p.cube.space);

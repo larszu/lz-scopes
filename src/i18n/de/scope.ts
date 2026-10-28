@@ -17,6 +17,7 @@ export default {
   'scope.name.ycbcr': 'YCbCr-Parade',
   'scope.name.hls': 'HLS-Vectorscope',
   'scope.name.vector': 'Vectorscope',
+  'scope.name.vector3': 'Vectorscope nach Tonwert',
   'scope.name.cie': 'CIE-Diagramm',
   'scope.name.diamond': 'Diamond (Gamut)',
   'scope.name.cube': '3D-Farbvolumen',

@@ -94,8 +94,9 @@ jobs:
       - run: npx playwright install --with-deps chromium
       # the camera bridge built into the desktop app (scripts/build-camera-bridge.mjs); same tag as
       # scripts/camera-bridge.json. The repository is private: the checkout needs a fine-grained
-      # PAT (contents: read) as the secret CAMERA_BRIDGE_TOKEN. Without it the bridge test skips
-      # itself (e2e/shading.spec.ts) and everything else still runs.
+      # PAT (contents: read) as the secret CAMERA_BRIDGE_TOKEN. Without it `npm run test:e2e`
+      # bundles nothing (--optional) and the bridge test skips itself (e2e/shading.spec.ts);
+      # that the bundle really builds is checked by linux-app and release.yml.
       - uses: actions/checkout@v5
         if: env.BRIDGE_TOKEN != ''
         with:

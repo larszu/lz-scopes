@@ -1557,14 +1557,14 @@ function activeVideo(): Source | null {
 
 function transportControls(s: Source): Node[] {
   const range = slider(0, (val) => { const d = s.duration; if (d) { s.pause(); s.seek((val / 1000) * d); } }, { min: 0, max: 1000, step: 1, title: 'Playhead', attrs: { class: 'playhead', 'data-src': s.id } });
-  const btn = (label: string, title: string, fn: () => void) => iconButton(label, title, fn, { small: true });
+  const btn = (label: string, title: string, fn: () => void, attrs: Record<string, string> = {}) => iconButton(label, title, fn, { small: true, attrs });
   return [
     row(range),
     h('div', { class: 'row transport', role: 'toolbar', 'aria-label': 'Transport' },
       btn('⏮', t('main.tp.start'), () => s.seek(0)),
       btn('◀◀', t('main.tp.rev'), () => s.shuttle(-1)),
       btn('◀|', t('main.tp.back'), () => s.step(-1)),
-      btn(s.playing ? '❚❚' : '▶', t('main.tp.play'), () => s.togglePlay()),
+      btn(s.playing ? '❚❚' : '▶', t('main.tp.play'), () => s.togglePlay(), { 'data-play': s.id }),
       btn('|▶', t('main.tp.fwdFrame'), () => s.step(1)),
       btn('▶▶', t('main.tp.fwd'), () => s.shuttle(1)),
       h('span', { class: 'tc', 'data-tc': s.id }, s.timecode())),
@@ -1576,6 +1576,10 @@ function updateTransport() {
   for (const s of sources) {
     if (!s.hasTransport) continue;
     const pos = s.position(), dur = s.duration;
+    // the play button follows without rebuilding the card: a clip reports its playhead every
+    // second, and a card rebuilt that often cannot be clicked on a busy machine
+    const pb = document.querySelector<HTMLElement>(`button[data-play="${s.id}"] span`);
+    if (pb) pb.textContent = s.playing ? '❚❚' : '▶';
     const r = document.querySelector<HTMLInputElement>(`input.playhead[data-src="${s.id}"]`);
     if (r && document.activeElement !== r && dur) r.value = String(Math.round((pos / dur) * 1000));
     const tc = document.querySelector<HTMLElement>(`[data-tc="${s.id}"]`);

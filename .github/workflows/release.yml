@@ -76,8 +76,16 @@ jobs:
     env:
       # the ffmpeg tests must not be skipped here (test/shippedFfmpeg.ts)
       LZS_FFMPEG_REQUIRED: '1'
+      # larszu/lz-camera-bridge is private (#190): a release ships the built-in bridge, so this
+      # secret is not optional here – the run stops right at the start without it
+      BRIDGE_TOKEN: ${{ secrets.CAMERA_BRIDGE_TOKEN }}
     steps:
       - uses: actions/checkout@v5
+      - name: Camera bridge secret
+        if: env.BRIDGE_TOKEN == ''
+        run: |
+          echo "::error::CAMERA_BRIDGE_TOKEN is missing. larszu/lz-camera-bridge is private, and every release ships the built-in bridge: create a fine-grained PAT (contents: read on larszu/lz-camera-bridge) and add it as the repository secret CAMERA_BRIDGE_TOKEN (gh secret set CAMERA_BRIDGE_TOKEN)."
+          exit 1
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
@@ -111,12 +119,14 @@ jobs:
           exe=""; if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
           ls -la helpers/bin
           for h in lz-decklink lz-ndi; do test -f "helpers/bin/$h$exe"; echo "$h:"; "helpers/bin/$h$exe" --list || true; done
-      # the camera bridge built into the desktop app (scripts/build-camera-bridge.mjs); same tag as scripts/camera-bridge.json
+      # the camera bridge built into the desktop app (scripts/build-camera-bridge.mjs); same tag as
+      # scripts/camera-bridge.json. Private repository: checked out with CAMERA_BRIDGE_TOKEN (#190)
       - uses: actions/checkout@v5
         with:
           repository: larszu/lz-camera-bridge
           ref: v2.2.0
           path: vendor/lz-camera-bridge
+          token: ${{ secrets.CAMERA_BRIDGE_TOKEN }}
           sparse-checkout: packages/bridge
       - run: node scripts/build-camera-bridge.mjs --required
       - name: Package

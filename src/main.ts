@@ -503,10 +503,12 @@ function renderSources() {
       const connect = () => { s.url = streamRoute.normalise(urlIn.value.trim()); urlIn.value = s.url; save(); s.connectStream(s.url, bridgeUrl()); };
       const bridgeUi: BridgeUi = {
         http: () => bridgeUrl().replace(/^ws/, 'http'), hud: alertHud, upd,
-        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (/^(decklink|ndi|folder):/.test(url)) s.settings.depth = 16; } connect(); renderSources(); },
+        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (/^(decklink|ndi|folder|file):/.test(url)) s.settings.depth = 16; } connect(); renderSources(); },
       };
       card.append(
         row(urlIn),
+        // a released file typed in here as `file:<name>` brings its transport along (#191)
+        ...(s.clip ? transportControls(s) : []),
         classRow('opts',
           ...bridgeQualitySelects(s, upd),
           select(set.transport, [['tcp', 'TCP'], ['udp', 'UDP']], (v) => upd({ transport: v as 'tcp' | 'udp' }, true), t('main.src.transportTitle')),
@@ -538,7 +540,7 @@ function renderSources() {
     } else if (s.kind === 'audio') {
       card.append(...audioSourceControls(s, save, renderSources, bridgeUrl));
     } else {
-      if (s.isVideoFile) card.append(...transportControls(s));
+      if (s.hasTransport) card.append(...transportControls(s));
       if (s.kind === 'file') card.append(...fileControls(s, upd));
       if (s.kind === 'webcam') card.append(deviceRow(s));
       if ((s.kind === 'screen' || s.kind === 'webcam' || s.isVideoFile) && running) {
@@ -1518,16 +1520,16 @@ function attachPointer(p: PanelState, body: HTMLElement) {
   });
 }
 
-// ---------------------------------------------------------------- transport (video files)
+// ------------------------------------------- transport (video files and clips in the bridge)
 
-/** The video file shown in the most panels (fallback: any video file). */
+/** The file shown in the most panels (fallback: any open file), browser path or bridge. */
 function activeVideo(): Source | null {
-  const shown = openViews().map((v) => panelSource(state.panels[v.idx])).filter((s): s is Source => !!s && s.isVideoFile);
-  return shown[0] ?? sources.find((s) => s.isVideoFile) ?? null;
+  const shown = openViews().map((v) => panelSource(state.panels[v.idx])).filter((s): s is Source => !!s && s.hasTransport);
+  return shown[0] ?? sources.find((s) => s.hasTransport) ?? null;
 }
 
 function transportControls(s: Source): Node[] {
-  const range = slider(0, (val) => { const v = s.video; if (v && v.duration) { v.pause(); s.seek((val / 1000) * v.duration); } }, { min: 0, max: 1000, step: 1, title: 'Playhead', attrs: { class: 'playhead', 'data-src': s.id } });
+  const range = slider(0, (val) => { const d = s.duration; if (d) { s.pause(); s.seek((val / 1000) * d); } }, { min: 0, max: 1000, step: 1, title: 'Playhead', attrs: { class: 'playhead', 'data-src': s.id } });
   const btn = (label: string, title: string, fn: () => void) => iconButton(label, title, fn, { small: true });
   return [
     row(range),
@@ -1535,7 +1537,7 @@ function transportControls(s: Source): Node[] {
       btn('⏮', t('main.tp.start'), () => s.seek(0)),
       btn('◀◀', t('main.tp.rev'), () => s.shuttle(-1)),
       btn('◀|', t('main.tp.back'), () => s.step(-1)),
-      btn(s.video?.paused === false ? '❚❚' : '▶', t('main.tp.play'), () => s.togglePlay()),
+      btn(s.playing ? '❚❚' : '▶', t('main.tp.play'), () => s.togglePlay()),
       btn('|▶', t('main.tp.fwdFrame'), () => s.step(1)),
       btn('▶▶', t('main.tp.fwd'), () => s.shuttle(1)),
       h('span', { class: 'tc', 'data-tc': s.id }, s.timecode())),
@@ -1545,12 +1547,12 @@ function transportControls(s: Source): Node[] {
 /** Move playheads and timecodes without re-rendering the source list. */
 function updateTransport() {
   for (const s of sources) {
-    const v = s.video;
-    if (!v || !s.isVideoFile) continue;
+    if (!s.hasTransport) continue;
+    const pos = s.position(), dur = s.duration;
     const r = document.querySelector<HTMLInputElement>(`input.playhead[data-src="${s.id}"]`);
-    if (r && document.activeElement !== r && v.duration) r.value = String(Math.round((v.currentTime / v.duration) * 1000));
+    if (r && document.activeElement !== r && dur) r.value = String(Math.round((pos / dur) * 1000));
     const tc = document.querySelector<HTMLElement>(`[data-tc="${s.id}"]`);
-    if (tc) tc.textContent = `${s.timecode()} / ${s.timecode(v.duration || 0)}${v.playbackRate !== 1 ? ` ×${v.playbackRate}` : ''}${s.reverseSpeed ? ` ◀×${s.reverseSpeed}` : ''}`;
+    if (tc) tc.textContent = `${s.timecode(pos)} / ${s.timecode(dur)}${s.playing && s.rate !== 1 ? ` ×${s.rate}` : ''}${s.reverseSpeed ? ` ◀×${s.reverseSpeed}` : ''}`;
   }
 }
 
@@ -1566,7 +1568,7 @@ function runQc(now: number) {
   for (const s of sources) {
     if (s.status !== 'live' || !s.ready) { qcLog.closeSource(s.id); continue; }
     const { kr, kb } = LUMA[s.colorspace]; s.updateStats(kr, kb);
-    const live = s.kind === 'stream' || s.kind === 'webcam' || s.kind === 'screen' || isBridgeFile(s) || (s.kind === 'file' && !!s.video && !s.video.paused);
+    const live = s.kind === 'stream' || s.kind === 'webcam' || s.kind === 'screen' || (s.kind === 'file' && (s.clip ? s.playing : !!s.video && !s.video.paused));
     // freeze check only where pictures are expected to change
     const f = live ? s.cpuFrame() : null, fp = f ? frameFingerprint(f.px, f.w, f.h, f.decode) : '';
     const fz = qcFreeze.get(s.id);
@@ -2171,8 +2173,8 @@ function execute(c: Command): unknown {
       // recordings (src/record/playback.ts) when no video file is meant
       if (c.source === undefined && !activeVideo() && playbackTransport(String(c.op))) return { playback: true };
       const s = need(c.source !== undefined ? findSource(c.source) : activeVideo(), 'No video file open');
-      const v = need(s.isVideoFile ? s.video : null, `${s.name} is not a video file`);
-      const playing = !v.paused || !!s.reverseSpeed;
+      need(s.hasTransport ? s : null, `${s.name} is not a video file`);
+      const playing = s.playing || !!s.reverseSpeed;
       switch (c.op) {
         case 'play': if (!playing) s.togglePlay(); break;
         case 'pause': case 'stop': s.shuttle(0); if (c.op === 'stop') s.seek(0); break;
@@ -2182,7 +2184,7 @@ function execute(c: Command): unknown {
         case 'forward': s.shuttle(1); break;
         case 'rewind': s.shuttle(-1); break;
         case 'start': s.seek(0); break;
-        case 'end': s.seek(v.duration || 0); break;
+        case 'end': s.seek(s.duration); break;
       }
       return { source: s.name };
     }
@@ -2326,7 +2328,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'k' || e.key === 'K') activeVideo()?.shuttle(0);
   else if (e.key === 'l' || e.key === 'L') activeVideo()?.shuttle(1);
   else if (e.key === 'Home') activeVideo()?.seek(0);
-  else if (e.key === 'End') { const v = activeVideo(); v?.seek(v.video?.duration ?? 0); }
+  else if (e.key === 'End') { const v = activeVideo(); v?.seek(v.duration); }
   else if (e.key === 'f' || e.key === 'F') toggleFullscreen();
   else if (e.key === 's' || e.key === 'S') snapshot();
   else if (e.key === 'b' || e.key === 'B') toggleSidebar();

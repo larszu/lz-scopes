@@ -48,8 +48,12 @@ async function createWindow() {
   let port;
   // recordings (server/record.mjs): <Movies|Videos>/LZ Scopes is released by default; LZS_RECORD_DIRS adds more
   const recordDirs = [process.env.LZS_RECORD_DEFAULT || path.join(app.getPath('videos'), 'LZ Scopes')];
-  try { ({ port } = await startBridge({ port: Number(process.env.LZS_PORT) || 4192, host, dist, configDir: app.getPath('userData'), recordDirs })); }
-  catch { ({ port } = await startBridge({ port: 0, host, dist, configDir: app.getPath('userData'), recordDirs })); }
+  // LZS_MEDIA_FILE: release files as inputs `file:<name>` at start, without the dialog (several
+  // separated by the path separator). Same as `npm start --media-file`; e2e/clip.spec.ts uses it.
+  const mediaFiles = (process.env.LZS_MEDIA_FILE || '').split(path.delimiter).filter(Boolean);
+  const opts = { host, dist, configDir: app.getPath('userData'), recordDirs, mediaFiles };
+  try { ({ port } = await startBridge({ ...opts, port: Number(process.env.LZS_PORT) || 4192 })); }
+  catch { ({ port } = await startBridge({ ...opts, port: 0 })); }
   origin = `http://127.0.0.1:${port}`;
   console.log(`bridge ${origin}, ffmpeg: ${ffmpegCandidates()[0] ?? 'missing'}`);
 

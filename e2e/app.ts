@@ -66,13 +66,15 @@ export async function launchApp(opts: { profile?: string; port?: number; lang?: 
   // The bridge gives the window 4 s per command. In CI (software WebGL) the window can be busy
   // longer – a heavy panel such as the simulcast map blocks the main thread for a moment, and
   // the command then comes back with "Main window does not answer" instead of a 504. Both mean
-  // the same thing: ask again, with a short pause, instead of failing the test.
+  // the same thing: ask again, with a short pause, instead of failing the test. A 1080p file
+  // decoded in software keeps the thread busy far longer than a panel, so the budget has to be
+  // generous: twenty tries are about a minute of patience and cost nothing when nobody is busy.
   const busy = (r: { status: number; body: { ok?: boolean; error?: string } }) =>
     r.status === 504 || (r.body?.ok === false && /does not answer|antwortet nicht/i.test(r.body.error ?? ''));
   const control = async (cmd: Record<string, unknown>) => {
     for (let i = 0; ; i++) {
       const r = await post(cmd);
-      if (!busy(r) || i >= 5) return r.body;
+      if (!busy(r) || i >= 20) return r.body;
       await new Promise((res) => setTimeout(res, 500));
     }
   };

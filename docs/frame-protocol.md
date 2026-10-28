@@ -145,6 +145,15 @@ For remote bridges with little bandwidth: `/stream?url=…&codec=h264` (forces p
 - If the browser cannot keep up, the bridge drops up to the next keyframe.
 - The browser decodes with WebCodecs in a worker (`src/frameWorker.ts`) and converts Y′CbCr to R′G′B′ itself with `decodeMatrix` (`src/yuv.ts`), not through a colour-managed canvas. Result: 8 bit, lossy – for exact measurements use the raw transport.
 
+## File transport (`file:<name>`)
+
+A file the app released (`file:<name>`, `server/media.mjs`) is played, paused and stepped from the page (`server/clip.mjs`). `info` then carries `"clip":{"duration":12.5,"fps":25,"loop":true}` – `duration` 0 means the length is unknown.
+
+- Client → server: `{"type":"clip","op":"play"|"pause"|"seek"|"step"|"rate"|"loop","pos":<s>,"frames":<n>,"rate":<x>,"loop":<bool>}`. `pos` is a position in seconds (optional: the playhead where it stands), `frames` the step of `step` (negative = back), `rate` 0.1 … 16.
+- Server → client: `{"type":"clip","state":"playing"|"paused","pos":<s>,"duration":<s>,"fps":<n>,"rate":<x>,"loop":<bool>}` at every command, at the end of the clip and once a second with the statistics; in between the client runs the playhead on itself.
+
+Every command starts a new ffmpeg: playing `-ss <pos> -readrate <rate>`, paused `-ss <pos>` with `-frames:v 1`, so exactly one picture goes out and stays on the scopes. Commands arriving while one is starting up coalesce. Reverse play is the page's own job (repeated `step`) – ffmpeg decodes forwards only. At the end of the clip the socket stays open: with `loop` it plays again from the start, otherwise it holds on the last frame.
+
 ## iOS app: RTSP direct (loopback)
 
 The iPhone/iPad app serves the same protocol itself for `rtsp://` sources (#90, `ios/LzRtsp/Sources/LzRtsp/FrameServer.swift`): `ws://127.0.0.1:<port>/rtsp?token=…&url=rtsp://…&transport=tcp|udp&width=…&wc=h264,hevc`, loopback only, with a random token per app run, no credentials in the URL (Keychain). Protocol 2 without sound. If the stream's codec is in `wc` (what the WebView's WebCodecs decodes) and 8 bit: `info` with `"transport":"h264"|"hevc"`, then `video` and `LZHK`/`LZHD` as above (HEVC: `hvc1.…` codec string, ISO/IEC 14496-15 Annex E). Otherwise VideoToolbox decodes in the app and `LZV1` R′G′B′A 8-bit frames arrive at `width`. `info.direct` is `"webcodecs"` or `"videotoolbox"`; `stats` carries `rtp` like the bridge's own RTP reception.

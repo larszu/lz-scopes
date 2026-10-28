@@ -29,6 +29,7 @@ import { resolveFolder, startFolderStream, watchRoots } from './folder.mjs';
 import { resolveStatus } from './resolve.mjs';
 import { createPlaybackWatch } from './resolveWatch.mjs';
 import { handleMeterSocket, meterInfo } from './meter.mjs';
+import { ClipTransport } from './clip.mjs';
 import { MEDIA_URL, STILL_FPS, addMediaFile, inputPath, mediaFile, mediaInputArgs } from './media.mjs';
 import { PtpMonitor, RtpMonitor, ipv4Interfaces, isMulticastV4, nowUtcNs } from './ptp.mjs';
 import { taiMinusUtc } from './leap.mjs';
@@ -181,7 +182,7 @@ export function recordAudioMap(url, { soundInProcess }) {
   return /^(rtsps?|rtmps?|rtp|udp|srt|http|https|tcp):\/\//i.test(url) ? '0:a:0?' : null;
 }
 
-function inputArgs(url, transport, { audio = false, video = true, device = {} } = {}) {
+function inputArgs(url, transport, { audio = false, video = true, device = {}, clip = null } = {}) {
   if (url in TEST_PATTERNS) {
     const a = [];
     if (video) a.push('-re', '-f', 'lavfi', '-i', TEST_PATTERNS[url]);
@@ -190,9 +191,10 @@ function inputArgs(url, transport, { audio = false, video = true, device = {} } 
   }
   const dev = deviceArgs(url, undefined, { ...device, audio });
   if (dev) return dev;
-  // released file (#188): ffmpeg decodes it, paced and looped like the browser's <video loop>
+  // released file (#188): ffmpeg decodes it, paced and looped like the browser's <video loop>,
+  // or from the playhead when the page steers the transport (#191, server/clip.mjs)
   const media = mediaFile(url);
-  if (media) return mediaInputArgs(media);
+  if (media) return mediaInputArgs(media, clip);
   const a = ['-fflags', 'nobuffer', '-flags', 'low_delay', '-analyzeduration', '1000000', '-probesize', '2000000'];
   // low latency: no reorder queue, no demuxer delay (the probe already ran separately)
   if (/^rtsps?:/i.test(url)) a.push('-rtsp_transport', transport === 'udp' ? 'udp' : 'tcp', '-timeout', '5000000', '-reorder_queue_size', '0', '-max_delay', '0');
@@ -295,7 +297,7 @@ async function probe(url, transport, device = {}) {
   }
   const FFPROBE = probes[0];
   const a = ['-v', 'error', '-analyzeduration', '1000000', '-probesize', '2000000', '-show_entries',
-    'stream=codec_type,width,height,codec_name,avg_frame_rate,r_frame_rate,color_transfer,color_primaries,color_space,color_range,pix_fmt,field_order,sample_rate,channels,channel_layout,start_time:stream_tags=timecode:format_tags=timecode',
+    'stream=codec_type,width,height,codec_name,avg_frame_rate,r_frame_rate,color_transfer,color_primaries,color_space,color_range,pix_fmt,field_order,sample_rate,channels,channel_layout,start_time,duration:stream_tags=timecode:format=duration:format_tags=timecode',
     '-of', 'json'];
   if (/^rtsps?:/i.test(url)) a.push('-rtsp_transport', transport === 'udp' ? 'udp' : 'tcp');
   a.push('-i', inputPath(url));
@@ -319,8 +321,11 @@ async function probe(url, transport, device = {}) {
         const rate = (r) => { const [n, d] = String(r ?? '0/1').split('/').map(Number); return d ? n / d : 0; };
         // start time code of the container (MOV tmcd, MXF …): stream tag of the video, any stream, or the format
         const timecode = s.tags?.timecode ?? streams.find((x) => x.tags?.timecode)?.tags?.timecode ?? json.format?.tags?.timecode;
+        // length of the clip (transport on the file path, server/clip.mjs); 0 for a live source
+        const duration = Number(s.duration) || Number(json.format?.duration) || 0;
         ok({
           ...(timecode ? { timecode, startTime: Number(s.start_time) } : {}), frameRate: s.r_frame_rate,
+          ...(duration > 0 ? { duration } : {}),
           width: s.width, height: s.height, codec: s.codec_name, pixFmt: s.pix_fmt,
           fps: Math.round((rate(s.avg_frame_rate) || rate(s.r_frame_rate)) * 100) / 100,
           transfer: s.color_transfer ?? 'unknown', primaries: s.color_primaries ?? 'unknown',
@@ -386,8 +391,10 @@ export function outputSize(w, h, maxWidth) {
  * `pts: true` (protocol 2): showinfo/ashowinfo print the presentation timestamps on stderr
  * (parsed by PtsTracker); needs `-loglevel info`. Not in 'split' mode: two ffmpeg
  * processes open two sessions whose timestamps cannot be compared.
+ * `clip` (transport on the file path, server/clip.mjs): `{ pos, rate, frames }` – where the
+ * decoder starts, how fast it reads, and `frames: 1` for the single picture of a pause.
  */
-export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', pts = false, device = {}, pixFmt = '', log = 'error', codec = 'raw', gop = 50, ownInput = null, extra = [] }) {
+export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video = true, audio = 'none', pts = false, device = {}, pixFmt = '', log = 'error', codec = 'raw', gop = 50, ownInput = null, extra = [], clip = null }) {
   const test = url in TEST_PATTERNS;
   const withPts = pts && audio !== 'split';
   // time code (#28) and PTS (#24) both read showinfo output; level+info keeps the error lines recognisable
@@ -400,34 +407,36 @@ export function ffmpegArgs({ url, transport = 'tcp', vf = '', depth = 8, video =
   // codec 'h264' (#16): 8-bit 4:2:0 H.264 in FLV framing for remote bridges; no B-frames, no
   // lookahead, every packet flushed at once. `vf` must then produce yuv420p.
   // `extra`: further outputs of the same process (recording, server/recorder.mjs), after the analysis output
-  const vid = [...videoOut({ codec, vfPts, depth, pixFmt, gop }), ...extra];
+  const vid = [...videoOut({ codec, vfPts, depth, pixFmt, gop, frames: clip?.frames ?? 0 }), ...extra];
   // own RTP reception (server/rtsp.mjs): the picture comes as Matroska on stdin; sound, if
   // wanted, from a second ffmpeg with its own RTSP session (like 'split', no common PTS)
   if (ownInput && video) {
     return {
       main: [...head.filter((x) => x !== '-nostdin'), ...ownInput, ...vid],
-      audio: audio === 'none' ? null : [...head, ...inputArgs(url, transport, { audio: true, video: false, device }), ...pcm(audioMap(url), 'pipe:1')],
+      audio: audio === 'none' ? null : [...head, ...inputArgs(url, transport, { audio: true, video: false, device, clip }), ...pcm(audioMap(url), 'pipe:1')],
     };
   }
-  if (!video) return { main: [...head, ...inputArgs(url, transport, { audio: true, video: false, device }), ...pcm(test ? '0:a:0' : audioMap(url), 'pipe:1')], audio: null };
-  if (audio === 'fd3') return { main: [...head, ...inputArgs(url, transport, { audio: true, device }), ...vid, ...pcm(audioMap(url), 'pipe:3')], audio: null };
+  if (!video) return { main: [...head, ...inputArgs(url, transport, { audio: true, video: false, device, clip }), ...pcm(test ? '0:a:0' : audioMap(url), 'pipe:1')], audio: null };
+  if (audio === 'fd3') return { main: [...head, ...inputArgs(url, transport, { audio: true, device, clip }), ...vid, ...pcm(audioMap(url), 'pipe:3')], audio: null };
   if (audio === 'split') {
     return {
-      main: [...head, ...inputArgs(url, transport, { device }), ...vid],
-      audio: [...head, ...inputArgs(url, transport, { audio: true, video: false, device }), ...pcm(test ? '0:a:0' : audioMap(url), 'pipe:1')],
+      main: [...head, ...inputArgs(url, transport, { device, clip }), ...vid],
+      audio: [...head, ...inputArgs(url, transport, { audio: true, video: false, device, clip }), ...pcm(test ? '0:a:0' : audioMap(url), 'pipe:1')],
     };
   }
-  return { main: [...head, ...inputArgs(url, transport, { device }), ...vid], audio: null };
+  return { main: [...head, ...inputArgs(url, transport, { device, clip }), ...vid], audio: null };
 }
 
-function videoOut({ codec, vfPts, depth, pixFmt, gop }) {
+function videoOut({ codec, vfPts, depth, pixFmt, gop, frames = 0 }) {
+  // `-frames:v 1`: the one picture of a paused clip (server/clip.mjs); ffmpeg then ends by itself
+  const n = frames > 0 ? ['-frames:v', String(frames)] : [];
   return codec === 'h264'
     ? ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vfPts, '-fps_mode', 'passthrough', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
-      '-bf', '0', '-g', String(gop), '-pix_fmt', 'yuv420p', '-flush_packets', '1', '-f', 'flv', 'pipe:1']
+      '-bf', '0', '-g', String(gop), '-pix_fmt', 'yuv420p', '-flush_packets', '1', ...n, '-f', 'flv', 'pipe:1']
     // '-threads 1' (encoder): ffmpeg's rawvideo encoder is frame-threaded and then hands each
     // frame out only when the next one comes in – one frame interval of latency for a memcpy
     // (measured, docs/research/low-latency.md)
-    : ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vfPts, '-fps_mode', 'passthrough', '-pix_fmt', pixFmt || (depth === 16 ? 'rgba64le' : 'rgba'), '-threads', '1', '-f', 'rawvideo', 'pipe:1'];
+    : ['-map', '0:v:0', '-an', '-sn', '-dn', '-vf', vfPts, '-fps_mode', 'passthrough', '-pix_fmt', pixFmt || (depth === 16 ? 'rgba64le' : 'rgba'), '-threads', '1', ...n, '-f', 'rawvideo', 'pipe:1'];
 }
 
 /**
@@ -601,6 +610,16 @@ async function startStream(ws, params) {
   const { width, height } = video ? outputSize(info.width, info.height, maxWidth) : { width: 0, height: 0 };
   const bytesPerFrame = width * height * 4 * (depth / 8);
   const outDepth = h264 ? 8 : depth;
+  // Transport on the file path (#191, server/clip.mjs): a clip is played, paused, stepped and
+  // scrubbed like in the browser path. A still has nothing to play, a live source nothing to seek.
+  const file = mediaFile(url);
+  const clip = file && !file.still && video
+    ? new ClipTransport({
+      duration: info.duration, fps: fpsLimit || info.fps,
+      send: (m) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); },
+      relaunch: () => relaunch(),
+    })
+    : null;
 
   // The scale filter converts Y'CbCr → R'G'B' with the stream's own matrix/range but
   // leaves the transfer function untouched, so PQ/HLG code values arrive unchanged.
@@ -637,6 +656,7 @@ async function startStream(ws, params) {
   const { audio: _probed, ...videoInfo } = info;
   const msg = { type: 'info', ...videoInfo, decodeMatrix, sourceWidth: info.width, sourceHeight: info.height, sourceFps: info.fps, width, height, depth: outDepth, fps: video ? (fpsLimit || info.fps) : 0 };
   if (interlaced) Object.assign(msg, { interlaced: true });
+  if (clip) msg.clip = { duration: clip.duration, fps: clip.fps, loop: clip.loop };
   if (own) msg.rtp = { own: true, transport: own.info.transport, codec: own.info.codec };
   else if (ownNote) msg.rtp = { own: false, ...field('note', ownNote) };
   if (h264 && video) Object.assign(msg, { transport: 'h264', range: 'tv' });
@@ -665,9 +685,12 @@ async function startStream(ws, params) {
     media: () => ({ width: info.width, height: info.height, fps: info.fps, codec: info.codec, audioMap: recAudio }),
   }) : null;
   ws.on('message', (data, isBinary) => {
-    if (isBinary || !recorder) return;
+    if (isBinary) return;
     let m;
     try { m = JSON.parse(String(data)); } catch { return; }
+    // transport of a clip (server/clip.mjs); everything else belongs to the recorder
+    if (m?.type === 'clip') { clip?.handle(m); return; }
+    if (!recorder) return;
     recorder.handle(m).catch((e) => recorder.error(e));
   });
   /** end ffmpeg; gracefully (SIGINT: segment trailer written) while it records */
@@ -680,6 +703,24 @@ async function startStream(ws, params) {
     if (closed || !current) return;
     restarting = true;
     stopProc(current, true);
+  };
+  /** Buffers of the frame stream: nothing of the old process may end up in the new picture. */
+  const resetStream = () => {
+    assembler.pending = []; assembler.bytes = 0; waiting.length = 0;
+    demux = makeDemux(); waitKey = true;
+    stderr = '';
+  };
+  /**
+   * ffmpeg again, with the playhead as it stands now (transport): a running process is stopped
+   * and its close handler starts the next one; when none runs – the single picture of a pause has
+   * been handed out – right away. Commands arriving in between coalesce, because launch() reads
+   * the playhead only when it starts.
+   */
+  const relaunch = () => {
+    if (closed || ws.readyState !== ws.OPEN) return;
+    if (current) { if (!restarting) { restarting = true; stopProc(current, false); } return; }
+    resetStream();
+    launch(split ? 'split' : 'fd3');
   };
   const packetizer = audioInfo ? new AudioPacketizer(audioInfo.sampleRate, audioInfo.channels, (buf) => { if (ws.readyState === ws.OPEN) ws.send(buf, { binary: true }); }) : null;
 
@@ -695,6 +736,7 @@ async function startStream(ws, params) {
       ws.send(Buffer.concat([packetHeader(key ? 'LZHK' : 'LZHD', frameNo, Date.now()), data]), { binary: true });
       sent++;
     } else { waitKey = true; dropped++; }
+    clip?.onFrame();
     frameNo++;
   }) : null;
   let demux = makeDemux();
@@ -735,6 +777,9 @@ async function startStream(ws, params) {
   const assembler = new FrameAssembler(bytesPerFrame, (frame) => {
     if (pts) { waiting.push({ no: frameNo, frame, at: Date.now() }); if (waiting.length > 8) flushWaiting(true); flushWaiting(); }
     else sendFrame(frameNo, frame, NaN);
+    // playhead of a clip: counted from the decoded frames, not from ffmpeg's own progress
+    // (a frame the busy socket drops has still gone by in the clip)
+    clip?.onFrame();
     frameNo++;
   });
   const ptsTimer = setInterval(() => flushWaiting(), 50);
@@ -750,13 +795,18 @@ async function startStream(ws, params) {
   };
 
   const launch = (mode) => {
+    // position and pace of a clip; paused it is one single picture (`-frames:v 1`) and no sound –
+    // the sound output would otherwise race to the end of the file on its own
+    const clipIn = clip?.input() ?? null;
+    const paused = !!clipIn && clipIn.frames > 0;
+    const sound = audioInfo && !paused;
     // PTS (#24) only on the raw path: H.264 packets carry the bridge clock (#16) instead
-    const withPts = proto === 2 && video && !!audioInfo && mode === 'fd3' && !h264;
-    const fd3 = mode === 'fd3' && video && !!audioInfo;
+    const withPts = proto === 2 && video && !!sound && mode === 'fd3' && !h264;
+    const fd3 = mode === 'fd3' && video && !!sound;
     recAudio = own ? null : recordAudioMap(url, { soundInProcess: fd3 });
     const rec = recorder?.outputs(4) ?? { args: [], pipes: 0, sessions: [] };
-    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: audioInfo ? mode : 'none', pts: withPts, device, pixFmt: yp?.yuv ? 'ayuv64le' : '', log: wantTc ? 'level+info' : 'error',
-      codec: h264 ? 'h264' : 'raw', gop: Math.max(10, Math.round((fpsLimit || info.fps || 25) * 2)), ownInput: own?.inputArgs ?? null, extra: rec.args });
+    const args = ffmpegArgs({ url, transport, vf: vf.join(','), depth, video, audio: sound ? mode : 'none', pts: withPts, device, pixFmt: yp?.yuv ? 'ayuv64le' : '', log: wantTc ? 'level+info' : 'error',
+      codec: h264 ? 'h264' : 'raw', gop: Math.max(10, Math.round((fpsLimit || info.fps || 25) * 2)), ownInput: own?.inputArgs ?? null, extra: rec.args, clip: clipIn });
     pts = withPts ? new PtsTracker(audioInfo.sampleRate, (index, t) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'apts', index, pts: t })); }) : null;
     const t0 = Date.now();
     let audioBytes = 0;
@@ -804,10 +854,15 @@ async function startStream(ws, params) {
       if (restarting && !closed && ws.readyState === ws.OPEN) {
         restarting = false;
         side?.kill('SIGKILL');
-        assembler.pending = []; assembler.bytes = 0; waiting.length = 0;
-        demux = makeDemux(); waitKey = true;
-        stderr = '';
+        resetStream();
         return launch(split ? 'split' : 'fd3');
+      }
+      // clip: the single picture of a pause is on the scopes, or the clip ran to its end –
+      // the socket stays open with the picture it has (loop: on from the start)
+      if (clip && !closed && ws.readyState === ws.OPEN) {
+        const next = clip.onExit(code);
+        if (next === 'relaunch') { side?.kill('SIGKILL'); resetStream(); return launch(split ? 'split' : 'fd3'); }
+        if (next === 'hold') { side?.kill('SIGKILL'); flushWaiting(true); recorder?.ended('end'); return; }
       }
       recorder?.ended('end');
       // pipe:3 not usable (e.g. handle inheritance on Windows): retry with a second process
@@ -832,6 +887,8 @@ async function startStream(ws, params) {
     if (recorder?.active) st.rec = recorder.status();
     if (recorder?.ringActive) st.ring = recorder.ringStatus();
     ws.send(JSON.stringify(st));
+    // where the playhead stands (the page interpolates in between)
+    clip?.report();
   }, 1000);
   own?.on('error', (e) => { stderr = (stderr + `\nOwn RTP reception: ${e.message}`).slice(-2000); });
   ws.on('close', () => {
@@ -1514,7 +1571,8 @@ export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false
   for (const o of allowOrigins) ORIGINS.allowTemporarily(o);
   if (watchDirs) WATCH_ROOTS = watchRoots(watchDirs.flatMap((d) => ['--watch-dir', d]), {});
   if (recordDirs) for (const d of recordDirs) addRecordDir(d);
-  if (mediaFiles) for (const f of mediaFiles) addMediaFile(f);
+  // a file that is not there must not keep the bridge from starting (CLI, LZS_MEDIA_FILE)
+  if (mediaFiles) for (const f of mediaFiles) { try { addMediaFile(f); } catch (e) { console.warn(`media file not released: ${e.message}`); } }
   if (controlToken !== undefined) CONTROL_TOKEN = controlToken;
   DEV = dev;
   return new Promise((ok, fail) => {

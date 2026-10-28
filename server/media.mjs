@@ -50,13 +50,21 @@ export function mediaFile(url) {
 export const inputPath = (url) => mediaFile(url)?.path ?? url;
 
 /**
- * ffmpeg input arguments of a released file: paced at its own frame rate and endlessly
- * looped, like the `<video loop>` of the browser path.
+ * ffmpeg input arguments of a released file. Without transport it is paced at its own frame
+ * rate and endlessly looped, like the `<video loop>` of the browser path. With transport
+ * (server/clip.mjs) the position and the pace come from the playhead: `rate` 0 is a pause,
+ * whose single picture comes from `-frames:v 1` on the output side.
  */
-export function mediaInputArgs(f) {
-  return f.still
-    ? ['-loop', '1', '-framerate', String(STILL_FPS), '-re', '-i', f.path]
-    : ['-stream_loop', '-1', '-re', '-i', f.path];
+export function mediaInputArgs(f, clip = null) {
+  if (f.still) return ['-loop', '1', '-framerate', String(STILL_FPS), '-re', '-i', f.path];
+  if (!clip) return ['-stream_loop', '-1', '-re', '-i', f.path];
+  return [
+    // `-ss` in front of the input: ffmpeg seeks to the key frame and decodes up to the frame
+    // asked for, so a step lands on exactly that picture (all-intra codecs seek exactly anyway)
+    ...(clip.pos > 0 ? ['-ss', clip.pos.toFixed(3)] : []),
+    ...(clip.rate > 0 ? ['-readrate', String(clip.rate)] : []),
+    '-i', f.path,
+  ];
 }
 
 /** Only for tests: forget every released file. */

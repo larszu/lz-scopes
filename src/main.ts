@@ -574,7 +574,9 @@ function renderSources() {
     if (s.url === 'resolve:' && s.status === 'live') card.append(resolveRouteRow(s));
     const rr = recordRow(s);
     if (rr) card.append(rr);
-    if (s.message) card.append(h('div', { class: 'msg', role: s.status === 'error' ? 'alert' : null }, s.message));
+    // always there, empty when there is nothing to say (CSS hides it): the status text changes
+    // with every statistics message and is updated in place instead of rebuilding the card
+    card.append(h('div', { class: 'msg', 'data-msg': s.id, role: s.status === 'error' ? 'alert' : null }, s.message));
     if (s.kind === 'webcam' && s.status === 'live') card.append(row(chip('', { attrs: { 'data-srcfps': s.id } })));
     // LUT files dropped on a source card: LUT 1, with Shift LUT 2
     card.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); card.classList.add('drop'); } });
@@ -1620,6 +1622,14 @@ function transportControls(s: Source): Node[] {
   ];
 }
 
+/** Write the status text of every source into its card without re-rendering the list. */
+function updateSourceText() {
+  for (const s of sources) {
+    const el = document.querySelector<HTMLElement>(`[data-msg="${s.id}"]`);
+    if (el && el.textContent !== s.message) el.textContent = s.message;
+  }
+}
+
 /** Move playheads and timecodes without re-rendering the source list. */
 function updateTransport() {
   for (const s of sources) {
@@ -1712,7 +1722,7 @@ function drawAll(now: number) {
   if (renderer.resize(g.width, g.height, dpr)) needClear = true;
   renderer.beginFrame(needClear);
   if (needClear) { panelSigs.clear(); needClear = false; }
-  updateTransport();
+  updateTransport(); updateSourceText();
 
   // CPU statistics every 100 ms; low-latency sources at their own rate (fewer main-thread stalls)
   if (now - lastQc > 250) { lastQc = now; runQc(now); }

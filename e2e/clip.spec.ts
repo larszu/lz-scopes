@@ -56,11 +56,12 @@ test('Datei über die Bridge: Pause hält ein Bild, Einzelbild geht genau eines 
   await page.waitForTimeout(1000);
   expect(frameOf(await tc.textContent() ?? '')).toBe(held);
 
-  // one frame further, then back again
+  // one frame further, then back again. Every step starts ffmpeg anew and seeks – on a loaded
+  // runner the process alone takes seconds, so the wait is roomy rather than tight.
   await transport.getByRole('button', { name: 'Frame vor (→)' }).click();
-  await until(async () => frameOf(await tc.textContent() ?? '') === held + 1, 10_000, 'ein Bild weiter');
+  await until(async () => frameOf(await tc.textContent() ?? '') === held + 1, 30_000, 'ein Bild weiter');
   await transport.getByRole('button', { name: 'Frame zurück (←)' }).click();
-  await until(async () => frameOf(await tc.textContent() ?? '') === held, 10_000, 'ein Bild zurück');
+  await until(async () => frameOf(await tc.textContent() ?? '') === held, 30_000, 'ein Bild zurück');
   await page.screenshot({ path: test.info().outputPath('clip-paused.png') });
 
   // and on from there

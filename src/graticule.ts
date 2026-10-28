@@ -528,7 +528,10 @@ export function cieToPlot(r: Rect, x: number, y: number, uv = false) {
   return [r.x + ((x - v.x0) / (v.x1 - v.x0)) * r.w, r.y + r.h - ((y - v.y0) / (v.y1 - v.y0)) * r.h] as const;
 }
 
-export function drawCieGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, o: { uv?: boolean; gamut?: GamutId } = {}) {
+/** Standard white points on the chromaticity diagram (#181): D65, D55 and the DCI white. */
+export const CIE_WHITES: [string, number, number][] = [['D65', 0.3127, 0.329], ['D55', 0.33243, 0.34744], ['DCI', 0.314, 0.351]];
+
+export function drawCieGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, o: { uv?: boolean; gamut?: GamutId; target?: GamutId } = {}) {
   const uv = !!o.uv;
   ctx.lineWidth = 1; ctx.font = FONT;
   ctx.strokeStyle = GRID_DIM; ctx.fillStyle = LABEL;
@@ -561,9 +564,13 @@ export function drawCieGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Col
   const tri: [GamutId, string][] = [['709', 'rgba(255,255,255,0.75)'], ['p3', 'rgba(255,200,60,0.7)'], ['2020', 'rgba(60,220,255,0.7)']];
   // the source primaries as a fourth triangle when they are none of the three (601, camera gamuts, ACES)
   if (!tri.some(([k]) => k === src)) tri.push([src, 'rgba(255,120,200,0.8)']);
+  // the target of the gamut warning (#181) is drawn solid and thicker: that is the line the
+  // percentage below the diagram counts against
+  if (o.target && !tri.some(([k]) => k === o.target)) tri.push([o.target, 'rgba(255,255,255,0.75)']);
   tri.forEach(([k, c], i) => {
     const g = GAMUTS[k];
-    ctx.strokeStyle = c; ctx.setLineDash(k === src ? [] : [4, 3]);
+    ctx.strokeStyle = c; ctx.setLineDash(k === src || k === o.target ? [] : [4, 3]);
+    ctx.lineWidth = k === o.target ? 2 : 1;
     ctx.beginPath();
     [g.r, g.g, g.b].forEach(([x, y], j) => { const [px, py] = cieToPlot(r, x, y, uv); if (j) ctx.lineTo(px, py); else ctx.moveTo(px, py); });
     ctx.closePath();
@@ -574,8 +581,22 @@ export function drawCieGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Col
     if (uv) { ctx.textBaseline = 'bottom'; ctx.fillText(g.name, r.x + r.w - 4, r.y + r.h - 4 - (tri.length - 1 - i) * 13); } else ctx.fillText(g.name, r.x + r.w - 4, r.y + 4 + i * 13);
   });
   ctx.setLineDash([]);
-  const [wx, wy] = cieToPlot(r, 0.3127, 0.329, uv);
-  ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(wx, wy, 3, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 1;
+  // D65 as a ring, D55 and the DCI white as small crosses with their names
+  for (const [name, x, y] of CIE_WHITES) {
+    const [px, py] = cieToPlot(r, x, y, uv);
+    ctx.strokeStyle = name === 'D65' ? '#fff' : 'rgba(255,255,255,0.5)';
+    ctx.beginPath();
+    if (name === 'D65') ctx.arc(px, py, 3, 0, Math.PI * 2);
+    else { ctx.moveTo(px - 3, py); ctx.lineTo(px + 3, py); ctx.moveTo(px, py - 3); ctx.lineTo(px, py + 3); }
+    ctx.stroke();
+    // D55 and DCI sit close together: the labels go to opposite sides
+    if (name !== 'D65' && r.w >= 240) {
+      ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.textBaseline = 'middle';
+      ctx.textAlign = name === 'DCI' ? 'right' : 'left';
+      ctx.fillText(name, px + (name === 'DCI' ? -5 : 5), py);
+    }
+  }
   const sw = GAMUTS[src].white;
   if (Math.abs(sw[0] - 0.3127) > 1e-4 || Math.abs(sw[1] - 0.329) > 1e-4) {
     const [ax, ay] = cieToPlot(r, sw[0], sw[1], uv);

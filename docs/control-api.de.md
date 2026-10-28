@@ -62,6 +62,7 @@ Antwort: `{ ok, result?, error?, state }`. `error` ist ein englischer Text, der 
   "frozen": false,
   "clip": 0.4, "clipHigh": 0.4, "clipLow": 0,
   "yMin": 3.1, "yMax": 98.7,
+  "outside": { "gamut": "709", "share": 12.4, "far": 3.1 },
   "layoutName": "Grading", "preset": "lc",
   "maximized": null,
   "scene": { "id": "…", "name": "Waveform unten" },
@@ -79,7 +80,7 @@ Antwort: `{ ok, result?, error?, state }`. `error` ist ein englischer Text, der 
 
 Namen (Quellen, Szenen, Testbilder, Ident) stehen so da, wie die App sie zeigt; selbst vergebene Namen bleiben, wie eingegeben.
 
-`clip`, `yMin`, `yMax` sind Prozent (0,1-genau) der aktiven Quelle – das ist die Quelle, die die meisten sichtbaren Panels zeigen. Ohne Statistik stehen sie auf `null`. `audio` gilt für die aktive Quelle mit Ton (sonst die erste mit Ton), Werte in LUFS/LU/dBTP auf 0,1 gerundet, `avOffsetMs` nach ITU-R BT.1359-1 (+ = Ton vor Bild), `null` ohne Messwert. `layoutName` ist die zuletzt geladene Layout-Konfiguration bzw. die Beschriftung der Vorlage.
+`outside` ist der Anteil der aktiven Quelle außerhalb des Zielfarbraums eines offenen CIE-Panels (#181; `null`, wenn keines offen ist), `far` der Teil deutlich außerhalb – dieselbe Regel wie die Gamut-Warnung in der Bildansicht. `clip`, `yMin`, `yMax` sind Prozent (0,1-genau) der aktiven Quelle – das ist die Quelle, die die meisten sichtbaren Panels zeigen. Ohne Statistik stehen sie auf `null`. `audio` gilt für die aktive Quelle mit Ton (sonst die erste mit Ton), Werte in LUFS/LU/dBTP auf 0,1 gerundet, `avOffsetMs` nach ITU-R BT.1359-1 (+ = Ton vor Bild), `null` ohne Messwert. `layoutName` ist die zuletzt geladene Layout-Konfiguration bzw. die Beschriftung der Vorlage.
 
 Über WebSocket kommen `{type:"hello", connected, state, commands}` beim Verbinden, `{type:"state", state}` bei jeder Änderung (höchstens viermal pro Sekunde), `{type:"connected", connected}` wenn das Hauptfenster kommt oder geht, und `{type:"result", id, ok, result?, error?}` auf jeden Befehl (die `id` des Befehls wird zurückgegeben).
 

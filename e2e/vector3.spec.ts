@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { type App, expectOk, launchApp, singlePanel, until } from './app';
+import { type App, launchApp, singlePanel, until } from './app';
 
 // Vectorscope by tonal range (#180): three circles, each fed only with the pixels of its luma
 // range. Checked against the SMPTE bars: the saturated colours sit in the shadows and the mids,

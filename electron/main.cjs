@@ -39,7 +39,7 @@ let mainWindow = null;
 let origin = '';
 
 async function createWindow() {
-  const { startBridge, ffmpegCandidates, addWatchDir, addRecordDir } = await import(pathToFileURL(path.join(__dirname, '..', 'server', 'index.mjs')).href);
+  const { startBridge, ffmpegCandidates, addWatchDir, addRecordDir, addMediaFile } = await import(pathToFileURL(path.join(__dirname, '..', 'server', 'index.mjs')).href);
   // Fixed port 4192 when free, so Bitfocus Companion finds the control API. Not 4190:
   // that is on the Fetch "bad ports" list (sieve), Chrome and Node's fetch refuse it.
   // (LZS_PORT, LZS_HOST, LZS_CONTROL_TOKEN override); otherwise any free port.
@@ -107,6 +107,19 @@ async function createWindow() {
     const { dialog } = require('electron');
     const r = await dialog.showOpenDialog(mainWindow, { title: text('watchFolder'), properties: ['openDirectory'] });
     return r.canceled || !r.filePaths[0] ? null : addWatchDir(r.filePaths[0]);
+  });
+  // a file for the bridge's file input (#188): ffmpeg decodes it, so ProRes, DNxHR, v210,
+  // 10-bit HEVC and 16-bit stills keep their bit depth – the <video> element of the page
+  // would hand out 8-bit RGBA. Only files released here are readable for the bridge.
+  ipcMain.handle('lzs:media-file', async () => {
+    const { dialog } = require('electron');
+    const r = await dialog.showOpenDialog(mainWindow, {
+      title: text('mediaFile'),
+      properties: ['openFile'],
+      filters: [{ name: text('mediaFilter'), extensions: ['mov', 'mp4', 'm4v', 'mxf', 'mkv', 'avi', 'webm', 'ts', 'm2ts', 'mts', 'y4m', 'yuv', 'braw', 'r3d', 'tif', 'tiff', 'dpx', 'exr', 'png', 'jpg', 'jpeg', 'webp', 'bmp'] }],
+    });
+    if (r.canceled || !r.filePaths[0]) return null;
+    try { return addMediaFile(r.filePaths[0]); } catch { return null; }
   });
   // one more recording folder (native dialog); the bridge only ever writes into released folders
   ipcMain.handle('lzs:record-folder', async () => {

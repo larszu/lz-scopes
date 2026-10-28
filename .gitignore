@@ -12,3 +12,4 @@ helpers/decklink/win-gen
 vendor/lz-camera-bridge
 electron/camera-bridge.cjs
 electron/camera-bridge.json
+vendor/luts

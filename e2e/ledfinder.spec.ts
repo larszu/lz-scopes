@@ -38,10 +38,11 @@ test('shutter finder records consecutive frames and shows exposures of whole cyc
   await expect(finder).toContainText('Frame rate used', { timeout: 60_000 });
   await expect(finder.locator('table')).toContainText('1/100 s');
   await expect(finder.locator('.pop-trigger')).toHaveCount(1);
-  // the result stands; stop the animated source so the screenshots below do not wait for a frame
-  // from a renderer saturated by SwiftShader (page.screenshot timed out on CI)
+  // the result stands; stop the animated source so the screenshot below does not wait for a frame
+  // from a renderer saturated by SwiftShader. Even frozen it can time out on a loaded runner –
+  // the picture is for looking at afterwards, so it must not decide the test.
   expectOk(await a.control({ cmd: 'freeze', mode: 'on' }));
-  await page.screenshot({ path: 'test-results/e2e/ledfinder-flicker.png' });
+  await page.screenshot({ path: 'test-results/e2e/ledfinder-flicker.png' }).catch((e: Error) => console.log('Screenshot übersprungen:', e.message.split('\n')[0]));
   await phoneFits(finder);
   expect(errors).toEqual([]);
 });

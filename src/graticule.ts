@@ -14,13 +14,13 @@ import { onLangChange, t, type Key } from './i18n';
 import { bridgeText } from './i18n/bridgeMessage';
 import { stopLabel, stopTicks, stopsOf } from './stops';
 
-export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'hls' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats' | 'tiles' | 'noise' | 'wshading' | 'skinall' | 'chart' | 'drift' | 'shguide'
+export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'vector3' | 'hls' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats' | 'tiles' | 'noise' | 'wshading' | 'skinall' | 'chart' | 'drift' | 'shguide'
   | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock' | 'genlock' | 'simulcast' | 'encoder' | 'lens' | 'sdi'
   | 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map' | 'light-spectrum' | 'light-swatch';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits' | 'stop';
 
 const SCOPE_IDS: ScopeType[] = [
-  'picture', 'wf-luma', 'wf-color', 'wf-skin', 'wf-green', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'hls', 'cie', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'qclog', 'timeline', 'hist', 'stats', 'match', 'simulcast', 'encoder', 'lens', 'sdi', 'tiles', 'noise', 'wshading', 'skinall', 'chart', 'drift', 'shguide',
+  'picture', 'wf-luma', 'wf-color', 'wf-skin', 'wf-green', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'vector3', 'hls', 'cie', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'qclog', 'timeline', 'hist', 'stats', 'match', 'simulcast', 'encoder', 'lens', 'sdi', 'tiles', 'noise', 'wshading', 'skinall', 'chart', 'drift', 'shguide',
   'audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check', 'clock', 'genlock',
   // Opple Light Master (src/opple/scopes.ts, LIGHT_LABELS)
   'light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch',
@@ -46,6 +46,8 @@ export function plotRect(scope: ScopeType, w: number, h: number, aspect = 16 / 9
     const s = Math.max(10, Math.min(w, h) - 16);
     return { x: (w - s) / 2, y: (h - s) / 2, w: s, h: s };
   }
+  // three vectorscopes side by side (#180): the whole body, split by vectorBandRects
+  if (scope === 'vector3') return { x: 6, y: 6, w: Math.max(30, w - 12), h: Math.max(30, h - 12) };
   if (scope === 'cie') {
     const s = Math.max(10, Math.min(w - 36, h - 24));
     return { x: (w - s + 24) / 2, y: (h - s - 16) / 2, w: s, h: s };
@@ -362,6 +364,32 @@ export function drawDiamondGraticule(ctx: CanvasRenderingContext2D, r: Rect) {
   ctx.fillText('B′/G′', r.x + 2, r.y + 8);
   ctx.fillText('R′/G′', r.x + 2, r.y + r.h - 8);
   ctx.restore();
+}
+
+/**
+ * Vectorscope by tonal range (#180): the picture's Y′ axis split into shadows, mids and
+ * highlights. The lowest band reaches below black and the highest above white, so sub-black and
+ * super-white are measured too – they belong to the picture, however little one wants them.
+ * `limits` are the two boundaries in % Y′.
+ */
+export function vectorBands(limits: [number, number] = [30, 70]): [number, number][] {
+  const lo = Math.min(99, Math.max(1, limits[0])) / 100;
+  const hi = Math.min(100, Math.max(lo * 100 + 1, limits[1])) / 100;
+  return [[-1e3, lo], [lo, hi], [hi, 1e3]];
+}
+
+/**
+ * Where the three circles sit in the plot area. `big` 0 = all three next to each other,
+ * 1…3 = only that one, as large as the panel allows.
+ */
+export function vectorBandRects(r: Rect, big = 0): Rect[] {
+  const one = (x: number, w: number): Rect => {
+    const s = Math.max(10, Math.min(w - 8, r.h - 18));
+    return { x: x + (w - s) / 2, y: r.y + (r.h - 18 - s) / 2 + 12, w: s, h: s };
+  };
+  if (big >= 1 && big <= 3) return [one(r.x, r.w)];
+  const w = r.w / 3;
+  return [0, 1, 2].map((i) => one(r.x + i * w, w));
 }
 
 export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, skinTol = 0, targets?: BarTargetSet, green?: { hue: number; tol: number }) {

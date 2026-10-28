@@ -21,7 +21,7 @@ import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
 import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } from './scene';
 import { connectRemote } from './remote';
-import { DEFAULT_QC, QC_LABELS, QC_TYPES, evaluate as evaluateQc, frameFingerprint, qcLog, toCsv, type QcSettings } from './qclog';
+import { DEFAULT_ALARM, DEFAULT_QC, QC_LABELS, QC_TYPES, evaluate as evaluateQc, frameFingerprint, qcLog, toCsv, type AlarmSettings, type QcSettings } from './qclog';
 import { GRIDS } from './history';
 import { CUBE_SPACE_LABELS, DEFAULT_CUBE, type CubeSettings, type CubeSpace } from './cube';
 import { DEFAULT_CRT, PERSIST_CHOICES, PHOSPHORS, type CrtSettings, type Phosphor } from './crt';
@@ -1106,6 +1106,23 @@ function panelSettings(p: PanelState): Node[] {
     row(t('panel.qc.freeze'), qcNum(q.freezeMs / 1000, 0.5, 30, (v) => setQc({ freezeMs: v * 1000 })), 's');
     row('', button(t('panel.qc.csv'), () => download(`lz-scopes-qc-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`, toCsv(qcLog.events, p.qcTypes ?? QC_TYPES), 'text/csv;charset=utf-8'), { small: true }),
       button(t('panel.qc.clear'), () => qcLog.clear(), { small: true }));
+  }
+  // alarm frame (#182): which QC conditions of this panel's source light it up
+  if (!isAudio(p.scope) && p.scope !== 'qclog') {
+    const a = p.alarm ?? { on: false };
+    const setA = (patch: Partial<AlarmSettings>) => { p.alarm = { ...a, ...patch }; save(); refreshPanelSettings(p); };
+    row(t('panel.alarm.frame'), checkbox(a.on, t('panel.alarm.frameText'), (v) => setA({ on: v }), t('panel.alarm.frameTitle')));
+    if (a.on) {
+      const shown = new Set(a.types ?? QC_TYPES);
+      rows.push(field('', ...QC_TYPES.map((qt) => checkbox(shown.has(qt), QC_LABELS[qt], (v) => {
+        if (v) shown.add(qt); else shown.delete(qt);
+        setA({ types: QC_TYPES.filter((x) => shown.has(x)) });
+      }))));
+      row(t('panel.alarm.hold'), numberInput((a.hold ?? DEFAULT_ALARM.hold) / 1000, (v) => setA({ hold: Math.max(0, v) * 1000 }), { min: 0, max: 120, size: 's' }), 's',
+        numberInput(a.width ?? DEFAULT_ALARM.width, (v) => setA({ width: v }), { min: 1, max: 16, size: 's' }), t('panel.alarm.px'));
+      row('', checkbox(a.green !== false, t('panel.alarm.green'), (v) => setA({ green: v }), t('panel.alarm.greenTitle')));
+      rows.push(hint(t('panel.alarm.hint')));
+    }
   }
   if (p.scope === 'timeline') {
     row(t('panel.tl.span'), select(String(p.span ?? 10), [['10', '10 s'], ['60', '1 min'], ['300', '5 min']], (v) => { p.span = Number(v) as PanelState['span']; save(); }));

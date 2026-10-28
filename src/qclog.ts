@@ -60,6 +60,8 @@ export function evaluate(i: QcInput, s: QcSettings): Record<QcType, QcCondition>
 
 export interface QcEvent {
   id: number; type: QcType; source: string;
+  /** id of the source, for the panel alarm frames (#182); the name is what a reader sees */
+  sourceId: string;
   /** Date.now() at start / end (null = still active) */
   start: number; end: number | null;
   /** source time code at start / end, if the source has one */
@@ -80,7 +82,7 @@ export class QcLog {
     for (const type of QC_TYPES) {
       const k = `${sourceId}:${type}`, c = cond[type], ev = this.open.get(k);
       if (c.on && !ev) {
-        const e: QcEvent = { id: this.next++, type, source: sourceName, start: now, end: null, tcStart: tc, tcEnd: null, detail: c.detail, worst: c.value };
+        const e: QcEvent = { id: this.next++, type, source: sourceName, sourceId, start: now, end: null, tcStart: tc, tcEnd: null, detail: c.detail, worst: c.value };
         this.events.push(e); this.open.set(k, e); this.version++;
         if (this.events.length > this.max) this.events.splice(0, this.events.length - this.max);
       } else if (c.on && ev) {
@@ -96,6 +98,39 @@ export class QcLog {
     for (const [k, e] of this.open) if (k.startsWith(`${sourceId}:`)) { e.end = now; this.open.delete(k); this.version++; }
   }
   clear() { this.events = []; this.open.clear(); this.version++; }
+
+  /**
+   * State of a source for a panel's alarm frame (#182): 'alarm' while one of `types` holds,
+   * 'hold' for `holdMs` after the last one ended – a flash that is over before anyone looks up
+   * must still be visible – and 'ok' otherwise.
+   */
+  alarm(sourceId: string, types: readonly QcType[], holdMs: number, now = Date.now()): AlarmState {
+    let state: AlarmState = 'ok';
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      const e = this.events[i];
+      if (e.sourceId !== sourceId || !types.includes(e.type)) continue;
+      if (e.end === null) return 'alarm';
+      if (now - e.end <= holdMs) state = 'hold';
+      // the list is in starting order: older events can only be further in the past
+      else if (state === 'hold') break;
+    }
+    return state;
+  }
+}
+
+/** Panel alarm frame (#182). */
+export type AlarmState = 'ok' | 'hold' | 'alarm';
+
+/** Settings of a panel's alarm frame. */
+export interface AlarmSettings { on: boolean; types?: QcType[]; hold?: number; width?: number; green?: boolean }
+export const DEFAULT_ALARM = { hold: 5000, width: 4 };
+
+/** Colour of the frame, or '' when nothing is to be drawn. */
+export function alarmColor(state: AlarmState, a: AlarmSettings): string {
+  if (!a.on) return '';
+  if (state === 'alarm') return '#ff3b30';
+  if (state === 'hold') return '#ffb300';
+  return a.green === false ? '' : '#1f9d55';
 }
 
 /** The app's log (all sources). */

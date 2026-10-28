@@ -155,6 +155,8 @@ export default {
   'main.add.screenTitle': 'Screen or window (e.g. the Resolve viewer)',
   'main.add.screen': 'Screen/window',
   'main.add.file': 'File',
+  'main.add.fileVideo': 'File in the browser',
+  'main.add.fileVideoTitle': 'The same file through the page’s <video> element: browser codecs only and always 8 bit, but with crop, measuring frame and the clip’s own sound.',
   'main.add.folderTitle': 'Newest image in a folder (exports from Resolve, Lightroom, Capture One)',
   'main.add.folder': 'Folder',
   'main.add.audioTitle': 'Measure an audio device, audio file or the generator',

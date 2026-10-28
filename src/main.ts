@@ -852,19 +852,27 @@ function addSourceOfKind(kind: string) {
     case 'stream': { state.sidebar = true; applySidebar(); save(); return void addSource('stream', `Stream ${sources.length + 1}`); }
     case 'resolve': return addResolve();
     case 'webcam': case 'screen': case 'file': case 'folder': return void startLocal(addSource(kind));
+    // the browser path on purpose (#191): 8 bit, but with crop, ROI and the clip's own sound
+    case 'file-video': { const s = addSource('file'); s.settings.fileRoute = 'video'; return void startLocal(s); }
     case 'audio': return addAudioSource('device');
     case 'generator': return addAudioSource('generator');
   }
 }
-$('#add').replaceChildren(
+/** Buttons of the "+ Quelle" bar; built after start-up, because it asks the desktop app. */
+function renderAddMenu() {
+  $('#add').replaceChildren(
   h('span', {}, t('main.add.source')),
   ...([
     ['pattern', t('main.pattern.title'), ''], ['stream', t('main.add.stream'), ''], ['resolve', 'DaVinci Resolve', t('main.add.resolveTitle')],
     ['webcam', t('main.add.webcam'), t('main.add.webcamTitle')], ['screen', t('main.add.screen'), t('main.add.screenTitle')], ['file', t('main.add.file'), ''],
+    // desktop app: the file goes through the bridge by default (full depth). The browser path
+    // stays one click away – it is 8 bit, but it crops and brings the clip's own sound.
+    ...(mediaFilePicker() ? [['file-video', t('main.add.fileVideo'), t('main.add.fileVideoTitle')] as const] : []),
     ['folder', t('main.add.folder'), t('main.add.folderTitle')], ['audio', 'Audio', t('main.add.audioTitle')],
   ] as const).map(([kind, label, title]) => button(label, () => addSourceOfKind(kind), { title })),
   button(t('playback.add'), () => openRecordingsDialog(), { title: t('playback.addTitle') }),
-);
+  );
+}
 
 /** Add an audio source and, if no audio panel is open, a pinned level/loudness panel for it. */
 function addAudioSource(mode: AudioInput['mode']) {
@@ -2470,6 +2478,7 @@ const menuActions: MenuActions = {
   }),
 };
 mountMenu($('#menubar'), menuState, menuActions);
+renderAddMenu();
 requestAnimationFrame(frame);
 // Control API: the bridge forwards Companion/HTTP commands to this window.
 connectRemote(bridgeUrl, execute, controlState);

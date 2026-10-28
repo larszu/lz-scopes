@@ -27,9 +27,16 @@ test('ST 352 flags PQ, the scopes read SDR: warning, then the switch', async () 
   await expect.poll(fresh, { timeout: 30_000 }).toContain('Signal flags PQ');
   expect(await label()).toContain('1080-line 3G Level A');
   expect(await label()).toContain('CEA-708 yes');
-  await inject();
-  await panel.getByRole('button', { name: 'Settings: SDI Signal Info' }).click();
-  await page.locator('.popover.psettings').getByRole('button', { name: 'Use what the signal says' }).click();
+  // The injected VANC goes stale like a real one, and the settings are built when the popover
+  // opens: on a slow machine it can be gone by then. So inject and open until the button is there.
+  const follow = page.locator('.popover.psettings').getByRole('button', { name: 'Use what the signal says' });
+  await expect(async () => {
+    await page.keyboard.press('Escape');
+    await inject();
+    await panel.getByRole('button', { name: 'Settings: SDI Signal Info' }).click();
+    await expect(follow).toBeVisible({ timeout: 1500 });
+  }).toPass({ timeout: 45_000 });
+  await follow.click();
   await page.keyboard.press('Escape');
   await expect.poll(fresh, { timeout: 30_000 }).not.toContain('Signal flags');
   expect(errors).toEqual([]);

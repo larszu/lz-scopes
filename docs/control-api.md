@@ -62,6 +62,7 @@ Answer: `{ ok, result?, error?, state }`. `error` is an English text naming the 
   "frozen": false,
   "clip": 0.4, "clipHigh": 0.4, "clipLow": 0,
   "yMin": 3.1, "yMax": 98.7,
+  "outside": { "gamut": "709", "share": 12.4, "far": 3.1 },
   "layoutName": "Grading", "preset": "lc",
   "maximized": null,
   "scene": { "id": "…", "name": "Waveform bottom" },
@@ -79,7 +80,7 @@ Answer: `{ ok, result?, error?, state }`. `error` is an English text naming the 
 
 Names (sources, scenes, patterns, ident) appear as they are shown in the app; user-defined names stay as entered.
 
-`clip`, `yMin`, `yMax` are percentages (to 0.1) of the active source – the source shown by most visible panels. Without statistics they are `null`. `audio` refers to the active source with audio (otherwise the first one with audio); values in LUFS/LU/dBTP rounded to 0.1, `avOffsetMs` according to ITU-R BT.1359-1 (+ = audio ahead of picture), `null` without a reading. `layoutName` is the last loaded layout configuration or the label of the preset.
+`outside` is the share of the active source outside the target gamut of an open CIE panel (#181; `null` without such a panel), `far` the part clearly outside – the same rule as the gamut warning in the picture. `clip`, `yMin`, `yMax` are percentages (to 0.1) of the active source – the source shown by most visible panels. Without statistics they are `null`. `audio` refers to the active source with audio (otherwise the first one with audio); values in LUFS/LU/dBTP rounded to 0.1, `avOffsetMs` according to ITU-R BT.1359-1 (+ = audio ahead of picture), `null` without a reading. `layoutName` is the last loaded layout configuration or the label of the preset.
 
 Over WebSocket you receive `{type:"hello", connected, state, commands}` on connecting, `{type:"state", state}` on every change (at most four times per second), `{type:"connected", connected}` when the main window appears or goes away, and `{type:"result", id, ok, result?, error?}` for every command (the command's `id` is echoed).
 

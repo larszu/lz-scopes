@@ -1108,7 +1108,14 @@ function panelSettings(p: PanelState): Node[] {
     row(t('panel.persist'), select(String(p.persist ?? 0), [['0', t('common.off')], ['300', `${num(0.3, 1)} s`], ['1000', '1 s'], ['3000', '3 s'], ['10000', '10 s'], ['-1', t('panel.infinite')]], (v) => { p.persist = Number(v); save(); },
       t('panel.persistTitle')));
   }
-  if (p.scope === 'cie') row(t('panel.cie.diagram'), check('cieUv', t('panel.cie.uv')));
+  if (p.scope === 'cie') {
+    row(t('panel.cie.diagram'), check('cieUv', t('panel.cie.uv')));
+    // share outside the target gamut (#181) – same target and same rule as the gamut warning in the picture
+    row(t('panel.cie.target'), select(p.gamutTarget ?? '709', [['709', 'Rec.709'], ['p3', 'P3-D65'], ['2020', 'Rec.2020']],
+      (v) => { p.gamutTarget = v as PanelState['gamutTarget']; save(); }, t('panel.cie.targetTitle')));
+    row(t('panel.cie.share'), checkbox(p.gamutShare !== false, t('panel.cie.shareText'), (v) => { p.gamutShare = v; save(); refreshPanelSettings(p); }));
+    if (p.gamutShare !== false) rows.push(hint(t('panel.cie.shareHint')));
+  }
   if (scatter) {
     const c = { ...DEFAULT_CRT, ...p.crt };
     const setCrt = (patch: Partial<CrtSettings>, rebuild = false) => { p.crt = { ...c, ...patch }; Object.assign(c, patch); save(); if (rebuild) refreshPanelSettings(p); };
@@ -2276,6 +2283,12 @@ function controlState() {
     clipLow: st ? pct(Math.max(...st.clipLow)) : null,
     yMin: st ? pct(st.yMin) : null,
     yMax: st ? pct(st.yMax) : null,
+    // share of the active source outside the target gamut of an open CIE panel (#181)
+    outside: (() => {
+      const cie = state.panels.find((p) => p.scope === 'cie' && p.gamutShare !== false);
+      const g = act && cie ? act.gamutOutside(cie.gamutTarget ?? '709') : null;
+      return g ? { gamut: cie!.gamutTarget ?? '709', share: pct(g.share), far: pct(g.far) } : null;
+    })(),
     layoutName: state.layoutName || PRESETS[state.layout]?.label || '',
     preset: state.layout,
     layouts: Object.keys(loadLayouts()).sort((a, b) => a.localeCompare(b)),

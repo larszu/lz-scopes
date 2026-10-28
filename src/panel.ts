@@ -6,7 +6,7 @@ import { drawGenlockPanel, type GenlockOptions } from './genlock';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, mul3, rgbToXyzMatrix, bandRange, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId, type HdrPreview } from './color';
 import {
   drawChannelPlotGraticule, drawCubeGraticule, drawLutVolume, drawDiamondGraticule, drawSatLumGraticule, diamondPoint, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawHlsGraticule, hsl, hlsPoint, drawWaveGraticule, drawWaveProbe,
-  WAVE_ZOOMS, channelLayout, isAudio, isWaveform, plotRect, type WaveChannels, type WaveOpts, type WaveZoom, probeLines, statsLines, vectorPoint, type ScopeType, type Unit, type BarTargetSet,
+  WAVE_ZOOMS, channelLayout, isAudio, isWaveform, plotRect, type WaveChannels, type WaveOpts, type WaveZoom, probeLines, statsLines, vectorPoint, FONT, LABEL, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
 import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/panels';
 import type { DisplayParams, PictureMode, PictureParams, Rect, Renderer, ScatterMode, ScatterParams, SkinRange } from './renderer';
@@ -57,6 +57,8 @@ export interface PanelState {
   paradeColor?: 'mono' | 'channel' | 'source';
   /** vectorscope: gamut boundaries to show */
   gamuts?: ('709' | 'p3' | '2020')[];
+  /** CIE diagram: share of the picture outside gamutTarget below the diagram (#181), on by default */
+  gamutShare?: boolean;
   /** Pinned panels keep their source when another panel switches. */
   pin?: boolean;
   /** waveforms: EBU R 103 −5/105 % lines (off by default) and reference marks (BT.2408 / 18 % grey, on by default) */
@@ -607,7 +609,9 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
     : p.scope === 'encoder' ? `|e${Math.floor(Date.now() / 40)}`
     // lens fingerprint: stored prints can change without a new frame
     : p.scope === 'lens' ? `|l${Math.floor(Date.now() / 500)}`
-    : p.scope === 'qclog' ? `|q${qcLog.version}:${Math.floor(Date.now() / 1000)}` : '';
+    : p.scope === 'qclog' ? `|q${qcLog.version}:${Math.floor(Date.now() / 1000)}`
+    // CIE: the share outside the target gamut is counted a few times a second (#181)
+    : p.scope === 'cie' && p.gamutShare !== false ? `|c${Math.floor(Date.now() / 250)}` : '';
   if (p.scope === 'clock') return `C|${src?.id}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}${tick}`;
   if (isLight(p.scope)) return `${lightSignature(p.scope, p.light, body.w, body.h)}|${body.x},${body.y}`;
   if (isAudio(p.scope)) {
@@ -780,7 +784,19 @@ export function drawPanel(renderer: Renderer, ctx: CanvasRenderingContext2D, key
       ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.moveTo(x - 9, y); ctx.lineTo(x + 9, y); ctx.moveTo(x, y - 9); ctx.lineTo(x, y + 9); ctx.stroke();
     }
   } else if (p.scope === 'cie') {
-    drawCieGraticule(ctx, r, src.colorspace, { uv: p.cieUv, gamut: src.gamut });
+    const target = p.gamutTarget ?? '709';
+    drawCieGraticule(ctx, r, src.colorspace, { uv: p.cieUv, gamut: src.gamut, target: p.gamutShare === false ? undefined : target });
+    // share of the picture outside the target gamut (#181): the number to the picture's gamut warning
+    if (p.gamutShare !== false) {
+      const g = src.gamutOutside(target);
+      ctx.font = FONT; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+      if (!g) ctx.fillStyle = 'rgba(230, 215, 170, 0.6)';
+      else ctx.fillStyle = g.share > 0.01 ? '#ffb300' : LABEL;
+      const pct = (v: number) => `${(v * 100).toFixed(v >= 0.01 ? 1 : 2)} %`;
+      // the overlay context is relative to the panel body
+      ctx.fillText(g ? t('panel.cie.outside', { pct: pct(g.share), gamut: GAMUTS[target].name }) + (g.far > 0 ? ` · ${pct(g.far)} ${t('panel.cie.far')}` : '') : t('panel.cie.outsideWait'),
+        4, body.h - 4);
+    }
   } else if (p.scope === 'minmax') {
     const lim = p.minmax?.limits === 'legal' ? [0, 1] : [-0.05, 1.05];
     drawMinMax(ctx, r, src.lineExtremes(), { lo: lim[0], hi: lim[1], targets: (p.minmax?.targets ?? []).slice(0, 4).map((t) => t / 100) });

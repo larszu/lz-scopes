@@ -121,6 +121,7 @@ Geräte ohne freien ffmpeg-Weg (DeckLink, NDI) laufen über einen eigenen Helfer
 - `STAT` (JSON `{"message":"…","code":"…"}`): Zustand, z. B. „no input signal“ (`code` optional, siehe oben). `code` `ndi.stats` mit `params` `{fps, received, ndiDropped, skipped, queue, connections}` (je Sekunde) wertet die Bridge als Zähler aus.
 - `ERR `: Fehler als JSON `{"message":"…","code":"…","params":{…}}` oder als reiner Text; der Helfer beendet sich danach.
 - `TIME` (JSON `{"tc":"10:00:00:00","df":false}`, optional, je Bild vor `FRAM`): Timecode der Quelle (DeckLink: RP 188). Die Bridge schickt ihn als `{"type":"tc","tc":…,"kind":"decklink","fps":…,"df":…}` weiter.
+- `VANC` (JSON `{"packets":[{"did":65,"sdid":1,"line":10,"stream":0,"data":"89e92001"}]}`, optional, DeckLink): SDI-Zusatzpakete des Bildes, `data` = Nutzdatenwörter (untere 8 Bit) in Hex; gesendet, wenn sich die Menge ändert, höchstens 4-mal pro Sekunde. Die Bridge schickt sie als `{"type":"vanc","packets":[…]}` weiter; der Browser liest sie aus (`src/vanc.ts`, #160).
 
 Bei Helfer-Quellen enthält `stats` zusätzlich `phase`: Lage der Bild-Ankunft im SMPTE-ST-2059-1-Raster `{periodMs, meanMs, sdMs, driftPpm, n, spanS, ref:"system"|"ptp"}` (server/phase.mjs). `GET /api/decklink/reference?index=n` liefert den Referenz-/Genlock-Status der Karte (`lz-decklink --reference n`, docs/research/genlock.md).
 

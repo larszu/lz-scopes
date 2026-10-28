@@ -33,6 +33,7 @@ import wallcheck from './en/wallcheck';
 import sim from './en/sim';
 import enc from './en/enc';
 import lens from './en/lens';
+import sdi from './en/sdi';
 
 
 import tools from './en/tools';
@@ -79,6 +80,7 @@ export const en = {
   ...sim,
   ...enc,
   ...lens,
+  ...sdi,
 };
 
 export type Key = keyof typeof en;

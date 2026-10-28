@@ -29,6 +29,7 @@ import { resolveFolder, startFolderStream, watchRoots } from './folder.mjs';
 import { resolveStatus } from './resolve.mjs';
 import { createPlaybackWatch } from './resolveWatch.mjs';
 import { handleMeterSocket, meterInfo } from './meter.mjs';
+import { MEDIA_URL, STILL_FPS, addMediaFile, inputPath, mediaFile, mediaInputArgs } from './media.mjs';
 import { PtpMonitor, RtpMonitor, ipv4Interfaces, isMulticastV4, nowUtcNs } from './ptp.mjs';
 import { taiMinusUtc } from './leap.mjs';
 import { CONSENT_HEADERS, OriginStore, clockAccess, consentLang, consentPage, defaultOriginsFile, newNonce, normalizeOrigin, takeNonce } from './origins.mjs';
@@ -89,6 +90,7 @@ export function validateInput(url) {
   if (/^ndi:[^\n\r\0]{1,200}$/.test(url) && !url.slice(4).startsWith('-')) return null;
   if (/^folder:[\w .-]{1,80}$/.test(url)) return null;
   if (REC_URL.test(url)) return null;
+  if (MEDIA_URL.test(url)) return mediaFile(url) ? null : bmsg('media.notReleased', 'File no longer released – open it again');
   if (url.startsWith('-')) return bmsg('input.invalid', 'Invalid source');
   if (!ALLOWED.test(url)) return bmsg('input.scheme', 'Only rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s)://, resolve: or test:*');
   return null;
@@ -188,6 +190,9 @@ function inputArgs(url, transport, { audio = false, video = true, device = {} } 
   }
   const dev = deviceArgs(url, undefined, { ...device, audio });
   if (dev) return dev;
+  // released file (#188): ffmpeg decodes it, paced and looped like the browser's <video loop>
+  const media = mediaFile(url);
+  if (media) return mediaInputArgs(media);
   const a = ['-fflags', 'nobuffer', '-flags', 'low_delay', '-analyzeduration', '1000000', '-probesize', '2000000'];
   // low latency: no reorder queue, no demuxer delay (the probe already ran separately)
   if (/^rtsps?:/i.test(url)) a.push('-rtsp_transport', transport === 'udp' ? 'udp' : 'tcp', '-timeout', '5000000', '-reorder_queue_size', '0', '-max_delay', '0');
@@ -293,7 +298,7 @@ async function probe(url, transport, device = {}) {
     'stream=codec_type,width,height,codec_name,avg_frame_rate,r_frame_rate,color_transfer,color_primaries,color_space,color_range,pix_fmt,field_order,sample_rate,channels,channel_layout,start_time:stream_tags=timecode:format_tags=timecode',
     '-of', 'json'];
   if (/^rtsps?:/i.test(url)) a.push('-rtsp_transport', transport === 'udp' ? 'udp' : 'tcp');
-  a.push('-i', url);
+  a.push('-i', inputPath(url));
   return new Promise((ok, fail) => {
     const p = spawn(FFPROBE, a, { stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = '';
@@ -588,6 +593,8 @@ async function startStream(ws, params) {
   let info;
   try { info = await probe(url, transport, device); } catch (e) { return fail(ws, e); }
   if (ws.readyState !== ws.OPEN) return;
+  // a still carries no frame rate of its own: ffmpeg repeats it at STILL_FPS (server/media.mjs)
+  if (mediaFile(url)?.still) info = { ...info, fps: STILL_FPS };
   const audioInfo = wantAudio && info.audio?.sampleRate && info.audio?.channels ? info.audio : null;
   const video = !!info.width && !(wantAudio && params.get('video') === '0');
   if (!video && !audioInfo) return fail(ws, wantAudio ? bmsg('source.noPictureNoSound', 'Neither picture nor sound in this source') : bmsg('source.noVideo', 'No video stream in this source'));
@@ -1068,6 +1075,9 @@ export async function ndiStatus() {
 
 /** Recording folders released with --record-dir / LZS_RECORD_DIRS or by the desktop app (server/record.mjs). */
 let RECORD_ROOTS = recordRoots();
+/** Release a media file to the bridge (desktop app: chosen in a native dialog); → { name, url, file }. */
+export { addMediaFile };
+
 /** Release one more recording folder (desktop app: default folder, native dialog). */
 export function addRecordDir(dir) {
   RECORD_ROOTS = recordRoots([...RECORD_ROOTS.flatMap((r) => ['--record-dir', r.dir]), '--record-dir', dir], {});
@@ -1498,12 +1508,13 @@ function handleAllow(req, res) {
  * Start the bridge. Used by the CLI below and by the desktop app (electron/main.cjs),
  * which passes port 0 for a free port and its own dist folder.
  */
-export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false, controlToken, watchDirs, recordDirs, configDir, allowOrigins = [] } = {}) {
+export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false, controlToken, watchDirs, recordDirs, mediaFiles, configDir, allowOrigins = [] } = {}) {
   if (dist) DIST = resolve(dist);
   ORIGINS = new OriginStore(configDir ? join(configDir, 'allowed-origins.json') : defaultOriginsFile());
   for (const o of allowOrigins) ORIGINS.allowTemporarily(o);
   if (watchDirs) WATCH_ROOTS = watchRoots(watchDirs.flatMap((d) => ['--watch-dir', d]), {});
   if (recordDirs) for (const d of recordDirs) addRecordDir(d);
+  if (mediaFiles) for (const f of mediaFiles) addMediaFile(f);
   if (controlToken !== undefined) CONTROL_TOKEN = controlToken;
   DEV = dev;
   return new Promise((ok, fail) => {
@@ -1524,7 +1535,10 @@ export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(arg('port', process.env.PORT ?? 4192)), host = arg('host', process.env.HOST ?? '127.0.0.1');
   const allowOrigins = args.flatMap((a, i) => (a === '--allow-origin' && args[i + 1] ? [args[i + 1]] : []));
-  startBridge({ port, host, dev: DEV, configDir: arg('config-dir', process.env.LZS_CONFIG_DIR), allowOrigins }).then(({ port: p, bonjour }) => {
+  // --media-file <file>: release a file as the input `file:<name>` (the desktop app does this
+  // from its file dialog; on the command line it makes a clip available without a server)
+  const mediaFiles = args.flatMap((a, i) => (a === '--media-file' && args[i + 1] ? [args[i + 1]] : []));
+  startBridge({ port, host, dev: DEV, mediaFiles, configDir: arg('config-dir', process.env.LZS_CONFIG_DIR), allowOrigins }).then(({ port: p, bonjour }) => {
     console.log(`lz-scopes bridge on http://${host}:${p}${DEV ? ' (dev)' : ''} · ffmpeg: ${ffmpegCandidates()[0] ?? 'not found'}${bonjour ? ` · Bonjour: ${bonjour}` : ''}`);
   });
 }

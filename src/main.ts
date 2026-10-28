@@ -488,7 +488,7 @@ function renderSources() {
     const set = s.settings;
     const upd = (patch: Partial<SourceSettings>, reconnect = false) => {
       Object.assign(s.settings, patch); save();
-      if (reconnect && s.kind === 'stream' && s.status !== 'idle') s.connectStream(s.url, bridgeUrl());
+      if (reconnect && (s.kind === 'stream' || isBridgeFile(s)) && s.status !== 'idle') s.connectStream(s.url, bridgeUrl());
       renderSources();
     };
     const running = s.status === 'live' || s.status === 'connecting';
@@ -509,9 +509,7 @@ function renderSources() {
       card.append(
         row(urlIn),
         classRow('opts',
-          select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', t('main.native')]], (v) => upd({ width: Number(v) }, true), s.lowLatency && effectiveWidth(set.width, true, s.llConfig.width) !== set.width ? t('main.src.widthLimited', { px: s.llConfig.width }) : t('main.src.widthTitle')),
-          select(String(set.fps), [['0', t('main.src.fpsAll')], ['10', '10 fps'], ['25', '25 fps'], ['30', '30 fps']], (v) => upd({ fps: Number(v) }, true), t('main.src.fpsTitle')),
-          select(set.yuv ? 'yuv' : String(set.depth), [['8', '8 bit'], ['16', '16 bit'], ['yuv', '16 bit Y′CbCr']], (v) => upd(v === 'yuv' ? { depth: 16, yuv: true } : { depth: Number(v) as 8 | 16, yuv: false }, true), t('main.src.depthTitle')),
+          ...bridgeQualitySelects(s, upd),
           select(set.transport, [['tcp', 'TCP'], ['udp', 'UDP']], (v) => upd({ transport: v as 'tcp' | 'udp' }, true), t('main.src.transportTitle')),
           select(set.audio === false ? '0' : '1', [['1', t('main.src.audio')], ['0', t('main.src.noAudio')]], (v) => upd({ audio: v === '1' }, true), t('main.src.audioTitle')),
           select(set.codec ?? 'raw', [['raw', t('main.src.raw')], ['h264', 'H.264 · 8 bit']], (v) => upd({ codec: v as 'raw' | 'h264' }, true), t('main.src.codecTitle'))),
@@ -542,6 +540,7 @@ function renderSources() {
       card.append(...audioSourceControls(s, save, renderSources, bridgeUrl));
     } else {
       if (s.isVideoFile) card.append(...transportControls(s));
+      if (s.kind === 'file') card.append(...fileControls(s, upd));
       if (s.kind === 'webcam') card.append(deviceRow(s));
       if ((s.kind === 'screen' || s.kind === 'webcam' || s.isVideoFile) && running) {
         card.append(row(
@@ -760,7 +759,48 @@ async function startLocal(s: Source) {
   if (s.kind === 'folder') return s.startFolder();
   if (s.kind === 'screen' && desktop?.captureSources) return pickWindow(s);
   if (s.kind === 'webcam' || s.kind === 'screen') return s.startCapture(s.kind).then(() => refreshDevices().then(renderSources));
+  // file through the bridge (#188): ffmpeg decodes it, so the file's own depth and codec survive
+  const pick = fileRoute(s) === 'bridge' ? mediaFilePicker() : null;
+  if (pick) {
+    const f = await pick();
+    if (!f) return;
+    s.openBridgeFile(f.url, f.file.slice(0, 40), bridgeUrl());
+    renderSources(); renderPanels();
+    return;
+  }
   filePicker('video/*,image/*', ([f]) => { s.openFile(f).then(renderPanels); }).pick();
+}
+
+/**
+ * File sources (#188). The bridge decodes with ffmpeg (ProRes, DNxHR, v210, 10-bit HEVC,
+ * 16-bit stills, up to 16 bit), the browser path with `<video>` (8 bit, but with transport).
+ * The bridge path needs the desktop app (it releases the file) and a bridge on this computer.
+ */
+const mediaFilePicker = () => (desktop?.mediaFile && isLocalHost(bridgeUrl()) ? desktop.mediaFile : null);
+const isBridgeFile = (s: Source) => s.kind === 'file' && s.url.startsWith('file:');
+const fileRoute = (s: Source) => s.settings.fileRoute ?? (mediaFilePicker() ? 'bridge' : 'video');
+
+function fileControls(s: Source, upd: (patch: Partial<SourceSettings>, reconnect?: boolean) => void): Node[] {
+  const out: Node[] = [];
+  if (mediaFilePicker()) {
+    out.push(row(select(fileRoute(s), [['bridge', t('main.src.fileBridge')], ['video', t('main.src.fileVideo')]],
+      (v) => { s.stop(); upd({ fileRoute: v as 'bridge' | 'video' }); }, t('main.src.fileRouteTitle'))));
+  }
+  if (isBridgeFile(s)) {
+    out.push(classRow('opts', ...bridgeQualitySelects(s, upd)));
+    out.push(h('p', { class: 'hint' }, t('main.src.fileBridgeHint')));
+  }
+  return out;
+}
+
+/** Analysis width, frame rate and bit depth of a bridge source (stream card and file card). */
+function bridgeQualitySelects(s: Source, upd: (patch: Partial<SourceSettings>, reconnect?: boolean) => void): Node[] {
+  const set = s.settings;
+  return [
+    select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', t('main.native')]], (v) => upd({ width: Number(v) }, true), s.lowLatency && effectiveWidth(set.width, true, s.llConfig.width) !== set.width ? t('main.src.widthLimited', { px: s.llConfig.width }) : t('main.src.widthTitle')),
+    select(String(set.fps), [['0', t('main.src.fpsAll')], ['10', '10 fps'], ['25', '25 fps'], ['30', '30 fps']], (v) => upd({ fps: Number(v) }, true), t('main.src.fpsTitle')),
+    select(set.yuv ? 'yuv' : String(set.depth), [['8', '8 bit'], ['16', '16 bit'], ['yuv', '16 bit Y′CbCr']], (v) => upd(v === 'yuv' ? { depth: 16, yuv: true } : { depth: Number(v) as 8 | 16, yuv: false }, true), t('main.src.depthTitle')),
+  ];
 }
 
 /** Camera / USB capture device selection (labels are only known after the first permission). */
@@ -1528,7 +1568,7 @@ function runQc(now: number) {
   for (const s of sources) {
     if (s.status !== 'live' || !s.ready) { qcLog.closeSource(s.id); continue; }
     const { kr, kb } = LUMA[s.colorspace]; s.updateStats(kr, kb);
-    const live = s.kind === 'stream' || s.kind === 'webcam' || s.kind === 'screen' || (s.kind === 'file' && !!s.video && !s.video.paused);
+    const live = s.kind === 'stream' || s.kind === 'webcam' || s.kind === 'screen' || isBridgeFile(s) || (s.kind === 'file' && !!s.video && !s.video.paused);
     // freeze check only where pictures are expected to change
     const f = live ? s.cpuFrame() : null, fp = f ? frameFingerprint(f.px, f.w, f.h, f.decode) : '';
     const fz = qcFreeze.get(s.id);
@@ -1901,6 +1941,7 @@ interface DesktopApi {
   displays: () => Promise<{ id: number; label: string; bounds: { width: number; height: number }; primary: boolean }[]>;
   captureSources?: () => Promise<{ id: string; name: string; thumb: string }[]>;
   watchFolder?: () => Promise<{ name: string; url: string } | null>;
+  mediaFile?: () => Promise<{ name: string; url: string; file: string } | null>;
 }
 const desktop = (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop;
 /** DaVinci Resolve during playback (#88), see src/resolvePlayback.ts */

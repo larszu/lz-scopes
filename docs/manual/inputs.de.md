@@ -7,6 +7,7 @@ So kommt ein Bild in LZ Scopes. Alle Eingänge stehen links in der Seitenleiste 
 | DaVinci Resolve (Scripting) | 16 bit (Pause), 8 bit (Wiedergabe) | gegradetes Bild aus dem Resolve-Viewer, ohne zusätzliche Hardware |
 | Clean Feed über Capture-Karte | 10 bit | Resolve gibt über eine DeckLink/UltraStudio aus, LZ Scopes nimmt über eine Karte auf |
 | Clean Feed oder Fenster per Bildschirm-Capture | 8 bit | schnell, ohne Hardware; der Bildschirm verfälscht Farben und Pegel |
+| Datei | 8 bit (Browser), bis 16 bit (Bridge) | ein Clip oder ein Einzelbild von der Platte |
 | Ordner | 8 bit (Browser), 16 bit (Bridge) | Standbilder aus Lightroom, Capture One, Resolve |
 | Capture-Karte, DeckLink, NDI® | 8–16 bit | Kameras, Mischer, Kreuzschienen |
 
@@ -77,6 +78,17 @@ Resolve kann das Viewer-Bild ohne Bedienoberfläche ausgeben: **Arbeitsbereich �
 4. In der Quellenkarte auf **✂ Zuschnitt = Rahmen** klicken. Ab jetzt wird nur noch der Viewer gemessen. **Zuschnitt aus** hebt das wieder auf.
 
 Wie beim Bildschirm-Capture gilt: 8 bit, und Fensterinhalte durchlaufen das Farbmanagement des Systems. Der Weg eignet sich für Bildkomposition, Belichtung und grobe Pegel, nicht für Farbabnahmen.
+
+## Datei (ProRes, DNxHR, 10 bit)
+
+Eine Datei kann auf zwei Wegen ins Skop. Die Wahl steht in der Quellenkarte unter **Weg**.
+
+- **Brücke · bis 16 bit** (Desktop-App): ffmpeg decodiert die Datei. Damit gehen ProRes, DNxHR, v210, MXF, 10-bit-HEVC und 16-bit-TIFF/DPX/EXR – und die Tiefe der Datei kommt wirklich an. Die Datei läuft in Schleife; Anhalten, Springen und Einzelbild gibt es auf diesem Weg noch nicht. Analysebreite, Bildrate und Tiefe (8 bit, 16 bit, 16 bit Y′CbCr) stellst du wie bei einem Stream ein; 16 bit Y′CbCr misst unbeschnitten, mit Sub-Black und Super-White.
+- **Browser · 8 bit**: die Datei läuft im `<video>`-Element der Seite. Nur was der Browser kann (H.264, VP9, AV1, HEVC je nach System), und das Bild kommt immer als 8 bit R′G′B′ an – auch bei einer 10-bit-Datei. Dafür gibt es Transport: Abspielen, Anhalten, Bildweise, Shuttle und Zuschnitt.
+
+Woran du einen 8-bit-Weg erkennst: Vectorscope aufziehen (Zoom) und auf das Punktmuster sehen. Ein regelmäßiges Gitter aus drei Geradenscharen ist das 8-bit-R′G′B′-Raster. Es verschwindet nicht durch eine höhere Auflösung der Scopes, sondern nur durch mehr Bits im Zuspielweg.
+
+Mit `npm start` statt der Desktop-App gibst du eine Datei beim Start frei: `--media-file <Datei>`. Freigegeben sind nur ausdrücklich genannte Dateien; die Seite kennt nur deren Namen, nie einen Pfad.
 
 ## Ordner (Lightroom, Capture One, Resolve-Standbilder)
 

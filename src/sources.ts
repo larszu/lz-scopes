@@ -64,6 +64,8 @@ export interface SourceSettings {
   ll?: Partial<LowLatencyConfig>;
   /** bridge: keep a ring buffer for "save the last … s" (src/record/record.ts) */
   ring?: boolean;
+  /** file sources (#188): 'bridge' = ffmpeg decodes (up to 16 bit), 'video' = the browser's <video> (8 bit, with transport) */
+  fileRoute?: 'bridge' | 'video';
 }
 
 export interface StreamInfo {
@@ -756,6 +758,18 @@ export class Source {
     } catch (e) {
       this.set('error', t('source.status.notPlayable', { msg: (e as Error).message }));
     }
+  }
+
+  /**
+   * A file through the bridge (#188): ffmpeg decodes it, so ProRes, DNxHR, v210, 10-bit HEVC
+   * and 16-bit stills arrive with their own depth – the `<video>` element of openFile() hands
+   * out 8-bit R′G′B′ whatever went in. `url` is the `file:<name>` of a released file.
+   */
+  openBridgeFile(url: string, name: string, bridge: string) {
+    this.name = name;
+    this.settings.depth = 16;
+    this.settings.yuv ??= true;
+    this.connectStream(url, bridge);
   }
 
   /** Play a video from a URL (cached test videos, lzs-media://, #52); CORS keeps WebGL readable. */

@@ -10,6 +10,7 @@ import genlock from './en/genlock';
 import lut from './en/lut';
 import main from './en/main';
 import match from './en/match';
+import colormatch from './en/colormatch';
 import menu from './en/menu';
 import output from './en/output';
 import panel from './en/panel';
@@ -57,6 +58,7 @@ export const en = {
   ...lut,
   ...main,
   ...match,
+  ...colormatch,
   ...menu,
   ...output,
   ...panel,

@@ -130,6 +130,7 @@ describe('Sony VISCA over IP', () => {
       async send(pk) {
         sent.push(pk);
         const p = pk.subarray(8);
+        if (pk[1] === 0x10 && p[3] === 0x35) return reply([0x90, 0x50, 0x00, 0xff]); // WB mode auto
         if (pk[1] === 0x10) { const g = gains[p[3]]; return reply([0x90, 0x50, 0, 0, g >> 4, g & 15, 0xff]); }
         gains[p[3]] = (p[6] << 4) | p[7];
         return reply([0x90, 0x51, 0xff]);
@@ -138,7 +139,8 @@ describe('Sony VISCA over IP', () => {
     expect(await cam.read()).toEqual({ 'visca.rgain': 0, 'visca.bgain': -16 });
     await cam.write({ 'visca.rgain': 7 });
     expect(gains[0x43]).toBe(0x87);
-    expect(sent.map((p) => p[7])).toEqual([1, 2, 3]); // sequence numbers count up
+    expect(sent.map((p) => p[7])).toEqual([1, 2, 3, 4, 5]); // sequence numbers count up
+    expect(Array.from(sent[3].subarray(8))).toEqual([0x81, 0x01, 0x04, 0x35, 0x05, 0xff]); // manual WB before the first gain (p. 15)
     expect(viscaGainParse(reply([0x90, 0x60, 0x02, 0xff]))).toBeNull();
   });
 

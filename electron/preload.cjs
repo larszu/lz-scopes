@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('lzsDesktop', {
     status: () => ipcRenderer.invoke('lzs:camera-bridge-status'),
     start: () => ipcRenderer.invoke('lzs:camera-bridge-start'),
   },
+  /** VISCA over IP (UDP, electron/viscaIp.cjs) for the colour match; → { ok, reply } | { ok: false, error, code }. */
+  visca: { send: (host, port, bytes) => ipcRenderer.invoke('lzs:visca-send', host, port, bytes) },
   /** Feedback report: OS, CPU, RAM, GPU, screens (no host or user name). */
   sysinfo: () => ipcRenderer.invoke('lzs:sysinfo'),
   /** Windows and screens for capture (Resolve, Lightroom, Capture One …) with thumbnails. */

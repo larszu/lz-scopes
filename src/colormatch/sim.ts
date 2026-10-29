@@ -24,9 +24,9 @@ export const SIM_PARAMS: ParamDef[] = [
 
 /** Scene light of the chart fields, linear Rec.709: the field values where the chart has them, else a spread. */
 export function sceneOf(chart: ChartDef): number[][] {
-  const g = GAMUTS['709'], toRgb = inv3(rgbToXyzMatrix(g)), adapt = bradford(REF_WHITE_XY, g.white);
+  const g = GAMUTS['709'], toRgb = inv3(rgbToXyzMatrix(g)), adapt = bradford(chart.whitePoint ?? REF_WHITE_XY, g.white);
   return chart.patches.map((f, i) => {
-    if (f.value) return mul3(toRgb, mul3(adapt, valueXyz(f.value))).map((v) => Math.max(0, v));
+    if (f.value) return mul3(toRgb, mul3(adapt, valueXyz(f.value, chart.whitePoint))).map((v) => Math.max(0, v));
     if (f.kind === 'black') return [0.02, 0.02, 0.02];
     if (f.kind === 'white') return [0.9, 0.9, 0.9];
     if (f.kind === 'gray') { const y = 0.9 * 0.7 ** (i % 12); return [y, y, y]; }

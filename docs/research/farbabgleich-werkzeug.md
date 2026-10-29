@@ -1,6 +1,6 @@
 # Kamera-Farbabgleich (Werkzeug)
 
-Stand 29.10.2026. Ausgabe → *Kamera-Farbabgleich …*, Code in `src/colormatch/`, Tests `test/colormatch-tool.test.ts`, `e2e/colormatch.spec.ts`. Baut auf dem Kamera-Abgleich auf ([kamera-abgleich.md](kamera-abgleich.md), #140): Homographie aus `src/led/analysis.ts`, ΔE aus `src/deltae.ts`, Sollwerte der ColorChecker aus `src/match/chartRef.ts`, Eckendialog aus `src/match/chartUi.ts`, Paint-Bus aus `src/shading/`.
+Stand 29.10.2026. Ausgabe → *Kamera-Farbabgleich …*, Code in `src/colormatch/`, Tests `test/colormatch-tool.test.ts`, `test/colormatch-vendors.test.ts`, `test/colormatch-import.test.ts`, `test/visca-ip.test.ts`, `e2e/colormatch.spec.ts`. Baut auf dem Kamera-Abgleich auf ([kamera-abgleich.md](kamera-abgleich.md), #140): Homographie aus `src/led/analysis.ts`, ΔE aus `src/deltae.ts`, Sollwerte der ColorChecker aus `src/match/chartRef.ts`, Eckendialog aus `src/match/chartUi.ts`, Paint-Bus aus `src/shading/`.
 
 ## Bedienung
 
@@ -18,7 +18,11 @@ Weil die Wirkung gemessen und nicht angenommen wird, braucht die Schleife weder 
 
 ## Karten (`charts.ts`, datengetrieben)
 
-Eine Karte ist eine Beschreibung: Seitenverhältnis, Felder als Rechtecke in Kartenkoordinaten 0..1, Feldtyp (Farbe, Grau, Schwarz, Weiß) und – wo öffentlich belegt – ein Sollwert je Feld (xyY oder Lab, D50, oder nur Y = Reflexion für neutrale Felder). Erkennung, Abtastung, ΔE und Regelschleife nehmen alles andere aus der Beschreibung; eine neue Karte ist ein Eintrag in `CHART_SPECS`. Graustufenkarten ohne Farbfelder durchlaufen nur Schwarz, Weiß, Pedestal und Gamma.
+Eine Karte ist eine Beschreibung: Seitenverhältnis, Felder als Rechtecke in Kartenkoordinaten 0..1, Feldtyp (Farbe, Grau, Schwarz, Weiß) und – wo öffentlich belegt – ein Sollwert je Feld (xyY oder Lab, D50, oder nur Y = Reflexion für neutrale Felder). Erkennung, Abtastung, ΔE und Regelschleife nehmen alles andere aus der Beschreibung; eine neue Karte ist ein Eintrag in `CHART_SPECS`. Graustufenkarten ohne Farbfelder durchlaufen nur Schwarz, Weiß, Pedestal und Gamma. Optional `whitePoint: [x, y]`: Weißpunkt, auf den sich die Sollwerte beziehen (Lab und Y werden darauf bezogen, danach Bradford auf den Weißpunkt des Farbraums); ohne Angabe D50.
+
+### Eigene Karten (`chartImport.ts`)
+
+Referenzwerte aus fremder Software gehören nicht in dieses öffentliche Repo. Darum lädt die Person sie selbst: *Karte importieren …* liest eine JSON-Datei im Format der Einträge von `CHART_SPECS` (`id`, `name`, `aspect`, `fields[]` mit `name`, `kind`, `x/y/w/h`, optional `value` = `{xyY}`, `{lab}` oder `{Y}`, optional `whitePoint`, `source`, `note`). Geprüft werden Schema und Wertebereiche: Rechtecke innerhalb 0..1, xy innerhalb des Diagramms, L 0…100, a/b ±200, Y 0…2, höchstens 400 Felder, mindestens ein neutrales Feld. Fehler werden mit Feldnummer gemeldet. Die Karte liegt im localStorage dieses Programms (`lzs.colormatch.charts`, Kennung mit Vorsatz `user:`), erscheint hinter den eingebauten Karten in der Auswahl und lässt sich *exportieren* (gleiches Format, auch für eingebaute Karten) und *entfernen*. Das Repo enthält keine importierten Werte; die Tests nutzen einen erfundenen Graukeil.
 
 | Karte | Lage | Sollwerte |
 |---|---|---|
@@ -38,7 +42,7 @@ lz-scopes ist öffentlich. Hier wird nur gesprochen, was eine öffentliche Herst
 | lz-camera-bridge Paint-Bus | kein Kameraprotokoll: die WebSocket-Befehle der Bridge, die Touch Shading schon sendet (`src/shading/model.ts` `busCommands`) | Black/White R/G/B, Master Black, Master Gamma, Saturation – nur Felder, die die Bridge für die Kamera meldet |
 | Panasonic AW-CGI | Panasonic Connect, *AW-UE150/AW-HE145 Integrated Camera Interface Specifications*, 1. 4. 2022: <https://eww.pass.panasonic.co.jp/pro-av/support/content/guide/DEF/UE150/AW-UE150HE145_InterfaceSpecification_E.pdf> | siehe Tabelle unten |
 | Sony CGI | Sony, *VISCA Command List / CGI Command List, Software Version 1.0, SRG-A40/A12* (5-053-155-11 (1), 2023), auf der Sony-Supportseite als „Technical Manual – VISCA/CGI Command List“: <https://www.sony.com.hk/en/electronics/support/ptz-and-remote-cameras-ptz-cameras/srg-a40/manuals> | siehe Tabelle unten |
-| Sony VISCA over IP | dasselbe Sony-Dokument | siehe Tabelle unten |
+| Sony VISCA over IP | dasselbe Sony-Dokument; geprüftes Exemplar (Software Version 1.0): <https://content.etilize.com/Additional-pdf1/1077138108.pdf> | siehe Tabelle unten; nur in der Desktop-App |
 | Anleitungsmodus | kein Protokoll | Person stellt um, Werkzeug misst |
 | Simulator | kein Protokoll | Demo und Tests |
 
@@ -72,12 +76,18 @@ Die Codes gelten für UE150/HE145; andere Modelle haben eigene Spezifikationen. 
 | R.GAIN Direct | `81 01 04 43 00 00 0p 0p FF` | pp 00…80…FF = −128…0…+127 | 15 |
 | B.GAIN Direct | `81 01 04 44 00 00 0p 0p FF` | wie oben | 15 |
 | R/B-Gain-Abfrage | `81 09 04 43 FF`, `81 09 04 44 FF` → `90 50 00 00 0p 0p FF` | | 20 |
+| WHITE BALANCE MODE Manual | `81 01 04 35 05 FF` (einmal vor dem ersten Gain-Wert, wenn die Abfrage nicht schon Manual meldet) | | 15 |
+| WB-Modus-Abfrage | `81 09 04 35 FF` → `90 50 0p FF` (5 = Manual) | | 20 |
 
-Sony-Pedestal, -Gamma, -Matrix und Mehrachsen stehen in der SRG-A40/A12-Liste nicht und bleiben deshalb draußen. Daten aus der Panasonic-Analyse (mapdata) und Code aus lz-camera-bridge wurden nicht verwendet.
+**Transport (`electron/viscaIp.cjs`):** Eine Webseite kann kein UDP, darum liegt der Socket im Main-Prozess der Desktop-App und ist über preload als `lzsDesktop.visca.send(host, port, bytes)` erreichbar; im Browser fehlt die Steuerung in der Auswahl. Ablauf nach dem Sony-Dokument: zuerst Control-Befehl RESET (`02 00`, Nutzlast `01`, Antwort `02 01`/`01`, S. 11), danach Folgenummern ab 0, die der Transport selbst vergibt. Immer nur eine Nachricht unterwegs (S. 12); ohne Antwort binnen 500 ms Wiederholung mit derselben Folgenummer, zweimal (S. 12). Befehle warten über das ACK (`90 4z FF`) hinaus auf die Completion (`90 5z FF`), Abfragen auf die Antwort (S. 8). Fehlerantworten `90 6z ee FF` werden mit Klartext gemeldet (02 Syntax, 03 Puffer voll, 04 abgebrochen, 05 kein Socket, 41 nicht ausführbar, S. 8). Control-ERROR `0F 01` (Folgenummer) löst ein neues RESET und eine Wiederholung aus (S. 11).
+
+**Weitere Paint-Befehle geprüft (29.10.2026):** Der Farbabschnitt der Liste (S. 15 Befehle, S. 20 Abfragen) enthält WHITE BALANCE MODE, ONE PUSH TRIGGER, R.GAIN, B.GAIN, SPEED, OFFSET und CHROMA SUPPRESS. Pedestal/Black Level, Gamma, Matrix, Farbsättigung und Farbton gibt es für SRG-A40/A12 nicht. OFFSET verschiebt nur den automatischen Weißabgleich, CHROMA SUPPRESS ist eine Rauschfunktion – beide sind keine Paint-Regler und bleiben draußen.
+
+Sony-Pedestal, -Gamma, -Matrix, -Sättigung, -Farbton und Mehrachsen stehen in der SRG-A40/A12-Liste nicht (geprüft, s. o.) und bleiben deshalb draußen. Daten aus der Panasonic-Analyse (mapdata) und Code aus lz-camera-bridge wurden nicht verwendet.
 
 ## Offen
 
 - Nichts an echter Kamera geprüft (#116). Die BMD-REST-Steuerung ruft die Kamera direkt aus der Oberfläche auf; ob die Kamera das ohne CORS-Freigabe annimmt, ist ungeprüft.
 - Matrix und Mehrachsen-Farbe: Simulator und Panasonic; über Bridge und BMD-REST nur globale Sättigung (BMD zusätzlich Farbton); Sony nur R/B-Gain.
-- Panasonic- und Sony-CGI rufen die Kamera direkt aus der Oberfläche auf (CORS, bei Sony zusätzlich Digest ungeprüft). VISCA over IP ist UDP: Adapter und Tests sind da, ein Transport in der Desktop-App fehlt noch, darum steht VISCA nicht in der Auswahl.
+- Panasonic- und Sony-CGI rufen die Kamera direkt aus der Oberfläche auf (CORS, bei Sony zusätzlich Digest ungeprüft). VISCA over IP läuft nur in der Desktop-App (UDP); Transport gegen einen lokalen UDP-Server getestet, nicht an einer echten Kamera.
 - Lage der ChromaDuMonde-Felder und die TE156-Vorlage mit Herstellerunterlagen füllen.

@@ -54,6 +54,8 @@ export interface MenuActions {
   outputPattern: () => void;
   led: () => void;
   calibration: () => void;
+  /** Output → camera colour match (src/colormatch) */
+  colorMatch?: () => void;
   /** Help → Send Feedback … (src/feedback) */
   feedback?: () => void;
   /** Help → Show scope help (src/help) */
@@ -151,6 +153,7 @@ export function buildMenu(s: MenuState): TopMenu[] {
         sep(),
         { id: 'led', label: t('menu.led') },
         { id: 'calibration', label: t('menu.calibration') },
+        { id: 'colormatch', label: t('cm.menu') },
         ...extras('output'),
       ],
     },
@@ -212,6 +215,7 @@ export function dispatch(id: string, a: MenuActions) {
     case 'output': return has ? a.outputPattern() : a.output();
     case 'led': return a.led();
     case 'calibration': return a.calibration();
+    case 'colormatch': return a.colorMatch?.();
     case 'feedback': return a.feedback?.();
     case 'help': return a.help?.();
     case 'open': { const u = URLS[arg]; if (u) window.open(u, '_blank', 'noopener'); return; }

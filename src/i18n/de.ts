@@ -18,6 +18,7 @@ import genlock from './de/genlock';
 import lut from './de/lut';
 import main from './de/main';
 import match from './de/match';
+import colormatch from './de/colormatch';
 import menu from './de/menu';
 import output from './de/output';
 import panel from './de/panel';
@@ -60,6 +61,7 @@ export const de: Record<Key, Msg> = {
   ...lut,
   ...main,
   ...match,
+  ...colormatch,
   ...menu,
   ...output,
   ...panel,

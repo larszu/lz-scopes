@@ -8,7 +8,8 @@ import { CLASSIC_24, toFractions, toPixels } from './chart';
 import { button, h, hint, openModal } from '../ui';
 import { t } from '../i18n';
 
-export function openChartCorners(src: Source, initial: Pt[] | undefined, onSave: (pts: Pt[] | null) => void) {
+/** `layout`: other chart than the ColorChecker Classic grid (src/colormatch/charts.ts) – its fields are drawn instead. */
+export function openChartCorners(src: Source, initial: Pt[] | undefined, onSave: (pts: Pt[] | null) => void, layout?: { width: number; height: number; patches: { x: number; y: number; w: number; h: number }[] }) {
   const f = grabFrame(src);
   if (!f) { openModal({ title: t('chart.cornersTitle', { name: src.name }), size: 'sm', body: [hint(t('chart.noPicture'))] }); return; }
   let corners: Pt[] = initial?.length === 4 ? toPixels(initial, f.width, f.height) : [];
@@ -25,9 +26,13 @@ export function openChartCorners(src: Source, initial: Pt[] | undefined, onSave:
     if (corners.length === 4) {
       // patch grid as a check that the corners sit right
       ctx.strokeStyle = 'rgba(140,255,158,.85)'; ctx.lineWidth = lw; ctx.beginPath();
-      const { cols, rows } = CLASSIC_24, H = homography([[0, 0], [cols, 0], [cols, rows], [0, rows]], corners);
-      for (let c = 0; c <= cols; c++) { ctx.moveTo(...project(H, c, 0)); ctx.lineTo(...project(H, c, rows)); }
-      for (let r = 0; r <= rows; r++) { ctx.moveTo(...project(H, 0, r)); ctx.lineTo(...project(H, cols, r)); }
+      const { cols, rows } = layout ? { cols: layout.width, rows: layout.height } : CLASSIC_24, H = homography([[0, 0], [cols, 0], [cols, rows], [0, rows]], corners);
+      if (layout) for (const p of layout.patches) {
+        ctx.moveTo(...project(H, p.x, p.y)); ctx.lineTo(...project(H, p.x + p.w, p.y)); ctx.lineTo(...project(H, p.x + p.w, p.y + p.h)); ctx.lineTo(...project(H, p.x, p.y + p.h)); ctx.closePath();
+      } else {
+        for (let c = 0; c <= cols; c++) { ctx.moveTo(...project(H, c, 0)); ctx.lineTo(...project(H, c, rows)); }
+        for (let r = 0; r <= rows; r++) { ctx.moveTo(...project(H, 0, r)); ctx.lineTo(...project(H, cols, r)); }
+      }
       ctx.stroke();
     }
     corners.forEach((p) => { ctx.fillStyle = '#ffb44a'; ctx.beginPath(); ctx.arc(p[0], p[1], lw * 6, 0, Math.PI * 2); ctx.fill(); });

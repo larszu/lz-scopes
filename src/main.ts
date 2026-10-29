@@ -2569,6 +2569,7 @@ const menuActions: MenuActions = {
   outputPattern: () => { const p = sources.find((x) => x.kind === 'pattern'); if (p) openOutput(p.pattern); },
   led: () => openLed(),
   calibration: () => openCalibrationDialog(),
+  colorMatch: () => { void import('./colormatch/ui').then((m) => m.openColorMatch({ sources: () => sources, link: shading.link })); },
   help: () => { setHelpOn(!helpOn()); for (const v of views.values()) fillHead(v); refreshMenu(); },
   feedback: () => openFeedback({
     version: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '',

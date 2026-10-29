@@ -105,7 +105,7 @@ export function openColorMatch(host: ColorMatchHost) {
       const file = input.files?.[0];
       input.remove();
       if (!file) return;
-      const r = parseChartJson(await file.text());
+      const r = parseChartJson(await file.text(), file.name);
       if (!r.ok) { status.textContent = t('cm.importFail', { name: file.name, errors: r.errors.slice(0, 5).join('; ') + (r.errors.length > 5 ? ' …' : '') }); return; }
       const spec = addUserChart(r.spec);
       pickChart(spec.id);

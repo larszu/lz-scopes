@@ -4,8 +4,8 @@
 // public source exists, a reference value per field. A new chart is one more entry in CHART_SPECS;
 // detection, sampling, ΔE and the control loop take everything else from the description.
 //
-// Reference values: CIE xyY or CIELAB (both relative to ICC D50, Y of a perfect diffuse white =
-// 1), or only Y (luminance factor = reflectance) for neutral fields. A chart without values for
+// Reference values: CIE xyY, XYZ or CIELAB (relative to the white point `whitePoint`, default ICC D50, Y of a
+// perfect diffuse white = 1), or only Y (luminance factor = reflectance) for neutral fields. A chart without values for
 // every field is compared against a reference camera only.
 
 import { GAMUTS, bradford, inv3, linearToSignal, mul3, rgbToXyzMatrix } from '../color';
@@ -15,7 +15,7 @@ import type { Rgb } from '../match/core';
 
 export type FieldKind = 'color' | 'gray' | 'black' | 'white';
 
-export type FieldValue = { xyY: [number, number, number] } | { lab: [number, number, number] } | { Y: number };
+export type FieldValue = { xyY: [number, number, number] } | { lab: [number, number, number] } | { XYZ: [number, number, number] } | { Y: number };
 
 export interface FieldSpec {
   name: string;
@@ -136,6 +136,7 @@ const labToXyz = ([L, a, b]: number[], w: Xy) => {
 /** XYZ (relative to `white`, default D50; white Y = 1) of a field value. */
 export function valueXyz(v: FieldValue, white: Xy = D50_WHITE): number[] {
   if ('xyY' in v) { const [x, y, Y] = v.xyY; return y > 0 ? [(x * Y) / y, Y, ((1 - x - y) * Y) / y] : [0, 0, 0]; }
+  if ('XYZ' in v) return [...v.XYZ];
   if ('lab' in v) return labToXyz(v.lab, white);
   const [x, y] = white;
   return [(x * v.Y) / y, v.Y, ((1 - x - y) * v.Y) / y];

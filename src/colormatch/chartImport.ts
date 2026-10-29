@@ -18,8 +18,13 @@ const tuple = (v: unknown, n: number): v is number[] => Array.isArray(v) && v.le
 function checkValue(v: unknown, at: string, err: string[]): FieldValue | undefined {
   if (v == null) return undefined;
   if (typeof v !== 'object') { err.push(`${at}: value must be an object`); return undefined; }
-  const o = v as Record<string, unknown>, keys = Object.keys(o);
-  if (keys.length !== 1) { err.push(`${at}: value needs exactly one of xyY, lab, Y`); return undefined; }
+  // the first known encoding wins; other keys (notes, raw data of the exporting tool) are ignored
+  const o = v as Record<string, unknown>;
+  if ('XYZ' in o) {
+    if (!tuple(o.XYZ, 3)) { err.push(`${at}: XYZ must be [X, Y, Z]`); return undefined; }
+    if (o.XYZ.some((c) => c < 0 || c > 2)) err.push(`${at}: XYZ outside 0…2 (white Y = 1)`);
+    return { XYZ: [o.XYZ[0], o.XYZ[1], o.XYZ[2]] };
+  }
   if ('xyY' in o) {
     if (!tuple(o.xyY, 3)) { err.push(`${at}: xyY must be [x, y, Y]`); return undefined; }
     const [x, y, Y] = o.xyY;
@@ -38,7 +43,7 @@ function checkValue(v: unknown, at: string, err: string[]): FieldValue | undefin
     if (!num(o.Y) || o.Y < 0 || o.Y > 2) { err.push(`${at}: Y must be a number 0…2`); return undefined; }
     return { Y: o.Y };
   }
-  err.push(`${at}: unknown value type ${keys[0]}`);
+  err.push(`${at}: value needs one of XYZ, xyY, lab, Y`);
   return undefined;
 }
 
@@ -68,8 +73,11 @@ export function checkChartSpec(input: unknown): CheckResult {
     if (!KINDS.includes(q.kind as FieldKind)) err.push(`${at}.kind: one of ${KINDS.join(', ')}`);
     const r = [q.x, q.y, q.w, q.h];
     if (!r.every(num)) { err.push(`${at}: x, y, w, h must be numbers`); return; }
-    const [x, y, w, h] = r as number[];
-    if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > 1 + 1e-9 || y + h > 1 + 1e-9) err.push(`${at}: rectangle outside 0…1`);
+    let [x, y, w, h] = r as number[];
+    // rounding in exported layouts: up to 1 % past the edge is clipped, more is an error
+    const TOL = 0.01;
+    if (w <= 0 || h <= 0 || x < -TOL || y < -TOL || x + w > 1 + TOL || y + h > 1 + TOL) err.push(`${at}: rectangle outside 0…1`);
+    else { const x1 = Math.min(1, x + w), y1 = Math.min(1, y + h); x = Math.max(0, x); y = Math.max(0, y); w = x1 - x; h = y1 - y; }
     const value = checkValue(q.value, `${at}.value`, err);
     fields.push({ name: String(q.name ?? '').trim(), kind: q.kind as FieldKind, x, y, w, h, ...(value ? { value } : {}) });
   });
@@ -84,10 +92,52 @@ export function checkChartSpec(input: unknown): CheckResult {
   return { ok: true, spec };
 }
 
-/** Parse a file's text; JSON errors become check errors. */
-export function parseChartJson(text: string): CheckResult {
+// ------------------------------------------------------------------ converter: German field-list format
+//
+// A second layout some extraction tools write: `karte` (name), `seitenverhaeltnis` (aspect),
+// `sollwerte.weisspunkt` (text naming D50 or D65), `felder[]` with `name`, `typ`
+// (farbe/grau/weiss/schwarz), `mitte` and `groesse` (centre and size, 0..1, origin top left) and
+// `XYZ` (white Y = 1). Everything else in those files is ignored.
+
+const KIND_DE: Record<string, FieldKind> = { farbe: 'color', grau: 'gray', weiss: 'white', 'weiß': 'white', schwarz: 'black' }; // lang-ok: keys of the imported field-list format, not UI text
+const WHITES: [RegExp, [number, number]][] = [[/\bD65\b/i, [0.3127, 0.329]], [/\bD50\b/i, [0.3457, 0.3585]]];
+
+export function isFieldListFormat(j: unknown): boolean {
+  return !!j && typeof j === 'object' && Array.isArray((j as Record<string, unknown>).felder);
+}
+
+/** Field-list format → chart description (unchecked; checkChartSpec does the checking). */
+export function fromFieldList(j: Record<string, unknown>, fallbackId = 'chart'): Record<string, unknown> {
+  const name = typeof j.karte === 'string' ? j.karte : fallbackId;
+  const soll = (j.sollwerte ?? {}) as Record<string, unknown>;
+  const wp = typeof soll.weisspunkt === 'string' ? WHITES.find(([re]) => re.test(soll.weisspunkt as string))?.[1] : undefined;
+  const slug = name.toLowerCase().normalize('NFKD').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || 'chart';
+  // fields with size 0 have no sampling area in the source: they cannot be measured, so they are left out
+  const all = j.felder as Record<string, unknown>[];
+  const usable = all.filter((f) => !Array.isArray(f.groesse) || ((f.groesse as number[])[0] > 0 && (f.groesse as number[])[1] > 0));
+  const skipped = all.length - usable.length;
+  return {
+    id: slug, name, aspect: j.seitenverhaeltnis,
+    source: 'imported (field-list format)',
+    ...(skipped ? { note: `${skipped} / ${all.length} fields without area left out.` } : {}),
+    ...(wp ? { whitePoint: wp } : {}),
+    fields: usable.map((f) => {
+      const [cx, cy] = Array.isArray(f.mitte) ? (f.mitte as number[]) : [NaN, NaN];
+      const [w, h] = Array.isArray(f.groesse) ? (f.groesse as number[]) : [NaN, NaN];
+      return {
+        name: f.name, kind: KIND_DE[String(f.typ).toLowerCase()] ?? f.typ,
+        x: cx - w / 2, y: cy - h / 2, w, h,
+        ...(Array.isArray(f.XYZ) ? { value: { XYZ: f.XYZ } } : {}),
+      };
+    }),
+  };
+}
+
+/** Parse a file's text (native or field-list format); JSON errors become check errors. */
+export function parseChartJson(text: string, fileName = ''): CheckResult {
   let j: unknown;
   try { j = JSON.parse(text); } catch (e) { return { ok: false, errors: [`JSON: ${(e as Error).message}`] }; }
+  if (isFieldListFormat(j)) j = fromFieldList(j as Record<string, unknown>, fileName.replace(/\.json$/i, ''));
   return checkChartSpec(j);
 }
 

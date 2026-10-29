@@ -56,4 +56,12 @@ export default {
   'cm.detectFail': 'Keine Tafel in {name} gefunden – Ecken von Hand setzen.',
   'cm.detected': 'Tafel in {name} gefunden.',
   'cm.menu': 'Kamera-Farbabgleich …',
+  'cm.ctlVisca': 'Sony-Kamera (VISCA over IP, nur Weißabgleich)',
+  'cm.viscaHost': 'Adresse der Kamera, z. B. 192.0.2.10 oder 192.0.2.10:52381',
+  'cm.importChart': 'Karte importieren …',
+  'cm.exportChart': 'Karte exportieren',
+  'cm.removeChart': 'Karte entfernen',
+  'cm.imported': 'Karte „{name}“ importiert ({n} Felder), nur in diesem Programm gespeichert.',
+  'cm.importFail': '{name} nicht importiert: {errors}',
+  'cm.removed': 'Karte „{name}“ entfernt.',
 } satisfies Translation<typeof en>;

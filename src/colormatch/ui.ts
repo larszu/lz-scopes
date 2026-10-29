@@ -11,14 +11,15 @@ import { toPixels } from '../match/chart';
 import { convertSignal, type Rgb } from '../match/core';
 import { spaceOf } from '../match/panel';
 import type { Space } from '../deltae';
-import { button, checkbox, chip, h, hint, openModal, segmented, select, textInput } from '../ui';
+import { button, checkbox, chip, download, h, hint, openModal, segmented, select, textInput } from '../ui';
 import { t, type Key } from '../i18n';
-import { CHARTS, CHART_SPECS, type ChartDef, type ChartId } from './charts';
+import { type ChartDef, type ChartId, type ChartSpec } from './charts';
+import { USER_PREFIX, addUserChart, allChartSpecs, chartDef, chartToJson, parseChartJson, removeUserChart } from './chartImport';
 import { detectChart } from './detect';
 import { toFractions } from '../match/chart';
 import { defaultCorners, measureChart, summary, type Patches } from './measure';
 import { runMatch, type MatchCamera, type Stage, type Values } from './engine';
-import { BmdRestCamera, BridgeCamera, PanasonicCamera, SonyCgiCamera, GuideCamera, GUIDE_PARAMS, type GuideChange } from './adapters';
+import { BmdRestCamera, BridgeCamera, DesktopViscaTransport, PanasonicCamera, SonyCgiCamera, GuideCamera, GUIDE_PARAMS, ViscaIpCamera, viscaAvailable, type GuideChange } from './adapters';
 import { SimCamera, sceneOf } from './sim';
 
 export interface ColorMatchHost { sources: () => Source[]; link: CameraBridgeLink }
@@ -37,7 +38,9 @@ export function openColorMatch(host: ColorMatchHost) {
   let chartId: ChartId = 'classic24', refId = VALUES, ref: { patches: Patches; space: Space } | null = null;
   let multi = false, running: AbortController | null = null, view: 'before' | 'after' = 'after';
   const targets: Target[] = [{ source: SIM, control: SIM, host: '' }];
-  const chart = (): ChartDef => CHARTS[chartId];
+  let def: ChartDef = chartDef(chartId);
+  const chart = (): ChartDef => def;
+  const pickChart = (id: string) => { def = chartDef(id); chartId = def.id; ref = null; corners.clear(); renderLeft(); };
 
   const left = h('section', { class: 'cm-card' });
   const right = h('section', { class: 'cm-card' });
@@ -79,8 +82,12 @@ export function openColorMatch(host: ColorMatchHost) {
     const s = srcById(refId);
     left.replaceChildren(
       h('h3', { class: 'kicker' }, t('cm.reference')),
-      h('label', { class: 'field' }, t('cm.chart'), select(chartId, CHART_SPECS.map((c) => [c.id, c.name] as const), (v) => { chartId = v; ref = null; corners.clear(); renderLeft(); }, t('cm.chart'))),
-      chart().note ? hint(t(chart().note as Key)) : '',
+      h('label', { class: 'field' }, t('cm.chart'), select(chartId, allChartSpecs().map((c) => [c.id, c.name] as const), pickChart, t('cm.chart'))),
+      chart().note ? hint(chartId.startsWith(USER_PREFIX) ? chart().note! : t(chart().note as Key)) : '',
+      h('div', { class: 'cm-actions' },
+        button(t('cm.importChart'), importChart, { variant: 'ghost' }),
+        button(t('cm.exportChart'), exportChart, { variant: 'ghost' }),
+        chartId.startsWith(USER_PREFIX) ? button(t('cm.removeChart'), () => { removeUserChart(chartId); status.textContent = t('cm.removed', { name: chart().name }); pickChart(allChartSpecs()[0].id); }, { variant: 'ghost' }) : ''),
       h('label', { class: 'field' }, t('cm.source'), select(refId, opts, (v) => { refId = v; ref = null; renderLeft(); })),
       h('div', { class: 'cm-actions' },
         s ? button(t('cm.detect'), () => {
@@ -92,8 +99,31 @@ export function openColorMatch(host: ColorMatchHost) {
     );
   }
 
+  function importChart() {
+    const input = h('input', { type: 'file', accept: '.json,application/json', hidden: true, class: 'cm-import' }) as HTMLInputElement;
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      input.remove();
+      if (!file) return;
+      const r = parseChartJson(await file.text(), file.name);
+      if (!r.ok) { status.textContent = t('cm.importFail', { name: file.name, errors: r.errors.slice(0, 5).join('; ') + (r.errors.length > 5 ? ' …' : '') }); return; }
+      const spec = addUserChart(r.spec);
+      pickChart(spec.id);
+      status.textContent = t('cm.imported', { name: spec.name, n: spec.fields.length });
+    };
+    left.append(input);
+    input.click();
+  }
+
+  function exportChart() {
+    const spec = allChartSpecs().find((c) => c.id === chartId) as ChartSpec;
+    download(`${spec.id.replace(/^user:/, '').replace(/[^\w.-]+/g, '_')}.json`, chartToJson(spec), 'application/json');
+  }
+
   function controlOptions() {
     const list: [string, string][] = [[SIM, t('cm.ctlSim')], ['guide', t('cm.ctlGuide')], ['bmd', t('cm.ctlBmd')], ['pana', t('cm.ctlPana')], ['sony', t('cm.ctlSony')]];
+    // UDP only exists in the desktop app (electron/viscaIp.cjs); the browser does not offer it
+    if (viscaAvailable()) list.push(['visca', t('cm.ctlVisca')]);
     for (const c of host.link.cameras) list.push([`bridge:${c.cameraNumber}`, t('cm.ctlBridge', { n: c.cameraNumber, label: c.label })]);
     return list;
   }
@@ -102,7 +132,7 @@ export function openColorMatch(host: ColorMatchHost) {
     const rows = (multi ? targets : targets.slice(0, 1)).map((tg, i) => h('div', { class: 'cm-target' },
       h('label', { class: 'field' }, t('cm.source'), select(tg.source, srcOptions([[SIM, t('cm.ctlSim')]]), (v) => { tg.source = v; if (v === SIM) tg.control = SIM; renderRight(); })),
       tg.source === SIM ? '' : h('label', { class: 'field' }, t('cm.control'), select(tg.control, controlOptions(), (v) => { tg.control = v; renderRight(); })),
-      ['bmd', 'pana', 'sony'].includes(tg.control) && tg.source !== SIM ? textInput(tg.host, (v) => { tg.host = v; }, { placeholder: t('cm.bmdHost'), mono: true }) : '',
+      ['bmd', 'pana', 'sony', 'visca'].includes(tg.control) && tg.source !== SIM ? textInput(tg.host, (v) => { tg.host = v; }, { placeholder: t(tg.control === 'visca' ? 'cm.viscaHost' : 'cm.bmdHost'), mono: true }) : '',
       multi && targets.length > 1 ? button(t('cm.removeTarget'), () => { targets.splice(i, 1); renderRight(); }, { variant: 'ghost' }) : '',
     ));
     const done = targets.some((x) => x.result);
@@ -145,6 +175,7 @@ export function openColorMatch(host: ColorMatchHost) {
     if (tg.control === 'bmd') return new BmdRestCamera(tg.host);
     if (tg.control === 'pana') return new PanasonicCamera(tg.host);
     if (tg.control === 'sony') return new SonyCgiCamera(tg.host);
+    if (tg.control === 'visca') return new ViscaIpCamera(new DesktopViscaTransport(tg.host));
     const n = Number(tg.control.split(':')[1]);
     return new BridgeCamera(host.link, n, host.link.cameras.find((c) => c.cameraNumber === n)?.mode ?? '');
   }

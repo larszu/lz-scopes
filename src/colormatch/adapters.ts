@@ -244,10 +244,16 @@ export class SonyCgiCamera implements MatchCamera {
 // header = payload type 2 bytes (01 00 command, 01 10 inquiry, 01 11 reply) + payload length
 // 2 bytes + sequence number 4 bytes, big-endian; camera address locked to 1), p. 15 (R.GAIN
 // Direct 8x 01 04 43 00 00 0p 0p FF, B.GAIN Direct 8x 01 04 44 …, pp 00…80…FF = −128…0…+127),
-// p. 20 (inquiries 8x 09 04 43 FF / 8x 09 04 44 FF → y0 50 00 00 0p 0p FF). The list has no
-// pedestal, gamma or matrix commands for these models.
+// p. 15 (WHITE BALANCE MODE 8x 01 04 35 0p FF, p = 5 Manual), p. 20 (inquiries 8x 09 04 43 FF /
+// 8x 09 04 44 FF → y0 50 00 00 0p 0p FF, 8x 09 04 35 FF → y0 50 0p FF). The colour section of the
+// list (pp. 15, 20) has white balance mode, one-push trigger, R/B gain, WB speed, WB offset and
+// chroma suppress – no pedestal/black level, gamma, matrix, saturation or hue for these models,
+// so those stay out. WB offset only shifts the auto white balance and chroma suppress is a noise
+// setting; neither is a paint control.
 //
-// A web page cannot send UDP: the transport is injected (desktop app or tests).
+// A web page cannot send UDP: the transport is the desktop app's (electron/viscaIp.cjs, through
+// lzsDesktop.visca) or a test double. The desktop transport owns the sequence numbers (reset,
+// retransmission); the number written here only matters for a transport that keeps it.
 
 export interface ViscaTransport { send(packet: Uint8Array): Promise<Uint8Array> }
 
@@ -265,6 +271,8 @@ export const VISCA_PARAMS: ParamDef[] = [
   { id: 'visca.rgain', label: 'R gain', stage: 'white', min: -128, max: 127, step: 1, probe: 8 },
   { id: 'visca.bgain', label: 'B gain', stage: 'white', min: -128, max: 127, step: 1, probe: 8 },
 ];
+/** WHITE BALANCE MODE Manual (p. 15) – R/B gain act only there. */
+export const VISCA_WB_MANUAL = [0x81, 0x01, 0x04, 0x35, 0x05, 0xff];
 
 /** Direct command: value −128…127 → pp = 80h + value, as two nibbles. */
 export function viscaGainCommand(id: string, v: number): number[] {
@@ -279,23 +287,59 @@ export function viscaGainParse(packet: Uint8Array): number | null {
   return ((p[4] << 4) | p[5]) - 0x80;
 }
 
+const hexBytes = (p: Uint8Array) => Array.from(p, (b) => b.toString(16).padStart(2, '0')).join(' ');
+
 export class ViscaIpCamera implements MatchCamera {
   params = VISCA_PARAMS;
   private seq = 1;
+  private manual = false;
   constructor(private t: ViscaTransport) {}
+  private async cmd(payload: number[]) {
+    const p = (await this.t.send(viscaPacket('command', this.seq++, payload))).subarray(8);
+    if (p.length >= 2 && (p[1] & 0xf0) === 0x60) throw new Error(`VISCA error ${hexBytes(p)}`);
+  }
   async read(): Promise<Values> {
     const out: Values = {};
     for (const p of this.params) {
       const v = viscaGainParse(await this.t.send(viscaPacket('inquiry', this.seq++, [0x81, 0x09, 0x04, VISCA_GAIN[p.id], 0xff])));
       if (v != null) out[p.id] = v;
     }
+    const m = (await this.t.send(viscaPacket('inquiry', this.seq++, [0x81, 0x09, 0x04, 0x35, 0xff]))).subarray(8);
+    this.manual = m.length >= 4 && m[1] === 0x50 && m[2] === 0x05;
     return out;
   }
   async write(v: Values) {
     for (const [k, x] of Object.entries(v)) {
       if (!(k in VISCA_GAIN)) continue;
-      const p = (await this.t.send(viscaPacket('command', this.seq++, viscaGainCommand(k, x)))).subarray(8);
-      if (p.length >= 2 && (p[1] & 0xf0) === 0x60) throw new Error(`VISCA error ${Array.from(p, (b) => b.toString(16).padStart(2, '0')).join(' ')}`);
+      if (!this.manual) { await this.cmd(VISCA_WB_MANUAL); this.manual = true; }
+      await this.cmd(viscaGainCommand(k, x));
     }
+  }
+}
+
+// ------------------------------------------------------------------ desktop transport
+
+export interface DesktopVisca { send(host: string, port: number, bytes: number[]): Promise<{ ok: true; reply: number[] } | { ok: false; error: string; code?: string }> }
+const desktopVisca = (): DesktopVisca | undefined =>
+  (typeof window !== 'undefined' ? (window as unknown as { lzsDesktop?: { visca?: DesktopVisca } }).lzsDesktop?.visca : undefined);
+
+/** True in the desktop app, where UDP is available; the browser hides VISCA over IP. */
+export const viscaAvailable = () => !!desktopVisca();
+
+/** `host` or `host:port` (default UDP 52381, p. 9). */
+export function viscaAddress(s: string): { host: string; port: number } {
+  const t = s.trim().replace(/^[a-z]+:\/\//i, '').replace(/\/.*$/, '');
+  const m = /^(.*?)(?::(\d+))?$/.exec(t)!;
+  return { host: m[1], port: m[2] ? Number(m[2]) : 52381 };
+}
+
+export class DesktopViscaTransport implements ViscaTransport {
+  constructor(private address: string, private api: DesktopVisca | undefined = desktopVisca()) {}
+  async send(packet: Uint8Array): Promise<Uint8Array> {
+    if (!this.api) throw new Error('VISCA over IP: desktop app only');
+    const { host, port } = viscaAddress(this.address);
+    const r = await this.api.send(host, port, Array.from(packet));
+    if (!r.ok) throw new Error(`VISCA over IP: ${r.error}`);
+    return Uint8Array.from(r.reply);
   }
 }

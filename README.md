@@ -71,7 +71,7 @@ Keys: `1`–`6` layout · `Space` freeze or play · `←`/`→` one frame · `J`
 - **Scopes**: waveform (luma, colour, RGB), RGB/YRGB/YCbCr parade, vectorscope (also split by tonal range), HLS, CIE, diamond, 3D colour volume, histogram, saturation vs luma, channel plot, readings.
 - **Inputs**: camera, screen, file (through the bridge up to 16 bit, with transport), folder, RTSP, SRT, RTMP, NDI, DeckLink/UltraStudio, SDI VANC, DaVinci Resolve.
 - **Measuring properly**: unclipped Y′CbCr (sub-black, super-white), EBU R 103, PQ/HLG in cd/m², the manufacturers' log curves, CST and LUTs per source, scale in %, 8/10 bit, nits or stops.
-- **Matching cameras**: reference camera with ghost trace, colour chart match with ΔE and a matrix proposal, skin tones of every camera in one vectorscope, drift guard, Touch Shading through the [LZ Camera Bridge](https://github.com/larszu/lz-camera-bridge).
+- **Matching cameras**: reference camera with ghost trace, colour chart match with ΔE and a matrix proposal, skin tones of every camera in one vectorscope, drift guard, Touch Shading through the [LZ Camera Bridge](https://github.com/larszu/lz-camera-bridge). Camera colour match that drives the camera itself (Blackmagic REST, Panasonic and Sony CGI, Sony VISCA over IP in the desktop app, bridge, or step-by-step guide) against built-in or imported chart definitions (JSON, kept locally).
 - **On the desk**: alarm frames per panel with a hold time, QC log as CSV, recording with ring buffer and synchronised playback, output window for the second screen, control from Companion.
 - **Also**: test patterns (SMPTE, PLUGE, zone plate, HDR, LED wall), display calibration, light meter, clock and time code, audio with loudness and A/V offset.
 

@@ -55,4 +55,12 @@ export default {
   'cm.detectFail': 'No chart found in {name} – set the corners by hand.',
   'cm.detected': 'Chart found in {name}.',
   'cm.menu': 'Camera colour match …',
+  'cm.ctlVisca': 'Sony camera (VISCA over IP, white balance only)',
+  'cm.viscaHost': 'Camera address, e.g. 192.0.2.10 or 192.0.2.10:52381',
+  'cm.importChart': 'Import chart …',
+  'cm.exportChart': 'Export chart',
+  'cm.removeChart': 'Remove chart',
+  'cm.imported': 'Chart “{name}” imported ({n} fields), stored in this app only.',
+  'cm.importFail': '{name} not imported: {errors}',
+  'cm.removed': 'Chart “{name}” removed.',
 } satisfies Messages;

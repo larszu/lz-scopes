@@ -4,8 +4,8 @@
 // public source exists, a reference value per field. A new chart is one more entry in CHART_SPECS;
 // detection, sampling, ΔE and the control loop take everything else from the description.
 //
-// Reference values: CIE xyY or CIELAB (both relative to ICC D50, Y of a perfect diffuse white =
-// 1), or only Y (luminance factor = reflectance) for neutral fields. A chart without values for
+// Reference values: CIE xyY, XYZ or CIELAB (relative to the white point `whitePoint`, default ICC D50, Y of a
+// perfect diffuse white = 1), or only Y (luminance factor = reflectance) for neutral fields. A chart without values for
 // every field is compared against a reference camera only.
 
 import { GAMUTS, bradford, inv3, linearToSignal, mul3, rgbToXyzMatrix } from '../color';
@@ -15,7 +15,7 @@ import type { Rgb } from '../match/core';
 
 export type FieldKind = 'color' | 'gray' | 'black' | 'white';
 
-export type FieldValue = { xyY: [number, number, number] } | { lab: [number, number, number] } | { Y: number };
+export type FieldValue = { xyY: [number, number, number] } | { lab: [number, number, number] } | { XYZ: [number, number, number] } | { Y: number };
 
 export interface FieldSpec {
   name: string;
@@ -33,8 +33,10 @@ export interface ChartSpec {
   fields: FieldSpec[];
   /** where the layout and values come from */
   source: string;
-  /** shown in the dialog (e.g. "template, values missing") */
+  /** shown in the dialog (e.g. "template, values missing"); an i18n key or plain text */
   note?: string;
+  /** xy chromaticity of the white point the values refer to; default D50 (ICC PCS) */
+  whitePoint?: [number, number];
 }
 
 /** Derived view the measurement and the loop use. */
@@ -50,6 +52,8 @@ export interface ChartDef {
   neutrals: number[];
   black: number;
   white: number;
+  /** xy of the white point the field values refer to */
+  whitePoint: [number, number];
   chromatic: number[];
   /** reference values in an encoding, or null when not every field has a value */
   reference: ((s: Space) => Rgb[]) | null;
@@ -120,19 +124,21 @@ export const CHART_SPECS: ChartSpec[] = [CLASSIC, CDM, TE156_TEMPLATE];
 
 // ------------------------------------------------------------------ derived view
 
-const D50_WHITE = REF_WHITE_XY;
-const labToXyz = ([L, a, b]: number[]) => {
+const D50_WHITE = REF_WHITE_XY as [number, number];
+export type Xy = [number, number];
+const labToXyz = ([L, a, b]: number[], w: Xy) => {
   const fy = (L + 16) / 116, fx = fy + a / 500, fz = fy - b / 200, e = 6 / 29;
   const f = (t: number) => (t > e ? t ** 3 : 3 * e * e * (t - 4 / 29));
-  const wx = D50_WHITE[0] / D50_WHITE[1], wz = (1 - D50_WHITE[0] - D50_WHITE[1]) / D50_WHITE[1];
+  const wx = w[0] / w[1], wz = (1 - w[0] - w[1]) / w[1];
   return [wx * f(fx), f(fy), wz * f(fz)];
 };
 
-/** XYZ (D50, white Y = 1) of a field value. */
-export function valueXyz(v: FieldValue): number[] {
+/** XYZ (relative to `white`, default D50; white Y = 1) of a field value. */
+export function valueXyz(v: FieldValue, white: Xy = D50_WHITE): number[] {
   if ('xyY' in v) { const [x, y, Y] = v.xyY; return y > 0 ? [(x * Y) / y, Y, ((1 - x - y) * Y) / y] : [0, 0, 0]; }
-  if ('lab' in v) return labToXyz(v.lab);
-  const [x, y] = D50_WHITE;
+  if ('XYZ' in v) return [...v.XYZ];
+  if ('lab' in v) return labToXyz(v.lab, white);
+  const [x, y] = white;
   return [(x * v.Y) / y, v.Y, ((1 - x - y) * v.Y) / y];
 }
 
@@ -147,18 +153,19 @@ export function deriveChart(s: ChartSpec): ChartDef {
   const black = idx.find((i) => s.fields[i].kind === 'black') ?? neutrals[0] ?? 0;
   const white = idx.find((i) => s.fields[i].kind === 'white') ?? neutrals[neutrals.length - 1] ?? 0;
   const full = s.fields.every((f) => f.value);
+  const whitePoint = s.whitePoint ?? D50_WHITE;
   return {
     id: s.id, name: s.name, aspect: s.aspect, width: 1, height: 1, patches: s.fields, note: s.note,
-    neutrals, black, white,
+    neutrals, black, white, whitePoint,
     chromatic: idx.filter((i) => s.fields[i].kind === 'color'),
-    reference: full ? (space) => referenceSignals(s.fields, space) : null,
+    reference: full ? (space) => referenceSignals(s.fields, space, whitePoint) : null,
   };
 }
 
-/** Field values as signal in `space`: XYZ D50 → Bradford to the gamut white → linear RGB → curve. */
-export function referenceSignals(fields: FieldSpec[], space: Space): Rgb[] {
-  const g = GAMUTS[space.gamut], toRgb = inv3(rgbToXyzMatrix(g)), adapt = bradford(D50_WHITE, g.white);
-  return fields.map((f) => linearToSignal(mul3(toRgb, mul3(adapt, valueXyz(f.value!))), space.transfer, space.hlgLw) as Rgb);
+/** Field values as signal in `space`: XYZ (white `white`, default D50) → Bradford to the gamut white → linear RGB → curve. */
+export function referenceSignals(fields: FieldSpec[], space: Space, white: Xy = D50_WHITE): Rgb[] {
+  const g = GAMUTS[space.gamut], toRgb = inv3(rgbToXyzMatrix(g)), adapt = bradford(white, g.white);
+  return fields.map((f) => linearToSignal(mul3(toRgb, mul3(adapt, valueXyz(f.value!, white))), space.transfer, space.hlgLw) as Rgb);
 }
 
 export const CHARTS: Record<string, ChartDef> = Object.fromEntries(CHART_SPECS.map((s) => [s.id, deriveChart(s)]));

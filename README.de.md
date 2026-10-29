@@ -70,7 +70,7 @@ Tasten: `1`–`6` Layout · `Leertaste` Einfrieren bzw. Wiedergabe · `←`/`→
 - **Scopes**: Waveform (Luma, Farbe, RGB), RGB-/YRGB-/YCbCr-Parade, Vectorscope (auch nach Tonwert getrennt), HLS, CIE, Diamond, 3D-Farbvolumen, Histogramm, Sättigung über Luma, Kanal-Plot, Messwerte.
 - **Eingänge**: Kamera, Bildschirm, Datei (über die Brücke bis 16 bit, mit Transport), Ordner, RTSP, SRT, RTMP, NDI, DeckLink/UltraStudio, SDI-VANC, DaVinci Resolve.
 - **Richtig messen**: Y′CbCr unbeschnitten (Sub-Black, Super-White), EBU R 103, PQ/HLG in cd/m², Log-Kurven der Hersteller, CST und LUTs je Quelle, Skala in %, 8/10 bit, nits oder Blenden.
-- **Kameras abgleichen**: Referenzkamera mit Geisterspur, Farbtafel-Match mit ΔE und Matrixvorschlag, Hautton aller Kameras in einem Vectorscope, Drift-Wächter, Touch Shading über die [LZ Camera Bridge](https://github.com/larszu/lz-camera-bridge).
+- **Kameras abgleichen**: Referenzkamera mit Geisterspur, Farbtafel-Match mit ΔE und Matrixvorschlag, Hautton aller Kameras in einem Vectorscope, Drift-Wächter, Touch Shading über die [LZ Camera Bridge](https://github.com/larszu/lz-camera-bridge). Kamera-Farbabgleich, der die Kamera selbst nachstellt (Blackmagic REST, Panasonic- und Sony-CGI, Sony VISCA over IP in der Desktop-App, Bridge oder Anleitung), gegen eingebaute oder importierte Kartendefinitionen (JSON, lokal gespeichert).
 - **Im Betrieb**: Alarmrahmen je Panel mit Haltezeit, QC-Protokoll als CSV, Aufzeichnung mit Ringpuffer und synchroner Wiedergabe, Ausgabefenster für den zweiten Schirm, Steuerung über Companion.
 - **Dazu**: Testbilder (SMPTE, PLUGE, Zonenplatte, HDR, LED-Wand), Display-Kalibrierung, Lichtmesser, Uhr und Timecode, Audio mit Lautheit und A/V-Versatz.
 

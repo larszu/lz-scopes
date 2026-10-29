@@ -19,6 +19,8 @@ export default {
   'cm.ctlGuide': 'Guide mode (turn by hand)',
   'cm.ctlBmd': 'Blackmagic camera (REST API)',
   'cm.ctlBridge': 'Bridge camera {n}: {label}',
+  'cm.ctlPana': 'Panasonic camera (AW-CGI)',
+  'cm.ctlSony': 'Sony camera (CGI, white balance only)',
   'cm.bmdHost': 'Camera address, e.g. http://studio-camera.local',
   'cm.match': 'Match',
   'cm.cancel': 'Cancel',

@@ -20,6 +20,8 @@ export default {
   'cm.ctlGuide': 'Anleitungsmodus (von Hand drehen)',
   'cm.ctlBmd': 'Blackmagic-Kamera (REST-API)',
   'cm.ctlBridge': 'Bridge-Kamera {n}: {label}',
+  'cm.ctlPana': 'Panasonic-Kamera (AW-CGI)',
+  'cm.ctlSony': 'Sony-Kamera (CGI, nur Weißabgleich)',
   'cm.bmdHost': 'Adresse der Kamera, z. B. http://studio-camera.local',
   'cm.match': 'Abgleichen',
   'cm.cancel': 'Abbrechen',

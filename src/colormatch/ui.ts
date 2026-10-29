@@ -18,7 +18,7 @@ import { detectChart } from './detect';
 import { toFractions } from '../match/chart';
 import { defaultCorners, measureChart, summary, type Patches } from './measure';
 import { runMatch, type MatchCamera, type Stage, type Values } from './engine';
-import { BmdRestCamera, BridgeCamera, GuideCamera, GUIDE_PARAMS, type GuideChange } from './adapters';
+import { BmdRestCamera, BridgeCamera, PanasonicCamera, SonyCgiCamera, GuideCamera, GUIDE_PARAMS, type GuideChange } from './adapters';
 import { SimCamera, sceneOf } from './sim';
 
 export interface ColorMatchHost { sources: () => Source[]; link: CameraBridgeLink }
@@ -93,7 +93,7 @@ export function openColorMatch(host: ColorMatchHost) {
   }
 
   function controlOptions() {
-    const list: [string, string][] = [[SIM, t('cm.ctlSim')], ['guide', t('cm.ctlGuide')], ['bmd', t('cm.ctlBmd')]];
+    const list: [string, string][] = [[SIM, t('cm.ctlSim')], ['guide', t('cm.ctlGuide')], ['bmd', t('cm.ctlBmd')], ['pana', t('cm.ctlPana')], ['sony', t('cm.ctlSony')]];
     for (const c of host.link.cameras) list.push([`bridge:${c.cameraNumber}`, t('cm.ctlBridge', { n: c.cameraNumber, label: c.label })]);
     return list;
   }
@@ -102,7 +102,7 @@ export function openColorMatch(host: ColorMatchHost) {
     const rows = (multi ? targets : targets.slice(0, 1)).map((tg, i) => h('div', { class: 'cm-target' },
       h('label', { class: 'field' }, t('cm.source'), select(tg.source, srcOptions([[SIM, t('cm.ctlSim')]]), (v) => { tg.source = v; if (v === SIM) tg.control = SIM; renderRight(); })),
       tg.source === SIM ? '' : h('label', { class: 'field' }, t('cm.control'), select(tg.control, controlOptions(), (v) => { tg.control = v; renderRight(); })),
-      tg.control === 'bmd' && tg.source !== SIM ? textInput(tg.host, (v) => { tg.host = v; }, { placeholder: t('cm.bmdHost'), mono: true }) : '',
+      ['bmd', 'pana', 'sony'].includes(tg.control) && tg.source !== SIM ? textInput(tg.host, (v) => { tg.host = v; }, { placeholder: t('cm.bmdHost'), mono: true }) : '',
       multi && targets.length > 1 ? button(t('cm.removeTarget'), () => { targets.splice(i, 1); renderRight(); }, { variant: 'ghost' }) : '',
     ));
     const done = targets.some((x) => x.result);
@@ -143,6 +143,8 @@ export function openColorMatch(host: ColorMatchHost) {
     if (sim) return sim;
     if (tg.control === 'guide') return new GuideCamera(GUIDE_PARAMS, guideAsk);
     if (tg.control === 'bmd') return new BmdRestCamera(tg.host);
+    if (tg.control === 'pana') return new PanasonicCamera(tg.host);
+    if (tg.control === 'sony') return new SonyCgiCamera(tg.host);
     const n = Number(tg.control.split(':')[1]);
     return new BridgeCamera(host.link, n, host.link.cameras.find((c) => c.cameraNumber === n)?.mode ?? '');
   }

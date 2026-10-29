@@ -269,6 +269,10 @@ export class Source {
     this.gamutCache = { key, set, at: now, v };
     return v;
   }
+  /** The last share counted for `target` (by the CIE panel), without reading the frame. */
+  gamutOutsideCached(target: GamutId): GamutShare | null {
+    return this.gamutCache.set === `${target}:${this.gamut}:${this.transfer}:${this.hlgLw}` ? this.gamutCache.v : null;
+  }
   private neutral: { key: string; v: NeutralCast | null } = { key: '', v: null };
   /** Mean cast of the near-neutral pixels (minmax.ts), once per frame and setting. */
   neutralCast(threshold: number, lo: number, hi: number): NeutralCast | null {

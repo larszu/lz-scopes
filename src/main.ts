@@ -2223,7 +2223,11 @@ function execute(c: Command): unknown {
         i = typeof c.pattern === 'number' ? c.pattern - 1 : PATTERNS.findIndex((p) => p.id === c.pattern || p.name.toLowerCase() === low);
         if (!PATTERNS[i]) throw new Error(`Test pattern ${c.pattern} does not exist`);
       } else i = (i + (c.cmd === 'pattern.next' ? 1 : -1) + PATTERNS.length) % PATTERNS.length;
-      s.pattern.id = PATTERNS[i].id; save(); s.startPattern(); renderSources();
+      // selecting the pattern that is already running changes nothing. Restarting it would
+      // redraw the canvas, and the first readback of a new pattern canvas waits for the GPU –
+      // under software WebGL for seconds. A client that repeats the command because the window
+      // was busy then kept it busy for good.
+      if (s.pattern.id !== PATTERNS[i].id || s.status !== 'live') { s.pattern.id = PATTERNS[i].id; save(); s.startPattern(); renderSources(); }
       return { pattern: PATTERNS[i].id, name: PATTERNS[i].name };
     }
     case 'output.open': {
@@ -2385,7 +2389,9 @@ function controlState() {
     // share of the active source outside the target gamut of an open CIE panel (#181)
     outside: (() => {
       const cie = state.panels.find((p) => p.scope === 'cie' && p.gamutShare !== false);
-      const g = act && cie ? act.gamutOutside(cie.gamutTarget ?? '709') : null;
+      // only what the CIE panel has already counted: the state is built four times a second and
+      // after every command, and computing it here meant a pixel readback in the command path
+      const g = act && cie ? act.gamutOutsideCached(cie.gamutTarget ?? '709') : null;
       return g ? { gamut: cie!.gamutTarget ?? '709', share: pct(g.share), far: pct(g.far) } : null;
     })(),
     layoutName: state.layoutName || PRESETS[state.layout]?.label || '',

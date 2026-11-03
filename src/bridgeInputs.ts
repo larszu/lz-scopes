@@ -111,7 +111,8 @@ export function deckLinkButton(ui: BridgeUi): HTMLElement {
 export function deckLinkRow(s: Source, ui: BridgeUi): Node | null {
   if (!s.url.startsWith('decklink:')) return null;
   return row(
-    select(String(s.settings.deckLinkBits ?? 10), [['10', 'DeckLink 10 bit (v210)'], ['8', 'DeckLink 8 bit (UYVY)']], (v) => ui.upd({ deckLinkBits: Number(v) as 8 | 10, ...(v === '10' ? { depth: 16 as const } : {}) }, true), t('bridgeui.decklinkFormatTitle')),
+    // capture and transport together: 10 bit from the card needs the 16-bit transport, 8 bit is enough with 8
+    select(String(s.settings.deckLinkBits ?? 10), [['10', t('bridgeui.decklink10')], ['8', t('bridgeui.decklink8')]], (v) => ui.upd({ deckLinkBits: Number(v) as 8 | 10, depth: v === '10' ? 16 : 8, yuv: false }, true), t('bridgeui.decklinkFormatTitle')),
     inputSelect(s, ui),
     button(t('bridgeui.decklinkSetup'), async () => { const st = await deckLinkStatus(ui); if (st) openDeckLinkSetup(st, () => deckLinkStatus(ui)); else ui.hud(t('bridgeui.bridgeUnreachable')); },
       { small: true, variant: 'ghost', title: t('bridgeui.decklinkSetupTitle') }));

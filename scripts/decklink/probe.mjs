@@ -12,7 +12,7 @@ const http = arg('bridge', 'http://127.0.0.1:4192'), index = arg('index', '0'), 
 const st = await (await fetch(`${http}/api/decklink`)).json();
 console.log('devices:', JSON.stringify(st));
 const withAudio = !process.argv.includes('--no-audio');
-const q = new URLSearchParams({ url: `decklink:${index}`, depth: '16', ...(bits === '8' ? { pixel: '8' } : {}), ...(input ? { input } : {}), ...(withAudio ? { audio: '1' } : {}) });
+const q = new URLSearchParams({ url: `decklink:${index}`, depth: arg('depth', '16'), ...(bits === '8' ? { pixel: '8' } : {}), ...(input ? { input } : {}), ...(withAudio ? { audio: '1' } : {}) });
 const ws = new WebSocket(`${http.replace(/^http/, 'ws')}/stream?${q}`, { headers: { origin: http } });
 let frames = 0, firstFrame = 0, tc = null, vanc = 0, proto = 1, channels = 0;
 let samples = 0, nextIndex = null, gaps = 0, peaks = [], firstPts = null, framePts = [];

@@ -147,6 +147,7 @@ export default {
   'main.res.hTitle': 'Height in pixels (free)',
   'main.res.title': 'Resolution',
   'main.dev.default': 'Default device',
+  'main.dev.blackmagicHint': 'This is the Blackmagic card as a system camera: 8 bit, converted to RGB by macOS and the browser (matrix and levels not under LZ Scopes’ control), no sound, no timecode – so the scopes read it differently. For measuring use RTSP / Netz → DeckLink… (10 bit straight from the card).',
   'main.dev.title': 'Camera or USB capture device',
   'main.pick.title': 'Choose a window or screen',
   'main.pick.hint': 'Resolve: best put “Video Clean Feed” on a second screen and choose that – or choose the Resolve window, drag a frame around the viewer and use “Crop = frame”. Lightroom/Capture One the same way, or use the export folder as a “Folder” source.',

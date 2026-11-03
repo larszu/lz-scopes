@@ -30,6 +30,8 @@ lz-decklink --capture <index> [--bits 8|10] [--input sdi|hdmi|optical|component|
 lz-decklink --reference <index>       → {"ok":true,"hasReference":true,"referenceLocked":true,"referenceMode":{…},"timingOffsetPixels":0,…} (Genlock, #72)
 ```
 
+- Start im zuletzt erkannten Modus (`bmdDeckLinkStatusDetectedVideoInputMode`), sonst 1080i50.
+- Schreiben in einem eigenen Thread: ein noch nicht geschriebenes Bild wird durch das neuere ersetzt (`STAT` `decklink.skipped` je Sekunde, die Bridge zählt es als verworfen); Ton und Metadaten gehen nie verloren. Bilder ohne Zeilenauffüllung gehen ohne Kopie aus dem Treiberpuffer raus.
 - Formaterkennung (`bmdVideoInputEnableFormatDetection`): bei jedem Wechsel wird der Eingang neu geöffnet und ein neuer `INFO`-Datensatz geschickt. Geräte ohne Formaterkennung bleiben auf 1080i50. Ein Wechsel nur zwischen p und PsF bei gleicher Größe und Rate wird übergangen: Der Recorder 3G meldet bei 1080p25 über SDI mit jedem Bild abwechselnd 1080p25 und 1080PsF25.
 - `--input`: Eingangsbuchse nur für diesen Prozess (`bmdDeckLinkConfigVideoInputConnection`); ohne die Angabe gilt die Einstellung aus Desktop Video Setup. `--list` meldet die vorhandenen Buchsen (`inputs`) und die eingestellte (`input`).
 - Y′CbCr-Signale: `v210` (10 bit, Voreinstellung) oder `uyvy422` (8 bit) unverändert.

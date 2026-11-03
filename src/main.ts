@@ -239,6 +239,7 @@ try {
 // (command "setting", docs/control-api.md).
 
 const UNIT_OPTIONS = (): Option[] => [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', t('settings.scopes.nitsScene')], ['stop', t('settings.scopes.stop')]];
+const PARADE_SCOPES: ScopeType[] = ['parade', 'yrgb', 'wf-rgb'];
 const TINT_OPTIONS = (): Option[] => [['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]];
 const SET = {
   lang: { key: 'lang', kind: 'select', label: () => t('lang.label'), title: () => t('lang.title'), hint: () => t('lang.hint'),
@@ -469,7 +470,13 @@ function toggleFreeze() {
 function addSource(kind: SourceKind, name?: string, url = '', settings?: Partial<SourceSettings>) {
   const s = new Source(kind, name, settings);
   s.url = url;
-  s.onChange = () => { renderSources(); };
+  let wasLive = false;
+  s.onChange = () => {
+    const live = s.status === 'live';
+    if (live && !wasLive) deviceLive(s);
+    wasLive = live;
+    renderSources();
+  };
   sources.push(s);
   renderSources(); renderPanels(); save(); refreshMenu();
   return s;
@@ -477,6 +484,18 @@ function addSource(kind: SourceKind, name?: string, url = '', settings?: Partial
 
 // platform shells open stream sources through this hook (src/streamRoute.ts; iOS auto streams)
 streamRoute.bindAdder((url, name) => { const s = addSource('stream', name, url); s.connectStream(url, bridgeUrl()); });
+
+/**
+ * A capture device (DeckLink, NDI, capture card) just went live: the unpinned panels switch to it,
+ * and the test pattern closes – unless it is being output to a display right now (then it stays,
+ * only the panels switch). Once per connection; a later manual switch back is left alone.
+ */
+function deviceLive(s: Source) {
+  if (s.kind !== 'stream' || !/^(decklink|ndi|device):/.test(s.url)) return;
+  for (const q of state.panels) if (!q.pin) q.sourceId = s.id;
+  if (!liveOutputs().size) for (const p of sources.filter((x) => x.kind === 'pattern')) removeSource(p);
+  save(); renderPanels();
+}
 
 function removeSource(s: Source) {
   if (refState().sourceId === s.id) setRef({ sourceId: '' });
@@ -511,7 +530,7 @@ function renderSources() {
       const connect = () => { s.url = streamRoute.normalise(urlIn.value.trim()); urlIn.value = s.url; save(); s.connectStream(s.url, bridgeUrl()); };
       const bridgeUi: BridgeUi = {
         http: () => bridgeUrl().replace(/^ws/, 'http'), hud: alertHud, upd,
-        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (/^(decklink|ndi|folder|file):/.test(url)) s.settings.depth = 16; } connect(); renderSources(); },
+        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (/^(decklink|ndi|folder|file):/.test(url)) s.settings.depth = 16; if (url.startsWith('decklink:')) s.settings.deckLinkBits ??= 10; } connect(); renderSources(); },
       };
       card.append(
         row(urlIn),
@@ -829,7 +848,10 @@ function deviceRow(s: Source): Node {
   return row(select(s.deviceId, opts.length ? opts : [['', t('main.dev.default')]], (id) => {
     s.name = videoDevices.find((d) => d.deviceId === id)?.label.replace(/\s*\([0-9a-f:]+\)$/i, '').slice(0, 40) || s.name;
     s.startCapture('webcam', id).then(() => { refreshDevices().then(renderSources); });
-  }, t('main.dev.title')));
+  }, t('main.dev.title')),
+  // Desktop Video also offers the card as a macOS camera: 8 bit, converted by the system and the
+  // browser – the DeckLink path measures the signal itself (10 bit, sound, timecode)
+  /blackmagic|ultrastudio|decklink/i.test(videoDevices.find((d) => d.deviceId === s.deviceId)?.label ?? s.name) ? hint(t('main.dev.blackmagicHint')) : '');
 }
 
 /** Desktop app: choose a window or screen (thumbnails), e.g. DaVinci Resolve's viewer. */
@@ -962,7 +984,7 @@ function fillHead(v: PanelView) {
   const multi = sources.length > 1 && !isLight(p.scope) && p.scope !== 'tiles';
   lead.replaceChildren(...[
     select(p.scope, Object.entries(SCOPE_LABELS) as Option[], (val) => {
-      p.scope = val as ScopeType; p.view = undefined; if (val === 'vector' || val === 'hls' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
+      p.scope = val as ScopeType; p.view = undefined; if (val === 'vector' || val === 'hls' || val === 'cie') p.colorize = true; if (PARADE_SCOPES.includes(p.scope) && !p.paradeColor) p.paradeColor = 'source'; save(); fillHead(v); dock.setTitle(idx);
     }, '', { 'aria-label': t('ui.scope') }),
     multi && select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), t('panel.sourceTitle')),
     stageChip(p),
@@ -1357,6 +1379,7 @@ function panelSettings(p: PanelState): Node[] {
       row(t('panel.zebraLow'), slider(Math.round(state.zebraLow * 100), (v) => { state.zebraLow = v / 100; save(); }, { min: 0, max: 100, step: 1, reset: 0, number: true, unit: '%', title: t('panel.zebraLowTitle') }));
     }
     row(t('panel.clock'), checkbox(!!p.clockOverlay, t('panel.clockText'), (v) => { p.clockOverlay = v; save(); }, t('panel.clockTitle')));
+    row(t('panel.fps'), checkbox(!!p.fpsOverlay, t('panel.fpsText'), (v) => { p.fpsOverlay = v; save(); }, t('panel.fpsTitle')));
     global(SET.display);
     global(SET.hdrPreview);
     row(t('main.src.audio'), checkbox(p.audioBar !== false, t('panel.audioBar'), (v) => { p.audioBar = v; save(); refreshHeads(); }, t('panel.audioBarTitle')));

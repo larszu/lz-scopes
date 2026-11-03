@@ -307,6 +307,8 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
       ff.stdin.write(Buffer.from(payload));
     } else if (tag === 'STAT') {
       const m = helperText(payload);
+      // DeckLink helper: pictures replaced by newer ones while the pipe was full – counted, no status text
+      if (m.code === 'decklink.skipped') { helperDropped += Number(m.params?.n) || 0; return; }
       if (m.code === 'ndi.stats') {
         // NDI counters once a second: losses go into `dropped`; text only while pictures get lost
         const c = m.params ?? {};

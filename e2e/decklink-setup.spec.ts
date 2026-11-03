@@ -33,29 +33,43 @@ test('DeckLink… ohne Gerät: Einrichtungsschritte mit Haken, Erneut prüfen', 
   expect(errors).toEqual([]);
 });
 
-// With a real device (hand-run, #116): LZS_E2E_DECKLINK=1 npx playwright test -c e2e/playwright.config.ts decklink
-test.describe('real DeckLink device', () => {
-  test.skip(!process.env.LZS_E2E_DECKLINK, 'needs a DeckLink/UltraStudio with a signal on SDI');
+// Live device: by default a stand-in helper with 1080p25, 16-channel sound, timecode and real VANC
+// (test/fixtures/fake-decklink-live.mjs); with LZS_E2E_DECKLINK=1 the real card (hand-run, #116):
+//   LZS_E2E_DECKLINK=1 npx playwright test -c e2e/playwright.config.ts decklink
+test.describe('DeckLink device live', () => {
+  const real = !!process.env.LZS_E2E_DECKLINK;
   let r: App;
-  test.beforeAll(async () => { r = await launchApp({ lang: 'de' }); });
+  test.beforeAll(async () => { r = await launchApp({ lang: 'de', env: real ? {} : { LZS_DECKLINK_HELPER: join(ROOT, 'test/fixtures/fake-decklink-live.sh') } }); });
   test.afterAll(async () => { await r?.close(); });
-  test('DeckLink… connects the only device, SDI/HDMI choice on the card', async () => {
+  test('DeckLink… connects the only device: 10 bit, sound, test pattern closed, page stays responsive', async () => {
     const { page } = r;
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    expect((await r.state()).sources.some((x) => x.kind === 'pattern')).toBe(true);
     await page.locator('#add button', { hasText: 'RTSP / Netz' }).click();
-    const card = page.locator('#source-list .src').last();
-    await card.getByRole('button', { name: 'DeckLink…' }).click();
-    await expect.poll(async () => (await r.state()).sources.at(-1)?.status, { timeout: 30_000 }).toBe('live');
+    await page.locator('#source-list .src').last().getByRole('button', { name: 'DeckLink…' }).click();
+    await expect.poll(async () => (await r.state()).sources.find((x) => x.kind === 'stream')?.status, { timeout: 30_000 }).toBe('live');
+    // the test pattern closes by itself, every panel shows the device
+    await expect.poll(async () => (await r.state()).sources.map((x) => x.kind), { timeout: 10_000 }).toEqual(['stream']);
+    const card = page.locator('#source-list .src').first();
     await expect(card).toContainText('1920×1080');
-    // embedded sound arrives with the picture, without any further setting (fresh profile)
     await expect(card).toContainText('48 kHz');
-    const level = () => page.evaluate(() => {
-      const w = window as unknown as { lzs: { sources: () => { id: string }[]; source: (id: string) => { url: string; audio: { channels: number } | null } | null } };
-      const s = w.lzs.sources().map((x) => w.lzs.source(x.id)).find((x) => x?.url.startsWith('decklink:'));
-      return s?.audio?.channels ?? 0;
+    // 10 bit by default, adjustable on the card
+    await expect(card.locator('select', { has: page.locator('option', { hasText: 'DeckLink 8 bit' }) })).toHaveValue('10');
+    await expect(card.locator('select', { has: page.locator('option', { hasText: 'HDMI' }) })).toBeVisible();
+    // the page keeps answering while picture and 16 channels of sound arrive
+    const probe = () => page.evaluate(() => {
+      const w = window as unknown as { lzs: { sources: () => { id: string }[]; source: (id: string) => { audio: { channels: number } | null; settings: { depth: number } } | null } };
+      const x = w.lzs.source(w.lzs.sources()[0].id);
+      return { channels: x?.audio?.channels ?? 0, depth: x?.settings.depth };
     });
-    await expect.poll(level, { timeout: 15_000 }).toBe(16);
-    const input = card.locator('select', { has: page.locator('option', { hasText: 'HDMI' }) });
-    await expect(input).toBeVisible();
+    for (let i = 0; i < 5; i++) {
+      const t = Date.now();
+      expect(await probe()).toEqual({ channels: 16, depth: 16 });
+      expect(Date.now() - t).toBeLessThan(1000);
+      await page.waitForTimeout(500);
+    }
     await page.screenshot({ path: join(ROOT, 'test-results/e2e/decklink-live.png') });
+    expect(errors).toEqual([]);
   });
 });

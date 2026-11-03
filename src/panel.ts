@@ -124,6 +124,8 @@ export interface PanelState {
   rgc?: boolean;
   /** picture: compact time of day / source time code in the corner */
   clockOverlay?: boolean;
+  /** picture: video frame rate, display rate and dropped frames in the corner */
+  fpsOverlay?: boolean;
   /** light scopes (Opple Light Master, src/opple/scopes.ts) */
   light?: Partial<LightPanelOptions>;
   /** simulcast deviation map (simulcastPanel.ts): stages compared, colour scale */
@@ -611,6 +613,8 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
   }
   // clocks run: redraw at 25 Hz
   const tick = p.scope === 'clock' || (p.scope === 'picture' && p.clockOverlay) ? `|t${Math.floor(performance.now() / 40)}`
+    // frame-rate overlay: new numbers once a second
+    : p.scope === 'picture' && p.fpsOverlay ? `|f${src?.fps}:${src?.dropped}:${o.displayFps}`
     // QC log: new events, and the durations of active ones once a second
     : p.scope === 'genlock' ? `|g${Math.floor(Date.now() / 250)}`
     // simulcast map: chain settings of other stages can change without a new frame
@@ -643,8 +647,11 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
   return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}${tick}${alarm}|${bar}${abSig}${refSig}`;
 }
 
+// Traces in picture colour by default (waveforms, vectorscope, parade: source pixels); mono and
+// channel colours stay one click away in the panel settings.
 export const defaultPanel = (scope: ScopeType): PanelState => ({
-  scope, sourceId: '', gain: 1, colorize: scope === 'vector' || scope === 'vector3' || scope === 'hls' || scope === 'cie' || scope === 'cube' || scope === 'satlum' || scope === 'chplot', zoom: 1, picture: 'normal', hist: 'rgb', log: false,
+  scope, sourceId: '', gain: 1, colorize: true, zoom: 1, picture: 'normal', hist: 'rgb', log: false,
+  ...(['parade', 'yrgb', 'wf-rgb'].includes(scope) ? { paradeColor: 'source' as const } : {}),
 });
 
 const PARADE: ScopeType[] = ['parade', 'yrgb', 'wf-rgb'];
@@ -1003,6 +1010,7 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
       drawTextBox(ctx, frame.x + frame.w - 6, frame.y + 6, [...probeLines(src, probeRgb, p.unit ?? o.unit), ...deLines(src, probeRgb, o)], 'right');
     }
     if (o.frozen) drawTextBox(ctx, frame.x + 6, frame.y + 6, [t('panel.draw.frozen')]);
+    if (p.fpsOverlay) drawTextBox(ctx, frame.x + 6, frame.y + (o.frozen ? 30 : 6), [t('panel.draw.fps', { video: src.fps, shown: o.displayFps, dropped: src.dropped })]);
     if (p.clockOverlay) drawClockOverlay(ctx, clockOpts(p.clock), src, frame.x + frame.w - 6, frame.y + frame.h - 6);
     if (p.audioBar !== false && src.audio) drawAudioBar(ctx, src.audio, frame);
   } else if (p.scope === 'match') {

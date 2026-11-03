@@ -26,6 +26,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -44,13 +46,65 @@
 
 static std::mutex g_out;
 
-static void writeRecord(const char tag[4], const void* data, uint32_t len) {
+static void rawWrite(const char tag[4], const void* data, uint32_t len) {
   std::lock_guard<std::mutex> lock(g_out);
   uint8_t head[8];
   std::memcpy(head, tag, 4);
   head[4] = len & 0xff; head[5] = (len >> 8) & 0xff; head[6] = (len >> 16) & 0xff; head[7] = (len >> 24) & 0xff;
   if (fwrite(head, 1, 8, stdout) != 8 || (len && fwrite(data, 1, len, stdout) != len)) std::exit(0); // bridge closed the pipe
   fflush(stdout);
+}
+
+// During capture, records go through a writer thread: the driver hands out at most 12 buffers and
+// delivers them in order, so a callback blocked on a full pipe (bridge busy for a moment) would
+// build a queue of old pictures in the driver – up to 12 frames of extra latency that never drains
+// at 1×. Here the newest picture wins: an unwritten FRAM is replaced by the next one (counted in
+// g_skipped); sound, INFO, TIME, VANC are never dropped. Analysis of Desktop Video 16.5, #116.
+struct Record { char tag[4]; std::vector<uint8_t> data; IDeckLinkVideoInputFrame* frame = nullptr; const void* ptr = nullptr; uint32_t len = 0; };
+static std::mutex g_qLock;
+static std::condition_variable g_qCv;
+static std::deque<Record> g_queue;
+static std::atomic<bool> g_async{false};
+static std::atomic<uint32_t> g_skipped{0};
+
+static void enqueue(Record&& r) {
+  std::lock_guard<std::mutex> lock(g_qLock);
+  if (std::memcmp(r.tag, "FRAM", 4) == 0)
+    for (auto it = g_queue.begin(); it != g_queue.end(); ++it)
+      if (std::memcmp(it->tag, "FRAM", 4) == 0) { if (it->frame) it->frame->Release(); g_queue.erase(it); g_skipped++; break; }
+  g_queue.push_back(std::move(r));
+  g_qCv.notify_one();
+}
+
+static void writerLoop() {
+  for (;;) {
+    Record r;
+    {
+      std::unique_lock<std::mutex> lock(g_qLock);
+      g_qCv.wait(lock, [] { return !g_queue.empty(); });
+      r = std::move(g_queue.front());
+      g_queue.pop_front();
+    }
+    if (r.frame) { rawWrite(r.tag, r.ptr, r.len); r.frame->Release(); }
+    else rawWrite(r.tag, r.data.data(), (uint32_t)r.data.size());
+  }
+}
+
+static void writeRecord(const char tag[4], const void* data, uint32_t len) {
+  if (!g_async) return rawWrite(tag, data, len);
+  Record r;
+  std::memcpy(r.tag, tag, 4);
+  r.data.assign(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + len);
+  enqueue(std::move(r));
+}
+/** FRAM straight from the driver's buffer, without a copy: the frame stays referenced until written. */
+static void writeFrame(IDeckLinkVideoInputFrame* frame, const void* data, uint32_t len) {
+  if (!g_async) return rawWrite("FRAM", data, len);
+  frame->AddRef();
+  Record r;
+  std::memcpy(r.tag, "FRAM", 4);
+  r.frame = frame; r.ptr = data; r.len = len;
+  enqueue(std::move(r));
 }
 static void writeText(const char tag[4], const std::string& s) { writeRecord(tag, s.data(), (uint32_t)s.size()); }
 
@@ -251,7 +305,7 @@ class Capture : public IDeckLinkInputCallback {
     // v210 rows are 128-byte blocks per 48 px, UYVY rows 2 bytes per px – DeckLink uses exactly
     // these strides, so rows are copied unless the driver pads them further
     const long tight = pixel_ == bmdFormat10BitYUV ? ((w + 47) / 48) * 128 : w * 2;
-    if (row == tight) { writeRecord("FRAM", src, (uint32_t)(row * h)); return S_OK; }
+    if (row == tight) { writeFrame(frame, src, (uint32_t)(row * h)); return S_OK; }
     buf_.resize((size_t)tight * h);
     for (long y = 0; y < h; y++) std::memcpy(buf_.data() + y * tight, src + y * row, tight);
     writeRecord("FRAM", buf_.data(), (uint32_t)buf_.size());
@@ -514,19 +568,30 @@ static int capture(int index, bool tenBit, const std::string& input, int wantAud
   IDeckLinkProfileAttributes* attr = nullptr;
   if (d->QueryInterface(IID_IDeckLinkProfileAttributes, (void**)&attr) == S_OK) { attr->GetFlag(BMDDeckLinkSupportsInputFormatDetection, &detect); attr->Release(); }
 
-  // start with 1080i50 (or the first mode); format detection switches to the real signal
+  // start in the mode the driver last detected on this input (status 'dvim'/'dvff'; the
+  // "current input mode" status is only the stored setting), else 1080i50 or the first mode.
+  // Format detection still corrects it; starting right saves the restart after the first frames.
+  int64_t detected = 0, detectedFlags = 0;
+  IDeckLinkStatus* status = nullptr;
+  if (detect && d->QueryInterface(IID_IDeckLinkStatus, (void**)&status) == S_OK) {
+    if (status->GetInt(bmdDeckLinkStatusDetectedVideoInputMode, &detected) != S_OK) detected = 0;
+    if (status->GetInt(bmdDeckLinkStatusDetectedVideoInputFormatFlags, &detectedFlags) != S_OK) detectedFlags = 0;
+    status->Release();
+  }
   IDeckLinkDisplayModeIterator* modes = nullptr;
   IDeckLinkDisplayMode* start = nullptr;
   if (in->GetDisplayModeIterator(&modes) == S_OK) {
     IDeckLinkDisplayMode* m = nullptr;
+    int rank = -1; // 2 = detected, 1 = 1080i50, 0 = first
     while (modes->Next(&m) == S_OK) {
-      if (!start) { start = m; continue; }
-      if (m->GetDisplayMode() == bmdModeHD1080i50) { start->Release(); start = m; } else m->Release();
+      const int r = detected && (int64_t)m->GetDisplayMode() == detected ? 2 : m->GetDisplayMode() == bmdModeHD1080i50 ? 1 : 0;
+      if (r > rank) { if (start) start->Release(); start = m; rank = r; } else m->Release();
     }
     modes->Release();
   }
   if (!start) return fatal("decklink.noModes", "Device reports no video modes");
-  const BMDPixelFormat pf = tenBit ? bmdFormat10BitYUV : bmdFormat8BitYUV;
+  const bool rgbStart = detected && (detectedFlags & bmdDetectedVideoInputRGB444) && start->GetDisplayMode() == (BMDDisplayMode)detected;
+  const BMDPixelFormat pf = rgbStart ? bmdFormat10BitRGB : tenBit ? bmdFormat10BitYUV : bmdFormat8BitYUV;
   // embedded sound: 48 kHz, 32 bit, the largest of 16/8/2 channels the device takes (SDI carries 16)
   int64_t maxCh = 2;
   if (d->QueryInterface(IID_IDeckLinkProfileAttributes, (void**)&attr) == S_OK) { attr->GetInt(BMDDeckLinkMaximumAudioChannels, &maxCh); attr->Release(); }
@@ -543,9 +608,16 @@ static int capture(int index, bool tenBit, const std::string& input, int wantAud
   cb.setMode(start, pf);
   start->Release();
   if (!detect) writeText("STAT", "{\"code\":\"decklink.noDetect\",\"message\":\"Device without format detection – mode fixed to 1080i50\"}");
-  if (in->StartStreams() != S_OK) return fatal("decklink.startFailed", "Capture cannot be started");
-  // runs until the bridge closes stdout (writeRecord exits) or kills the process
-  for (;;) std::this_thread::sleep_for(std::chrono::seconds(1));
+  g_async = true;
+  std::thread(writerLoop).detach();
+  if (in->StartStreams() != S_OK) { g_async = false; return fatal("decklink.startFailed", "Capture cannot be started"); }
+  // runs until the bridge closes stdout (the writer exits) or kills the process; once a second
+  // it reports pictures the bridge did not take in time
+  for (;;) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    const uint32_t n = g_skipped.exchange(0);
+    if (n) writeText("STAT", "{\"code\":\"decklink.skipped\",\"message\":\"" + std::to_string(n) + " pictures skipped - bridge busy\",\"params\":{\"n\":" + std::to_string(n) + "}}");
+  }
 }
 
 int main(int argc, char** argv) {

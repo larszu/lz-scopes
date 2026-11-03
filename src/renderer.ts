@@ -138,8 +138,10 @@ bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
   float x = (float(p.x) + 0.5) / float(uSize.x);
   vec3 unit[3] = vec3[3](vec3(1.0, 0.18, 0.18), vec3(0.2, 1.0, 0.25), vec3(0.3, 0.45, 1.0));
   vec3 mono = uTint;
-  // the pixel's own colour, brightness normalised so dark pixels stay visible
-  vec3 srcCol = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
+  // the pixel's own colour, brightness normalised so dark pixels stay visible; black and
+  // near-black (no hue to show) become white instead of disappearing
+  float mx = max(rgb.r, max(rgb.g, rgb.b));
+  vec3 srcCol = mx > 0.002 ? clamp(rgb / mx, 0.0, 1.0) : vec3(1.0);
   col = mono;
   // only one band of the picture (#180): shadows, mids or highlights of the same frame
   if (Y < uLumaWin.x || Y > uLumaWin.y) return false;
@@ -152,7 +154,7 @@ bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
     col = skin ? srcCol : vec3(0.6); // skin in its source colour (hue and saturation unchanged)
   } else if (uMode == 0) {
     pos = vec2(x * 2.0 - 1.0, waveY(Y));
-    if (uColorize == 1) col = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
+    if (uColorize == 1) col = srcCol;
   } else if (uMode == 1 || uMode == 2) {
     if (uSec[ch] < 0) return false;
     float v = ch == 0 ? rgb.r : ch == 1 ? rgb.g : rgb.b;
@@ -202,7 +204,7 @@ bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
     if (uColorize == 1) col = srcCol;
   } else if (uMode == 5) {
     pos = vec2(cb, cr) * 2.0 * 0.9 * uZoom;
-    if (uColorize == 1) col = clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0);
+    if (uColorize == 1) col = srcCol;
   } else {
     vec3 XYZ = uToXYZ * toLinear(rgb);
     float s = uCieUv == 1 ? XYZ.x + 15.0 * XYZ.y + 3.0 * XYZ.z : XYZ.x + XYZ.y + XYZ.z;
@@ -210,7 +212,7 @@ bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
     // CIE 1931 xy or CIE 1976 u'v' = (4X, 9Y)/(X + 15Y + 3Z)
     vec2 xy = uCieUv == 1 ? vec2(4.0 * XYZ.x, 9.0 * XYZ.y) / s : XYZ.xy / s;
     pos = vec2((xy.x - uCie.x) / (uCie.y - uCie.x), (xy.y - uCie.z) / (uCie.w - uCie.z)) * 2.0 - 1.0;
-    col = uColorize == 1 ? clamp(rgb / max(max(rgb.r, max(rgb.g, rgb.b)), 0.05), 0.0, 1.0) : mono;
+    col = uColorize == 1 ? srcCol : mono;
   }
   pos = pos * uPanZoom.x + uPanZoom.yz;
   if (uRoiCount > 0) {

@@ -5,7 +5,8 @@ import { TILE_HEAD, tileAspect, tileGrid } from '../src/tiles';
 // Camera comparison (src/ghost.ts and friends), driven through the control API and the panel ⚙.
 
 let a: App;
-test.beforeAll(async () => { a = await launchApp(); });
+// the ghost must differ from the live trace: green mono trace, not the picture-colour standard
+test.beforeAll(async () => { a = await launchApp(); expectOk(await a.control({ cmd: 'setting', key: 'tint', value: 'green' })); });
 test.afterAll(async () => { await a?.close(); });
 // a stray key press (space) on the visible window freezes every source: start each test live
 test.beforeEach(async () => { expectOk(await a.control({ cmd: 'freeze', mode: 'off' })); });
@@ -43,7 +44,7 @@ test('Referenzkamera eingefroren: Geisterspur in Magenta am alten Pegel', async 
   const ghost = await until(async () => { const c = await traceColour(0.5); return c[0] > 60 && c[2] > 60 && c[1] < c[0] * 0.7 ? c : false; }, 60_000, 'Magenta-Spur bei 50 %')
     .catch(async (e) => { console.log('Farbe bei 50 %', await traceColour(0.5)); throw e; });
   expect(ghost[0]).toBeGreaterThan(ghost[1]);
-  // the live trace is in the mono tint (green by default), not magenta
+  // the live trace is in the mono tint (green here), not magenta
   const live = await traceColour(0);
   expect(live[1]).toBeGreaterThan(live[0]);
 });

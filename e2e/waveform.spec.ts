@@ -2,7 +2,8 @@ import { expect, test } from '@playwright/test';
 import { type App, expectOk, launchApp, singlePanel, traceNear, until, waveLevels, waveProfile } from './app';
 
 let a: App;
-test.beforeAll(async () => { a = await launchApp(); });
+// trace brightness is compared across bars: white trace, not the picture-colour standard
+test.beforeAll(async () => { a = await launchApp(); expectOk(await a.control({ cmd: 'setting', key: 'tint', value: 'white' })); });
 test.afterAll(async () => { await a?.close(); });
 
 test('Graustufen 11 → Waveform-Pegel an bekannten Positionen', async () => {

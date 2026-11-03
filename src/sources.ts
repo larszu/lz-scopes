@@ -59,6 +59,8 @@ export interface SourceSettings {
   decodeRange?: 'auto' | 'tv' | 'pc';
   /** DeckLink helper: 10 bit (v210) or 8 bit (UYVY) capture */
   deckLinkBits?: 8 | 10;
+  /** DeckLink input connector ('sdi', 'hdmi' …); unset = as set in Desktop Video Setup */
+  deckLinkInput?: string;
   /** bridge streams: 'h264' = compressed 8-bit transport for remote bridges, decoded in the browser (#16) */
   codec?: 'raw' | 'h264';
   /** low-latency mode (docs/research/low-latency.md): undefined = follow the global switch */
@@ -128,6 +130,7 @@ export function bridgeInputParams(url: string, set: SourceSettings): Record<stri
     if (set.device?.pixfmt) q.pixfmt = set.device.pixfmt;
   }
   if (url.startsWith('decklink:') && set.deckLinkBits === 8) q.pixel = '8';
+  if (url.startsWith('decklink:') && set.deckLinkInput) q.input = set.deckLinkInput;
   if (set.decodeMatrix && set.decodeMatrix !== 'auto') q.matrix = set.decodeMatrix;
   if (set.decodeRange && set.decodeRange !== 'auto') q.range = set.decodeRange;
   return q;

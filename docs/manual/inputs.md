@@ -114,10 +114,30 @@ An **RTSP / Netz** source has these buttons below the address field:
 ![Stream card with Gerät…, DeckLink…, NDI®…, Ordner…](img/stream-card.png)
 
 - **Gerät…** (device): cards that appear as system devices (USB capture, Magewell, Blackmagic with WDM or AVFoundation driver). The bridge takes the deepest raw format the card offers. Mode, frame rate and pixel format can be fixed.
-- **DeckLink…**: Blackmagic DeckLink and UltraStudio through the DeckLink helper, with 10 bit, format detection and timecode. Needs Blackmagic Desktop Video. If the helper or the driver is missing, the app says so. Not yet tested with real hardware.
+- **DeckLink…**: Blackmagic DeckLink and UltraStudio through the DeckLink helper, with 10 bit, embedded sound (up to 16 channels, 48 kHz), format detection, timecode and SDI ancillary data. The sound goes to the audio meters with timestamps, so the A/V offset can be measured. Needs Blackmagic Desktop Video (see *Setting up Blackmagic Desktop Video*). With one device it connects straight away; with several, a list appears. If the helper, the driver or the device is missing, the setup steps open.
 - **NDI®…**: NDI sources on the network. Needs the NDI runtime from [ndi.video](https://ndi.video/). LZ Scopes does not ship it.
 - **Ordner…**: see above.
 
 Use **Wandlung** (conversion) and **Pegel** (levels) to fix matrix and range when a card labels its signal wrongly or not at all.
+
+### Setting up Blackmagic Desktop Video
+
+**DeckLink…** opens these steps when no device can be used yet; **Einrichtung …** (setup) on a DeckLink source opens them at any time. Done steps are ticked, **Erneut prüfen** (check again) asks the bridge again and connects as soon as a device is found.
+
+![Setup steps for DeckLink / UltraStudio](img/decklink-setup.png)
+
+**macOS** (checked with an UltraStudio Recorder 3G on Thunderbolt, macOS 26, Desktop Video 16.5):
+
+1. On [blackmagicdesign.com/support](https://www.blackmagicdesign.com/support/family/capture-and-playback) choose **Desktop Video** (latest version) → **Mac OS** → *Download only* or *Register & Download*.
+2. Open the zip, open the `.dmg`, run **Install Desktop Video … .pkg** and enter the administrator password.
+3. **System Settings → General → Login Items & Extensions → Driver Extensions** (ⓘ): switch on every Blackmagic entry, above all **BlackmagicIO**, and confirm with the password. Usually no restart is needed; if the device still does not show up, restart once.
+4. If **BlackmagicIO** is not in the list: open **Applications → Blackmagic Desktop Video → Desktop Video Setup** once. That registers the device driver. Quit System Settings (⌘Q), open it again and switch the entry on.
+5. Reconnect the UltraStudio once. If Desktop Video Setup offers a firmware update, install it and reconnect.
+
+The bridge reads the state of the driver extension itself (`systemextensionsctl list`), so the dialog shows whether it is missing, waiting for approval or enabled.
+
+**Windows:** install Desktop Video as administrator and restart. **Linux:** install the `desktopvideo` package for the distribution (it builds the kernel module) and restart.
+
+On a source with more than one input (UltraStudio Recorder 3G: SDI and HDMI) a list chooses the connector; without a choice the input set in Desktop Video Setup is used. After a change the device needs about a second to lock onto the signal.
 
 NDI® is a registered trademark of Vizrt NDI AB.

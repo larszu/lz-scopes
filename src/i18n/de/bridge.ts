@@ -57,6 +57,7 @@ export default {
   'bridge.decklink.noDetect': 'Gerät ohne Formaterkennung – Modus fest auf 1080i50',
   'bridge.decklink.noReference': 'Helfer lieferte keinen Referenzstatus',
   'bridge.decklink.startFailed': 'Aufnahme lässt sich nicht starten',
+  'bridge.decklink.inputConnector': 'Eingang {input} gibt es an diesem Gerät nicht',
 
   'bridge.ndi.noHelper': 'NDI-Helfer nicht gebaut (npm run build:helpers)',
   'bridge.ndi.unavailable': 'NDI nicht verfügbar – Helfer nicht gebaut (npm run build:helpers)',

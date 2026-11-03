@@ -540,35 +540,8 @@ export class PtsTracker {
   videoPts(n) { const v = this.video.get(n); if (v !== undefined) this.video.delete(n); return v; }
 }
 
-/** 16-byte header of proto 2: 4 ASCII bytes, uint32, float64 (little endian). */
-export function packetHeader(magic, count, value) {
-  const b = Buffer.alloc(16);
-  b.write(magic, 0, 'ascii'); b.writeUInt32LE(count >>> 0, 4); b.writeDoubleLE(value, 8);
-  return b;
-}
-
-/** Splits a raw f32le stream into 20 ms packets with an LZA1 header; never drops. */
-export class AudioPacketizer {
-  constructor(sampleRate, channels, send) {
-    this.frameBytes = channels * 4;
-    this.packetFrames = Math.max(1, Math.round(sampleRate * 0.02));
-    this.send = send; this.pending = []; this.bytes = 0; this.index = 0; this.packets = 0;
-  }
-  push(chunk) {
-    this.pending.push(chunk); this.bytes += chunk.length;
-    const want = this.packetFrames * this.frameBytes;
-    while (this.bytes >= want) this.emit(want);
-  }
-  flush() { const b = this.bytes - (this.bytes % this.frameBytes); if (b > 0) this.emit(b); }
-  emit(len) {
-    const all = this.pending.length === 1 ? this.pending[0] : Buffer.concat(this.pending, this.bytes);
-    const data = all.subarray(0, len), rest = all.subarray(len);
-    this.pending = rest.length ? [rest] : []; this.bytes = rest.length;
-    const n = len / this.frameBytes;
-    this.send(Buffer.concat([packetHeader('LZA1', n, this.index), data]));
-    this.index += n; this.packets++;
-  }
-}
+export { packetHeader, AudioPacketizer } from './proto2.mjs';
+import { packetHeader, AudioPacketizer } from './proto2.mjs';
 
 async function startStream(ws, params) {
   const url = params.get('url') ?? '';
@@ -1092,7 +1065,33 @@ export async function deckLinkStatus() {
   const bin = helperPath('lz-decklink');
   if (!bin) return { available: false, helper: false, devices: [], ...field('error', bmsg('decklink.noHelper', 'DeckLink helper not built (helpers/decklink, DeckLink SDK needed)')) };
   const r = await helperList(bin);
-  return { available: !!r.ok, helper: true, devices: r.devices ?? [], ...(r.ok ? {} : field('error', r.error ? { message: r.error, code: r.code } : bmsg('decklink.noDriver', 'Desktop Video not installed'))) };
+  // macOS: Desktop Video installs, but the device driver only runs once the user approves it (setup dialog)
+  const driverExtension = process.platform === 'darwin' && !(r.devices ?? []).length ? await macDriverExtension() : undefined;
+  return { available: !!r.ok, helper: true, platform: process.platform, devices: r.devices ?? [], ...(driverExtension ? { driverExtension } : {}), ...(r.ok ? {} : field('error', r.error ? { message: r.error, code: r.code } : bmsg('decklink.noDriver', 'Desktop Video not installed'))) };
+}
+
+/**
+ * State of Blackmagic's device driver (DriverKit extension com.blackmagic-design.BlackmagicIO.DExt)
+ * from `systemextensionsctl list`: 'enabled', 'waiting' (installed, approval in System Settings
+ * missing), 'missing' (not registered yet – Desktop Video Setup registers it) or 'unknown'.
+ */
+export function parseDriverExtension(text) {
+  const line = String(text).split('\n').find((l) => l.includes('com.blackmagic-design.BlackmagicIO.DExt'));
+  if (!line) return 'missing';
+  if (/\[activated enabled\]/.test(line)) return 'enabled';
+  if (/waiting for user/.test(line)) return 'waiting';
+  return 'unknown';
+}
+function macDriverExtension() {
+  return new Promise((ok) => {
+    let out = '';
+    let p;
+    try { p = spawn('/usr/bin/systemextensionsctl', ['list'], { stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return ok('unknown'); }
+    const timer = setTimeout(() => p.kill('SIGKILL'), 3000);
+    p.stdout.on('data', (d) => { out += d; });
+    p.on('error', () => { clearTimeout(timer); ok('unknown'); });
+    p.on('close', () => { clearTimeout(timer); ok(out ? parseDriverExtension(out) : 'unknown'); });
+  });
 }
 
 /** Reference (genlock) status of one DeckLink device: `lz-decklink --reference <n>` (#72), cached 1 s. */
@@ -1121,8 +1120,11 @@ function startDeckLink(ws, params, url) {
   if (!ffmpeg) return fail(ws, bmsg('ffmpeg.missing', 'ffmpeg not found'));
   const index = url.slice('decklink:'.length);
   const pixel = params.get('pixel') === '8' ? '8' : '10';
+  // input connector (sdi, hdmi …); without it the one set in Desktop Video Setup
+  const input = /^[a-z]{3,10}$/.test(params.get('input') ?? '') ? ['--input', params.get('input')] : [];
   startHelperStream(ws, {
-    bin, args: ['--capture', index, '--bits', pixel], label: 'DeckLink', params,
+    // embedded sound (up to 16 channels) when the page asks for it (frame protocol 2)
+    bin, args: ['--capture', index, '--bits', pixel, ...input, '--audio', params.get('audio') === '1' ? '16' : '0'], label: 'DeckLink', params, audio: true,
     ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions, now: clockNow, recorder: helperRecorder(ws, url, ffmpeg) },
   });
 }

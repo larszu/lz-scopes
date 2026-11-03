@@ -114,10 +114,30 @@ In einer Quelle **RTSP / Netz** stehen unter dem Adressfeld diese Knöpfe:
 ![Stream-Karte mit Gerät…, DeckLink…, NDI®…, Ordner…](img/stream-card.png)
 
 - **Gerät…**: Karten, die sich als Systemgerät melden (USB-Capture, Magewell, Blackmagic mit WDM- oder AVFoundation-Treiber). Die Bridge nimmt das Rohformat mit der höchsten Bittiefe, das die Karte anbietet. Modus, Bildrate und Pixelformat lassen sich fest wählen.
-- **DeckLink…**: Blackmagic DeckLink und UltraStudio über den DeckLink-Helfer, mit 10 bit, Formaterkennung und Timecode. Dafür muss Blackmagic Desktop Video installiert sein. Fehlt der Helfer oder der Treiber, sagt die App das. Mit echter Hardware ist dieser Weg noch nicht geprüft.
+- **DeckLink…**: Blackmagic DeckLink und UltraStudio über den DeckLink-Helfer, mit 10 bit, eingebettetem Ton (bis 16 Kanäle, 48 kHz), Formaterkennung, Timecode und SDI-Zusatzdaten. Der Ton geht mit Zeitstempeln an die Audiomessung, der A/V-Versatz lässt sich also messen. Dafür muss Blackmagic Desktop Video installiert sein (siehe *Blackmagic Desktop Video einrichten*). Mit einem Gerät verbindet die App sofort, bei mehreren erscheint eine Liste. Fehlt der Helfer, der Treiber oder das Gerät, öffnen sich die Einrichtungsschritte.
 - **NDI®…**: NDI-Quellen im Netz. Dafür muss die NDI-Runtime von [ndi.video](https://ndi.video/) installiert sein. LZ Scopes liefert sie nicht mit.
 - **Ordner…**: siehe oben.
 
 Unter **Wandlung** und **Pegel** stellst du Matrix und Wertebereich fest ein, wenn eine Karte ihr Signal falsch oder gar nicht kennzeichnet.
+
+### Blackmagic Desktop Video einrichten
+
+**DeckLink…** öffnet diese Schritte, solange kein Gerät nutzbar ist; **Einrichtung …** an einer DeckLink-Quelle öffnet sie jederzeit. Erledigte Schritte sind abgehakt, **Erneut prüfen** fragt die Bridge neu und verbindet, sobald ein Gerät gefunden ist.
+
+![Einrichtungsschritte für DeckLink / UltraStudio](img/decklink-setup.png)
+
+**macOS** (geprüft mit einem UltraStudio Recorder 3G an Thunderbolt, macOS 26, Desktop Video 16.5):
+
+1. Auf [blackmagicdesign.com/support](https://www.blackmagicdesign.com/support/family/capture-and-playback) **Desktop Video** (neueste Version) → **Mac OS** → *Nur herunterladen* bzw. *Registrieren & herunterladen* wählen.
+2. Zip öffnen, `.dmg` öffnen, **Install Desktop Video … .pkg** ausführen und das Administratorpasswort eingeben.
+3. **Systemeinstellungen → Allgemein → Anmeldeobjekte & Erweiterungen → Treibererweiterungen** (ⓘ): alle Blackmagic-Einträge einschalten, vor allem **BlackmagicIO**, und mit dem Passwort bestätigen. In der Regel ohne Neustart; findet die App das Gerät danach nicht, einmal neu starten.
+4. Steht **BlackmagicIO** nicht in der Liste: einmal **Programme → Blackmagic Desktop Video → Desktop Video Setup** öffnen. Das meldet den Gerätetreiber an. Systemeinstellungen beenden (⌘Q), neu öffnen und den Eintrag einschalten.
+5. Das UltraStudio einmal ab- und wieder anstecken. Bietet Desktop Video Setup ein Firmware-Update an, installieren und neu anstecken.
+
+Die Bridge liest den Zustand der Treibererweiterung selbst (`systemextensionsctl list`); der Dialog zeigt also, ob sie fehlt, auf die Freigabe wartet oder eingeschaltet ist.
+
+**Windows:** Desktop Video als Administrator installieren und neu starten. **Linux:** das Paket `desktopvideo` der Distribution installieren (es baut das Kernelmodul) und neu starten.
+
+Hat das Gerät mehrere Eingänge (UltraStudio Recorder 3G: SDI und HDMI), wählt eine Liste an der Quelle die Buchse; ohne Wahl gilt der in Desktop Video Setup eingestellte Eingang. Nach einem Wechsel braucht das Gerät etwa eine Sekunde, bis es auf das Signal einrastet.
 
 NDI® is a registered trademark of Vizrt NDI AB.

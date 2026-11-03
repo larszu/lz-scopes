@@ -58,6 +58,7 @@ export default {
   'bridge.decklink.noDetect': 'Device without format detection – mode fixed to 1080i50',
   'bridge.decklink.noReference': 'Helper returned no reference status',
   'bridge.decklink.startFailed': 'Capture cannot be started',
+  'bridge.decklink.inputConnector': 'Input {input} not available on this device',
 
   'bridge.ndi.noHelper': 'NDI helper not built (npm run build:helpers)',
   'bridge.ndi.unavailable': 'NDI not available – helper not built (npm run build:helpers)',

@@ -52,7 +52,7 @@ import { greenSettings, matchPanelSettings, targetEditor, type MatchUi } from '.
 import { openChartCorners } from './match/chartUi';
 import { bindBridgeField, normaliseBridge } from './bridgeField';
 import { streamRoute } from './streamRoute';
-import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
+import { addDeckLink, deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
 import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
 import { DEFAULT_LOW_LATENCY, LL_STATS, LL_WIDTHS, describeLowLatency, effectiveWidth, type LowLatencyConfig } from './lowLatency';
@@ -129,7 +129,7 @@ const STORE_KEY = 'lz-scopes.v1';
 
 function load(): Persisted {
   const base: Persisted = {
-    layout: 'lc', panels: DEFAULT_SCOPES.map(panel), unit: 'percent', tint: 'green', falsePreset: 'ARRI', zebra: 0.95, zebraLow: 0,
+    layout: 'lc', panels: DEFAULT_SCOPES.map(panel), unit: 'percent', tint: 'picture', falsePreset: 'ARRI', zebra: 0.95, zebraLow: 0,
     maxSamples: 1_000_000, bridge: '', sidebar: true, skin: { ...DEFAULT_SKIN }, display: 'auto', theme: DEFAULT_THEME, targets: [], scenes: [defaultScene()], activeScene: '', layoutName: '',
     sources: [{ kind: 'pattern', name: t('main.pattern.title'), url: '', settings: { transfer: 'auto', colorspace: 'auto', width: 960, fps: 0, depth: 8, transport: 'tcp' }, pattern: { id: 'smpte75-lz', width: 1920, height: 1080, label: '' } }],
   };
@@ -239,7 +239,7 @@ try {
 // (command "setting", docs/control-api.md).
 
 const UNIT_OPTIONS = (): Option[] => [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', t('settings.scopes.nitsScene')], ['stop', t('settings.scopes.stop')]];
-const TINT_OPTIONS = (): Option[] => [['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]];
+const TINT_OPTIONS = (): Option[] => [['picture', t('settings.scopes.pictureColour')], ['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]];
 const SET = {
   lang: { key: 'lang', kind: 'select', label: () => t('lang.label'), title: () => t('lang.title'), hint: () => t('lang.hint'),
     options: () => [['auto', t('lang.auto', { lang: LANG_NAMES[systemLang()] })], ...LANGS.map((l) => [l, LANG_NAMES[l]] as Option)],
@@ -469,7 +469,13 @@ function toggleFreeze() {
 function addSource(kind: SourceKind, name?: string, url = '', settings?: Partial<SourceSettings>) {
   const s = new Source(kind, name, settings);
   s.url = url;
-  s.onChange = () => { renderSources(); };
+  let wasLive = false;
+  s.onChange = () => {
+    const live = s.status === 'live';
+    if (live && !wasLive) deviceLive(s);
+    wasLive = live;
+    renderSources();
+  };
   sources.push(s);
   renderSources(); renderPanels(); save(); refreshMenu();
   return s;
@@ -477,6 +483,18 @@ function addSource(kind: SourceKind, name?: string, url = '', settings?: Partial
 
 // platform shells open stream sources through this hook (src/streamRoute.ts; iOS auto streams)
 streamRoute.bindAdder((url, name) => { const s = addSource('stream', name, url); s.connectStream(url, bridgeUrl()); });
+
+/**
+ * A capture device (DeckLink, NDI, capture card) just went live: the unpinned panels switch to it,
+ * and the test pattern closes – unless it is being output to a display right now (then it stays,
+ * only the panels switch). Once per connection; a later manual switch back is left alone.
+ */
+function deviceLive(s: Source) {
+  if (s.kind !== 'stream' || !/^(decklink|ndi|device):/.test(s.url)) return;
+  for (const q of state.panels) if (!q.pin) q.sourceId = s.id;
+  if (!liveOutputs().size) for (const p of sources.filter((x) => x.kind === 'pattern')) removeSource(p);
+  save(); renderPanels();
+}
 
 function removeSource(s: Source) {
   if (refState().sourceId === s.id) setRef({ sourceId: '' });
@@ -511,7 +529,7 @@ function renderSources() {
       const connect = () => { s.url = streamRoute.normalise(urlIn.value.trim()); urlIn.value = s.url; save(); s.connectStream(s.url, bridgeUrl()); };
       const bridgeUi: BridgeUi = {
         http: () => bridgeUrl().replace(/^ws/, 'http'), hud: alertHud, upd,
-        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (/^(decklink|ndi|folder|file):/.test(url)) s.settings.depth = 16; } connect(); renderSources(); },
+        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (/^(decklink|ndi|folder|file):/.test(url)) s.settings.depth = 16; if (url.startsWith('decklink:')) s.settings.deckLinkBits ??= 10; } connect(); renderSources(); },
       };
       card.append(
         row(urlIn),
@@ -829,7 +847,11 @@ function deviceRow(s: Source): Node {
   return row(select(s.deviceId, opts.length ? opts : [['', t('main.dev.default')]], (id) => {
     s.name = videoDevices.find((d) => d.deviceId === id)?.label.replace(/\s*\([0-9a-f:]+\)$/i, '').slice(0, 40) || s.name;
     s.startCapture('webcam', id).then(() => { refreshDevices().then(renderSources); });
-  }, t('main.dev.title')));
+  }, t('main.dev.title')),
+  // Desktop Video also offers the card as a macOS camera: 8 bit, converted by the system and the
+  // browser – the DeckLink path measures the signal itself (10 bit, sound, timecode)
+  /blackmagic|ultrastudio|decklink/i.test(videoDevices.find((d) => d.deviceId === s.deviceId)?.label ?? s.name)
+    ? [hint(t('main.dev.blackmagicHint')), button(t('main.dev.useDecklink'), () => void addDeckLinkSource(s), { variant: 'primary', small: true })] : '');
 }
 
 /** Desktop app: choose a window or screen (thumbnails), e.g. DaVinci Resolve's viewer. */
@@ -858,12 +880,23 @@ function addResolve() {
   s.connectStream('resolve:', bridgeUrl());
 }
 
+/** DeckLink/UltraStudio through the bridge's helper: 10 bit (v210) into the 16-bit transport, with sound. */
+function addDeckLinkSource(replace?: Source) {
+  return addDeckLink(() => bridgeUrl().replace(/^ws/, 'http'), alertHud, (url, name) => {
+    if (replace) removeSource(replace);
+    state.sidebar = true; applySidebar();
+    const s = addSource('stream', name, url, { depth: 16, deckLinkBits: 10 });
+    s.connectStream(url, bridgeUrl());
+  });
+}
+
 /** Add a source of a kind (sidebar buttons and Quellen menu). */
 function addSourceOfKind(kind: string) {
   switch (kind) {
     case 'pattern': return void startLocal(addSource('pattern', t('main.src.patternN', { n: sources.length + 1 })));
     case 'stream': { state.sidebar = true; applySidebar(); save(); return void addSource('stream', `Stream ${sources.length + 1}`); }
     case 'resolve': return addResolve();
+    case 'decklink': return addDeckLinkSource();
     case 'webcam': case 'screen': case 'file': case 'folder': return void startLocal(addSource(kind));
     // the browser path on purpose (#191): 8 bit, but with crop, ROI and the clip's own sound
     case 'file-video': { const s = addSource('file'); s.settings.fileRoute = 'video'; return void startLocal(s); }
@@ -877,7 +910,7 @@ function renderAddMenu() {
   h('span', {}, t('main.add.source')),
   ...([
     ['pattern', t('main.pattern.title'), ''], ['stream', t('main.add.stream'), ''], ['resolve', 'DaVinci Resolve', t('main.add.resolveTitle')],
-    ['webcam', t('main.add.webcam'), t('main.add.webcamTitle')], ['screen', t('main.add.screen'), t('main.add.screenTitle')], ['file', t('main.add.file'), ''],
+    ['decklink', 'Blackmagic DeckLink', t('main.add.decklinkTitle')], ['webcam', t('main.add.webcam'), t('main.add.webcamTitle')], ['screen', t('main.add.screen'), t('main.add.screenTitle')], ['file', t('main.add.file'), ''],
     // desktop app: the file goes through the bridge by default (full depth). The browser path
     // stays one click away – it is 8 bit, but it crops and brings the clip's own sound.
     ...(mediaFilePicker() ? [['file-video', t('main.add.fileVideo'), t('main.add.fileVideoTitle')] as const] : []),
@@ -1357,6 +1390,7 @@ function panelSettings(p: PanelState): Node[] {
       row(t('panel.zebraLow'), slider(Math.round(state.zebraLow * 100), (v) => { state.zebraLow = v / 100; save(); }, { min: 0, max: 100, step: 1, reset: 0, number: true, unit: '%', title: t('panel.zebraLowTitle') }));
     }
     row(t('panel.clock'), checkbox(!!p.clockOverlay, t('panel.clockText'), (v) => { p.clockOverlay = v; save(); }, t('panel.clockTitle')));
+    row(t('panel.fps'), checkbox(!!p.fpsOverlay, t('panel.fpsText'), (v) => { p.fpsOverlay = v; save(); }, t('panel.fpsTitle')));
     global(SET.display);
     global(SET.hdrPreview);
     row(t('main.src.audio'), checkbox(p.audioBar !== false, t('panel.audioBar'), (v) => { p.audioBar = v; save(); refreshHeads(); }, t('panel.audioBarTitle')));

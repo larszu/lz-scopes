@@ -165,6 +165,50 @@ describe('helper protocol (DeckLink/NDI helpers)', () => {
     expect(msgs.filter((m) => m.type === 'vanc')).toEqual([{ type: 'vanc', packets: [{ did: 0x41, sdid: 0x01, line: 10, stream: 0, data: '89e92001' }] }]);
   });
 
+  const ff0 = ffmpegCandidates()[0];
+  it.skipIf(!ff0)('an INFO that only renames the mode (p ↔ PsF) does not restart ffmpeg', async () => {
+    const msgs: Record<string, unknown>[] = [];
+    let frames = 0;
+    await new Promise<void>((done) => {
+      const ws = Object.assign(new EventEmitter(), {
+        OPEN: 1, readyState: 1, bufferedAmount: 0,
+        send(d: Buffer | string) { if (typeof d === 'string') msgs.push(JSON.parse(d)); else frames++; },
+        close() { ws.readyState = 3; ws.emit('close'); done(); },
+      });
+      startHelperStream(ws, {
+        bin: process.execPath, args: [fake, '--psf', '940', '8'], label: 'DeckLink', params: new URLSearchParams('depth=8&width=96'),
+        ctx: { ffmpeg: ff0, fail: () => ws.close(), outputSize, decodeParams, applyDecodeOverride, deviceOptions },
+      });
+    });
+    expect(msgs.filter((m) => m.type === 'info')).toHaveLength(1);
+    expect(frames).toBeGreaterThanOrEqual(6);
+  });
+
+  it.skipIf(!ff0)('sound from a helper: protocol 2, s32 → f32, PTS on pictures, gap in the sample index', async () => {
+    const msgs: Record<string, unknown>[] = [];
+    const bins: Buffer[] = [];
+    await new Promise<void>((done) => {
+      const ws = Object.assign(new EventEmitter(), {
+        OPEN: 1, readyState: 1, bufferedAmount: 0,
+        send(d: Buffer | string) { if (typeof d === 'string') msgs.push(JSON.parse(d)); else bins.push(Buffer.from(d)); },
+        close() { ws.readyState = 3; ws.emit('close'); done(); },
+      });
+      startHelperStream(ws, {
+        bin: process.execPath, args: [fake, '--audio'], label: 'DeckLink', params: new URLSearchParams('depth=8&width=96&audio=1'), audio: true,
+        ctx: { ffmpeg: ff0, fail: () => ws.close(), outputSize, decodeParams, applyDecodeOverride, deviceOptions },
+      });
+    });
+    expect(msgs.find((m) => m.type === 'info')).toMatchObject({ proto: 2, audio: { sampleRate: 48000, channels: 2, format: 'f32le' } });
+    const sound = bins.filter((b) => b.toString('ascii', 0, 4) === 'LZA1');
+    const pics = bins.filter((b) => b.toString('ascii', 0, 4) === 'LZV1');
+    // 4 packets of 1920 samples in 20 ms packets (960); packet 3 is missing → index jumps from 3840 to 5760
+    expect(sound.map((b) => b.readDoubleLE(8))).toEqual([0, 960, 1920, 2880, 5760, 6720, 7680, 8640]);
+    const f = new Float32Array(sound[0].buffer.slice(sound[0].byteOffset + 16, sound[0].byteOffset + 24));
+    expect([...f]).toEqual([0.5, -0.25]);
+    expect(msgs.filter((m) => m.type === 'apts')).toEqual([{ type: 'apts', index: 0, pts: 0 }, { type: 'apts', index: 5760, pts: 0.12 }]);
+    expect(pics.map((b) => b.readDoubleLE(8))).toEqual([0, 0.04, 0.08, 0.12, 0.16]);
+  });
+
   const helperBin = fileURLToPath(new URL(`../helpers/bin/lz-ndi${process.platform === 'win32' ? '.exe' : ''}`, import.meta.url));
   it.skipIf(!existsSync(helperBin))('lz-ndi --selftest: box-filter reduction of UYVY and P216', async () => {
     const out = await new Promise<string>((res) => { import('node:child_process').then(({ execFile }) => execFile(helperBin, ['--selftest'], (_e, o) => res(String(o)))); });

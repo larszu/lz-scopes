@@ -124,6 +124,8 @@ export interface PanelState {
   rgc?: boolean;
   /** picture: compact time of day / source time code in the corner */
   clockOverlay?: boolean;
+  /** picture: video frame rate, display rate and dropped frames in the corner */
+  fpsOverlay?: boolean;
   /** light scopes (Opple Light Master, src/opple/scopes.ts) */
   light?: Partial<LightPanelOptions>;
   /** simulcast deviation map (simulcastPanel.ts): stages compared, colour scale */
@@ -392,7 +394,8 @@ export const waveOpts = (p: PanelState, src: Source | null): WaveOpts => ({
   lw: src?.hlgLw, r103: p.r103, marks: p.marks, range: waveRangeOf(p), channels: p.channels, names: p.names,
 });
 
-export const TINTS = { white: [1, 1, 1], green: [0.55, 1, 0.62], amber: [1, 0.82, 0.45] } as const;
+/** 'picture' = trace in the pixel's own colour (greys and black white); the standard (Settings → Scopes → Trace colour) */
+export const TINTS = { picture: [1, 1, 1], white: [1, 1, 1], green: [0.55, 1, 0.62], amber: [1, 0.82, 0.45] } as const;
 export type Tint = keyof typeof TINTS;
 
 export interface DrawOptions {
@@ -611,6 +614,8 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
   }
   // clocks run: redraw at 25 Hz
   const tick = p.scope === 'clock' || (p.scope === 'picture' && p.clockOverlay) ? `|t${Math.floor(performance.now() / 40)}`
+    // frame-rate overlay: new numbers once a second
+    : p.scope === 'picture' && p.fpsOverlay ? `|f${src?.fps}:${src?.dropped}:${o.displayFps}`
     // QC log: new events, and the durations of active ones once a second
     : p.scope === 'genlock' ? `|g${Math.floor(Date.now() / 250)}`
     // simulcast map: chain settings of other stages can change without a new frame
@@ -787,7 +792,7 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
         view: { zoom: cube.zoom ?? 1, panX: cube.panX ?? 0, panY: cube.panY ?? 0 },
       } } : {}),
       ...(xv ? { view: [xv.z, xv.x, xv.y] as [number, number, number], density: xv.z * xv.z } : wz !== 1 ? { density: wz } : {}),
-      mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: crt ? [...PHOSPHORS[crt.phosphor].color] as [number, number, number] : [...TINTS[o.tint]] as [number, number, number],
+      mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize || (o.tint === 'picture' && !crt), zoom: p.zoom, tint: crt ? [...PHOSPHORS[crt.phosphor].color] as [number, number, number] : [...TINTS[o.tint]] as [number, number, number],
       maxSamples: o.maxSamples, roi: s.activeRois(), skin: p.scope === 'wf-green' ? greenOf(o) : o.skin, cieUv: p.scope === 'cie' && !!p.cieUv,
       ...(isWaveform(p.scope) ? { range: waveRangeOf(p), ...(({ sec, n }) => ({ sec, secN: n }))(channelLayout(p.scope, p.channels)) } : {}),
     });
@@ -1003,6 +1008,7 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
       drawTextBox(ctx, frame.x + frame.w - 6, frame.y + 6, [...probeLines(src, probeRgb, p.unit ?? o.unit), ...deLines(src, probeRgb, o)], 'right');
     }
     if (o.frozen) drawTextBox(ctx, frame.x + 6, frame.y + 6, [t('panel.draw.frozen')]);
+    if (p.fpsOverlay) drawTextBox(ctx, frame.x + 6, frame.y + (o.frozen ? 30 : 6), [t('panel.draw.fps', { video: src.fps, shown: o.displayFps, dropped: src.dropped })]);
     if (p.clockOverlay) drawClockOverlay(ctx, clockOpts(p.clock), src, frame.x + frame.w - 6, frame.y + frame.h - 6);
     if (p.audioBar !== false && src.audio) drawAudioBar(ctx, src.audio, frame);
   } else if (p.scope === 'match') {

@@ -81,6 +81,9 @@ export async function launchApp(opts: { profile?: string; port?: number; lang?: 
   // the main window connects to /control?role=app once it has booted, then answers commands
   await until(async () => (await (await fetch(`${base}/api/control`)).json()).connected === true, 60_000, 'Hauptfenster verbindet sich nicht mit der Bridge');
   await until(async () => (await post({ cmd: 'state' })).body.ok === true, 90_000, 'Hauptfenster beantwortet keine Steuerbefehle');
+  // the tests measure trace levels by brightness: a white mono trace instead of the picture-colour
+  // standard, where a blue bar draws darker than a white one (a spec needing another colour sets it)
+  if (!opts.profile) await control({ cmd: 'setting', key: 'tint', value: 'white' });
   const state = async () => {
     const r = await control({ cmd: 'state' });
     if (!r.ok) throw new Error(r.error);

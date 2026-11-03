@@ -40,6 +40,14 @@ export const HELPER_PIXELS = {
 };
 
 /**
+ * ffmpeg options before the helper input. Without them the v210 decoder runs frame threads, and
+ * frame threading delays decoding by one frame per thread (libavcodec/pthread_frame.c, see
+ * docs/research/low-latency.md): 405 ms at 1080p25 on a 10-core Mac, 6 ms with these
+ * (scripts/decklink/latency.mjs, UltraStudio Recorder 3G, 03.11.2026). Slice threads stay.
+ */
+export const HELPER_INPUT_FLAGS = ['-flags', 'low_delay', '-thread_type', 'slice'];
+
+/**
  * Splits the helper's stdout into records; never loses bytes across chunk borders.
  * Chunks are collected in a list and joined once per record: Windows pipes deliver a frame
  * in thousands of small chunks, and re-concatenating on every chunk cost O(n²) (NDI at 2 fps).
@@ -244,7 +252,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
     const vf = [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}${info.interlaced ? ':interl=1' : ''}`];
     if (fpsLimit) vf.push(`fps=${fpsLimit}`);
     const rec = recorder?.outputs(3) ?? { args: [], pipes: 0, sessions: [] };
-    ff = spawn(ctx.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', ...f.input, '-map', '0:v:0', '-vf', vf.join(','), '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-threads', '1', '-f', 'rawvideo', 'pipe:1', ...rec.args],
+    ff = spawn(ctx.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', ...HELPER_INPUT_FLAGS, ...f.input, '-map', '0:v:0', '-vf', vf.join(','), '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-threads', '1', '-f', 'rawvideo', 'pipe:1', ...rec.args],
       { stdio: ['pipe', 'pipe', 'pipe', ...Array(rec.pipes).fill('pipe')], windowsHide: true });
     ff.recording = rec.sessions.length > 0;
     if (rec.sessions.length) recorder.attach(ff, rec);

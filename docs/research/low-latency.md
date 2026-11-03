@@ -160,3 +160,16 @@ setting of its own:
 The panel head shows `Low Latency · … ms`, the source card the measured value next to the
 switch (only with stamped pictures), the Messwerte panel the stage split and how the bridge
 receives the stream (own RTP with packet counters, or ffmpeg and why).
+
+## Capture helpers (DeckLink, NDI)
+
+Measured 03.11.2026 with an UltraStudio Recorder 3G (SDI 1080p25, v210) and
+`scripts/decklink/latency.mjs`: the helper delivers a picture every 40 ms, but the bridge's
+ffmpeg (v210 decoder, 960 px, rgba64le) gave each picture back **406 ms** later – the v210
+decoder ran frame threads (10 cores → 10 frames). The helper path had none of the input flags
+of the ffmpeg path. With `-flags low_delay -thread_type slice` before the input
+(`HELPER_INPUT_FLAGS`, `server/helper-input.mjs`) it is **6 ms** (median, p95 7 ms). Lowering
+`-probesize`/`-analyzeduration` on the raw pipe made it worse (+1 frame, 48 ms) and is not used.
+What remains is inherent: the card hands over a picture only once it is complete (one frame,
+40 ms at 25p), then transport and display in the browser.
+

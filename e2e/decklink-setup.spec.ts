@@ -46,8 +46,8 @@ test.describe('DeckLink device live', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     expect((await r.state()).sources.some((x) => x.kind === 'pattern')).toBe(true);
-    await page.locator('#add button', { hasText: 'RTSP / Netz' }).click();
-    await page.locator('#source-list .src').last().getByRole('button', { name: 'DeckLink…' }).click();
+    // straight from "+ Quelle", without the stream card
+    await page.locator('#add button', { hasText: 'Blackmagic DeckLink' }).click();
     await expect.poll(async () => (await r.state()).sources.find((x) => x.kind === 'stream')?.status, { timeout: 30_000 }).toBe('live');
     // the test pattern closes by itself, every panel shows the device
     await expect.poll(async () => (await r.state()).sources.map((x) => x.kind), { timeout: 10_000 }).toEqual(['stream']);

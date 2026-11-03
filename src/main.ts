@@ -52,7 +52,7 @@ import { greenSettings, matchPanelSettings, targetEditor, type MatchUi } from '.
 import { openChartCorners } from './match/chartUi';
 import { bindBridgeField, normaliseBridge } from './bridgeField';
 import { streamRoute } from './streamRoute';
-import { deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
+import { addDeckLink, deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
 import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
 import { DEFAULT_LOW_LATENCY, LL_STATS, LL_WIDTHS, describeLowLatency, effectiveWidth, type LowLatencyConfig } from './lowLatency';
@@ -851,7 +851,8 @@ function deviceRow(s: Source): Node {
   }, t('main.dev.title')),
   // Desktop Video also offers the card as a macOS camera: 8 bit, converted by the system and the
   // browser – the DeckLink path measures the signal itself (10 bit, sound, timecode)
-  /blackmagic|ultrastudio|decklink/i.test(videoDevices.find((d) => d.deviceId === s.deviceId)?.label ?? s.name) ? hint(t('main.dev.blackmagicHint')) : '');
+  /blackmagic|ultrastudio|decklink/i.test(videoDevices.find((d) => d.deviceId === s.deviceId)?.label ?? s.name)
+    ? [hint(t('main.dev.blackmagicHint')), button(t('main.dev.useDecklink'), () => void addDeckLinkSource(s), { variant: 'primary', small: true })] : '');
 }
 
 /** Desktop app: choose a window or screen (thumbnails), e.g. DaVinci Resolve's viewer. */
@@ -880,12 +881,23 @@ function addResolve() {
   s.connectStream('resolve:', bridgeUrl());
 }
 
+/** DeckLink/UltraStudio through the bridge's helper: 10 bit (v210) into the 16-bit transport, with sound. */
+function addDeckLinkSource(replace?: Source) {
+  return addDeckLink(() => bridgeUrl().replace(/^ws/, 'http'), alertHud, (url, name) => {
+    if (replace) removeSource(replace);
+    state.sidebar = true; applySidebar();
+    const s = addSource('stream', name, url, { depth: 16, deckLinkBits: 10 });
+    s.connectStream(url, bridgeUrl());
+  });
+}
+
 /** Add a source of a kind (sidebar buttons and Quellen menu). */
 function addSourceOfKind(kind: string) {
   switch (kind) {
     case 'pattern': return void startLocal(addSource('pattern', t('main.src.patternN', { n: sources.length + 1 })));
     case 'stream': { state.sidebar = true; applySidebar(); save(); return void addSource('stream', `Stream ${sources.length + 1}`); }
     case 'resolve': return addResolve();
+    case 'decklink': return addDeckLinkSource();
     case 'webcam': case 'screen': case 'file': case 'folder': return void startLocal(addSource(kind));
     // the browser path on purpose (#191): 8 bit, but with crop, ROI and the clip's own sound
     case 'file-video': { const s = addSource('file'); s.settings.fileRoute = 'video'; return void startLocal(s); }
@@ -899,7 +911,7 @@ function renderAddMenu() {
   h('span', {}, t('main.add.source')),
   ...([
     ['pattern', t('main.pattern.title'), ''], ['stream', t('main.add.stream'), ''], ['resolve', 'DaVinci Resolve', t('main.add.resolveTitle')],
-    ['webcam', t('main.add.webcam'), t('main.add.webcamTitle')], ['screen', t('main.add.screen'), t('main.add.screenTitle')], ['file', t('main.add.file'), ''],
+    ['decklink', 'Blackmagic DeckLink', t('main.add.decklinkTitle')], ['webcam', t('main.add.webcam'), t('main.add.webcamTitle')], ['screen', t('main.add.screen'), t('main.add.screenTitle')], ['file', t('main.add.file'), ''],
     // desktop app: the file goes through the bridge by default (full depth). The browser path
     // stays one click away – it is 8 bit, but it crops and brings the clip's own sound.
     ...(mediaFilePicker() ? [['file-video', t('main.add.fileVideo'), t('main.add.fileVideoTitle')] as const] : []),

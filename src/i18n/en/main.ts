@@ -154,6 +154,8 @@ export default {
   'common.cancel': 'Cancel',
   'main.add.stream': 'RTSP / network',
   'main.add.resolveTitle': 'Current frame from DaVinci Resolve (viewer, graded) in 16 bit via the scripting API – Resolve Studio, External scripting using: Local',
+  'main.add.decklinkTitle': 'Blackmagic DeckLink or UltraStudio through the bridge: 10 bit straight from the card, embedded sound, timecode. Opens the setup steps when Desktop Video is missing.',
+  'main.dev.useDecklink': 'Connect through DeckLink (10 bit)',
   'main.add.webcamTitle': 'Camera or USB capture device (HDMI/SDI → USB)',
   'main.add.webcam': 'Camera/capture',
   'main.add.screenTitle': 'Screen or window (e.g. the Resolve viewer)',

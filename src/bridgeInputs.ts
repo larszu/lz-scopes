@@ -5,7 +5,7 @@
 import type { Source, SourceSettings } from './sources';
 import { t } from './i18n';
 import { bridgeText } from './i18n/bridgeMessage';
-import { button, h, hint, link, row, select } from './ui';
+import { button, h, hint, link, openModal, row, select } from './ui';
 import { openDeckLinkSetup, type DeckLinkStatus } from './decklinkSetup';
 
 export interface BridgeUi {
@@ -89,6 +89,24 @@ const deckLinkStatus = async (ui: BridgeUi): Promise<DeckLinkStatus | null> => {
 };
 /** Last device list per bridge: the input connectors of a DeckLink source come from here. */
 const deckLinkDevices = new Map<string, DeckLinkStatus['devices']>();
+
+/**
+ * "+ Quelle → Blackmagic DeckLink": straight to the device without the stream card. One device
+ * connects at once, several get a short list; without a usable device the setup steps open.
+ */
+export async function addDeckLink(http: () => string, hud: (m: string) => void, add: (url: string, name: string) => void) {
+  const ui = { http } as BridgeUi;
+  const st = await deckLinkStatus(ui);
+  if (!st) { hud(t('bridgeui.bridgeUnreachable')); return; }
+  const pick = (s: DeckLinkStatus) => {
+    deckLinkDevices.set(http(), s.devices);
+    if (s.devices.length === 1) return add(`decklink:${s.devices[0].index}`, s.devices[0].name);
+    const m = openModal({ title: t('bridgeui.chooseDecklink'), size: 'sm', body: s.devices.map((d) =>
+      button(d.name, () => { m.close(); add(`decklink:${d.index}`, d.name); }, { attrs: { style: 'display:block;width:100%;margin-bottom:6px' } })) });
+  };
+  if (!st.available || !st.devices.length) { openDeckLinkSetup(st, () => deckLinkStatus(ui), pick); return; }
+  pick(st);
+}
 
 /** DeckLink/UltraStudio via the native helper; without a usable device the setup steps open. */
 export function deckLinkButton(ui: BridgeUi): HTMLElement {

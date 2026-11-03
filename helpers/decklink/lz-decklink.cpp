@@ -2,7 +2,7 @@
 //
 //   lz-decklink --list                       one JSON line: {"ok":true,"devices":[…]} or {"ok":false,"error":"…"}
 //   lz-decklink --reference <index>          one JSON line: genlock/reference status (#72), see reference()
-//   lz-decklink --capture <index> [--bits 8|10]
+//   lz-decklink --capture <index> [--bits 8|10] [--input sdi|hdmi|optical|component|composite|svideo]
 //                                            helper protocol on stdout (docs/frame-protocol.md):
 //                                            INFO / FRAM / STAT / ERR records
 //
@@ -14,8 +14,9 @@
 // Built against the DeckLink SDK headers (Desktop Video SDK, free download from Blackmagic
 // Design after registration – not part of this repository). See README.md next to this file.
 //
-// STATUS: compiled on macOS against SDK 12.0 headers; NEVER RUN WITH HARDWARE. Windows and
-// Linux branches are written from the SDK headers and not compiled here.
+// STATUS: run on macOS 26 with an UltraStudio Recorder 3G (Thunderbolt, Desktop Video 16.5):
+// list, capture v210 1080p25 over SDI, RP 188 timecode, VANC. Windows and Linux branches are
+// compiled in CI and not run with hardware (#116).
 
 #ifdef _WIN32
 #include <windows.h>
@@ -117,6 +118,36 @@ static std::vector<IDeckLink*> allDevices() {
   return list;
 }
 
+// ---------------------------------------------------------------- input connectors
+
+struct Connector { const char* name; int64_t bit; };
+static const Connector CONNECTORS[] = {
+  { "sdi", bmdVideoConnectionSDI }, { "hdmi", bmdVideoConnectionHDMI }, { "optical", bmdVideoConnectionOpticalSDI },
+  { "component", bmdVideoConnectionComponent }, { "composite", bmdVideoConnectionComposite }, { "svideo", bmdVideoConnectionSVideo },
+};
+
+/** JSON array of the device's video input connectors, e.g. ["sdi","hdmi"]. */
+static std::string inputsJson(IDeckLinkProfileAttributes* attr) {
+  int64_t conns = 0;
+  std::string out = "[";
+  if (attr && attr->GetInt(BMDDeckLinkVideoInputConnections, &conns) == S_OK)
+    for (const Connector& c : CONNECTORS) if (conns & c.bit) { if (out.size() > 1) out += ","; out += std::string("\"") + c.name + "\""; }
+  return out + "]";
+}
+
+/** Current input connector from the driver configuration (set in Desktop Video Setup), "" if unknown. */
+static std::string currentInput(IDeckLink* d) {
+  IDeckLinkConfiguration* cfg = nullptr;
+  std::string out;
+  if (d->QueryInterface(IID_IDeckLinkConfiguration, (void**)&cfg) == S_OK) {
+    int64_t v = 0;
+    if (cfg->GetInt(bmdDeckLinkConfigVideoInputConnection, &v) == S_OK)
+      for (const Connector& c : CONNECTORS) if (v == c.bit) out = c.name;
+    cfg->Release();
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- --list
 
 static int listDevices() {
@@ -132,16 +163,20 @@ static int listDevices() {
     DLString name = nullptr;
     d->GetDisplayName(&name);
     bool detect = false, canInput = false;
+    std::string inputs = "[]";
     IDeckLinkProfileAttributes* attr = nullptr;
     if (d->QueryInterface(IID_IDeckLinkProfileAttributes, (void**)&attr) == S_OK) {
       DLBool f = false;
       if (attr->GetFlag(BMDDeckLinkSupportsInputFormatDetection, &f) == S_OK) detect = f;
       int64_t io = 0;
       if (attr->GetInt(BMDDeckLinkVideoIOSupport, &io) == S_OK) canInput = (io & bmdDeviceSupportsCapture) != 0;
+      inputs = inputsJson(attr);
       attr->Release();
     }
+    const std::string cur = currentInput(d);
     if (index) out += ",";
-    out += "{\"index\":" + std::to_string(index) + ",\"name\":\"" + jsonEscape(toStd(name)) + "\",\"formatDetection\":" + (detect ? "true" : "false") + ",\"capture\":" + (canInput ? "true" : "false") + "}";
+    out += "{\"index\":" + std::to_string(index) + ",\"name\":\"" + jsonEscape(toStd(name)) + "\",\"formatDetection\":" + (detect ? "true" : "false") + ",\"capture\":" + (canInput ? "true" : "false")
+      + ",\"inputs\":" + inputs + (cur.empty() ? "" : ",\"input\":\"" + cur + "\"") + "}";
     d->Release();
     index++;
   }
@@ -164,6 +199,10 @@ class Capture : public IDeckLinkInputCallback {
   HRESULT STDMETHODCALLTYPE VideoInputFormatChanged(BMDVideoInputFormatChangedEvents, IDeckLinkDisplayMode* mode, BMDDetectedVideoInputFormatFlags flags) override {
     const bool rgb = (flags & bmdDetectedVideoInputRGB444) != 0;
     const BMDPixelFormat pf = rgb ? bmdFormat10BitRGB : (tenBit_ ? bmdFormat10BitYUV : bmdFormat8BitYUV);
+    // 1080p25 and 1080PsF25 are the same picture on the wire; with format detection the driver
+    // flips between them on every frame (UltraStudio Recorder 3G, Desktop Video 16.5). Re-enabling
+    // the input each time restarted the bridge's ffmpeg per frame – keep the current mode instead.
+    if (sameProgressive(mode, pf)) return S_OK;
     input_->PauseStreams();
     input_->EnableVideoInput(mode->GetDisplayMode(), pf, bmdVideoInputEnableFormatDetection);
     input_->FlushStreams();
@@ -213,8 +252,20 @@ class Capture : public IDeckLinkInputCallback {
     return S_OK;
   }
 
+  /** p ↔ PsF only: same size, rate and pixel format, neither mode interlaced. */
+  bool sameProgressive(IDeckLinkDisplayMode* mode, BMDPixelFormat pf) {
+    std::lock_guard<std::mutex> lock(modeLock_);
+    BMDTimeValue duration = 0; BMDTimeScale scale = 0;
+    mode->GetFrameRate(&duration, &scale);
+    const BMDFieldDominance f = mode->GetFieldDominance();
+    const bool inter = f == bmdLowerFieldFirst || f == bmdUpperFieldFirst;
+    return pf == pixel_ && !inter && !interlaced_ && mode->GetWidth() == width_ && mode->GetHeight() == height_
+      && (long long)scale == fpsNum_ && (long long)duration == fpsDen_;
+  }
+
   void setMode(IDeckLinkDisplayMode* mode, BMDPixelFormat pf) {
     std::lock_guard<std::mutex> lock(modeLock_);
+    width_ = mode->GetWidth(); height_ = mode->GetHeight();
     BMDTimeValue duration = 0; BMDTimeScale scale = 0;
     mode->GetFrameRate(&duration, &scale);
     DLString name = nullptr;
@@ -231,7 +282,7 @@ class Capture : public IDeckLinkInputCallback {
  private:
   // VANC (#160): every ancillary packet of the frame as JSON, at most 4 times a second or when the
   // set of packets changes. data = user data words, lower 8 bits (bmdAncillaryPacketFormatUInt8).
-  // NEVER RUN WITH HARDWARE (#116).
+  // Checked with an UltraStudio Recorder 3G over SDI (#116).
   void sendVanc(IDeckLinkVideoInputFrame* frame) {
     IDeckLinkVideoFrameAncillaryPackets* anc = nullptr;
     if (frame->QueryInterface(IID_IDeckLinkVideoFrameAncillaryPackets, (void**)&anc) != S_OK || !anc) return;
@@ -310,6 +361,7 @@ class Capture : public IDeckLinkInputCallback {
   std::mutex modeLock_;
   std::string modeName_, modeMatrix_ = "unknown", lastInfo_;
   long long fpsNum_ = 25, fpsDen_ = 1;
+  long width_ = 0, height_ = 0;
   bool interlaced_ = false;
   BMDPixelFormat pixel_ = bmdFormat10BitYUV;
   std::vector<uint8_t> buf_;
@@ -417,13 +469,24 @@ static int reference(int index) {
   return 0;
 }
 
-static int capture(int index, bool tenBit) {
+static int capture(int index, bool tenBit, const std::string& input) {
   std::vector<IDeckLink*> list = allDevices();
   if (list.empty()) return fatal("decklink.noDevices", "No DeckLink devices found (Desktop Video installed? Device connected?)");
   if (index < 0 || index >= (int)list.size()) return fatal("decklink.noDevice", "DeckLink device " + std::to_string(index) + " not present", "{\"index\":" + std::to_string(index) + "}");
   IDeckLink* d = list[index];
   IDeckLinkInput* in = nullptr;
   if (d->QueryInterface(IID_IDeckLinkInput, (void**)&in) != S_OK) return fatal("decklink.noInput", "Device cannot capture");
+  // input connector (SDI/HDMI …) for this process only; without --input the one set in Desktop Video Setup
+  if (!input.empty()) {
+    int64_t bit = 0;
+    for (const Connector& c : CONNECTORS) if (input == c.name) bit = c.bit;
+    IDeckLinkConfiguration* cfg = nullptr;
+    if (!bit || d->QueryInterface(IID_IDeckLinkConfiguration, (void**)&cfg) != S_OK || cfg->SetInt(bmdDeckLinkConfigVideoInputConnection, bit) != S_OK) {
+      if (cfg) cfg->Release();
+      return fatal("decklink.inputConnector", "Input " + input + " not available on this device", "{\"input\":\"" + input + "\"}");
+    }
+    cfg->Release();
+  }
   DLBool detect = false;
   IDeckLinkProfileAttributes* attr = nullptr;
   if (d->QueryInterface(IID_IDeckLinkProfileAttributes, (void**)&attr) == S_OK) { attr->GetFlag(BMDDeckLinkSupportsInputFormatDetection, &detect); attr->Release(); }
@@ -461,9 +524,13 @@ int main(int argc, char** argv) {
   if (argc >= 3 && std::strcmp(argv[1], "--reference") == 0) return reference(std::atoi(argv[2]));
   if (argc >= 3 && std::strcmp(argv[1], "--capture") == 0) {
     bool tenBit = true;
-    for (int i = 3; i + 1 < argc; i++) if (std::strcmp(argv[i], "--bits") == 0) tenBit = std::strcmp(argv[i + 1], "8") != 0;
-    return capture(std::atoi(argv[2]), tenBit);
+    std::string input;
+    for (int i = 3; i + 1 < argc; i++) {
+      if (std::strcmp(argv[i], "--bits") == 0) tenBit = std::strcmp(argv[i + 1], "8") != 0;
+      if (std::strcmp(argv[i], "--input") == 0) input = argv[i + 1];
+    }
+    return capture(std::atoi(argv[2]), tenBit, input);
   }
-  fprintf(stderr, "usage: lz-decklink --list | --reference <index> | --capture <index> [--bits 8|10]\n");
+  fprintf(stderr, "usage: lz-decklink --list | --reference <index> | --capture <index> [--bits 8|10] [--input sdi|hdmi|…]\n");
   return 1;
 }

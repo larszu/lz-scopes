@@ -165,6 +165,25 @@ describe('helper protocol (DeckLink/NDI helpers)', () => {
     expect(msgs.filter((m) => m.type === 'vanc')).toEqual([{ type: 'vanc', packets: [{ did: 0x41, sdid: 0x01, line: 10, stream: 0, data: '89e92001' }] }]);
   });
 
+  const ff0 = ffmpegCandidates()[0];
+  it.skipIf(!ff0)('an INFO that only renames the mode (p ↔ PsF) does not restart ffmpeg', async () => {
+    const msgs: Record<string, unknown>[] = [];
+    let frames = 0;
+    await new Promise<void>((done) => {
+      const ws = Object.assign(new EventEmitter(), {
+        OPEN: 1, readyState: 1, bufferedAmount: 0,
+        send(d: Buffer | string) { if (typeof d === 'string') msgs.push(JSON.parse(d)); else frames++; },
+        close() { ws.readyState = 3; ws.emit('close'); done(); },
+      });
+      startHelperStream(ws, {
+        bin: process.execPath, args: [fake, '--psf', '940', '8'], label: 'DeckLink', params: new URLSearchParams('depth=8&width=96'),
+        ctx: { ffmpeg: ff0, fail: () => ws.close(), outputSize, decodeParams, applyDecodeOverride, deviceOptions },
+      });
+    });
+    expect(msgs.filter((m) => m.type === 'info')).toHaveLength(1);
+    expect(frames).toBeGreaterThanOrEqual(6);
+  });
+
   const helperBin = fileURLToPath(new URL(`../helpers/bin/lz-ndi${process.platform === 'win32' ? '.exe' : ''}`, import.meta.url));
   it.skipIf(!existsSync(helperBin))('lz-ndi --selftest: box-filter reduction of UYVY and P216', async () => {
     const out = await new Promise<string>((res) => { import('node:child_process').then(({ execFile }) => execFile(helperBin, ['--selftest'], (_e, o) => res(String(o)))); });

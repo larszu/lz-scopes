@@ -416,3 +416,13 @@ dialog.colormatch .cm-fields { display: grid; grid-template-columns: repeat(var(
 dialog.colormatch .cm-field { display: flex; flex-direction: column; align-items: stretch; gap: 3px; font-variant-numeric: tabular-nums; }
 dialog.colormatch .cm-swatch { height: 22px; border-radius: var(--radius); border: 1px solid var(--line-2); }
 @media (max-width: 640px) { dialog.colormatch .cm-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* DeckLink setup dialog (src/decklinkSetup.ts): steps with tick marks */
+dialog.dlsetup .dlsetup-progress { width: 100%; accent-color: var(--accent); }
+dialog.dlsetup .dlsetup-steps { list-style: none; padding: 0; margin: 12px 0; display: flex; flex-direction: column; gap: 10px; }
+dialog.dlsetup .dlsetup-steps li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-lg); background: var(--surface-2); border: 1px solid var(--line-1); }
+dialog.dlsetup .dlsetup-mark { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; border: 1px solid var(--line-1); }
+dialog.dlsetup .dlsetup-done { opacity: .75; }
+dialog.dlsetup .dlsetup-done .dlsetup-mark { background: var(--primary-bg); color: var(--primary-text); border-color: var(--primary-border); }
+dialog.dlsetup .dlsetup-next { border-color: var(--primary-border); }
+dialog.dlsetup .dlsetup-body { margin-top: 4px; line-height: 1.45; }

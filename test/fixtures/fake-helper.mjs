@@ -3,6 +3,7 @@
 // protocol (server/helper-input.mjs) and sends flat v210 frames with a known level.
 //   fake-helper.mjs --list            → one JSON line
 //   fake-helper.mjs --capture <y10> <frames>   (each frame preceded by a TIME record)
+//   fake-helper.mjs --psf <y10> <frames>       (as --capture, plus an INFO per frame whose mode name flips p ↔ PsF)
 //   fake-helper.mjs --reference <n>            → one JSON line in the shape of lz-decklink --reference
 //   fake-helper.mjs --ndi-stats                → three lz-ndi counter records (fine, losses, fine)
 const [mode, a1, a2] = process.argv.slice(2);
@@ -38,8 +39,10 @@ const words = [c | (y << 10) | (c << 20), y | (c << 10) | (y << 20), c | (y << 1
 const row = Math.ceil(w / 48) * 128;
 const frame = Buffer.alloc(row * h);
 for (let i = 0; i < frame.length; i += 4) frame.writeUInt32LE(words[(i / 4) % 4] >>> 0, i);
-rec('INFO', { width: w, height: h, fpsNum: 25, fpsDen: 1, pixel: 'v210', matrix: 'bt709', range: 'tv', name: 'Fake 1080i50', timecode: '10:00:00:00' });
+const info = { width: w, height: h, fpsNum: 25, fpsDen: 1, pixel: 'v210', matrix: 'bt709', range: 'tv', name: 'Fake 1080i50', timecode: '10:00:00:00' };
+rec('INFO', info);
 rec('STAT', { message: 'Signal erkannt' });
 let k = 0;
-const t = setInterval(() => { rec('TIME', { tc: `10:00:00:${String(k).padStart(2, '0')}`, df: false }); rec('FRAM', frame); if (++k >= n) { clearInterval(t); setTimeout(() => process.exit(0), 300); } }, 40);
+// --psf: the mode name flips p ↔ PsF on every frame like an UltraStudio Recorder 3G with format detection
+const t = setInterval(() => { if (mode === '--psf') rec('INFO', { ...info, name: k % 2 ? '1080p25' : '1080PsF25' }); rec('TIME', { tc: `10:00:00:${String(k).padStart(2, '0')}`, df: false }); rec('FRAM', frame); if (++k >= n) { clearInterval(t); setTimeout(() => process.exit(0), 300); } }, 40);
 }

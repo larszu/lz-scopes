@@ -6,6 +6,7 @@ import type { Source, SourceSettings } from './sources';
 import { t } from './i18n';
 import { bridgeText } from './i18n/bridgeMessage';
 import { button, h, hint, link, row, select } from './ui';
+import { openDeckLinkSetup, type DeckLinkStatus } from './decklinkSetup';
 
 export interface BridgeUi {
   /** http(s) base of the bridge */
@@ -17,7 +18,6 @@ export interface BridgeUi {
 }
 
 interface DeviceFormats { modes: { width: number; height: number; fpsMin: number; fpsMax: number; pixfmt?: string }[]; pixfmts: string[]; preferred: string | null; defaultSize: string | null }
-interface DeckLinkStatus { available: boolean; helper: boolean; devices: { index: number; name: string; formatDetection?: boolean }[]; error?: string }
 
 const formatCache = new Map<string, DeviceFormats | 'loading'>();
 
@@ -84,16 +84,26 @@ export function deviceButton(ui: BridgeUi): HTMLElement {
   }, { small: true, title: t('bridgeui.deviceTitle') });
 }
 
-/** DeckLink/UltraStudio via the native helper; says plainly when it is not available. */
+const deckLinkStatus = async (ui: BridgeUi): Promise<DeckLinkStatus | null> => {
+  try { return await (await fetch(`${ui.http()}/api/decklink`)).json(); } catch { return null; /* bridge missing */ }
+};
+/** Last device list per bridge: the input connectors of a DeckLink source come from here. */
+const deckLinkDevices = new Map<string, DeckLinkStatus['devices']>();
+
+/** DeckLink/UltraStudio via the native helper; without a usable device the setup steps open. */
 export function deckLinkButton(ui: BridgeUi): HTMLElement {
   return button('DeckLink…', async (e: Event) => {
     const btn = e.currentTarget as HTMLElement;
-    let st: DeckLinkStatus | null = null;
-    try { st = await (await fetch(`${ui.http()}/api/decklink`)).json(); } catch { /* bridge missing */ }
+    const st = await deckLinkStatus(ui);
     if (!st) { ui.hud(t('bridgeui.bridgeUnreachable')); return; }
-    if (!st.available) { ui.hud(t('bridgeui.decklinkUnavailable', { why: bridgeText(st, 'error') || t('bridgeui.decklinkNeeds') })); return; }
-    if (!st.devices.length) { ui.hud(t('bridgeui.noDecklinkDevice')); return; }
-    btn.replaceWith(select('', [['', t('bridgeui.chooseDecklink')], ...st.devices.map((d) => [`decklink:${d.index}`, d.name] as [string, string])], (v) => { if (v) ui.connect(v, st!.devices.find((d) => `decklink:${d.index}` === v)?.name); }));
+    const choose = (s: DeckLinkStatus) => {
+      deckLinkDevices.set(ui.http(), s.devices);
+      const sel = select('', [['', t('bridgeui.chooseDecklink')], ...s.devices.map((d) => [`decklink:${d.index}`, d.name] as [string, string])], (v) => { if (v) ui.connect(v, s.devices.find((d) => `decklink:${d.index}` === v)?.name); });
+      if (btn.isConnected) btn.replaceWith(sel);
+      if (s.devices.length === 1) ui.connect(`decklink:${s.devices[0].index}`, s.devices[0].name);
+    };
+    if (!st.available || !st.devices.length) { openDeckLinkSetup(st, () => deckLinkStatus(ui), choose); return; }
+    choose(st);
   }, { small: true, title: t('bridgeui.decklinkTitle') });
 }
 
@@ -102,7 +112,26 @@ export function deckLinkRow(s: Source, ui: BridgeUi): Node | null {
   if (!s.url.startsWith('decklink:')) return null;
   return row(
     select(String(s.settings.deckLinkBits ?? 10), [['10', 'DeckLink 10 bit (v210)'], ['8', 'DeckLink 8 bit (UYVY)']], (v) => ui.upd({ deckLinkBits: Number(v) as 8 | 10, ...(v === '10' ? { depth: 16 as const } : {}) }, true), t('bridgeui.decklinkFormatTitle')),
-    h('span', { class: 'hint' }, t('bridgeui.untestedHw')));
+    inputSelect(s, ui),
+    button(t('bridgeui.decklinkSetup'), async () => { const st = await deckLinkStatus(ui); if (st) openDeckLinkSetup(st, () => deckLinkStatus(ui)); else ui.hud(t('bridgeui.bridgeUnreachable')); },
+      { small: true, variant: 'ghost', title: t('bridgeui.decklinkSetupTitle') }));
+}
+
+const CONNECTOR_NAMES: Record<string, string> = { sdi: 'SDI', hdmi: 'HDMI', optical: 'Optical SDI', component: 'Component', composite: 'Composite', svideo: 'S-Video' };
+
+/** SDI/HDMI … when the device has more than one input (list from DeckLink…, else fetched once). */
+function inputSelect(s: Source, ui: BridgeUi): Node | '' {
+  const index = Number(s.url.slice('decklink:'.length));
+  const list = deckLinkDevices.get(ui.http());
+  if (!list) {
+    deckLinkDevices.set(ui.http(), []);
+    void deckLinkStatus(ui).then((st) => { if (st?.devices.length) { deckLinkDevices.set(ui.http(), st.devices); ui.upd({}, false); } });
+    return '';
+  }
+  const dev = list.find((d) => d.index === index);
+  if (!dev?.inputs || dev.inputs.length < 2) return '';
+  return select(s.settings.deckLinkInput ?? '', [['', `${t('bridgeui.decklinkInputAuto')}${dev.input ? ` (${CONNECTOR_NAMES[dev.input] ?? dev.input})` : ''}`], ...dev.inputs.map((i) => [i, CONNECTOR_NAMES[i] ?? i] as [string, string])],
+    (v) => ui.upd({ deckLinkInput: v || undefined }, true), t('bridgeui.decklinkInputTitle'));
 }
 
 interface NdiStatus { available: boolean; helper: boolean; runtime: boolean; version?: string; sources: { name: string; url: string }[]; error?: string }

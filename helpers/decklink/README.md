@@ -2,7 +2,9 @@
 
 Nimmt von einem Gerät mit DeckLink-Schnittstelle auf (LZ Scopes compatible with Blackmagic Design DeckLink) und schreibt die Bilder im Helfer-Protokoll (`docs/frame-protocol.de.md`) auf stdout. Die Bridge startet ihn für Quellen `decklink:<n>` und rechnet wie bei Streams mit ffmpeg nach R′G′B′ um.
 
-**Stand:** In der Desktop-App enthalten (macOS universal, Windows x64, Linux x64 und arm64; gebaut in `release.yml`). Auf macOS gegen die Include-Dateien des DeckLink SDK 12.0 kompiliert und ohne Treiber ausgeführt (meldet „Blackmagic Desktop Video ist nicht installiert (DeckLink-Treiber fehlt)“). Der Windows-Zweig wird in CI kompiliert, aber nirgends ausgeführt; unter Linux (x64, arm64) wird er in CI kompiliert und ohne Treiber gestartet. Desktop Video für Linux gibt es auch für AArch64; Blackmagic nennt als getestete ARM-Plattformen nur Jetson AGX Xavier und Clara AGX, für Raspberry Pi 5 oder Jetson Orin nichts. **Nie mit echter Hardware gelaufen.** Bezeichnung nach SDK-EULA §6.2: „LZ Scopes compatible with Blackmagic Design DeckLink“.
+**Stand:** In der Desktop-App enthalten (macOS universal, Windows x64, Linux x64 und arm64; gebaut in `release.yml`). **Mit Hardware geprüft** am 03.11.2026 auf macOS 26 (Apple Silicon) mit einem UltraStudio Recorder 3G an Thunderbolt, Desktop Video 16.5: Liste, Aufnahme über SDI in v210 und UYVY (1080p25), RP-188-Timecode, VANC, Eingangswahl SDI/HDMI; Prüfskript `scripts/decklink/probe.mjs`. Nicht geprüft: RGB 4:4:4, HDR-Kennung, Referenzeingang (das Gerät hat keinen), Windows und Linux mit Karte (#116). Desktop Video für Linux gibt es auch für AArch64; Blackmagic nennt als getestete ARM-Plattformen nur Jetson AGX Xavier und Clara AGX. Bezeichnung nach SDK-EULA §6.2: „LZ Scopes compatible with Blackmagic Design DeckLink“.
+
+**Einrichtung des Treibers:** Schritte für macOS, Windows und Linux in `docs/manual/inputs.de.md` (*Blackmagic Desktop Video einrichten*); die Oberfläche zeigt sie als Dialog (`src/decklinkSetup.ts`).
 
 ## Warum ein eigener Helfer
 
@@ -23,12 +25,13 @@ Das Ergebnis landet in `helpers/bin/`; `npm run dist:*` und `release.yml` nehmen
 ## Schnittstelle
 
 ```
-lz-decklink --list                      → {"ok":true,"devices":[{"index":0,"name":"UltraStudio 4K Mini","formatDetection":true,"capture":true}]}
-lz-decklink --capture <index> [--bits 8|10]
+lz-decklink --list                      → {"ok":true,"devices":[{"index":0,"name":"UltraStudio Recorder 3G","formatDetection":true,"capture":true,"inputs":["sdi","hdmi"],"input":"sdi"}]}
+lz-decklink --capture <index> [--bits 8|10] [--input sdi|hdmi|optical|component|composite|svideo]
 lz-decklink --reference <index>       → {"ok":true,"hasReference":true,"referenceLocked":true,"referenceMode":{…},"timingOffsetPixels":0,…} (Genlock, #72)
 ```
 
-- Formaterkennung (`bmdVideoInputEnableFormatDetection`): bei jedem Wechsel wird der Eingang neu geöffnet und ein neuer `INFO`-Datensatz geschickt. Geräte ohne Formaterkennung bleiben auf 1080i50.
+- Formaterkennung (`bmdVideoInputEnableFormatDetection`): bei jedem Wechsel wird der Eingang neu geöffnet und ein neuer `INFO`-Datensatz geschickt. Geräte ohne Formaterkennung bleiben auf 1080i50. Ein Wechsel nur zwischen p und PsF bei gleicher Größe und Rate wird übergangen: Der Recorder 3G meldet bei 1080p25 über SDI mit jedem Bild abwechselnd 1080p25 und 1080PsF25.
+- `--input`: Eingangsbuchse nur für diesen Prozess (`bmdDeckLinkConfigVideoInputConnection`); ohne die Angabe gilt die Einstellung aus Desktop Video Setup. `--list` meldet die vorhandenen Buchsen (`inputs`) und die eingestellte (`input`).
 - Y′CbCr-Signale: `v210` (10 bit, Voreinstellung) oder `uyvy422` (8 bit) unverändert.
 - RGB-4:4:4-Signale: `bmdFormat10BitRGB` (`r210`, laut SDK-Header „SMPTE video levels (64-960)“) → im Helfer auf volle 16 bit gespreizt (`rgb48le`, Werte außerhalb 64…940 werden abgeschnitten).
 - `INFO` enthält Matrix (aus den Modus-Flags bzw. `bmdDeckLinkFrameMetadataColorspace`), HDR-EOTF (CEA-861.3: 2 = PQ, 3 = HLG) und Timecode (RP 188, erster gültiger).

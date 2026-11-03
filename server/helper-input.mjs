@@ -174,6 +174,8 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
   };
   // whole frames only (frames.mjs)
   const onOut = (chunk) => asm?.push(chunk);
+  // INFO fields that change the ffmpeg command; a new mode name alone (p ↔ PsF) only updates the card
+  const ffKey = (i) => JSON.stringify([i.width, i.height, i.fpsNum, i.fpsDen, i.pixel, i.matrix, i.range, i.interlaced]);
   const startFf = (info) => {
     stopFf();
     const f = helperFormat(info);
@@ -215,6 +217,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
     if (tag === 'INFO') {
       let info;
       try { info = JSON.parse(payload.toString('utf8')); } catch { return ctx.fail(ws, bmsg('helper.info', 'Helper: INFO is not JSON')); }
+      if (ff && lastInfo && ffKey(info) === ffKey(lastInfo)) { lastInfo = info; return; }
       startFf(info);
     } else if (tag === 'TIME') {
       let tcm;
@@ -228,6 +231,8 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
       if (Array.isArray(v.packets) && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'vanc', packets: v.packets.slice(0, 64) }));
     } else if (tag === 'FRAM') {
       if (phase && ctx.now) { const n = ctx.now(); phase.add(n.seconds, n.ref); }
+      // pictures again: a "no input signal" from the lock-up phase no longer applies
+      if (status && status.code === 'decklink.noSignal') status = '';
       if (!ff || !fmt) return;
       if (payload.length !== fmt.bytes) { status = bmsg('helper.frameSize', `Picture size does not match (${payload.length} instead of ${fmt.bytes} bytes)`, { got: payload.length, want: fmt.bytes }); return; }
       // newest picture wins: skip when ffmpeg is still busy with the previous ones

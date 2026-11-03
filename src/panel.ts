@@ -394,7 +394,8 @@ export const waveOpts = (p: PanelState, src: Source | null): WaveOpts => ({
   lw: src?.hlgLw, r103: p.r103, marks: p.marks, range: waveRangeOf(p), channels: p.channels, names: p.names,
 });
 
-export const TINTS = { white: [1, 1, 1], green: [0.55, 1, 0.62], amber: [1, 0.82, 0.45] } as const;
+/** 'picture' = trace in the pixel's own colour (greys and black white); the standard (Settings → Scopes → Trace colour) */
+export const TINTS = { picture: [1, 1, 1], white: [1, 1, 1], green: [0.55, 1, 0.62], amber: [1, 0.82, 0.45] } as const;
 export type Tint = keyof typeof TINTS;
 
 export interface DrawOptions {
@@ -647,11 +648,8 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
   return `${s}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}|${JSON.stringify(rest)}|${p.scope === 'stats' ? displayFps : ''}${tick}${alarm}|${bar}${abSig}${refSig}`;
 }
 
-// Traces in picture colour by default (waveforms, vectorscope, parade: source pixels); mono and
-// channel colours stay one click away in the panel settings.
 export const defaultPanel = (scope: ScopeType): PanelState => ({
-  scope, sourceId: '', gain: 1, colorize: true, zoom: 1, picture: 'normal', hist: 'rgb', log: false,
-  ...(['parade', 'yrgb', 'wf-rgb'].includes(scope) ? { paradeColor: 'source' as const } : {}),
+  scope, sourceId: '', gain: 1, colorize: scope === 'vector' || scope === 'vector3' || scope === 'hls' || scope === 'cie' || scope === 'cube' || scope === 'satlum' || scope === 'chplot', zoom: 1, picture: 'normal', hist: 'rgb', log: false,
 });
 
 const PARADE: ScopeType[] = ['parade', 'yrgb', 'wf-rgb'];
@@ -794,7 +792,7 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
         view: { zoom: cube.zoom ?? 1, panX: cube.panX ?? 0, panY: cube.panY ?? 0 },
       } } : {}),
       ...(xv ? { view: [xv.z, xv.x, xv.y] as [number, number, number], density: xv.z * xv.z } : wz !== 1 ? { density: wz } : {}),
-      mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize, zoom: p.zoom, tint: crt ? [...PHOSPHORS[crt.phosphor].color] as [number, number, number] : [...TINTS[o.tint]] as [number, number, number],
+      mode, gain: p.gain, colorize: PARADE.includes(p.scope) ? ({ mono: 0, channel: 1, source: 2 } as const)[p.paradeColor ?? (p.colorize ? 'channel' : 'mono')] : p.scope === 'wf-color' || p.colorize || (o.tint === 'picture' && !crt), zoom: p.zoom, tint: crt ? [...PHOSPHORS[crt.phosphor].color] as [number, number, number] : [...TINTS[o.tint]] as [number, number, number],
       maxSamples: o.maxSamples, roi: s.activeRois(), skin: p.scope === 'wf-green' ? greenOf(o) : o.skin, cieUv: p.scope === 'cie' && !!p.cieUv,
       ...(isWaveform(p.scope) ? { range: waveRangeOf(p), ...(({ sec, n }) => ({ sec, secN: n }))(channelLayout(p.scope, p.channels)) } : {}),
     });

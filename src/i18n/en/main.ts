@@ -20,6 +20,7 @@ export default {
   'settings.display.calibTitle': 'Show patches, verify the display with a meter (ArgyllCMS) or by eye, uniformity, report, 3D LUT',
   'settings.display.calib': 'Calibration / verification …',
   'settings.scopes.tint': 'Trace colour',
+  'settings.scopes.pictureColour': 'Picture colour',
   'settings.scopes.green': 'Green',
   'settings.scopes.white': 'White',
   'settings.scopes.amber': 'Amber',

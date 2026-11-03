@@ -69,7 +69,9 @@ test.describe('DeckLink device live', () => {
       expect(Date.now() - t).toBeLessThan(1000);
       await page.waitForTimeout(500);
     }
-    await page.screenshot({ path: join(ROOT, 'test-results/e2e/decklink-live.png') });
+    // picture for the record with the real card; under CI's software rendering a screenshot of a
+    // live 1080p source takes longer than the timeout and proves nothing extra
+    if (real) await page.screenshot({ path: join(ROOT, 'test-results/e2e/decklink-live.png') });
     expect(errors).toEqual([]);
   });
 });

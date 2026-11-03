@@ -21,6 +21,7 @@ export default {
   'settings.display.calibTitle': 'Messfelder ausgeben, Display mit Messgerät (ArgyllCMS) oder manuell prüfen, Uniformität, Bericht, 3D-LUT',
   'settings.display.calib': 'Kalibrierung / Verifikation …',
   'settings.scopes.tint': 'Spurfarbe',
+  'settings.scopes.pictureColour': 'Bildfarbe',
   'settings.scopes.green': 'Grün',
   'settings.scopes.white': 'Weiß',
   'settings.scopes.amber': 'Bernstein',

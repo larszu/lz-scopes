@@ -129,7 +129,7 @@ const STORE_KEY = 'lz-scopes.v1';
 
 function load(): Persisted {
   const base: Persisted = {
-    layout: 'lc', panels: DEFAULT_SCOPES.map(panel), unit: 'percent', tint: 'green', falsePreset: 'ARRI', zebra: 0.95, zebraLow: 0,
+    layout: 'lc', panels: DEFAULT_SCOPES.map(panel), unit: 'percent', tint: 'picture', falsePreset: 'ARRI', zebra: 0.95, zebraLow: 0,
     maxSamples: 1_000_000, bridge: '', sidebar: true, skin: { ...DEFAULT_SKIN }, display: 'auto', theme: DEFAULT_THEME, targets: [], scenes: [defaultScene()], activeScene: '', layoutName: '',
     sources: [{ kind: 'pattern', name: t('main.pattern.title'), url: '', settings: { transfer: 'auto', colorspace: 'auto', width: 960, fps: 0, depth: 8, transport: 'tcp' }, pattern: { id: 'smpte75-lz', width: 1920, height: 1080, label: '' } }],
   };
@@ -239,8 +239,7 @@ try {
 // (command "setting", docs/control-api.md).
 
 const UNIT_OPTIONS = (): Option[] => [['percent', '%'], ['bit8', '8 bit'], ['bit10', '10 bit'], ['nits', t('settings.scopes.nitsScene')], ['stop', t('settings.scopes.stop')]];
-const PARADE_SCOPES: ScopeType[] = ['parade', 'yrgb', 'wf-rgb'];
-const TINT_OPTIONS = (): Option[] => [['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]];
+const TINT_OPTIONS = (): Option[] => [['picture', t('settings.scopes.pictureColour')], ['green', t('settings.scopes.green')], ['white', t('settings.scopes.white')], ['amber', t('settings.scopes.amber')]];
 const SET = {
   lang: { key: 'lang', kind: 'select', label: () => t('lang.label'), title: () => t('lang.title'), hint: () => t('lang.hint'),
     options: () => [['auto', t('lang.auto', { lang: LANG_NAMES[systemLang()] })], ...LANGS.map((l) => [l, LANG_NAMES[l]] as Option)],
@@ -996,7 +995,7 @@ function fillHead(v: PanelView) {
   const multi = sources.length > 1 && !isLight(p.scope) && p.scope !== 'tiles';
   lead.replaceChildren(...[
     select(p.scope, Object.entries(SCOPE_LABELS) as Option[], (val) => {
-      p.scope = val as ScopeType; p.view = undefined; if (val === 'vector' || val === 'hls' || val === 'cie') p.colorize = true; if (PARADE_SCOPES.includes(p.scope) && !p.paradeColor) p.paradeColor = 'source'; save(); fillHead(v); dock.setTitle(idx);
+      p.scope = val as ScopeType; p.view = undefined; if (val === 'vector' || val === 'hls' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
     }, '', { 'aria-label': t('ui.scope') }),
     multi && select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), t('panel.sourceTitle')),
     stageChip(p),

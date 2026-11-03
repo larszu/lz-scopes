@@ -5,6 +5,7 @@
 //   fake-helper.mjs --capture <y10> <frames>   (each frame preceded by a TIME record)
 //   fake-helper.mjs --psf <y10> <frames>       (as --capture, plus an INFO per frame whose mode name flips p ↔ PsF)
 //   fake-helper.mjs --reference <n>            → one JSON line in the shape of lz-decklink --reference
+//   fake-helper.mjs --audio                    → 5 frames with FPTS and 2-channel sound (AUDI), one sound packet missing
 //   fake-helper.mjs --ndi-stats                → three lz-ndi counter records (fine, losses, fine)
 const [mode, a1, a2] = process.argv.slice(2);
 if (mode === '--reference') {
@@ -28,6 +29,23 @@ if (mode === '--vanc') {
   rec('VANC', { packets: [{ did: 0x41, sdid: 0x01, line: 10, stream: 0, data: '89e92001' }] });
   rec('VANC', 'not json');
   setTimeout(() => process.exit(0), 100);
+} else if (mode === '--audio') {
+  // lz-decklink with --audio: INFO.audio, FPTS before every frame, AUDI (int64 time + s32le). The
+  // third sound packet is missing (time jumps by 1920 samples): the bridge must show the gap.
+  const w = 96, h = 54, row = Math.ceil(w / 48) * 128, frame = Buffer.alloc(row * h);
+  rec('INFO', { width: w, height: h, fpsNum: 25, fpsDen: 1, pixel: 'v210', matrix: 'bt709', range: 'tv', name: '1080p25', audio: { sampleRate: 48000, channels: 2, format: 's32le' } });
+  const audi = (t) => {
+    const b = Buffer.alloc(8 + 1920 * 2 * 4);
+    b.writeBigInt64LE(BigInt(t), 0);
+    for (let i = 0; i < 1920; i++) { b.writeInt32LE(1 << 30, 8 + i * 8); b.writeInt32LE(-(1 << 29), 12 + i * 8); } // L +0.5, R -0.25
+    rec('AUDI', b);
+  };
+  let k = 0;
+  const t = setInterval(() => {
+    if (k !== 2) audi(k * 1920);
+    const pts = Buffer.alloc(8); pts.writeBigInt64LE(BigInt(k * 1920)); rec('FPTS', pts); rec('FRAM', frame);
+    if (++k >= 5) { clearInterval(t); setTimeout(() => process.exit(0), 300); }
+  }, 40);
 } else if (mode === '--ndi-stats') {
   const st = (p) => rec('STAT', { code: 'ndi.stats', message: 'NDI counters', params: { fps: 25, received: 25, queue: 0, connections: 1, ...p } });
   st({ ndiDropped: 0, skipped: 0 }); st({ ndiDropped: 3, skipped: 2 }); st({ ndiDropped: 0, skipped: 0 });

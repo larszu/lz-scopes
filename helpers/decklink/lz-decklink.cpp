@@ -2,7 +2,8 @@
 //
 //   lz-decklink --list                       one JSON line: {"ok":true,"devices":[…]} or {"ok":false,"error":"…"}
 //   lz-decklink --reference <index>          one JSON line: genlock/reference status (#72), see reference()
-//   lz-decklink --capture <index> [--bits 8|10] [--input sdi|hdmi|optical|component|composite|svideo]
+//   lz-decklink --capture <index> [--bits 8|10] [--input sdi|hdmi|optical|component|composite|svideo] [--audio 0|2|8|16]
+//                                            --audio n: embedded sound, up to n channels (AUDI records, see sendAudio)
 //                                            helper protocol on stdout (docs/frame-protocol.md):
 //                                            INFO / FRAM / STAT / ERR records
 //
@@ -189,7 +190,7 @@ static int listDevices() {
 
 class Capture : public IDeckLinkInputCallback {
  public:
-  Capture(IDeckLinkInput* in, bool tenBit) : input_(in), tenBit_(tenBit) {}
+  Capture(IDeckLinkInput* in, bool tenBit, int audioChannels) : input_(in), tenBit_(tenBit), audioChannels_(audioChannels) {}
 
   // IUnknown (the object lives for the whole process)
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID, LPVOID* ppv) override { *ppv = nullptr; return E_NOINTERFACE; }
@@ -211,7 +212,9 @@ class Capture : public IDeckLinkInputCallback {
     return S_OK;
   }
 
-  HRESULT STDMETHODCALLTYPE VideoInputFrameArrived(IDeckLinkVideoInputFrame* frame, IDeckLinkAudioInputPacket*) override {
+  HRESULT STDMETHODCALLTYPE VideoInputFrameArrived(IDeckLinkVideoInputFrame* frame, IDeckLinkAudioInputPacket* audio) override {
+    // sound first: it also arrives for frames the bridge may skip, and must have no gaps
+    if (audio && audioChannels_ && !(frame && (frame->GetFlags() & bmdFrameHasNoInputSource))) sendAudio(audio);
     if (!frame) return S_OK;
     if (frame->GetFlags() & bmdFrameHasNoInputSource) {
       auto now = std::chrono::steady_clock::now();
@@ -223,6 +226,9 @@ class Capture : public IDeckLinkInputCallback {
     if (frame->GetBytes(&bytes) != S_OK || !bytes) return S_OK;
     sendInfoIfChanged(frame);
     sendVanc(frame);
+    // stream time of the picture on the same clock as the sound (1/48000 s): A/V offset in the browser
+    BMDTimeValue ft = 0, fd = 0;
+    if (frame->GetStreamTime(&ft, &fd, 48000) == S_OK) { const int64_t v = (int64_t)ft; writeRecord("FPTS", &v, 8); }
     const uint8_t* src = static_cast<const uint8_t*>(bytes);
     if (pixel_ == bmdFormat10BitRGB) {
       // r210: big-endian 2:10:10:10, SMPTE levels 64–940 → full-range 16 bit (clipped)
@@ -315,6 +321,20 @@ class Capture : public IDeckLinkInputCallback {
     writeText("VANC", "{\"packets\":[" + list + "]}");
   }
 
+  /** AUDI: int64 LE time of the first sample (1/48000 s, packet time), then s32le interleaved samples. */
+  void sendAudio(IDeckLinkAudioInputPacket* audio) {
+    void* data = nullptr;
+    const long n = audio->GetSampleFrameCount();
+    BMDTimeValue t = 0;
+    if (n <= 0 || audio->GetBytes(&data) != S_OK || !data || audio->GetPacketTime(&t, 48000) != S_OK) return;
+    const size_t bytes = (size_t)n * audioChannels_ * 4;
+    abuf_.resize(8 + bytes);
+    const int64_t first = (int64_t)t;
+    std::memcpy(abuf_.data(), &first, 8);
+    std::memcpy(abuf_.data() + 8, data, bytes);
+    writeRecord("AUDI", abuf_.data(), (uint32_t)abuf_.size());
+  }
+
   void sendInfoIfChanged(IDeckLinkVideoInputFrame* frame) {
     std::string matrix, transfer = "unknown", primaries = "unknown", tc;
     {
@@ -348,7 +368,8 @@ class Capture : public IDeckLinkInputCallback {
       + ",\"fpsNum\":" + std::to_string(fpsNum_) + ",\"fpsDen\":" + std::to_string(fpsDen_)
       + ",\"pixel\":\"" + pixel + "\",\"matrix\":\"" + matrix + "\",\"range\":\"" + (pixel_ == bmdFormat10BitRGB ? "pc" : "tv")
       + "\",\"transfer\":\"" + transfer + "\",\"primaries\":\"" + primaries + "\",\"interlaced\":" + (interlaced_ ? "true" : "false")
-      + ",\"name\":\"" + jsonEscape(modeName_) + "\"";
+      + ",\"name\":\"" + jsonEscape(modeName_) + "\""
+      + (audioChannels_ ? ",\"audio\":{\"sampleRate\":48000,\"channels\":" + std::to_string(audioChannels_) + ",\"format\":\"s32le\"}" : "");
     // the timecode changes every frame; only format changes trigger a new INFO
     if (info == lastInfo_) return;
     lastInfo_ = info;
@@ -357,6 +378,8 @@ class Capture : public IDeckLinkInputCallback {
 
   IDeckLinkInput* input_;
   bool tenBit_;
+  int audioChannels_;
+  std::vector<uint8_t> abuf_;
   std::atomic<ULONG> refs_{1};
   std::mutex modeLock_;
   std::string modeName_, modeMatrix_ = "unknown", lastInfo_;
@@ -469,7 +492,7 @@ static int reference(int index) {
   return 0;
 }
 
-static int capture(int index, bool tenBit, const std::string& input) {
+static int capture(int index, bool tenBit, const std::string& input, int wantAudio) {
   std::vector<IDeckLink*> list = allDevices();
   if (list.empty()) return fatal("decklink.noDevices", "No DeckLink devices found (Desktop Video installed? Device connected?)");
   if (index < 0 || index >= (int)list.size()) return fatal("decklink.noDevice", "DeckLink device " + std::to_string(index) + " not present", "{\"index\":" + std::to_string(index) + "}");
@@ -504,7 +527,16 @@ static int capture(int index, bool tenBit, const std::string& input) {
   }
   if (!start) return fatal("decklink.noModes", "Device reports no video modes");
   const BMDPixelFormat pf = tenBit ? bmdFormat10BitYUV : bmdFormat8BitYUV;
-  Capture cb(in, tenBit);
+  // embedded sound: 48 kHz, 32 bit, the largest of 16/8/2 channels the device takes (SDI carries 16)
+  int64_t maxCh = 2;
+  if (d->QueryInterface(IID_IDeckLinkProfileAttributes, (void**)&attr) == S_OK) { attr->GetInt(BMDDeckLinkMaximumAudioChannels, &maxCh); attr->Release(); }
+  int channels = 0;
+  for (int c : { 16, 8, 2 }) if (!channels && c <= wantAudio && c <= maxCh) channels = c;
+  if (channels && in->EnableAudioInput(bmdAudioSampleRate48kHz, bmdAudioSampleType32bitInteger, channels) != S_OK) {
+    writeText("STAT", "{\"code\":\"decklink.noAudio\",\"message\":\"Sound input cannot be opened - picture only\"}");
+    channels = 0;
+  }
+  Capture cb(in, tenBit, channels);
   in->SetCallback(&cb);
   if (in->EnableVideoInput(start->GetDisplayMode(), pf, detect ? bmdVideoInputEnableFormatDetection : bmdVideoInputFlagDefault) != S_OK)
     return fatal("decklink.inputBusy", "Video input cannot be opened (in use by other software?)");
@@ -525,12 +557,14 @@ int main(int argc, char** argv) {
   if (argc >= 3 && std::strcmp(argv[1], "--capture") == 0) {
     bool tenBit = true;
     std::string input;
+    int audio = 0;
     for (int i = 3; i + 1 < argc; i++) {
       if (std::strcmp(argv[i], "--bits") == 0) tenBit = std::strcmp(argv[i + 1], "8") != 0;
       if (std::strcmp(argv[i], "--input") == 0) input = argv[i + 1];
+      if (std::strcmp(argv[i], "--audio") == 0) audio = std::atoi(argv[i + 1]);
     }
-    return capture(std::atoi(argv[2]), tenBit, input);
+    return capture(std::atoi(argv[2]), tenBit, input, audio);
   }
-  fprintf(stderr, "usage: lz-decklink --list | --reference <index> | --capture <index> [--bits 8|10] [--input sdi|hdmi|…]\n");
+  fprintf(stderr, "usage: lz-decklink --list | --reference <index> | --capture <index> [--bits 8|10] [--input sdi|hdmi|…] [--audio 0|2|8|16]\n");
   return 1;
 }

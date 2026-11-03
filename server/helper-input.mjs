@@ -6,6 +6,9 @@
 //   FRAM  one picture in `pixel` layout, rows without padding (v210: 128-byte blocks per 48 px)
 //   STAT  JSON {message, code?, params?}   (status text, e.g. "no input signal"; code: server/messages.mjs)
 //   TIME  JSON {tc, df}          (optional, per frame: source timecode, e.g. DeckLink RP 188)
+//   FPTS  int64 LE               (optional, before FRAM: stream time of the picture in 1/48000 s)
+//   AUDI  int64 LE + s32le       (optional: time of the first sample in 1/48000 s, then interleaved
+//                                 samples; channels/rate from INFO.audio {sampleRate, channels, format:"s32le"})
 //   ERR   UTF-8 text, or JSON {message, code?, params?}   (fatal; the helper exits afterwards)
 //
 // The bridge feeds the frames into ffmpeg (rawvideo/v210 demuxer on stdin) and uses the
@@ -15,6 +18,7 @@ import { spawn } from 'node:child_process';
 import { PhaseTracker } from './phase.mjs';
 import { FrameAssembler } from './frames.mjs';
 import { BridgeError, bmsg, toMsg } from './messages.mjs';
+import { AudioPacketizer, packetHeader } from './proto2.mjs';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -133,8 +137,13 @@ export function helperText(payload) {
  * Stream from a helper to a WebSocket in frame protocol 1. `ctx` supplies what lives in
  * server/index.mjs: ffmpeg path, decodeParams, outputSize, fail().
  */
-export function startHelperStream(ws, { bin, args, label, params, ctx }) {
+export function startHelperStream(ws, { bin, args, label, params, ctx, audio = false }) {
   const depth = params.get('depth') === '8' ? 8 : 16;
+  // frame protocol 2 (picture + sound) when the client asks for sound and the helper can deliver it
+  const proto = audio && params.get('audio') === '1' ? 2 : 1;
+  let frameNo = 0, nextPts = NaN, aud = null;
+  /** PTS (s) of the pictures handed to ffmpeg, in order; ffmpeg keeps the order (without fps= it keeps every picture) */
+  let ptsQueue = [];
   const maxWidth = Math.min(3840, Math.max(0, Number(params.get('width') ?? 960) || 0));
   const fpsLimit = Math.min(60, Math.max(0, Number(params.get('fps') ?? 0) || 0));
   const opts = ctx.deviceOptions(params);
@@ -170,12 +179,54 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
   };
   const sendFrame = (frame) => {
     if (ws.readyState !== ws.OPEN) return;
-    if (ws.bufferedAmount < outBytes * 2) { ws.send(frame, { binary: true }); sent++; } else dropped++;
+    const pts = ptsQueue.length ? ptsQueue.shift() : NaN;
+    const no = frameNo++;
+    if (ws.bufferedAmount < outBytes * 2) { ws.send(proto === 2 ? Buffer.concat([packetHeader('LZV1', no, fpsLimit ? NaN : pts), frame]) : frame, { binary: true }); sent++; } else dropped++;
+  };
+  /** INFO.audio → packetizer (new one when the format changes), or null. */
+  const audioFormat = (info) => {
+    const a = info?.audio;
+    const ok = proto === 2 && a && a.format === 's32le' && [2, 8, 16, 32].includes(Number(a.channels)) && Number(a.sampleRate) === 48000;
+    if (!ok) { aud = null; return null; }
+    if (!aud || aud.channels !== Number(a.channels)) {
+      const channels = Number(a.channels);
+      aud = {
+        channels, expected: null, lastAnchor: -Infinity,
+        pk: new AudioPacketizer(48000, channels, (b) => { if (ws.readyState === ws.OPEN) ws.send(b, { binary: true }); }),
+      };
+    }
+    return { sampleRate: 48000, channels: aud.channels, format: 'f32le', layout: '', codec: 'pcm_s32le', sourceSampleRate: 48000, sourceChannels: aud.channels };
+  };
+  /** AUDI: s32 → f32, gaps from the packet times, PTS anchors (first packet, gap, every 5 s). */
+  const onAudio = (payload) => {
+    if (!aud || payload.length < 8) return;
+    const t = Number(payload.readBigInt64LE(0));
+    const data = payload.subarray(8);
+    const n = Math.floor(data.length / (aud.channels * 4));
+    if (!n) return;
+    const pk = aud.pk;
+    let anchor = aud.expected === null || t - aud.lastAnchor >= 5 * 48000;
+    if (aud.expected !== null && t !== aud.expected) {
+      // lost sound: send what is pending, then jump the sample index (a jump = a gap, docs/frame-protocol.md)
+      pk.flush();
+      if (t > aud.expected) pk.index += t - aud.expected;
+      anchor = true;
+    }
+    if (anchor && ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({ type: 'apts', index: pk.index + pk.bytes / pk.frameBytes, pts: t / 48000 }));
+      aud.lastAnchor = t;
+    }
+    aud.expected = t + n;
+    const len = n * aud.channels;
+    const s32 = new Int32Array(data.buffer.slice(data.byteOffset, data.byteOffset + len * 4)); // copy: payload offset need not be aligned
+    const f32 = new Float32Array(len);
+    for (let i = 0; i < len; i++) f32[i] = s32[i] / 2147483648;
+    pk.push(Buffer.from(f32.buffer));
   };
   // whole frames only (frames.mjs)
   const onOut = (chunk) => asm?.push(chunk);
   // INFO fields that change the ffmpeg command; a new mode name alone (p ↔ PsF) only updates the card
-  const ffKey = (i) => JSON.stringify([i.width, i.height, i.fpsNum, i.fpsDen, i.pixel, i.matrix, i.range, i.interlaced]);
+  const ffKey = (i) => JSON.stringify([i.width, i.height, i.fpsNum, i.fpsDen, i.pixel, i.matrix, i.range, i.interlaced, i.audio?.channels ?? 0]);
   const startFf = (info) => {
     stopFf();
     const f = helperFormat(info);
@@ -183,6 +234,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
     fmt = f;
     lastInfo = info;
     lastFps = f.fps;
+    ptsQueue = [];
     phase = ctx.now && f.fps > 0 ? new PhaseTracker(Math.round(Number(info.fpsNum)), Math.round(Number(info.fpsDen) || 1)) : null;
     const { width, height } = ctx.outputSize(f.width, f.height, maxWidth);
     outBytes = width * height * 4 * (depth / 8); asm = new FrameAssembler(outBytes, sendFrame);
@@ -209,6 +261,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
         transfer: info.transfer ?? 'unknown', primaries: info.primaries ?? 'unknown', matrix: info.matrix ?? 'unknown', range: info.range ?? 'unknown',
         ...(info.timecode ? { timecode: info.timecode } : {}),
         ...(info.interlaced ? { interlaced: true } : {}),
+        ...(proto === 2 ? { proto: 2, audio: audioFormat(info) } : {}),
       }));
     }
   };
@@ -224,6 +277,10 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
       try { tcm = JSON.parse(payload.toString('utf8')); } catch { return; }
       lastDf = !!tcm.df;
       if (typeof tcm.tc === 'string' && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'tc', tc: tcm.tc, kind: label.toLowerCase(), fps: lastFps || null, df: lastDf }));
+    } else if (tag === 'AUDI') {
+      onAudio(payload);
+    } else if (tag === 'FPTS') {
+      if (payload.length === 8) nextPts = Number(payload.readBigInt64LE(0)) / 48000;
     } else if (tag === 'VANC') {
       // SDI ancillary packets (DeckLink, #160): forwarded as they are, decoded in the browser (src/vanc.ts)
       let v;
@@ -236,7 +293,9 @@ export function startHelperStream(ws, { bin, args, label, params, ctx }) {
       if (!ff || !fmt) return;
       if (payload.length !== fmt.bytes) { status = bmsg('helper.frameSize', `Picture size does not match (${payload.length} instead of ${fmt.bytes} bytes)`, { got: payload.length, want: fmt.bytes }); return; }
       // newest picture wins: skip when ffmpeg is still busy with the previous ones
+      const pts = nextPts; nextPts = NaN;
       if (ff.stdin.writableLength > fmt.bytes * 2) { dropped++; return; }
+      if (proto === 2) { ptsQueue.push(pts); if (ptsQueue.length > 64) ptsQueue.shift(); }
       ff.stdin.write(Buffer.from(payload));
     } else if (tag === 'STAT') {
       const m = helperText(payload);

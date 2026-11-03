@@ -18,7 +18,7 @@ export default {
   'bridgeui.soundTitle': 'Sound for the picture, e.g. HDMI sound of the capture card or Dante Virtual Soundcard (audio device of the bridge computer)',
   'bridgeui.chooseDevice': 'Choose device …',
   'bridgeui.device': 'Device…',
-  'bridgeui.decklinkTitle': 'Input via the DeckLink helper (compatible with Blackmagic Design DeckLink): v210 10 bit, format detection, timecode, HDR flags, VANC. The helper is included in the desktop app; it needs the Blackmagic Desktop Video driver on this computer (setup steps open when it is missing).',
+  'bridgeui.decklinkTitle': 'Input via the DeckLink helper (compatible with Blackmagic Design DeckLink): v210 10 bit, embedded sound (16 channels), format detection, timecode, HDR flags, VANC. The helper is included in the desktop app; it needs the Blackmagic Desktop Video driver on this computer (setup steps open when it is missing).',
   'bridgeui.bridgeUnreachable': 'Bridge not reachable',
   'bridgeui.noDecklinkDevice': 'Desktop Video installed, but no DeckLink device found',
   'bridgeui.chooseDecklink': 'Choose DeckLink …',

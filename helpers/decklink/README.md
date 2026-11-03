@@ -2,7 +2,7 @@
 
 Nimmt von einem Gerät mit DeckLink-Schnittstelle auf (LZ Scopes compatible with Blackmagic Design DeckLink) und schreibt die Bilder im Helfer-Protokoll (`docs/frame-protocol.de.md`) auf stdout. Die Bridge startet ihn für Quellen `decklink:<n>` und rechnet wie bei Streams mit ffmpeg nach R′G′B′ um.
 
-**Stand:** In der Desktop-App enthalten (macOS universal, Windows x64, Linux x64 und arm64; gebaut in `release.yml`). **Mit Hardware geprüft** am 03.11.2026 auf macOS 26 (Apple Silicon) mit einem UltraStudio Recorder 3G an Thunderbolt, Desktop Video 16.5: Liste, Aufnahme über SDI in v210 und UYVY (1080p25), RP-188-Timecode, VANC, Eingangswahl SDI/HDMI; Prüfskript `scripts/decklink/probe.mjs`. Nicht geprüft: RGB 4:4:4, HDR-Kennung, Referenzeingang (das Gerät hat keinen), Windows und Linux mit Karte (#116). Desktop Video für Linux gibt es auch für AArch64; Blackmagic nennt als getestete ARM-Plattformen nur Jetson AGX Xavier und Clara AGX. Bezeichnung nach SDK-EULA §6.2: „LZ Scopes compatible with Blackmagic Design DeckLink“.
+**Stand:** In der Desktop-App enthalten (macOS universal, Windows x64, Linux x64 und arm64; gebaut in `release.yml`). **Mit Hardware geprüft** am 03.11.2026 auf macOS 26 (Apple Silicon) mit einem UltraStudio Recorder 3G an Thunderbolt, Desktop Video 16.5: Liste, Aufnahme über SDI in v210 und UYVY (1080p25), eingebetteter Ton (16 Kanäle), RP-188-Timecode, VANC, Eingangswahl SDI/HDMI; Prüfskript `scripts/decklink/probe.mjs`. Nicht geprüft: RGB 4:4:4, HDR-Kennung, Referenzeingang (das Gerät hat keinen), Windows und Linux mit Karte (#116). Desktop Video für Linux gibt es auch für AArch64; Blackmagic nennt als getestete ARM-Plattformen nur Jetson AGX Xavier und Clara AGX. Bezeichnung nach SDK-EULA §6.2: „LZ Scopes compatible with Blackmagic Design DeckLink“.
 
 **Einrichtung des Treibers:** Schritte für macOS, Windows und Linux in `docs/manual/inputs.de.md` (*Blackmagic Desktop Video einrichten*); die Oberfläche zeigt sie als Dialog (`src/decklinkSetup.ts`).
 
@@ -26,7 +26,7 @@ Das Ergebnis landet in `helpers/bin/`; `npm run dist:*` und `release.yml` nehmen
 
 ```
 lz-decklink --list                      → {"ok":true,"devices":[{"index":0,"name":"UltraStudio Recorder 3G","formatDetection":true,"capture":true,"inputs":["sdi","hdmi"],"input":"sdi"}]}
-lz-decklink --capture <index> [--bits 8|10] [--input sdi|hdmi|optical|component|composite|svideo]
+lz-decklink --capture <index> [--bits 8|10] [--input sdi|hdmi|optical|component|composite|svideo] [--audio 0|2|8|16]
 lz-decklink --reference <index>       → {"ok":true,"hasReference":true,"referenceLocked":true,"referenceMode":{…},"timingOffsetPixels":0,…} (Genlock, #72)
 ```
 
@@ -36,7 +36,7 @@ lz-decklink --reference <index>       → {"ok":true,"hasReference":true,"refere
 - RGB-4:4:4-Signale: `bmdFormat10BitRGB` (`r210`, laut SDK-Header „SMPTE video levels (64-960)“) → im Helfer auf volle 16 bit gespreizt (`rgb48le`, Werte außerhalb 64…940 werden abgeschnitten).
 - `INFO` enthält Matrix (aus den Modus-Flags bzw. `bmdDeckLinkFrameMetadataColorspace`), HDR-EOTF (CEA-861.3: 2 = PQ, 3 = HLG) und Timecode (RP 188, erster gültiger).
 - `VANC`: alle Zusatzpakete des Bildes (`IDeckLinkVideoFrameAncillaryPackets`, DID/SDID, Zeile, Datenstrom, Nutzdaten als Hex), bei Änderung bzw. höchstens 4/s (#160). Ausgewertet im Browser (`src/vanc.ts`, Panel *SDI-Signalinfo*). Mit Hardware ungeprüft (#116).
-- Kein Ton (noch nicht umgesetzt).
+- Ton (`--audio n`, die Bridge setzt 16, wenn die Seite Ton will): eingebetteter Ton mit 48 kHz, 32 bit, so viele Kanäle wie das Gerät kann (16, 8 oder 2; `BMDDeckLinkMaximumAudioChannels`). `AUDI`-Datensätze mit Paketzeit, `FPTS` mit der Stream-Zeit jedes Bildes auf derselben Uhr; die Bridge macht daraus Protokoll 2 mit PTS (A/V-Versatz). Geprüft mit dem Recorder 3G über SDI: 16 Kanäle, lückenlos. Die lokale Aufnahme der Bridge schreibt bei DeckLink noch keinen Ton.
 
 ## Lizenz
 

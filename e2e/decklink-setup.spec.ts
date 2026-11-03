@@ -46,6 +46,14 @@ test.describe('real DeckLink device', () => {
     await card.getByRole('button', { name: 'DeckLink…' }).click();
     await expect.poll(async () => (await r.state()).sources.at(-1)?.status, { timeout: 30_000 }).toBe('live');
     await expect(card).toContainText('1920×1080');
+    // embedded sound arrives with the picture, without any further setting (fresh profile)
+    await expect(card).toContainText('48 kHz');
+    const level = () => page.evaluate(() => {
+      const w = window as unknown as { lzs: { sources: () => { id: string }[]; source: (id: string) => { url: string; audio: { channels: number } | null } | null } };
+      const s = w.lzs.sources().map((x) => w.lzs.source(x.id)).find((x) => x?.url.startsWith('decklink:'));
+      return s?.audio?.channels ?? 0;
+    });
+    await expect.poll(level, { timeout: 15_000 }).toBe(16);
     const input = card.locator('select', { has: page.locator('option', { hasText: 'HDMI' }) });
     await expect(input).toBeVisible();
     await page.screenshot({ path: join(ROOT, 'test-results/e2e/decklink-live.png') });

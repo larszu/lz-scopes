@@ -114,7 +114,7 @@ An **RTSP / Netz** source has these buttons below the address field:
 ![Stream card with Gerät…, DeckLink…, NDI®…, Ordner…](img/stream-card.png)
 
 - **Gerät…** (device): cards that appear as system devices (USB capture, Magewell, Blackmagic with WDM or AVFoundation driver). The bridge takes the deepest raw format the card offers. Mode, frame rate and pixel format can be fixed.
-- **DeckLink…**: Blackmagic DeckLink and UltraStudio through the DeckLink helper, with 10 bit, format detection, timecode and SDI ancillary data. Needs Blackmagic Desktop Video (see *Setting up Blackmagic Desktop Video*). With one device it connects straight away; with several, a list appears. If the helper, the driver or the device is missing, the setup steps open.
+- **DeckLink…**: Blackmagic DeckLink and UltraStudio through the DeckLink helper, with 10 bit, embedded sound (up to 16 channels, 48 kHz), format detection, timecode and SDI ancillary data. The sound goes to the audio meters with timestamps, so the A/V offset can be measured. Needs Blackmagic Desktop Video (see *Setting up Blackmagic Desktop Video*). With one device it connects straight away; with several, a list appears. If the helper, the driver or the device is missing, the setup steps open.
 - **NDI®…**: NDI sources on the network. Needs the NDI runtime from [ndi.video](https://ndi.video/). LZ Scopes does not ship it.
 - **Ordner…**: see above.
 

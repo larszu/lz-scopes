@@ -114,7 +114,7 @@ In einer Quelle **RTSP / Netz** stehen unter dem Adressfeld diese Knöpfe:
 ![Stream-Karte mit Gerät…, DeckLink…, NDI®…, Ordner…](img/stream-card.png)
 
 - **Gerät…**: Karten, die sich als Systemgerät melden (USB-Capture, Magewell, Blackmagic mit WDM- oder AVFoundation-Treiber). Die Bridge nimmt das Rohformat mit der höchsten Bittiefe, das die Karte anbietet. Modus, Bildrate und Pixelformat lassen sich fest wählen.
-- **DeckLink…**: Blackmagic DeckLink und UltraStudio über den DeckLink-Helfer, mit 10 bit, Formaterkennung, Timecode und SDI-Zusatzdaten. Dafür muss Blackmagic Desktop Video installiert sein (siehe *Blackmagic Desktop Video einrichten*). Mit einem Gerät verbindet die App sofort, bei mehreren erscheint eine Liste. Fehlt der Helfer, der Treiber oder das Gerät, öffnen sich die Einrichtungsschritte.
+- **DeckLink…**: Blackmagic DeckLink und UltraStudio über den DeckLink-Helfer, mit 10 bit, eingebettetem Ton (bis 16 Kanäle, 48 kHz), Formaterkennung, Timecode und SDI-Zusatzdaten. Der Ton geht mit Zeitstempeln an die Audiomessung, der A/V-Versatz lässt sich also messen. Dafür muss Blackmagic Desktop Video installiert sein (siehe *Blackmagic Desktop Video einrichten*). Mit einem Gerät verbindet die App sofort, bei mehreren erscheint eine Liste. Fehlt der Helfer, der Treiber oder das Gerät, öffnen sich die Einrichtungsschritte.
 - **NDI®…**: NDI-Quellen im Netz. Dafür muss die NDI-Runtime von [ndi.video](https://ndi.video/) installiert sein. LZ Scopes liefert sie nicht mit.
 - **Ordner…**: siehe oben.
 

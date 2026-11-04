@@ -9,7 +9,7 @@ So kommt ein Bild in LZ Scopes. Alle Eingänge stehen links in der Seitenleiste 
 | Clean Feed oder Fenster per Bildschirm-Capture | 8 bit | schnell, ohne Hardware; der Bildschirm verfälscht Farben und Pegel |
 | Datei | 8 bit (Browser), bis 16 bit (Bridge) | ein Clip oder ein Einzelbild von der Platte |
 | Ordner | 8 bit (Browser), 16 bit (Bridge) | Standbilder aus Lightroom, Capture One, Resolve |
-| Capture-Karte, DeckLink, NDI® | 8–16 bit | Kameras, Mischer, Kreuzschienen |
+| Capture-Karte, DeckLink, AJA, NDI® | 8–16 bit | Kameras, Mischer, Kreuzschienen |
 
 ## DaVinci Resolve
 
@@ -107,7 +107,7 @@ Gezeigt wird immer das **neueste Bild** in einem Ordner. Wer ein neues Bild expo
 
 Den Farbraum des Exports stellst du an der Quelle ein, etwa Transfer **sRGB** für einen sRGB-Export. Eingebettete ICC-Profile liest LZ Scopes nicht. Die Menüwege in Lightroom und Capture One sind beschrieben, aber nicht an den Programmen nachgeprüft.
 
-## Capture-Karten, DeckLink, NDI®
+## Capture-Karten, DeckLink, AJA, NDI®
 
 In einer Quelle **RTSP / Netz** stehen unter dem Adressfeld diese Knöpfe:
 
@@ -115,10 +115,18 @@ In einer Quelle **RTSP / Netz** stehen unter dem Adressfeld diese Knöpfe:
 
 - **Gerät…**: Karten, die sich als Systemgerät melden (USB-Capture, Magewell, Blackmagic mit WDM- oder AVFoundation-Treiber). Die Bridge nimmt das Rohformat mit der höchsten Bittiefe, das die Karte anbietet. Modus, Bildrate und Pixelformat lassen sich fest wählen.
 - **DeckLink…**: Blackmagic DeckLink und UltraStudio über den DeckLink-Helfer, mit 10 bit, eingebettetem Ton (bis 16 Kanäle, 48 kHz), Formaterkennung, Timecode und SDI-Zusatzdaten. Der Ton geht mit Zeitstempeln an die Audiomessung, der A/V-Versatz lässt sich also messen. Dafür muss Blackmagic Desktop Video installiert sein (siehe *Blackmagic Desktop Video einrichten*). Mit einem Gerät verbindet die App sofort, bei mehreren erscheint eine Liste. Fehlt der Helfer, der Treiber oder das Gerät, öffnen sich die Einrichtungsschritte.
+- **AJA…**: AJA KONA, Io, U-TAP und andere AJA-Karten über den AJA-Helfer (libajantv2), mit 10 bit, eingebettetem Ton (bis 16 Kanäle, 48 kHz), Formaterkennung, Timecode, HDR-Kennung aus der SDI-VPID bzw. dem HDMI-InfoFrame und SDI-Zusatzdaten. Dafür muss der AJA-Treiber installiert sein (siehe *AJA-Karte einrichten*). Karten mit mehreren Eingängen bekommen eine Eingangsliste (SDI 1, SDI 2 … HDMI 1, jeweils mit dem dort erkannten Format). 4K/UHD-Eingänge werden noch nicht unterstützt. Noch nicht mit einer Karte getestet.
 - **NDI®…**: NDI-Quellen im Netz. Dafür muss die NDI-Runtime von [ndi.video](https://ndi.video/) installiert sein. LZ Scopes liefert sie nicht mit.
 - **Ordner…**: siehe oben.
 
 Unter **Wandlung** und **Pegel** stellst du Matrix und Wertebereich fest ein, wenn eine Karte ihr Signal falsch oder gar nicht kennzeichnet.
+
+### AJA-Karte einrichten
+
+**AJA…** öffnet diese Schritte, solange keine Karte nutzbar ist; **Einrichtung …** an einer AJA-Quelle öffnet sie jederzeit. Erledigte Schritte sind abgehakt, **Erneut prüfen** fragt die Bridge neu.
+
+1. **macOS / Windows:** auf [aja.com/support](https://www.aja.com/support) das Produkt wählen und die **AJA Desktop Software** installieren (sie enthält den Treiber); unter macOS den AJA-Treiber bei Nachfrage unter **Systemeinstellungen → Allgemein → Anmeldeobjekte & Erweiterungen** erlauben, dann neu starten. **Linux:** Der Treiber gehört zu [libajantv2](https://github.com/aja-video/libajantv2): in `driver/linux` `make` ausführen, dann `sudo ./load_ajantv2`; die Karte erscheint als `/dev/ajantv20`.
+2. Von einer AJA-Karte kann immer nur ein Programm aufnehmen: AJA ControlRoom, Premiere, Resolve oder andere Software, die die Karte nutzt, beenden. Eine von einem anderen Programm gehaltene Karte steht in der Liste als *belegt*.
 
 ### Blackmagic Desktop Video einrichten
 

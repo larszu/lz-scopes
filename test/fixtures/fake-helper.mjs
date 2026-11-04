@@ -7,6 +7,7 @@
 //   fake-helper.mjs --reference <n>            → one JSON line in the shape of lz-decklink --reference
 //   fake-helper.mjs --audio                    → 5 frames with FPTS and 2-channel sound (AUDI), one sound packet missing
 //   fake-helper.mjs --ndi-stats                → three lz-ndi counter records (fine, losses, fine)
+//   fake-helper.mjs --aja-stat                 → lz-aja's counter records: 3 skipped by the helper, 2 dropped on the card
 const [mode, a1, a2] = process.argv.slice(2);
 if (mode === '--reference') {
   process.stdout.write(`${JSON.stringify({ ok: true, index: Number(a1), name: 'Fake DeckLink 8K Pro', hasReference: true, fullFrameOffset: false, referenceLocked: true,
@@ -46,6 +47,11 @@ if (mode === '--vanc') {
     const pts = Buffer.alloc(8); pts.writeBigInt64LE(BigInt(k * 1920)); rec('FPTS', pts); rec('FRAM', frame);
     if (++k >= 5) { clearInterval(t); setTimeout(() => process.exit(0), 300); }
   }, 40);
+} else if (mode === '--aja-stat') {
+  rec('STAT', { code: 'aja.skipped', message: '3 pictures skipped - bridge busy', params: { n: 3 } });
+  rec('STAT', { code: 'aja.dropped', message: '2 pictures dropped on the card', params: { n: 2 } });
+  rec('STAT', { code: 'aja.noSignal', message: 'no input signal' });
+  setTimeout(() => process.exit(0), 1300);
 } else if (mode === '--ndi-stats') {
   const st = (p) => rec('STAT', { code: 'ndi.stats', message: 'NDI counters', params: { fps: 25, received: 25, queue: 0, connections: 1, ...p } });
   st({ ndiDropped: 0, skipped: 0 }); st({ ndiDropped: 3, skipped: 2 }); st({ ndiDropped: 0, skipped: 0 });

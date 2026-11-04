@@ -1,9 +1,9 @@
 // Local recording of bridge sources (issue #140 step 5, docs/research/aufzeichnung.md).
 //
 // The recording is a second output of the same ffmpeg process that feeds the analysis: a
-// capture device (DeckLink, V4L2, AVFoundation) cannot be opened twice, and a network camera
+// capture device (DeckLink, AJA, V4L2, AVFoundation) cannot be opened twice, and a network camera
 // should not get a second session. Network sources are copied unchanged (`-c copy`); raw
-// sources (test patterns, capture devices, DeckLink/NDI helpers) are encoded with ProRes 422 HQ,
+// sources (test patterns, capture devices, DeckLink/AJA/NDI helpers) are encoded with ProRes 422 HQ,
 // DNxHR HQX, HEVC 10 bit (hardware encoder with fallback) or FFV1.
 //
 // Output: ffmpeg's segment muxer writes Matroska or MOV segments (a crash costs at most the
@@ -84,7 +84,7 @@ export const isNetworkUrl = (url) => /^(rtsps?|rtmps?|rtp|udp|srt|http|https|tcp
 /** copy | encode | null (not recordable: stills, audio only, Resolve). */
 export function recordMode(url) {
   if (isNetworkUrl(url)) return 'copy';
-  if (/^(test:|device:|decklink:|ndi:)/.test(url ?? '')) return 'encode';
+  if (/^(test:|device:|decklink:|aja:|ndi:)/.test(url ?? '')) return 'encode';
   return null;
 }
 

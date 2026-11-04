@@ -157,6 +157,7 @@ export default {
   'main.add.stream': 'RTSP / Netz',
   'main.add.resolveTitle': 'Aktuelles Frame aus DaVinci Resolve (Viewer, gegradet) in 16 bit über die Scripting-API – Resolve Studio, Externes Scripting: Lokal',
   'main.add.decklinkTitle': 'Blackmagic DeckLink oder UltraStudio über die Bridge: 10 bit direkt von der Karte, eingebetteter Ton, Timecode. Öffnet die Einrichtungsschritte, wenn Desktop Video fehlt.',
+  'main.add.ajaTitle': 'AJA KONA, Io oder U-TAP über die Bridge: 10 bit direkt von der Karte, eingebetteter Ton, Timecode. Öffnet die Einrichtungsschritte, wenn der AJA-Treiber fehlt.',
   'main.dev.useDecklink': 'Über DeckLink verbinden (10 bit)',
   'main.add.webcamTitle': 'Kamera oder USB-Capture-Gerät (HDMI/SDI → USB)',
   'main.add.webcam': 'Kamera/Capture',

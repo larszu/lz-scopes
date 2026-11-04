@@ -89,6 +89,7 @@ export function validateInput(url) {
   if (url in TEST_PATTERNS || url === 'resolve:') return null;
   if (/^(device|audio):/.test(url)) return parseDevice(url) ? null : bmsg('input.badDevice', 'Invalid device (device:<api>:<name>[#audio=<name>] or audio:<api>:<name>[#ch=<n>])');
   if (/^decklink:\d{1,2}$/.test(url)) return null;
+  if (/^aja:\d{1,2}$/.test(url)) return null;
   if (/^ndi:[^\n\r\0]{1,200}$/.test(url) && !url.slice(4).startsWith('-')) return null;
   if (/^folder:[\w .-]{1,80}$/.test(url)) return null;
   if (REC_URL.test(url)) return null;
@@ -549,6 +550,7 @@ async function startStream(ws, params) {
   if (problem) return fail(ws, problem);
   if (url === 'resolve:') return startResolve(ws, params);
   if (url.startsWith('decklink:')) return startDeckLink(ws, params, url);
+  if (url.startsWith('aja:')) return startAja(ws, params, url);
   if (url.startsWith('ndi:')) return startNdi(ws, params, url);
   if (url.startsWith('folder:')) return startFolder(ws, params, url);
   if (url.startsWith('rec:')) {
@@ -1130,6 +1132,32 @@ function startDeckLink(ws, params, url) {
 }
 
 /**
+ * AJA Video Systems cards (KONA, Io, U-TAP …) through the native helper (helpers/aja), linked
+ * against libajantv2 (MIT). The AJA driver is installed by the user and never shipped.
+ */
+export async function ajaStatus() {
+  const bin = helperPath('lz-aja');
+  if (!bin) return { available: false, helper: false, devices: [], ...field('error', bmsg('aja.noHelper', 'AJA helper not built (helpers/aja, npm run aja:fetch)')) };
+  const r = await helperList(bin);
+  return { available: !!r.ok, helper: true, platform: process.platform, sdk: r.sdk, devices: r.devices ?? [], ...(r.ok ? {} : field('error', r.error ? { message: r.error, code: r.code } : bmsg('aja.noDriver', 'AJA driver not installed'))) };
+}
+
+function startAja(ws, params, url) {
+  const bin = helperPath('lz-aja');
+  if (!bin) return fail(ws, bmsg('aja.unavailable', 'AJA not available – helper not built (helpers/aja/README.md)'));
+  const ffmpeg = ffmpegCandidates()[0];
+  if (!ffmpeg) return fail(ws, bmsg('ffmpeg.missing', 'ffmpeg not found'));
+  const index = url.slice('aja:'.length);
+  const pixel = params.get('pixel') === '8' ? '8' : '10';
+  // input connector sdi1…, hdmi1…; without it the first SDI input
+  const input = /^(sdi|hdmi)\d{1,2}$/.test(params.get('input') ?? '') ? ['--input', params.get('input')] : [];
+  startHelperStream(ws, {
+    bin, args: ['--capture', index, '--bits', pixel, ...input, '--audio', params.get('audio') === '1' ? '16' : '0'], label: 'AJA', params, audio: true,
+    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions, now: clockNow, recorder: helperRecorder(ws, url, ffmpeg) },
+  });
+}
+
+/**
  * NDI(R) through the native helper (helpers/ndi). The NDI runtime is installed by the
  * user and loaded by the helper at run time; lz-scopes ships nothing of NDI.
  * NDI(R) is a registered trademark of Vizrt NDI AB.
@@ -1181,7 +1209,7 @@ function startNdi(ws, params, url) {
   });
 }
 
-/** Recorder factory for the helper inputs (DeckLink, NDI): encoded recording, no sound. */
+/** Recorder factory for the helper inputs (DeckLink, AJA, NDI): encoded recording, no sound. */
 function helperRecorder(ws, url, ffmpeg) {
   return ({ restart, media }) => new StreamRecorder({
     url, ffmpeg, ffprobe: ffprobeCandidates([ffmpeg])[0] ?? '', allowed: ws.recordAllowed === true, roots: () => RECORD_ROOTS, clock: clockNow, restart, media,
@@ -1256,6 +1284,10 @@ const server = createServer((req, res) => {
   if (path === '/api/decklink/reference') {
     const index = Math.max(0, Math.min(63, Number(new URL(req.url ?? '/', 'http://x').searchParams.get('index')) || 0));
     deckLinkReference(index).then((st) => { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(st)); });
+    return;
+  }
+  if (path === '/api/aja') {
+    ajaStatus().then((st) => { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(st)); });
     return;
   }
   if (path === '/api/decklink') {

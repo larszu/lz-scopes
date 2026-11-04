@@ -1,5 +1,5 @@
 // Source-card controls for inputs that live in the bridge: capture devices (device:…)
-// with mode/pixel format, Blackmagic DeckLink through the native helper, and the
+// with mode/pixel format, Blackmagic DeckLink and AJA cards through the native helpers, and the
 // explicit decode matrix of the bridge's Y′CbCr → R′G′B′ step.
 
 import type { Source, SourceSettings } from './sources';
@@ -7,6 +7,7 @@ import { t } from './i18n';
 import { bridgeText } from './i18n/bridgeMessage';
 import { button, h, hint, link, openModal, row, select } from './ui';
 import { openDeckLinkSetup, type DeckLinkStatus } from './decklinkSetup';
+import { ajaInputName, openAjaSetup, type AjaStatus } from './ajaSetup';
 
 export interface BridgeUi {
   /** http(s) base of the bridge */
@@ -151,6 +152,73 @@ function inputSelect(s: Source, ui: BridgeUi): Node | '' {
   if (!dev?.inputs || dev.inputs.length < 2) return '';
   return select(s.settings.deckLinkInput ?? '', [['', `${t('bridgeui.decklinkInputAuto')}${dev.input ? ` (${CONNECTOR_NAMES[dev.input] ?? dev.input})` : ''}`], ...dev.inputs.map((i) => [i, CONNECTOR_NAMES[i] ?? i] as [string, string])],
     (v) => ui.upd({ deckLinkInput: v || undefined }, true), t('bridgeui.decklinkInputTitle'));
+}
+
+const ajaStatus = async (ui: Pick<BridgeUi, 'http'>): Promise<AjaStatus | null> => {
+  try { return await (await fetch(`${ui.http()}/api/aja`)).json(); } catch { return null; /* bridge missing */ }
+};
+/** Last AJA device list per bridge: inputs and detected formats of an AJA source come from here. */
+const ajaDevices = new Map<string, AjaStatus['devices']>();
+const ajaLabel = (d: AjaStatus['devices'][number]) => `${d.name}${d.busy ? ` (${t('bridgeui.ajaBusy')})` : ''}`;
+
+/**
+ * "+ Quelle → AJA": straight to the card without the stream card. One card connects at once,
+ * several get a short list; without a usable card the setup steps open.
+ */
+export async function addAja(http: () => string, hud: (m: string) => void, add: (url: string, name: string) => void) {
+  const st = await ajaStatus({ http });
+  if (!st) { hud(t('bridgeui.bridgeUnreachable')); return; }
+  const pick = (s: AjaStatus) => {
+    ajaDevices.set(http(), s.devices);
+    if (s.devices.length === 1) return add(`aja:${s.devices[0].index}`, s.devices[0].name);
+    const m = openModal({ title: t('bridgeui.chooseAja'), size: 'sm', body: s.devices.map((d) =>
+      button(ajaLabel(d), () => { m.close(); add(`aja:${d.index}`, d.name); }, { attrs: { style: 'display:block;width:100%;margin-bottom:6px' } })) });
+  };
+  if (!st.available || !st.devices.length) { openAjaSetup(st, () => ajaStatus({ http }), pick); return; }
+  pick(st);
+}
+
+/** AJA KONA/Io/U-TAP via the native helper; without a usable card the setup steps open. */
+export function ajaButton(ui: BridgeUi): HTMLElement {
+  return button('AJA…', async (e: Event) => {
+    const btn = e.currentTarget as HTMLElement;
+    const st = await ajaStatus(ui);
+    if (!st) { ui.hud(t('bridgeui.bridgeUnreachable')); return; }
+    const choose = (s: AjaStatus) => {
+      ajaDevices.set(ui.http(), s.devices);
+      const sel = select('', [['', t('bridgeui.chooseAja')], ...s.devices.map((d) => [`aja:${d.index}`, ajaLabel(d)] as [string, string])], (v) => { if (v) ui.connect(v, s.devices.find((d) => `aja:${d.index}` === v)?.name); });
+      if (btn.isConnected) btn.replaceWith(sel);
+      if (s.devices.length === 1) ui.connect(`aja:${s.devices[0].index}`, s.devices[0].name);
+    };
+    if (!st.available || !st.devices.length) { openAjaSetup(st, () => ajaStatus(ui), choose); return; }
+    choose(st);
+  }, { small: true, title: t('bridgeui.ajaTitle') });
+}
+
+/** 8/10 bit, input connector and setup for AJA sources. */
+export function ajaRow(s: Source, ui: BridgeUi): Node | null {
+  if (!s.url.startsWith('aja:')) return null;
+  return row(
+    select(String(s.settings.ajaBits ?? 10), [['10', t('bridgeui.aja10')], ['8', t('bridgeui.aja8')]], (v) => ui.upd({ ajaBits: Number(v) as 8 | 10, depth: v === '10' ? 16 : 8, yuv: false }, true), t('bridgeui.decklinkFormatTitle')),
+    ajaInputSelect(s, ui),
+    button(t('bridgeui.decklinkSetup'), async () => { const st = await ajaStatus(ui); if (st) openAjaSetup(st, () => ajaStatus(ui)); else ui.hud(t('bridgeui.bridgeUnreachable')); },
+      { small: true, variant: 'ghost', title: t('bridgeui.ajaSetupTitle') }));
+}
+
+/** SDI 1 / SDI 2 / HDMI 1 … with the format detected on each (list from AJA…, else fetched once). */
+function ajaInputSelect(s: Source, ui: BridgeUi): Node | '' {
+  const index = Number(s.url.slice('aja:'.length));
+  const list = ajaDevices.get(ui.http());
+  if (!list) {
+    ajaDevices.set(ui.http(), []);
+    void ajaStatus(ui).then((st) => { if (st?.devices.length) { ajaDevices.set(ui.http(), st.devices); ui.upd({}, false); } });
+    return '';
+  }
+  const dev = list.find((d) => d.index === index);
+  if (!dev?.inputs || dev.inputs.length < 2) return '';
+  const label = (i: string) => `${ajaInputName(i)}${dev.signals?.[i] ? ` · ${dev.signals[i]}` : ''}`;
+  return select(s.settings.ajaInput ?? '', [['', `${t('bridgeui.ajaInputAuto')} (${label(dev.inputs[0])})`], ...dev.inputs.map((i) => [i, label(i)] as [string, string])],
+    (v) => ui.upd({ ajaInput: v || undefined }, true), t('bridgeui.decklinkInputTitle'));
 }
 
 interface NdiStatus { available: boolean; helper: boolean; runtime: boolean; version?: string; sources: { name: string; url: string }[]; error?: string }

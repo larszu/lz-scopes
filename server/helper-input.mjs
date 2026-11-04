@@ -1,4 +1,4 @@
-// Native capture helpers (DeckLink, NDI) → bridge. A helper is a separate executable
+// Native capture helpers (DeckLink, AJA, NDI) → bridge. A helper is a separate executable
 // that writes records to stdout (helper protocol, docs/frame-protocol.md):
 //
 //   4 × ASCII tag | uint32 LE payload length | payload
@@ -290,14 +290,14 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
     } else if (tag === 'FPTS') {
       if (payload.length === 8) nextPts = Number(payload.readBigInt64LE(0)) / 48000;
     } else if (tag === 'VANC') {
-      // SDI ancillary packets (DeckLink, #160): forwarded as they are, decoded in the browser (src/vanc.ts)
+      // SDI ancillary packets (DeckLink, AJA; #160): forwarded as they are, decoded in the browser (src/vanc.ts)
       let v;
       try { v = JSON.parse(payload.toString('utf8')); } catch { return; }
       if (Array.isArray(v.packets) && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'vanc', packets: v.packets.slice(0, 64) }));
     } else if (tag === 'FRAM') {
       if (phase && ctx.now) { const n = ctx.now(); phase.add(n.seconds, n.ref); }
       // pictures again: a "no input signal" from the lock-up phase no longer applies
-      if (status && status.code === 'decklink.noSignal') status = '';
+      if (status && (status.code === 'decklink.noSignal' || status.code === 'aja.noSignal')) status = '';
       if (!ff || !fmt) return;
       if (payload.length !== fmt.bytes) { status = bmsg('helper.frameSize', `Picture size does not match (${payload.length} instead of ${fmt.bytes} bytes)`, { got: payload.length, want: fmt.bytes }); return; }
       // newest picture wins: skip when ffmpeg is still busy with the previous ones
@@ -307,8 +307,9 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
       ff.stdin.write(Buffer.from(payload));
     } else if (tag === 'STAT') {
       const m = helperText(payload);
-      // DeckLink helper: pictures replaced by newer ones while the pipe was full – counted, no status text
-      if (m.code === 'decklink.skipped') { helperDropped += Number(m.params?.n) || 0; return; }
+      // DeckLink/AJA helper: pictures replaced by newer ones while the pipe was full, or dropped by the
+      // card's AutoCirculate ring (aja.dropped) – counted, no status text
+      if (m.code === 'decklink.skipped' || m.code === 'aja.skipped' || m.code === 'aja.dropped') { helperDropped += Number(m.params?.n) || 0; return; }
       if (m.code === 'ndi.stats') {
         // NDI counters once a second: losses go into `dropped`; text only while pictures get lost
         const c = m.params ?? {};

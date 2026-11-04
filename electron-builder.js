@@ -56,7 +56,7 @@ export default {
       const a = linuxArch[ctx.arch]
       if (!a) throw new Error(`Linux: only x64 and arm64 are built, not arch ${ctx.arch}`)
       dir = dir.replace('${arch}', a.name)
-      for (const f of [`${dir}/ffmpeg`, 'helpers/bin/lz-ndi', 'helpers/bin/lz-decklink']) {
+      for (const f of [`${dir}/ffmpeg`, 'helpers/bin/lz-ndi', 'helpers/bin/lz-decklink', 'helpers/bin/lz-aja']) {
         if (existsSync(f) && elfMachine(f) !== a.elf) throw new Error(`${f} is not built for linux-${a.name}`)
       }
     }

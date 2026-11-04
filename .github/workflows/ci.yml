@@ -131,20 +131,27 @@ jobs:
       - run: npm ci
       - run: node scripts/ffmpeg-fetch.mjs ${{ matrix.ffmpeg }}
       - run: npx vitest run test/ffmpeg.test.ts test/out10.test.ts
-      # the helpers the installers ship (DeckLink, NDI), compiled as release.yml does: a
+      # the helpers the installers ship (DeckLink, AJA, NDI), compiled as release.yml does: a
       # Windows-only compile error otherwise shows up only at release time
       - name: DeckLink SDK include files
         run: node scripts/decklink-sdk-fetch.mjs
+      - name: libajantv2 (pinned tag and commit)
+        run: node scripts/aja-sdk-fetch.mjs
+      - name: libudev (AJA helper, Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q libudev-dev
       - name: MSVC (Windows helpers)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
-      - name: Helpers (DeckLink, NDI) build and start without driver
+      - name: Helpers (DeckLink, AJA, NDI) build and start without driver
         shell: bash
         run: |
           set -eu
-          node scripts/build-helpers.mjs decklink ndi
+          node scripts/build-helpers.mjs decklink aja ndi
           exe=""; if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
           for h in lz-decklink lz-ndi; do "helpers/bin/$h$exe" --list || true; done
+          # AJA: without a card the list must still be well-formed
+          "helpers/bin/lz-aja$exe" --list | node -e "const j=JSON.parse(require('fs').readFileSync(0,'utf8'));if(!j.ok||!Array.isArray(j.devices))process.exit(1);console.log('lz-aja',j.sdk,j.devices.length,'devices')"
           "helpers/bin/lz-ndi$exe" --selftest
 
   # The Linux app as release.yml packages it (AppImage + deb, x64 and arm64, each on its own
@@ -172,14 +179,15 @@ jobs:
           node-version: '24'
           cache: 'npm'
       - run: npm ci
-      - run: sudo apt-get update -q && sudo apt-get install -y -q xvfb
+      - run: sudo apt-get update -q && sudo apt-get install -y -q xvfb libudev-dev
       - run: node scripts/ffmpeg-fetch.mjs linux-${{ matrix.arch }}
       - run: npm run build
       - run: node scripts/decklink-sdk-fetch.mjs
-      - name: Helpers (DeckLink, NDI) build and start without driver
+      - run: node scripts/aja-sdk-fetch.mjs
+      - name: Helpers (DeckLink, AJA, NDI) build and start without driver
         run: |
-          node scripts/build-helpers.mjs decklink ndi
-          for h in lz-decklink lz-ndi; do "helpers/bin/$h" --list || true; done
+          node scripts/build-helpers.mjs decklink aja ndi
+          for h in lz-decklink lz-aja lz-ndi; do "helpers/bin/$h" --list || true; done
           helpers/bin/lz-ndi --selftest
       # the camera bridge built into the desktop app (scripts/build-camera-bridge.mjs); same tag as
       # scripts/camera-bridge.json. Private repository: see the e2e job above (#190)
@@ -209,7 +217,7 @@ jobs:
             echo 'no CAMERA_BRIDGE_TOKEN: packaged without the built-in camera bridge'
           fi
           ls "$res"/app.asar.unpacked/node_modules/@serialport/bindings-cpp/prebuilds/linux-${{ matrix.arch }}/*.node
-          test -x "$res/app.asar.unpacked/helpers/bin/lz-decklink"; test -x "$res/app.asar.unpacked/helpers/bin/lz-ndi"
+          test -x "$res/app.asar.unpacked/helpers/bin/lz-decklink"; test -x "$res/app.asar.unpacked/helpers/bin/lz-aja"; test -x "$res/app.asar.unpacked/helpers/bin/lz-ndi"
           cat release/latest-linux*.yml
           # ffmpeg and helpers of this arch (electron-builder.js beforePack checks it as well)
           file "$res/ffmpeg/ffmpeg" "$res/app.asar.unpacked/helpers/bin/lz-ndi"

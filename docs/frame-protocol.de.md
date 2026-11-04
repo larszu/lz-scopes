@@ -101,15 +101,16 @@ Zusätzlich zu `url`, `width`, `fps`, `depth`, `transport`, `audio`:
 | `size` | `1920x1080` | `device:` – Modus des Geräts (ohne Angabe auf macOS der größte 16:9-Modus) |
 | `rate` | `50`, `59.94`, `30000/1001` | `device:` – Aufnahmerate des Geräts |
 | `pixfmt` | ffmpeg-Name, z. B. `yuv422p10le`, `uyvy422` | `device:` – Rohformat (ohne Angabe das tiefste angebotene) |
-| `pixel` | `8` | `decklink:` – 8 bit UYVY statt 10 bit v210 |
+| `pixel` | `8` | `decklink:`, `aja:` – 8 bit UYVY statt 10 bit v210 |
+| `input` | `sdi`, `hdmi` … / `sdi1`, `hdmi1` … | `decklink:` / `aja:` – Eingangsbuchse |
 | `matrix` | `bt709`, `bt601`, `bt2020`, `smpte240m` | alle – feste Matrix für Y′CbCr → R′G′B′ statt Kennzeichnung/Größenregel |
 | `range` | `tv`, `pc` | alle – fester Wertebereich |
 
-`GET /api/devices/formats?url=device:…` liefert `{modes:[{width,height,fpsMin,fpsMax,pixfmt?}], pixfmts:[…], preferred, defaultSize}`, `GET /api/decklink` den Zustand des DeckLink-Helfers `{available, helper, devices, error}`, `GET /api/ndi` die NDI-Quellen `{available, runtime, version, sources:[{name,url}], error}`; eine NDI-Quelle heißt `ndi:<Name>`. `GET /api/folders` listet die freigegebenen Watch-Ordner `[{name,url}]` (`folder:<Name>`, freigegeben mit `--watch-dir`).
+`GET /api/devices/formats?url=device:…` liefert `{modes:[{width,height,fpsMin,fpsMax,pixfmt?}], pixfmts:[…], preferred, defaultSize}`, `GET /api/decklink` den Zustand des DeckLink-Helfers `{available, helper, devices, error}`, `GET /api/aja` den des AJA-Helfers (gleiche Form, Geräte mit `inputs`, `signals`, `busy`; Quelle `aja:<n>`, `pixel=8`, `input=sdi1|hdmi1…`), `GET /api/ndi` die NDI-Quellen `{available, runtime, version, sources:[{name,url}], error}`; eine NDI-Quelle heißt `ndi:<Name>`. `GET /api/folders` listet die freigegebenen Watch-Ordner `[{name,url}]` (`folder:<Name>`, freigegeben mit `--watch-dir`).
 
 ## Helfer-Protokoll (native Aufnahme-Helfer → Bridge)
 
-Geräte ohne freien ffmpeg-Weg (DeckLink, NDI) laufen über einen eigenen Helfer-Prozess, den die Bridge startet. Er schreibt auf stdout Datensätze:
+Geräte ohne freien ffmpeg-Weg (DeckLink, AJA, NDI) laufen über einen eigenen Helfer-Prozess, den die Bridge startet. Er schreibt auf stdout Datensätze:
 
 | Offset | Typ | Inhalt |
 |---|---|---|

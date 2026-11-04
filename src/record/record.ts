@@ -40,7 +40,7 @@ export function takeName(d = new Date()) {
 /** Where a source can be recorded: in the bridge, in the page, or not at all. */
 export function recordKind(s: Pick<Source, 'kind' | 'url' | 'status'> & { isVideoFile?: boolean }): 'bridge' | 'browser' | null {
   if (s.status !== 'live') return null;
-  if (s.kind === 'stream') return /^(test:|device:|decklink:|ndi:|(rtsps?|rtmps?|rtp|udp|srt|https?|tcp):\/\/)/i.test(s.url) ? 'bridge' : null;
+  if (s.kind === 'stream') return /^(test:|device:|decklink:|aja:|ndi:|(rtsps?|rtmps?|rtp|udp|srt|https?|tcp):\/\/)/i.test(s.url) ? 'bridge' : null;
   if (s.kind === 'webcam' || s.kind === 'screen' || s.kind === 'pattern' || (s.kind === 'file' && s.isVideoFile)) return 'browser';
   return null;
 }

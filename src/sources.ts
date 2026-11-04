@@ -61,6 +61,10 @@ export interface SourceSettings {
   deckLinkBits?: 8 | 10;
   /** DeckLink input connector ('sdi', 'hdmi' …); unset = as set in Desktop Video Setup */
   deckLinkInput?: string;
+  /** AJA helper: 10 bit (v210) or 8 bit (UYVY) capture */
+  ajaBits?: 8 | 10;
+  /** AJA input connector ('sdi1', 'hdmi1' …); unset = the first SDI input */
+  ajaInput?: string;
   /** bridge streams: 'h264' = compressed 8-bit transport for remote bridges, decoded in the browser (#16) */
   codec?: 'raw' | 'h264';
   /** low-latency mode (docs/research/low-latency.md): undefined = follow the global switch */
@@ -121,7 +125,7 @@ export interface Stats {
 /** MaxCLL / MaxFALL (CTA-861.3) over the frames seen since the last reset. */
 export interface LightLevel { maxCll: number; maxFall: number; frames: number }
 
-/** Extra query parameters of the bridge for capture devices, DeckLink and the decode matrix. */
+/** Extra query parameters of the bridge for capture devices, DeckLink, AJA and the decode matrix. */
 export function bridgeInputParams(url: string, set: SourceSettings): Record<string, string> {
   const q: Record<string, string> = {};
   if (url.startsWith('device:')) {
@@ -131,6 +135,8 @@ export function bridgeInputParams(url: string, set: SourceSettings): Record<stri
   }
   if (url.startsWith('decklink:') && set.deckLinkBits === 8) q.pixel = '8';
   if (url.startsWith('decklink:') && set.deckLinkInput) q.input = set.deckLinkInput;
+  if (url.startsWith('aja:') && set.ajaBits === 8) q.pixel = '8';
+  if (url.startsWith('aja:') && set.ajaInput) q.input = set.ajaInput;
   if (set.decodeMatrix && set.decodeMatrix !== 'auto') q.matrix = set.decodeMatrix;
   if (set.decodeRange && set.decodeRange !== 'auto') q.range = set.decodeRange;
   return q;

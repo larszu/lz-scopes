@@ -61,7 +61,7 @@ export function drawSdiPanel(ctx: CanvasRenderingContext2D, w: number, h: number
   const msg = (text: string) => { ctx.fillStyle = '#6b7078'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, w / 2, h / 2); ctx.canvas.setAttribute('aria-label', text); };
   if (!src) { msg(empty); return; }
   const s = vancOf(src);
-  if (!s) { msg(src.url.startsWith('decklink:') ? t('sdi.waiting') : t('sdi.noVanc')); return; }
+  if (!s) { msg(/^(decklink|aja):/.test(src.url) ? t('sdi.waiting') : t('sdi.noVanc')); return; }
   const rows = sdiRows(s, src);
   ctx.font = '11px ui-monospace, Menlo, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   let y = 8;

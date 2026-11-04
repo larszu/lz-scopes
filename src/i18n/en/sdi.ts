@@ -4,8 +4,8 @@ import type { Messages } from '../types';
 export default {
   'sdi.yes': 'yes',
   'sdi.no': 'no',
-  'sdi.waiting': 'No ancillary data from the DeckLink input yet',
-  'sdi.noVanc': 'No SDI ancillary data – only DeckLink inputs carry VANC',
+  'sdi.waiting': 'No ancillary data from the DeckLink/AJA input yet',
+  'sdi.noVanc': 'No SDI ancillary data – only DeckLink and AJA inputs carry VANC',
   'sdi.no352': 'No ST 352 payload ID in the signal',
   'sdi.unknownPayload': 'Payload code {code}h (not in the table)',
   'sdi.format': '{rate} {scan} · {sampling} · {bits} bit',

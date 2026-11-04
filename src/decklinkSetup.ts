@@ -23,7 +23,7 @@ export const DESKTOP_VIDEO_URL = 'https://www.blackmagicdesign.com/support/famil
 
 type StepState = 'done' | 'next' | 'open';
 /** body is built on demand: the step list itself needs no DOM (tests run in Node) */
-interface Step { done: boolean; title: string; body: () => Kid[] }
+export interface Step { done: boolean; title: string; body: () => Kid[] }
 
 /** Steps for the bridge's platform with their done flags (pure, tested). */
 export function deckLinkSteps(st: DeckLinkStatus): Step[] {
@@ -58,15 +58,16 @@ export function stepStates(steps: { done: boolean }[]): StepState[] {
   return steps.map((s, i) => (s.done ? 'done' : i === next ? 'next' : 'open'));
 }
 
-/** Opens the setup dialog; `check` asks the bridge again, `onReady` gets the status once a device is found. */
-export function openDeckLinkSetup(st: DeckLinkStatus, check: () => Promise<DeckLinkStatus | null>, onReady?: (st: DeckLinkStatus) => void) {
-  const render = (s: DeckLinkStatus): Kid[] => {
-    const steps = deckLinkSteps(s);
+/** Setup dialog with ticked-off steps (DeckLink, AJA); `check` asks the bridge again, `onReady` gets the status once a device is found. */
+export function openSetupDialog<S extends { available: boolean; devices: { name: string }[] }>(o: { title: string; intro: string; steps: (s: S) => Step[] },
+  st: S, check: () => Promise<S | null>, onReady?: (st: S) => void) {
+  const render = (s: S): Kid[] => {
+    const steps = o.steps(s);
     const states = stepStates(steps);
     const n = states.filter((x) => x === 'done').length;
     const why = s.available ? '' : bridgeText(s, 'error');
     return [
-      h('p', {}, s.devices.length ? t('dlsetup.ready', { name: s.devices.map((d) => d.name).join(', ') }) : t('dlsetup.intro')),
+      h('p', {}, s.devices.length ? t('dlsetup.ready', { name: s.devices.map((d) => d.name).join(', ') }) : o.intro),
       h('progress', { class: 'dlsetup-progress', max: steps.length, value: n, 'aria-label': t('dlsetup.progress', { n, of: steps.length }) }),
       h('ol', { class: 'dlsetup-steps' }, steps.map((step, i) => h('li', { class: `dlsetup-${states[i]}` },
         h('span', { class: 'dlsetup-mark', 'aria-hidden': 'true' }, states[i] === 'done' ? '✓' : String(i + 1)),
@@ -82,6 +83,11 @@ export function openDeckLinkSetup(st: DeckLinkStatus, check: () => Promise<DeckL
     m.setBody(...render(s));
     if (s.devices.length && onReady) { m.close(); onReady(s); }
   }, { variant: 'primary' });
-  const m = openModal({ title: t('dlsetup.title'), size: 'md', cls: 'dlsetup', body: render(st), actions: [recheck] });
+  const m = openModal({ title: o.title, size: 'md', cls: 'dlsetup', body: render(st), actions: [recheck] });
   return m;
+}
+
+/** Opens the DeckLink setup dialog. */
+export function openDeckLinkSetup(st: DeckLinkStatus, check: () => Promise<DeckLinkStatus | null>, onReady?: (st: DeckLinkStatus) => void) {
+  return openSetupDialog({ title: t('dlsetup.title'), intro: t('dlsetup.intro'), steps: deckLinkSteps }, st, check, onReady);
 }

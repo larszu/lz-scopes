@@ -13,3 +13,5 @@ vendor/lz-camera-bridge
 electron/camera-bridge.cjs
 electron/camera-bridge.json
 vendor/luts
+vendor/libajantv2
+helpers/aja/build

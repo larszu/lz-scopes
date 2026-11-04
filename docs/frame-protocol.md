@@ -102,15 +102,16 @@ In addition to `url`, `width`, `fps`, `depth`, `transport`, `audio`:
 | `size` | `1920x1080` | `device:` – device mode (if omitted on macOS: the largest 16:9 mode) |
 | `rate` | `50`, `59.94`, `30000/1001` | `device:` – capture rate of the device |
 | `pixfmt` | ffmpeg name, e.g. `yuv422p10le`, `uyvy422` | `device:` – raw format (if omitted: the deepest one offered) |
-| `pixel` | `8` | `decklink:` – 8-bit UYVY instead of 10-bit v210 |
+| `pixel` | `8` | `decklink:`, `aja:` – 8-bit UYVY instead of 10-bit v210 |
+| `input` | `sdi`, `hdmi` … / `sdi1`, `hdmi1` … | `decklink:` / `aja:` – input connector |
 | `matrix` | `bt709`, `bt601`, `bt2020`, `smpte240m` | all – fixed matrix for Y′CbCr → R′G′B′ instead of tag/size rule |
 | `range` | `tv`, `pc` | all – fixed value range |
 
-`GET /api/devices/formats?url=device:…` returns `{modes:[{width,height,fpsMin,fpsMax,pixfmt?}], pixfmts:[…], preferred, defaultSize}`, `GET /api/decklink` the state of the DeckLink helper `{available, helper, devices, error}`, `GET /api/ndi` the NDI sources `{available, runtime, version, sources:[{name,url}], error}`; an NDI source is called `ndi:<name>`. `GET /api/folders` lists the released watch folders `[{name,url}]` (`folder:<name>`, released with `--watch-dir`).
+`GET /api/devices/formats?url=device:…` returns `{modes:[{width,height,fpsMin,fpsMax,pixfmt?}], pixfmts:[…], preferred, defaultSize}`, `GET /api/decklink` the state of the DeckLink helper `{available, helper, devices, error}`, `GET /api/aja` that of the AJA helper (same shape, devices with `inputs`, `signals`, `busy`; source `aja:<n>`, `pixel=8`, `input=sdi1|hdmi1…`), `GET /api/ndi` the NDI sources `{available, runtime, version, sources:[{name,url}], error}`; an NDI source is called `ndi:<name>`. `GET /api/folders` lists the released watch folders `[{name,url}]` (`folder:<name>`, released with `--watch-dir`).
 
 ## Helper protocol (native capture helpers → bridge)
 
-Devices without a free ffmpeg path (DeckLink, NDI) run through a separate helper process that the bridge starts. It writes records to stdout:
+Devices without a free ffmpeg path (DeckLink, AJA, NDI) run through a separate helper process that the bridge starts. It writes records to stdout:
 
 | Offset | Type | Content |
 |---|---|---|

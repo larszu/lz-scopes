@@ -5,8 +5,8 @@ import type { Translation } from '../types';
 export default {
   'sdi.yes': 'ja',
   'sdi.no': 'nein',
-  'sdi.waiting': 'Noch keine Zusatzdaten vom DeckLink-Eingang',
-  'sdi.noVanc': 'Keine SDI-Zusatzdaten – nur DeckLink-Eingänge liefern VANC',
+  'sdi.waiting': 'Noch keine Zusatzdaten vom DeckLink-/AJA-Eingang',
+  'sdi.noVanc': 'Keine SDI-Zusatzdaten – nur DeckLink- und AJA-Eingänge liefern VANC',
   'sdi.no352': 'Keine ST-352-Payload-ID im Signal',
   'sdi.unknownPayload': 'Payload-Code {code}h (nicht in der Tabelle)',
   'sdi.format': '{rate} {scan} · {sampling} · {bits} Bit',

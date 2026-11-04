@@ -6,13 +6,16 @@
 // NDI: builds without the SDK (helpers/ndi/ndi-min.h); the NDI runtime is loaded at run
 // time from the user's installation.
 //
+// AJA: libajantv2 (MIT) from scripts/aja-sdk-fetch.mjs (or AJA_SDK_DIR), built with CMake
+// together with the helper and linked statically (helpers/aja/README.md).
+//
 // DeckLink: the Desktop Video SDK is a free download from Blackmagic Design after
 // registration and is not part of this repository. macOS and Linux build here with
 // clang++/g++; Windows needs MIDL (see helpers/decklink/README.md).
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -51,6 +54,35 @@ function buildDeckLink() {
   }
 }
 
+/**
+ * macOS SDK path with a version in its name: libajantv2's CMakeOptions.cmake parses the major and
+ * minor version out of CMAKE_OSX_SYSROOT, and CMake 4 leaves it empty (MacOSX.sdk has no version).
+ */
+export function versionedMacSdk() {
+  const sdk = realpathSync(execFileSync('xcrun', ['--sdk', 'macosx', '--show-sdk-path'], { encoding: 'utf8' }).trim());
+  if (/MacOSX\d+\.\d+/.test(basename(sdk))) return sdk;
+  const ver = execFileSync('xcrun', ['--sdk', 'macosx', '--show-sdk-version'], { encoding: 'utf8' }).trim();
+  const named = join(dirname(sdk), `MacOSX${/\./.test(ver) ? ver : `${ver}.0`}.sdk`);
+  if (!existsSync(named)) throw new Error(`macOS-SDK mit Versionsnummer nicht gefunden (${named})`);
+  return named;
+}
+
+function buildAja() {
+  const fetched = join(root, 'vendor', 'libajantv2');
+  const sdk = process.env.AJA_SDK_DIR || (existsSync(join(fetched, 'CMakeLists.txt')) ? fetched : '');
+  if (!sdk) return console.log('aja: übersprungen – erst npm run aja:fetch (oder AJA_SDK_DIR setzen)');
+  const src = join(root, 'helpers', 'aja'), out = join(src, 'build');
+  const args = ['-S', src, '-B', out, '-DCMAKE_BUILD_TYPE=Release', `-DAJA_SDK_DIR=${resolve(sdk)}`];
+  if (process.platform === 'darwin') args.push(`-DCMAKE_OSX_SYSROOT=${versionedMacSdk()}`, '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64', '-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0');
+  if (process.platform === 'win32') args.push('-A', 'x64');
+  run('cmake', args);
+  run('cmake', ['--build', out, '--config', 'Release', '--target', 'lz-aja', '--parallel']);
+  const exe = process.platform === 'win32' ? 'lz-aja.exe' : 'lz-aja';
+  const built = [join(out, 'Release', exe), join(out, exe)].find((f) => existsSync(f));
+  if (!built) throw new Error(`aja: ${exe} nach dem Bau nicht gefunden unter ${out}`);
+  copyFileSync(built, join(bin, exe));
+}
+
 // ColorSync display-profile helper (#17): Swift, public ColorSync API, macOS only, universal.
 function buildColorSync() {
   if (process.platform !== 'darwin') return console.log('colorsync: nur macOS');
@@ -74,4 +106,5 @@ function buildNdi() {
 
 if (want('ndi')) buildNdi();
 if (want('decklink')) buildDeckLink();
+if (want('aja')) buildAja();
 if (want('colorsync')) buildColorSync();

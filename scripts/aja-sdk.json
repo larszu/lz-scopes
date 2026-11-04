@@ -1,0 +1,6 @@
+{
+  "_doc": "libajantv2 (AJA NTV2 SDK, MIT) for the AJA helper, pinned to a release tag and its commit. scripts/aja-sdk-fetch.mjs",
+  "repo": "aja-video/libajantv2",
+  "tag": "ntv2_18_0_0",
+  "commit": "4add45239a03960aa36de6fef326ee1b753e8ec9"
+}

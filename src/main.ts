@@ -52,7 +52,7 @@ import { greenSettings, matchPanelSettings, targetEditor, type MatchUi } from '.
 import { openChartCorners } from './match/chartUi';
 import { bindBridgeField, normaliseBridge } from './bridgeField';
 import { streamRoute } from './streamRoute';
-import { addDeckLink, deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
+import { addAja, ajaButton, ajaRow, addDeckLink, deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
 import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
 import { DEFAULT_LOW_LATENCY, LL_STATS, LL_WIDTHS, describeLowLatency, effectiveWidth, type LowLatencyConfig } from './lowLatency';
@@ -485,12 +485,12 @@ function addSource(kind: SourceKind, name?: string, url = '', settings?: Partial
 streamRoute.bindAdder((url, name) => { const s = addSource('stream', name, url); s.connectStream(url, bridgeUrl()); });
 
 /**
- * A capture device (DeckLink, NDI, capture card) just went live: the unpinned panels switch to it,
+ * A capture device (DeckLink, AJA, NDI, capture card) just went live: the unpinned panels switch to it,
  * and the test pattern closes – unless it is being output to a display right now (then it stays,
  * only the panels switch). Once per connection; a later manual switch back is left alone.
  */
 function deviceLive(s: Source) {
-  if (s.kind !== 'stream' || !/^(decklink|ndi|device):/.test(s.url)) return;
+  if (s.kind !== 'stream' || !/^(decklink|aja|ndi|device):/.test(s.url)) return;
   for (const q of state.panels) if (!q.pin) q.sourceId = s.id;
   if (!liveOutputs().size) for (const p of sources.filter((x) => x.kind === 'pattern')) removeSource(p);
   save(); renderPanels();
@@ -529,7 +529,7 @@ function renderSources() {
       const connect = () => { s.url = streamRoute.normalise(urlIn.value.trim()); urlIn.value = s.url; save(); s.connectStream(s.url, bridgeUrl()); };
       const bridgeUi: BridgeUi = {
         http: () => bridgeUrl().replace(/^ws/, 'http'), hud: alertHud, upd,
-        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (/^(decklink|ndi|folder|file):/.test(url)) s.settings.depth = 16; if (url.startsWith('decklink:')) s.settings.deckLinkBits ??= 10; } connect(); renderSources(); },
+        connect: (url, name) => { urlIn.value = url; if (name) s.name = name; if (url !== s.url) { s.settings.device = {}; if (/^(decklink|aja|ndi|folder|file):/.test(url)) s.settings.depth = 16; if (url.startsWith('decklink:')) s.settings.deckLinkBits ??= 10; if (url.startsWith('aja:')) s.settings.ajaBits ??= 10; } connect(); renderSources(); },
       };
       card.append(
         row(urlIn),
@@ -558,8 +558,8 @@ function renderSources() {
           running ? button(t('main.src.disconnect'), () => s.stop()) : button(t('main.src.connect'), connect, { variant: 'primary' }),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
             button(p, () => { urlIn.value = `test:${p}`; connect(); }, { small: true, title: t('main.src.testN', { name: p }) })),
-            deviceButton(bridgeUi), deckLinkButton(bridgeUi), ndiButton(bridgeUi), folderButton(bridgeUi, (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop?.watchFolder))),
-        ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
+            deviceButton(bridgeUi), deckLinkButton(bridgeUi), ajaButton(bridgeUi), ndiButton(bridgeUi), folderButton(bridgeUi, (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop?.watchFolder))),
+        ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), ajaRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
         ...(sourceFfmpegText(s.url, bridgeHealth) ? [h('p', { class: 'hint', 'data-ffmpeg-source': '' }, sourceFfmpegText(s.url, bridgeHealth))] : []),
       );
     } else if (s.url === SIM_URL) {
@@ -890,6 +890,15 @@ function addDeckLinkSource(replace?: Source) {
   });
 }
 
+/** AJA card through the bridge's helper: 10 bit (v210) into the 16-bit transport, with sound. */
+function addAjaSource() {
+  return addAja(() => bridgeUrl().replace(/^ws/, 'http'), alertHud, (url, name) => {
+    state.sidebar = true; applySidebar();
+    const s = addSource('stream', name, url, { depth: 16, ajaBits: 10 });
+    s.connectStream(url, bridgeUrl());
+  });
+}
+
 /** Add a source of a kind (sidebar buttons and Quellen menu). */
 function addSourceOfKind(kind: string) {
   switch (kind) {
@@ -897,6 +906,7 @@ function addSourceOfKind(kind: string) {
     case 'stream': { state.sidebar = true; applySidebar(); save(); return void addSource('stream', `Stream ${sources.length + 1}`); }
     case 'resolve': return addResolve();
     case 'decklink': return addDeckLinkSource();
+    case 'aja': return addAjaSource();
     case 'webcam': case 'screen': case 'file': case 'folder': return void startLocal(addSource(kind));
     // the browser path on purpose (#191): 8 bit, but with crop, ROI and the clip's own sound
     case 'file-video': { const s = addSource('file'); s.settings.fileRoute = 'video'; return void startLocal(s); }
@@ -910,7 +920,7 @@ function renderAddMenu() {
   h('span', {}, t('main.add.source')),
   ...([
     ['pattern', t('main.pattern.title'), ''], ['stream', t('main.add.stream'), ''], ['resolve', 'DaVinci Resolve', t('main.add.resolveTitle')],
-    ['decklink', 'Blackmagic DeckLink', t('main.add.decklinkTitle')], ['webcam', t('main.add.webcam'), t('main.add.webcamTitle')], ['screen', t('main.add.screen'), t('main.add.screenTitle')], ['file', t('main.add.file'), ''],
+    ['decklink', 'Blackmagic DeckLink', t('main.add.decklinkTitle')], ['aja', 'AJA', t('main.add.ajaTitle')], ['webcam', t('main.add.webcam'), t('main.add.webcamTitle')], ['screen', t('main.add.screen'), t('main.add.screenTitle')], ['file', t('main.add.file'), ''],
     // desktop app: the file goes through the bridge by default (full depth). The browser path
     // stays one click away – it is 8 bit, but it crops and brings the clip's own sound.
     ...(mediaFilePicker() ? [['file-video', t('main.add.fileVideo'), t('main.add.fileVideoTitle')] as const] : []),

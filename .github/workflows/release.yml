@@ -17,7 +17,8 @@ name: Release
 # ffmpeg: the builds of scripts/ffmpeg-builds.json (GPLv3, no nonfree, with libsrt),
 # SHA-256-checked; job `sources` attaches the corresponding source (GPLv3 section 6d).
 # DeckLink: helper compiled against the SDK include files (Blackmagic's permissive header
-# licence, EULA §0.1); the driver (Desktop Video) is the user's. Research:
+# licence, EULA §0.1); the driver (Desktop Video) is the user's. AJA: helper linked statically
+# against libajantv2 (MIT, pinned tag, scripts/aja-sdk.json); the AJA driver is the user's. Research:
 # docs/research/ffmpeg-lizenz.md, docs/research/geraete-eingaenge.md.
 
 on:
@@ -102,6 +103,11 @@ jobs:
       - run: npm run build
       - name: DeckLink SDK include files (git-blob-checked)
         run: node scripts/decklink-sdk-fetch.mjs
+      - name: libajantv2 (pinned tag and commit)
+        run: node scripts/aja-sdk-fetch.mjs
+      - name: libudev (AJA helper, Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q libudev-dev
       - name: MSVC (Windows helpers)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -110,15 +116,15 @@ jobs:
       - name: Xvfb (Linux smoke start)
         if: runner.os == 'Linux'
         run: sudo apt-get update -q && sudo apt-get install -y -q xvfb
-      - name: Helpers (DeckLink, NDI; macOS universal)
-        run: node scripts/build-helpers.mjs decklink ndi
+      - name: Helpers (DeckLink, AJA, NDI; macOS universal)
+        run: node scripts/build-helpers.mjs decklink aja ndi
       - name: Helpers built and runnable without driver
         shell: bash
         run: |
           set -eu
           exe=""; if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
           ls -la helpers/bin
-          for h in lz-decklink lz-ndi; do test -f "helpers/bin/$h$exe"; echo "$h:"; "helpers/bin/$h$exe" --list || true; done
+          for h in lz-decklink lz-aja lz-ndi; do test -f "helpers/bin/$h$exe"; echo "$h:"; "helpers/bin/$h$exe" --list || true; done
       # the camera bridge built into the desktop app (scripts/build-camera-bridge.mjs); same tag as
       # scripts/camera-bridge.json. Private repository: checked out with CAMERA_BRIDGE_TOKEN (#190)
       - uses: actions/checkout@v5
@@ -146,11 +152,13 @@ jobs:
             res="$(ls -d release/mac-universal/*.app)/Contents/Resources"
             dir="$res/ffmpeg"; lipo -archs "$dir/ffmpeg"; exe="$dir/ffmpeg"
             lipo -archs "$res/app.asar.unpacked/helpers/bin/lz-decklink"
+            lipo -archs "$res/app.asar.unpacked/helpers/bin/lz-aja" | grep -q arm64
             test -f "$res/app.asar.unpacked/helpers/bin/lz-ndi"
           elif [ "$RUNNER_OS" = Linux ]; then
             res="$(ls -d release/linux*-unpacked)/resources"
             dir="$res/ffmpeg"; exe="$dir/ffmpeg"
             test -x "$res/app.asar.unpacked/helpers/bin/lz-decklink"
+            test -x "$res/app.asar.unpacked/helpers/bin/lz-aja"
             test -x "$res/app.asar.unpacked/helpers/bin/lz-ndi"
             ls release/*.AppImage release/*.deb release/latest-linux*.yml
             "$exe" -hide_banner -devices | grep -E '^ D[E ] +alsa '
@@ -158,13 +166,14 @@ jobs:
             res="release/win-unpacked/resources"
             dir="$res/ffmpeg"; exe="$dir/ffmpeg.exe"
             test -f "$res/app.asar.unpacked/helpers/bin/lz-decklink.exe"
+            test -f "$res/app.asar.unpacked/helpers/bin/lz-aja.exe"
             test -f "$res/app.asar.unpacked/helpers/bin/lz-ndi.exe"
           fi
           ls -la "$dir" "$dir/licenses"
           "$exe" -hide_banner -L | head -3
           if "$exe" -hide_banner -version | grep -q -- --enable-nonfree; then echo "nonfree ffmpeg im Paket"; exit 1; fi
           "$exe" -hide_banner -protocols | grep -qw srt
-          echo "Paket: ffmpeg weitergebbar (kein nonfree) mit SRT, DeckLink- und NDI-Helfer enthalten"
+          echo "Paket: ffmpeg weitergebbar (kein nonfree) mit SRT, DeckLink-, AJA- und NDI-Helfer enthalten"
       - name: Smoke start of the AppImage (Linux)
         if: runner.os == 'Linux'
         run: |

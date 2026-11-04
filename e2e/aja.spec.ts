@@ -20,7 +20,8 @@ test.describe('AJA without a card', () => {
     await expect(dlg).toBeVisible();
     await expect(dlg.locator('.modal-title')).toHaveText('AJA-Karte einrichten');
     await expect(dlg.locator('li.dlsetup-done')).toHaveCount(1);
-    await expect(dlg.locator('li.dlsetup-next')).toContainText('AJA Desktop Software installieren');
+    // the driver step depends on the bridge's OS: AJA Desktop Software (macOS/Windows), kernel module (Linux)
+    await expect(dlg.locator('li.dlsetup-next')).toContainText(process.platform === 'linux' ? 'AJA-Kerneltreiber bauen und laden' : 'AJA Desktop Software installieren');
     await dlg.getByRole('button', { name: 'Erneut prüfen' }).click();
     await expect(dlg).toBeVisible();
     await page.screenshot({ path: join(ROOT, 'test-results/e2e/aja-setup.png') });

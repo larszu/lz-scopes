@@ -36,6 +36,8 @@ describe('AJA', () => {
   it('names the connectors as on the card', () => {
     expect(ajaInputName('sdi1')).toBe('SDI 1');
     expect(ajaInputName('hdmi2')).toBe('HDMI 2');
+    expect(ajaInputName('quad1')).toBe('SDI 1–4 · Quad 2SI');
+    expect(ajaInputName('quad1sq')).toBe('SDI 1–4 · Quad Square Division');
     expect(ajaInputName('odd')).toBe('odd');
   });
 

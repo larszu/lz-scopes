@@ -73,7 +73,8 @@ export default {
   'bridge.aja.inputConnector': 'Eingang {input} gibt es an diesem Gerät nicht',
   'bridge.aja.noAudio': 'Toneingang lässt sich nicht öffnen – nur Bild',
   'bridge.aja.format': 'Gerät kann dieses Format nicht aufnehmen ({format})',
-  'bridge.aja.format4k': '4K/UHD-Eingänge werden noch nicht unterstützt ({format})',
+  'bridge.aja.format4kInput': '4K ist an diesem Eingang nicht möglich – SDI 1–4 oder HDMI 1 nehmen',
+  'bridge.aja.formatQuad': 'Signal an SDI 1 ist kein Quad-Link-Viertel ({format})',
 
   'bridge.ndi.noHelper': 'NDI-Helfer nicht gebaut (npm run build:helpers)',
   'bridge.ndi.unavailable': 'NDI nicht verfügbar – Helfer nicht gebaut (npm run build:helpers)',

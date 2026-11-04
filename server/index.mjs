@@ -1149,8 +1149,8 @@ function startAja(ws, params, url) {
   if (!ffmpeg) return fail(ws, bmsg('ffmpeg.missing', 'ffmpeg not found'));
   const index = url.slice('aja:'.length);
   const pixel = params.get('pixel') === '8' ? '8' : '10';
-  // input connector sdi1…, hdmi1…; without it the first SDI input
-  const input = /^(sdi|hdmi)\d{1,2}$/.test(params.get('input') ?? '') ? ['--input', params.get('input')] : [];
+  // input connector sdi1…, hdmi1…, quad link quad1 (2SI) / quad1sq (square division); without it the first SDI input
+  const input = /^((sdi|hdmi)\d{1,2}|quad1(sq)?)$/.test(params.get('input') ?? '') ? ['--input', params.get('input')] : [];
   startHelperStream(ws, {
     bin, args: ['--capture', index, '--bits', pixel, ...input, '--audio', params.get('audio') === '1' ? '16' : '0'], label: 'AJA', params, audio: true,
     ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions, now: clockNow, recorder: helperRecorder(ws, url, ffmpeg) },

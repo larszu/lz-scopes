@@ -1,7 +1,7 @@
 // lz-aja – AJA Video Systems capture helper for the lz-scopes bridge (KONA, Io, U-TAP, T-TAP …).
 //
 //   lz-aja --list                            one JSON line: {"ok":true,"devices":[…]} or {"ok":false,"error":"…"}
-//   lz-aja --capture <index> [--bits 8|10] [--input sdi1|sdi2|…|hdmi1|…] [--audio 0|2|8|16]
+//   lz-aja --capture <index> [--bits 8|10] [--input sdi1|sdi2|…|hdmi1|…|quad1|quad1sq] [--audio 0|2|8|16]
 //                                            helper protocol on stdout (docs/frame-protocol.md):
 //                                            INFO / FRAM / FPTS / AUDI / TIME / VANC / STAT / ERR records
 //
@@ -13,7 +13,13 @@
 // NTV2_FBF_8BIT_YCBCR is UYVY ('2vuy'). An RGB signal on HDMI goes through the card's colour-space
 // converter into Y′CbCr (the card's own CSC; matrix from the format: BT.601 for SD, BT.709 for HD).
 // Format changes on the input are polled (GetInputVideoFormat) and restart AutoCirculate with a new
-// INFO record. 4K/UHD (quad link, TSI, 12G) is not handled yet: STAT aja.format4k.
+// INFO record.
+//
+// 4K/UHD: on 12G cards (KONA 5, Io 4K Plus, Corvid 44 12G …) one SDI input carries UHD/4K and the frame
+// store's built-in TSI takes it. On 3G cards four SDI inputs make a quad link: input quad1 (SDI 1–4,
+// two-sample interleave, 2SI) or quad1sq (square division); the format on SDI 1 is the quadrant format
+// (e.g. 1080p50 → 4x1920x1080p50). HDMI 4K goes through the TSI muxes. Routing as in AJA's ntv2capture4k
+// demo (CNTV2DemoCommon::GetInputRouting4K). The host buffer is always the whole 4K raster.
 //
 // STATUS: compiled in CI; NOT RUN WITH HARDWARE (no AJA card was available).
 
@@ -25,6 +31,7 @@
 #include "ajaanc/includes/ancillarylist.h"
 #include "ajaanc/includes/ancillarydata.h"
 #include "ajabase/system/process.h"
+#include "ntv2democommon.h" // AJA's own 4K routing (GetInputRouting4K, Get4KInputFormat), demos/, MIT
 
 #include <atomic>
 #include <chrono>
@@ -144,7 +151,8 @@ static int fatal(const char* code, const std::string& msg, const std::string& pa
 
 // ---------------------------------------------------------------- inputs
 
-struct Input { std::string name; NTV2InputSource source; };
+enum class Link { Single, Quad2si, QuadSquares };
+struct Input { std::string name; NTV2InputSource source; Link link = Link::Single; };
 
 /** SDI and HDMI inputs of the device, named sdi1…, hdmi1… (the card's connector numbering). */
 static std::vector<Input> deviceInputs(CNTV2Card& dev) {
@@ -153,6 +161,11 @@ static std::vector<Input> deviceInputs(CNTV2Card& dev) {
   for (UWord k = 0; k < sdi; k++) {
     const NTV2InputSource s = ::NTV2ChannelToInputSource(NTV2Channel(k), NTV2_IOKINDS_SDI);
     if (NTV2_IS_VALID_INPUT_SOURCE(s) && dev.features().CanDoInputSource(s)) list.push_back({ "sdi" + std::to_string(k + 1), s });
+  }
+  // 3G cards with 4K: quad link over SDI 1–4 (12G cards take UHD on one input and need none)
+  if (sdi >= 4 && dev.features().CanDo4KVideo() && !dev.features().CanDo12gRouting()) {
+    list.push_back({ "quad1", NTV2_INPUTSOURCE_SDI1, Link::Quad2si });
+    list.push_back({ "quad1sq", NTV2_INPUTSOURCE_SDI1, Link::QuadSquares });
   }
   for (UWord k = 0; k < hdmi; k++) {
     const NTV2InputSource s = ::NTV2ChannelToInputSource(NTV2Channel(k), NTV2_IOKINDS_HDMI);
@@ -167,7 +180,14 @@ static NTV2VideoFormat inputFormat(CNTV2Card& dev, NTV2InputSource src) {
   return dev.GetInputVideoFormat(src, progressive);
 }
 
-static bool is4k(NTV2VideoFormat f) { return NTV2_IS_4K_VIDEO_FORMAT(f) || NTV2_IS_QUAD_QUAD_FORMAT(f); }
+static bool is4k(NTV2VideoFormat f) { return NTV2_IS_4K_VIDEO_FORMAT(f) || NTV2_IS_QUAD_FRAME_FORMAT(f); }
+
+/** Picture format of an input: for a quad link the 4K format whose quadrants arrive on SDI 1–4. */
+static NTV2VideoFormat pictureFormat(NTV2VideoFormat signal, Link link) {
+  if (link == Link::Single || signal == NTV2_FORMAT_UNKNOWN) return signal;
+  NTV2VideoFormat f = signal;
+  return CNTV2DemoCommon::Get4KInputFormat(f) ? f : NTV2_FORMAT_UNKNOWN;
+}
 
 // ---------------------------------------------------------------- --list
 
@@ -185,7 +205,7 @@ static int listDevices() {
     for (const Input& in : deviceInputs(dev)) {
       if (inputs.size() > 1) { inputs += ","; }
       inputs += "\"" + in.name + "\"";
-      const NTV2VideoFormat f = inputFormat(dev, in.source);
+      const NTV2VideoFormat f = pictureFormat(inputFormat(dev, in.source), in.link);
       if (f != NTV2_FORMAT_UNKNOWN) { if (signals.size() > 1) signals += ","; signals += "\"" + in.name + "\":\"" + jsonEscape(::NTV2VideoFormatToString(f)) + "\""; }
     }
     inputs += "]"; signals += "}";
@@ -335,11 +355,13 @@ static int capture(ULWord index, bool tenBit, const std::string& inputName, int 
   std::atexit(cleanup);
   if (dev.features().CanDoMultiFormat()) dev.SetMultiFormatMode(false);
 
+  const bool quad = in->link != Link::Single;
   dev.EnableChannel(ch);
   dev.EnableInputInterrupt(ch);
   dev.SubscribeInputVerticalEvent(ch);
   if (dev.features().HasBiDirectionalSDI() && NTV2_INPUT_SOURCE_IS_SDI(src)) {
-    dev.SetSDITransmitEnable(ch, false); // bidirectional connector to receive
+    // bidirectional connectors to receive: the one input, or all four of a quad link
+    dev.SetSDITransmitEnable(::NTV2MakeChannelSet(ch, quad ? 4 : 1), false);
     std::this_thread::sleep_for(std::chrono::milliseconds(250)); // receiver lock (AJA's demos wait 10 VBIs)
   }
 
@@ -387,39 +409,63 @@ static int capture(ULWord index, bool tenBit, const std::string& inputName, int 
 
   while (!g_quit) {
     // ---- wait for a usable signal
-    NTV2VideoFormat fmt = inputFormat(dev, src);
+    const NTV2VideoFormat signal = inputFormat(dev, src);
+    const NTV2VideoFormat fmt = pictureFormat(signal, in->link);
     const auto now = std::chrono::steady_clock::now();
     if (fmt == NTV2_FORMAT_UNKNOWN || !dev.features().CanDoVideoFormat(fmt)) {
       if (now - lastNoSignal > std::chrono::seconds(1)) {
-        writeText("STAT", fmt == NTV2_FORMAT_UNKNOWN ? "{\"code\":\"aja.noSignal\",\"message\":\"no input signal\"}"
+        const std::string sig = jsonEscape(::NTV2VideoFormatToString(signal));
+        writeText("STAT", signal == NTV2_FORMAT_UNKNOWN ? "{\"code\":\"aja.noSignal\",\"message\":\"no input signal\"}"
+          : quad && fmt == NTV2_FORMAT_UNKNOWN ? "{\"code\":\"aja.formatQuad\",\"message\":\"Signal on SDI 1 is no quad-link quadrant\",\"params\":{\"format\":\"" + sig + "\"}}"
           : "{\"code\":\"aja.format\",\"message\":\"Device cannot capture this format\",\"params\":{\"format\":\"" + jsonEscape(::NTV2VideoFormatToString(fmt)) + "\"}}");
         lastNoSignal = now;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
     }
-    if (is4k(fmt)) {
-      if (now - last4k > std::chrono::seconds(1)) { writeText("STAT", "{\"code\":\"aja.format4k\",\"message\":\"4K/UHD inputs are not supported yet\",\"params\":{\"format\":\"" + jsonEscape(::NTV2VideoFormatToString(fmt)) + "\"}}"); last4k = now; }
+    const bool uhd = is4k(fmt);
+    if (uhd && !dev.features().CanDo4KVideo()) {
+      if (now - last4k > std::chrono::seconds(1)) { writeText("STAT", "{\"code\":\"aja.format\",\"message\":\"Device cannot capture this format\",\"params\":{\"format\":\"" + jsonEscape(::NTV2VideoFormatToString(fmt)) + "\"}}"); last4k = now; }
       std::this_thread::sleep_for(std::chrono::milliseconds(200));
       continue;
     }
+    const bool hdmi = NTV2_INPUT_SOURCE_IS_HDMI(src), twelveG = dev.features().CanDo12gRouting();
+    // 4K over HDMI and 4K quad links start on channel 1 (AJA's routing tables know Ch1–4 only on 3G cards)
+    if (uhd && (quad || (hdmi && !twelveG)) && ch != NTV2_CHANNEL1)
+      return abortCapture("aja.format4kInput", "4K on this input is not possible - use SDI 1-4 or HDMI 1");
 
-    // ---- configure channel and route for this format
+    // ---- configure frame stores and route for this format
+    // frame stores: 1 (HD, 12G 4K), 2 (TSI over two muxes: 2SI quad link, HDMI 4K), 4 (square division)
+    const UWord stores = !uhd || (twelveG && !hdmi) ? 1 : in->link == Link::QuadSquares ? 4 : 2;
+    const NTV2ChannelSet fbs = ::NTV2MakeChannelSet(ch, stores);
+    dev.EnableChannels(fbs, false);
     dev.SetVideoFormat(fmt, false, false, ch);
-    dev.SetVANCMode(NTV2_VANCMODE_OFF, ch);
-    dev.SetFrameBufferFormat(ch, fbf);
+    dev.SetVANCMode(fbs, NTV2_VANCMODE_OFF);
+    dev.SetFrameBufferFormat(fbs, fbf);
+    if (!uhd) { dev.Set4kSquaresEnable(false, ch); dev.SetTsiFrameEnable(false, ch); }
+    else if (in->link == Link::QuadSquares) dev.Set4kSquaresEnable(true, ch);
+    else dev.SetTsiFrameEnable(true, ch);
     NTV2LHIHDMIColorSpace cs = NTV2_LHIHDMIColorSpaceYCbCr;
-    if (NTV2_INPUT_SOURCE_IS_HDMI(src)) dev.GetHDMIInputColor(cs, ch);
+    if (hdmi) dev.GetHDMIInputColor(cs, ch);
     const bool rgbIn = cs == NTV2_LHIHDMIColorSpaceRGB;
     NTV2XptConnections route;
-    const NTV2InputXptID fbIn = ::GetFrameStoreInputXptFromChannel(ch);
-    const NTV2OutputXptID srcOut = ::GetInputSourceOutputXpt(src, false, rgbIn);
-    if (rgbIn) { // RGB → card's CSC → Y′CbCr frame store
-      route.insert(NTV2Connection(fbIn, ::GetCSCOutputXptFromChannel(ch, false, false)));
-      route.insert(NTV2Connection(::GetCSCInputXptFromChannel(ch), srcOut));
-    } else route.insert(NTV2Connection(fbIn, srcOut));
+    if (uhd) {
+      CaptureConfig cfg;
+      cfg.fInputChannel = ch; cfg.fInputSource = src; cfg.fPixelFormat = fbf;
+      cfg.fDoTSIRouting = in->link != Link::QuadSquares && !(twelveG && !hdmi);
+      if (!CNTV2DemoCommon::GetInputRouting4K(route, cfg, dev.GetDeviceID(), rgbIn)) return abortCapture("aja.route", "Signal routing on the card failed");
+    } else {
+      const NTV2InputXptID fbIn = ::GetFrameStoreInputXptFromChannel(ch);
+      const NTV2OutputXptID srcOut = ::GetInputSourceOutputXpt(src, false, rgbIn);
+      if (rgbIn) { // RGB → card's CSC → Y′CbCr frame store
+        route.insert(NTV2Connection(fbIn, ::GetCSCOutputXptFromChannel(ch, false, false)));
+        route.insert(NTV2Connection(::GetCSCInputXptFromChannel(ch), srcOut));
+      } else route.insert(NTV2Connection(fbIn, srcOut));
+    }
     // without inReplace: only these crosspoints change, the rest of the card's routing stays
     if (!dev.ApplySignalRoute(route, false)) return abortCapture("aja.route", "Signal routing on the card failed");
+    // anc extraction for HD/SD and 12G single link; quad links carry their anc on four links
+    const bool ancNow = withAnc && (!uhd || (twelveG && !hdmi));
 
     const NTV2FormatDescriptor desc(fmt, fbf);
     const ULWord w = desc.GetRasterWidth(), h = desc.GetVisibleRasterHeight(), pitch = desc.GetBytesPerRow();
@@ -434,11 +480,12 @@ static int capture(ULWord index, bool tenBit, const std::string& inputName, int 
       + ",\"pixel\":\"" + (tenBit ? "v210" : "uyvy422") + "\",\"matrix\":\"" + col.matrix + "\",\"range\":\"tv\""
       + ",\"transfer\":\"" + col.transfer + "\",\"primaries\":\"" + col.primaries + "\",\"interlaced\":" + (interlaced ? "true" : "false")
       + ",\"name\":\"" + jsonEscape(::NTV2VideoFormatToString(fmt)) + "\",\"input\":\"" + in->name + "\""
+      + (quad ? std::string(",\"link\":\"") + (in->link == Link::QuadSquares ? "quad-squares" : "quad-2si") + "\"" : uhd ? std::string(",\"link\":\"") + (hdmi ? "hdmi" : "12g") + "\"" : std::string())
       + (channels ? ",\"audio\":{\"sampleRate\":48000,\"channels\":" + std::to_string(channels) + ",\"format\":\"s32le\"}" : "");
     bool infoSent = false;
 
     dev.AutoCirculateStop(ch);
-    ULWord options = AUTOCIRCULATE_WITH_RP188 | (withAnc ? AUTOCIRCULATE_WITH_ANC : 0);
+    ULWord options = AUTOCIRCULATE_WITH_RP188 | (ancNow ? AUTOCIRCULATE_WITH_ANC : 0);
     if (!dev.AutoCirculateInitForInput(ch, 7, audSys, options) || !dev.AutoCirculateStart(ch)) {
       return abortCapture("aja.startFailed", "Capture cannot be started (device in use?)");
     }
@@ -455,7 +502,7 @@ static int capture(ULWord index, bool tenBit, const std::string& inputName, int 
       else {
         xfer.SetVideoBuffer(static_cast<ULWord*>(video.GetHostPointer()), ULWord(video.GetByteCount()));
         if (audio) xfer.SetAudioBuffer(static_cast<ULWord*>(audio.GetHostPointer()), ULWord(audio.GetByteCount()));
-        if (withAnc && anc1) xfer.SetAncBuffers(static_cast<ULWord*>(anc1.GetHostPointer()), ULWord(anc1.GetByteCount()), static_cast<ULWord*>(anc2.GetHostPointer()), ULWord(anc2.GetByteCount()));
+        if (ancNow && anc1) xfer.SetAncBuffers(static_cast<ULWord*>(anc1.GetHostPointer()), ULWord(anc1.GetByteCount()), static_cast<ULWord*>(anc2.GetHostPointer()), ULWord(anc2.GetByteCount()));
         if (dev.AutoCirculateTransfer(ch, xfer)) {
           const FRAME_STAMP& fs = xfer.acTransferStatus.acFrameStamp;
           const int64_t t = int64_t(fs.acAudioClockTimeStamp); // card's 48 kHz clock at this frame's VBI
@@ -480,7 +527,7 @@ static int capture(ULWord index, bool tenBit, const std::string& inputName, int 
             writeRecord("AUDI", abuf.data(), (uint32_t)abuf.size());
             audioNext += int64_t(abytes / (4 * ULWord(channels)));
           }
-          if (withAnc) {
+          if (ancNow) {
             const NTV2Buffer a1(anc1.GetHostPointer(), xfer.GetCapturedAncByteCount(false)), a2(anc2.GetHostPointer(), xfer.GetCapturedAncByteCount(true));
             sendVanc(a1, a2, lastVancSig, lastVanc);
           }
@@ -494,7 +541,7 @@ static int capture(ULWord index, bool tenBit, const std::string& inputName, int 
         // format check every 10 frames (register reads, cheap); p ↔ PsF only is not a change
         if (++frames % 10 == 0) {
           const NTV2VideoFormat now = inputFormat(dev, src);
-          if (!samePicture(now, fmt)) break;
+          if (!samePicture(now, signal)) break;
         }
       }
       const auto n = std::chrono::steady_clock::now();
@@ -531,6 +578,6 @@ int main(int argc, char** argv) {
     }
     return capture(ULWord(std::atoi(argv[2])), tenBit, input, audio);
   }
-  fprintf(stderr, "usage: lz-aja --list | --capture <index> [--bits 8|10] [--input sdi1|hdmi1|…] [--audio 0|2|8|16]\n");
+  fprintf(stderr, "usage: lz-aja --list | --capture <index> [--bits 8|10] [--input sdi1|hdmi1|quad1|quad1sq|…] [--audio 0|2|8|16]\n");
   return 1;
 }

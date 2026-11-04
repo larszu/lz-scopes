@@ -2,7 +2,7 @@
 
 Nimmt von einer Karte von AJA Video Systems auf (KONA, Io, U-TAP, Corvid …) und schreibt die Bilder im Helfer-Protokoll (`docs/frame-protocol.de.md`) auf stdout. Die Bridge startet ihn für Quellen `aja:<n>` und rechnet wie bei DeckLink mit ffmpeg nach R′G′B′ um.
 
-**Stand:** In der Desktop-App enthalten (macOS universal, Windows x64, Linux x64 und arm64). Gebaut gegen [libajantv2](https://github.com/aja-video/libajantv2) 18.0.0 (MIT), statisch gelinkt. **Mit Hardware nicht geprüft** – es stand keine AJA-Karte zur Verfügung. In CI geprüft: Bau auf allen drei Systemen, `--list` ohne Karte. Nicht unterstützt: 4K/UHD (Quad-Link, TSI, 12G; der Helfer meldet `aja.format4k`), Referenz-/Genlock-Status, analoge Eingänge.
+**Stand:** In der Desktop-App enthalten (macOS universal, Windows x64, Linux x64 und arm64). Gebaut gegen [libajantv2](https://github.com/aja-video/libajantv2) 18.0.0 (MIT), statisch gelinkt. **Mit Hardware nicht geprüft** – es stand keine AJA-Karte zur Verfügung. In CI geprüft: Bau auf allen drei Systemen, `--list` ohne Karte. 4K/UHD über 12G, Quad-Link (2SI und Square Division) und HDMI ist eingebaut, ebenfalls ungeprüft. Nicht unterstützt: Referenz-/Genlock-Status, analoge Eingänge, 8K.
 
 `aja-video/ntv2` ist der ältere, seit 2023 ruhende Stand derselben Bibliothek; genutzt wird `libajantv2`, das auch den Linux-Treiber enthält.
 
@@ -10,7 +10,7 @@ Nimmt von einer Karte von AJA Video Systems auf (KONA, Io, U-TAP, Corvid …) un
 
 1. Treiber installieren: macOS und Windows **AJA Desktop Software** (aja.com/support), Linux den Kerneltreiber aus libajantv2 (`driver/linux`: `make`, dann `sudo ./load_ajantv2`). Zum Bauen nicht nötig.
 2. Bibliothek holen: `npm run aja:fetch` – klont `aja-video/libajantv2` am Tag aus `scripts/aja-sdk.json` nach `vendor/libajantv2/` und prüft, dass der Tag auf den gepinnten Commit zeigt. Alternativ zeigt `AJA_SDK_DIR` auf einen eigenen Checkout. Neuer Tag: `node scripts/aja-sdk-fetch.mjs --pin ntv2_18_1_0`.
-3. Bauen: `node scripts/build-helpers.mjs aja` (CMake ≥ 3.21; `helpers/aja/CMakeLists.txt` bindet libajantv2 per `add_subdirectory` ein, ohne Demos, Werkzeuge, Tests, Treiber und Plugin-Laden).
+3. Bauen: `node scripts/build-helpers.mjs aja` (CMake ≥ 3.21; `helpers/aja/CMakeLists.txt` bindet libajantv2 per `add_subdirectory` ein (dazu `demos/ntv2democommon.cpp` für die 4K-Signalführung), ohne Demo-Programme, Werkzeuge, Tests, Treiber und Plugin-Laden).
 
 - macOS: universal (arm64 + x86_64), Mindestversion 11.0. libajantv2 liest die SDK-Version aus `CMAKE_OSX_SYSROOT`; das Build-Skript übergibt daher den Pfad mit Versionsnummer (`MacOSX27.2.sdk`), nicht den Link `MacOSX.sdk`.
 - Linux: `g++`, braucht `libudev-dev`.
@@ -22,9 +22,15 @@ Das Ergebnis landet in `helpers/bin/`; `npm run dist:*` und `release.yml` nehmen
 
 ```
 lz-aja --list   → {"ok":true,"sdk":"18.0.0","devices":[{"index":0,"name":"KONA 5","serial":"…","capture":true,"ready":true,"busy":false,"anc":true,"audioChannels":16,"inputs":["sdi1","sdi2","sdi3","sdi4","hdmi1"],"signals":{"sdi1":"1080i50"}}]}
-lz-aja --capture <index> [--bits 8|10] [--input sdi1|…|hdmi1|…] [--audio 0|2|8|16]
+lz-aja --capture <index> [--bits 8|10] [--input sdi1|…|hdmi1|…|quad1|quad1sq] [--audio 0|2|8|16]
 ```
 
+- 4K/UHD, Signalführung aus AJAs Demo `ntv2capture4k` (`CNTV2DemoCommon::GetInputRouting4K`, `demos/ntv2democommon.cpp` wird mitgebaut):
+  - **12G** (`CanDo12gRouting`: KONA 5, Io 4K Plus, Corvid 44 12G …): ein SDI-Eingang meldet das UHD/4K-Format selbst, ein Framestore mit eingebautem TSI.
+  - **Quad-Link** auf 3G-Karten mit 4K: Eingänge `quad1` (SDI 1–4, 2SI, zwei Framestores über die TSI-Muxe) und `quad1sq` (Square Division, vier Framestores). Das Signal an SDI 1 ist das Viertel-Format (1080p50 → `4x1920x1080p_5000`, `Get4KInputFormat`). 2SI und Square Division sind am Signal nicht unterscheidbar – deshalb zwei Eingänge.
+  - **HDMI** 4K: über die TSI-Muxe, nur an HDMI 1 (Kanal 1).
+  - Der Host-Puffer ist immer das ganze 4K-Raster. VANC wird bei Quad-Link und HDMI-4K nicht ausgelesen.
+  - Last: 3840×2160 v210 sind 22 MB je Bild, bei 50p 1,1 GB/s durch die Pipe; ist die Bridge zu langsam, ersetzt der Schreib-Thread Bilder (`aja.skipped`). 8 bit halbiert die Menge. Nicht gemessen.
 - Eingang: `--input`, sonst der erste SDI-Eingang. Der Eingang n nutzt Kanal n (Framestore, Audiosystem n, wenn die Karte eines je Kanal hat). Bidirektionale SDI-Buchsen werden auf Empfang geschaltet.
 - Belegung wie in AJAs eigenen Capture-Demos: `AcquireStreamForApplication` (Signatur `LZSC`), Task-Modus `NTV2_OEM_TASKS`; beim Ende (auch bei SIGTERM oder geschlossener Pipe) werden AutoCirculate gestoppt, Task-Modus und Besitz zurückgegeben. Ein toter Vorbesitzer wird vom SDK übernommen. Hält ein anderes Programm die Karte, meldet `--list` `busy` und `--capture` `aja.busy`.
 - Signalführung: nur die eigenen Kreuzpunkte (Eingang → Framestore, bei RGB über HDMI Eingang → CSC → Framestore), `ApplySignalRoute` ohne `inReplace` – die übrige Signalführung der Karte bleibt. Die Referenz wird nicht umgestellt.

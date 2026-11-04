@@ -69,7 +69,7 @@ export default {
   'bridgeui.decklinkSetupTitle': 'Steps to install and approve Blackmagic Desktop Video',
   'bridgeui.decklinkInputAuto': 'Input as in Desktop Video Setup',
   'bridgeui.decklinkInputTitle': 'Input connector of the device; changing it reconnects',
-  'bridgeui.ajaTitle': 'Input via the AJA helper (AJA KONA, Io, U-TAP …, libajantv2): v210 10 bit, embedded sound (up to 16 channels), format detection, timecode, HDR flags from VPID/InfoFrame, VANC. Not yet tested with a card.',
+  'bridgeui.ajaTitle': 'Input via the AJA helper (AJA KONA, Io, U-TAP …, libajantv2): v210 10 bit, embedded sound (up to 16 channels), format detection, timecode, HDR flags from VPID/InfoFrame, VANC; 4K/UHD over 12G, quad link (2SI, square division) and HDMI. Not yet tested with a card.',
   'bridgeui.chooseAja': 'Choose AJA card …',
   'bridgeui.ajaBusy': 'in use',
   'bridgeui.aja10': 'AJA 10 bit (v210, standard)',

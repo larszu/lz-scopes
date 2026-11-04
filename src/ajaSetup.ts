@@ -16,7 +16,7 @@ export interface AjaDevice {
   busy?: boolean;
   anc?: boolean;
   audioChannels?: number;
-  /** sdi1 …, hdmi1 … */
+  /** sdi1 …, hdmi1 …, quad1 / quad1sq (3G cards with 4K: quad link over SDI 1–4) */
   inputs?: string[];
   /** detected format per input with a signal, e.g. {sdi1: "1080i50"} */
   signals?: Record<string, string>;
@@ -55,8 +55,10 @@ export function openAjaSetup(st: AjaStatus, check: () => Promise<AjaStatus | nul
   return openSetupDialog({ title: t('ajasetup.title'), intro: t('ajasetup.intro'), steps: ajaSteps }, st, check, onReady);
 }
 
-/** "SDI 1", "HDMI 2" … for a connector id of the helper. */
+/** "SDI 1", "HDMI 2", "SDI 1–4 · Quad 2SI" … for a connector id of the helper. */
 export function ajaInputName(id: string): string {
+  if (id === 'quad1') return 'SDI 1–4 · Quad 2SI';
+  if (id === 'quad1sq') return 'SDI 1–4 · Quad Square Division';
   const m = /^(sdi|hdmi)(\d+)$/.exec(id);
   return m ? `${m[1].toUpperCase()} ${m[2]}` : id;
 }

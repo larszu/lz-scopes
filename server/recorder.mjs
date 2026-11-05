@@ -112,7 +112,16 @@ export class StreamRecorder {
     if (!seg || this.ring !== g) return;
     const file = basename(seg.file);
     g.entries = dropOverwritten(g.entries, file, g.wrap, gen);
-    g.entries.push({ file, startMs: at - (seg.end - seg.start) * 1000, endMs: at, gen, start: seg.start, end: seg.end });
+    // Wall-clock times from the segment's media times: ffmpeg reports a segment when it is written,
+    // and under load (encoder below real time) that report comes late – taking the report time as
+    // the end stretched the saved window (CI macOS: 138–149 instead of 125 frames). The anchor is
+    // the smallest report delay seen in this launch (wall clock − media end); later segments and
+    // the ones already listed are re-timed from it.
+    g.anchor ??= new Map();
+    const anchor = Math.min(g.anchor.get(gen) ?? Infinity, at - seg.end * 1000);
+    g.anchor.set(gen, anchor);
+    g.entries.push({ file, startMs: 0, endMs: 0, gen, start: seg.start, end: seg.end });
+    for (const e of g.entries) if (e.gen === gen) { e.startMs = anchor + e.start * 1000; e.endMs = anchor + e.end * 1000; }
     // files of earlier launches age out of the window: delete them
     const keepFrom = at - (g.pre + g.post + RING_MARGIN + 4) * 1000;
     for (const e of g.entries) if (e.endMs < keepFrom && e.gen !== gen) rm(join(g.dir, e.file), { force: true }).catch(() => {});

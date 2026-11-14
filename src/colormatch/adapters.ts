@@ -14,7 +14,7 @@
 //    one the bridge uses towards the camera is outside this repository.
 // 3. Guide mode – no protocol: the tool says which value to turn by how much, the person confirms.
 
-import type { CameraBridgeLink } from '../shading/bridge';
+import type { ShadingLink } from '../shading/bridge';
 import { busCommands, type Paint, type PaintField } from '../shading/model';
 import type { MatchCamera, ParamDef, Values } from './engine';
 
@@ -68,7 +68,7 @@ const BUS: [PaintField, ParamDef['stage']][] = [
 
 export class BridgeCamera implements MatchCamera {
   params: ParamDef[];
-  constructor(private link: CameraBridgeLink, private n: number, private mode = '') {
+  constructor(private link: ShadingLink, private n: number, private mode = '') {
     const known = link.states.get(n)?.paint ?? {};
     // only what the camera reports: a field the bridge never sent is a field the camera lacks
     this.params = BUS.filter(([f]) => known[f] !== undefined).map(([f, stage]) => ({ id: f, label: f, stage, min: 0, max: 255, step: 1, probe: 8 }));

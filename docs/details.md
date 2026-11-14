@@ -165,6 +165,7 @@ Panel type **Reference / Genlock** (*Referenz / Genlock*): house reference at a 
 ## Touch Shading
 
 **Scopes → Touch Shading** controls a camera from the scopes:
+- **Over NMOS IS-12:** enter an NMOS node address (`http://bridge:8640`) instead of the bridge WebSocket (`ws://…:9700`). The bar then finds the cameras through the IS-04 Node API and shades over IS-12 – the camera classes of lz-camera-bridge (`LzCameraPaint`, `LzCameraExposure`, `LzTally`), so any device offering them works. Values stay on the bus scale inside the bar; the link converts to the device's percent. Camera setup (connect, address) is not available over IS-12. Tested against the bridge's NMOS node, not on a real camera.
 - **Match to reference:** closed loop against the reference camera – black R/G/B, white R/G/B and master gamma in limited steps, measured again after each step until the levels agree within 0.5 %; every step can be undone. Every paint change (gesture, loop, undo, stop) goes into the companion file of running recordings. Tested only against the simulator and synthetic cameras, not on a real camera.
 - **Parade:** grab a channel low to move Black R/G/B, high to move White R/G/B.
 - **Luma waveform:** shadows move Master Black, mids Master Gamma, highlights White.

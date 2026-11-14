@@ -122,3 +122,19 @@ export class CameraBridgeLink {
     return true;
   }
 }
+
+/** What the shading bar, the camera dialog and colour matching need from a camera link. */
+export interface ShadingLink {
+  readonly cameras: BridgeCamera[];
+  readonly configs: Map<number, Record<string, unknown>>;
+  readonly cameraErrors: Map<number, string>;
+  readonly states: Map<number, CameraPaintState>;
+  readonly data: Map<number, CameraData>;
+  readonly status: 'off' | 'connecting' | 'open' | 'closed';
+  readonly lastError: string;
+  subscribe(f: () => void): () => void;
+  request(msg: Record<string, unknown>): boolean;
+  connect(): void;
+  disconnect(): void;
+  send(cameraNumber: number, cmd: string, params: Record<string, number>): boolean;
+}

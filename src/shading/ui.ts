@@ -6,7 +6,7 @@
 import { channelLayout, isWaveform, plotRect, waveLevel, type ScopeType } from '../graticule';
 import { contentRect, waveRangeOf, type PanelState } from '../panel';
 import type { Source } from '../sources';
-import { CameraBridgeLink } from './bridge';
+import { AutoLink } from './link';
 import {
   FIELDS, LIMITS, NEUTRAL_PAINT, busCommands, slopeScale, clampValue, fieldAvailable, formatValue, slope, vectorGesture, vectorMode, waveTarget,
   type Channel, type Paint, type PaintField,
@@ -74,7 +74,7 @@ export class ShadingControl {
   /** where the bar sits; it covers part of the scopes, so it can move out of the way */
   atTop = false;
   open = false;
-  readonly link: CameraBridgeLink;
+  readonly link: AutoLink;
   private sim: ShadingSim | null = null;
   private dirty = new Set<PaintField>();
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -87,7 +87,7 @@ export class ShadingControl {
 
   constructor(private host: ShadingHost, mount: HTMLElement) {
     try { const s = JSON.parse(localStorage.getItem(STORE) ?? '{}'); if (typeof s.bridgeUrl === 'string') this.bridgeUrl = s.bridgeUrl; this.atTop = s.atTop === true; } catch { /* defaults */ }
-    this.link = new CameraBridgeLink(() => this.bridgeUrl, () => { this.syncFromBridge(); this.render(); });
+    this.link = new AutoLink(() => this.bridgeUrl, () => { this.syncFromBridge(); this.render(); });
     setLiveCamera(() => {
       if (typeof this.target !== 'number') return null;
       const c = this.link.cameras.find((x) => x.cameraNumber === this.target);

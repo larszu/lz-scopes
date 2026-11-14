@@ -4,7 +4,7 @@
 // BridgeServer.ts). LZ Scopes keeps no camera list of its own; the bridge stores it.
 
 import { BRIDGE_PAINT_CAPS, capsKey } from './model';
-import type { CameraBridgeLink } from './bridge';
+import type { ShadingLink } from './bridge';
 import { button, field, h, hint, numberInput, openModal, select, textInput, type Kid, type Modal } from '../ui';
 import { t, type Key } from '../i18n';
 
@@ -80,7 +80,7 @@ const label = (k: FieldKey) => t(`shading.cam.field.${k}` as Key);
 const modeLabel = (m: string) => t(`shading.cam.mode.${m}` as Key);
 
 /** The dialog. `link` is the Touch Shading connection to the bridge. */
-export function openCameraDialog(link: CameraBridgeLink, onTarget?: (cameraNumber: number) => void): Modal {
+export function openCameraDialog(link: ShadingLink, onTarget?: (cameraNumber: number) => void): Modal {
   let form: CameraForm | null = null;
   let note = '';
   const m = openModal({ title: t('shading.cam.title'), id: 'cameras', cls: 'cameras', size: 'lg', sticky: true });

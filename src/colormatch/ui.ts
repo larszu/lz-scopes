@@ -3,7 +3,7 @@
 // with "Match", progress, cancel, before/after and Multi. The loop is engine.ts.
 
 import type { Source } from '../sources';
-import type { CameraBridgeLink } from '../shading/bridge';
+import type { ShadingLink } from '../shading/bridge';
 import type { Pt } from '../led/analysis';
 import { grabFrame } from '../led/ui';
 import { openChartCorners } from '../match/chartUi';
@@ -22,7 +22,7 @@ import { runMatch, type MatchCamera, type Stage, type Values } from './engine';
 import { BmdRestCamera, BridgeCamera, DesktopViscaTransport, PanasonicCamera, SonyCgiCamera, GuideCamera, GUIDE_PARAMS, ViscaIpCamera, viscaAvailable, type GuideChange } from './adapters';
 import { SimCamera, sceneOf } from './sim';
 
-export interface ColorMatchHost { sources: () => Source[]; link: CameraBridgeLink }
+export interface ColorMatchHost { sources: () => Source[]; link: ShadingLink }
 
 const SIM = 'sim', VALUES = 'values';
 const SIM_SPACE: Space = { transfer: 'sdr', gamut: '709', hlgLw: 1000 };

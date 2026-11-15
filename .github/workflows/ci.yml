@@ -101,10 +101,12 @@ jobs:
         if: env.BRIDGE_TOKEN != ''
         with:
           repository: larszu/lz-camera-bridge
-          ref: v2.2.0
+          ref: v2.6.0
           path: vendor/lz-camera-bridge
           token: ${{ secrets.CAMERA_BRIDGE_TOKEN }}
-          sparse-checkout: packages/bridge
+          sparse-checkout: |
+            packages/bridge
+            packages/nmos
       # Electron downloads its binary on first use; WebGL runs in SwiftShader (slow, see e2e/playwright.config.ts)
       - run: xvfb-run -a npm run test:e2e -- --shard=${{ matrix.shard }}/3
 
@@ -195,10 +197,12 @@ jobs:
         if: env.BRIDGE_TOKEN != ''
         with:
           repository: larszu/lz-camera-bridge
-          ref: v2.2.0
+          ref: v2.6.0
           path: vendor/lz-camera-bridge
           token: ${{ secrets.CAMERA_BRIDGE_TOKEN }}
-          sparse-checkout: packages/bridge
+          sparse-checkout: |
+            packages/bridge
+            packages/nmos
       - run: node scripts/build-camera-bridge.mjs ${{ env.BRIDGE_TOKEN != '' && '--required' || '--optional' }}
       - name: Package (AppImage, deb; ${{ matrix.arch }})
         run: node node_modules/electron-builder/cli.js --config electron-builder.js --linux --${{ matrix.arch }} --publish never

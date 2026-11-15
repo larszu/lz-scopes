@@ -130,10 +130,12 @@ jobs:
       - uses: actions/checkout@v5
         with:
           repository: larszu/lz-camera-bridge
-          ref: v2.2.0
+          ref: v2.6.0
           path: vendor/lz-camera-bridge
           token: ${{ secrets.CAMERA_BRIDGE_TOKEN }}
-          sparse-checkout: packages/bridge
+          sparse-checkout: |
+            packages/bridge
+            packages/nmos
       - run: node scripts/build-camera-bridge.mjs --required
       - name: Package
         # bash on every OS: pwsh swallowed electron-builder's exit code in cable-planner v0.2.35

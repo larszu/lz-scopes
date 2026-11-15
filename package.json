@@ -48,6 +48,7 @@
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.3",
     "@types/ws": "^8.18.2",
+    "atem-connection": "^3.10.3",
     "concurrently": "^10.0.5",
     "electron": "^44.4.5",
     "electron-builder": "^26.15.3",

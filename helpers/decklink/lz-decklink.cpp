@@ -258,6 +258,11 @@ class Capture : public IDeckLinkInputCallback {
     // flips between them on every frame (UltraStudio Recorder 3G, Desktop Video 16.5). Re-enabling
     // the input each time restarted the bridge's ffmpeg per frame – keep the current mode instead.
     if (sameProgressive(mode, pf)) return S_OK;
+    // Same display mode and pixel format: nothing to re-enable. The SDK restarts capture only "if
+    // the video mode or pixel format has changed". With 8 bit on a 10-bit wire (1080i50, #220) the
+    // driver keeps reporting the detected depth/colorspace; re-enabling the input on every report
+    // restarted the bridge's ffmpeg and starved the page.
+    if (sameMode(mode, pf)) return S_OK;
     input_->PauseStreams();
     input_->EnableVideoInput(mode->GetDisplayMode(), pf, bmdVideoInputEnableFormatDetection);
     input_->FlushStreams();
@@ -323,8 +328,15 @@ class Capture : public IDeckLinkInputCallback {
       && (long long)scale == fpsNum_ && (long long)duration == fpsDen_;
   }
 
+  /** The input already runs in exactly this display mode and pixel format. */
+  bool sameMode(IDeckLinkDisplayMode* mode, BMDPixelFormat pf) {
+    std::lock_guard<std::mutex> lock(modeLock_);
+    return modeSet_ && pf == pixel_ && mode->GetDisplayMode() == displayMode_;
+  }
+
   void setMode(IDeckLinkDisplayMode* mode, BMDPixelFormat pf) {
     std::lock_guard<std::mutex> lock(modeLock_);
+    displayMode_ = mode->GetDisplayMode(); modeSet_ = true;
     width_ = mode->GetWidth(); height_ = mode->GetHeight();
     BMDTimeValue duration = 0; BMDTimeScale scale = 0;
     mode->GetFrameRate(&duration, &scale);
@@ -440,6 +452,8 @@ class Capture : public IDeckLinkInputCallback {
   long long fpsNum_ = 25, fpsDen_ = 1;
   long width_ = 0, height_ = 0;
   bool interlaced_ = false;
+  bool modeSet_ = false;
+  BMDDisplayMode displayMode_ = 0;
   BMDPixelFormat pixel_ = bmdFormat10BitYUV;
   std::vector<uint8_t> buf_;
   std::chrono::steady_clock::time_point lastNoSignal_{}, lastVanc_{};

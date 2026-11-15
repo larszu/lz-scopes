@@ -2540,6 +2540,7 @@ applySidebar();
 renderHeader();
 // Touch Shading (#54): gestures on the scopes → lz-camera-bridge or the simulator
 const shading = new ShadingControl({
+  scopesHttp: () => bridgeUrl().replace(/^ws/, 'http'),
   simSource: () => {
     let s = sources.find((x) => x.url === SIM_URL);
     if (!s) { s = addSource('file', SHADING_T.simName, SIM_URL, { colorspace: '709' }); if (state.panels[0]) switchSource(state.panels[0], s.id); }

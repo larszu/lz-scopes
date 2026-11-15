@@ -7,6 +7,7 @@ import { channelLayout, isWaveform, plotRect, waveLevel, type ScopeType } from '
 import { contentRect, waveRangeOf, type PanelState } from '../panel';
 import type { Source } from '../sources';
 import { AutoLink } from './link';
+import { DEFAULT_CHOICE, LOCAL, MANUAL, choiceFromUrl, fetchFound, keyOf, nmosAvailable, urlFor, type Choice, type FoundBridge } from './connect';
 import {
   FIELDS, LIMITS, NEUTRAL_PAINT, busCommands, slopeScale, clampValue, fieldAvailable, formatValue, slope, vectorGesture, vectorMode, waveTarget,
   type Channel, type Paint, type PaintField,
@@ -18,7 +19,7 @@ import { cameraDataLabels, setLiveCamera } from './live';
 import { LUMA } from '../color';
 import { traceLevels } from '../ghost';
 import { LOOP_DEFAULTS, converged, loopErrors, loopStep, worstError } from '../match/loop';
-import { button, checkbox, disclosure, h, hint, iconButton, link, restoreFocus, row, select, textInput } from '../ui';
+import { button, checkbox, disclosure, h, hint, iconButton, link, restoreFocus, select, textInput } from '../ui';
 
 const BRIDGE_DOWNLOAD = 'https://github.com/larszu/lz-camera-bridge/releases';
 
@@ -56,6 +57,8 @@ export interface ShadingHost {
   loopPair?(): { cam: Source; ref: Source } | null;
   /** paint change into the companion file of every running recording (record.ts eventAll) */
   recordEvent?(kind: string, data: unknown): void;
+  /** http base of the LZ Scopes server (bridges found in the network: /api/camera-bridges) */
+  scopesHttp?(): string;
 }
 
 const SUPPORTED: ScopeType[] = ['parade', 'yrgb', 'wf-luma', 'wf-color', 'vector'];
@@ -70,7 +73,16 @@ export class ShadingControl {
   undoStack: Paint[] = [];
   gesture: Gesture | null = null;
   message = '';
-  bridgeUrl = 'ws://localhost:9700';
+  /** which bridge and which way (#224); the address follows from it */
+  choice: Choice = { ...DEFAULT_CHOICE };
+  /** bridges the scopes server found via DNS-SD */
+  found: FoundBridge[] = [];
+  /** NMOS port the bridge on this machine reported (bridgeInfo), kept across sessions */
+  localNmos: number | null = null;
+  private foundTimer: ReturnType<typeof setInterval> | null = null;
+  get bridgeUrl(): string {
+    return urlFor(this.choice, this.found, { port: this.builtIn?.port ?? 9700, nmosPort: this.localNmos });
+  }
   /** where the bar sits; it covers part of the scopes, so it can move out of the way */
   atTop = false;
   open = false;
@@ -86,8 +98,13 @@ export class ShadingControl {
   private why: 'gesture' | 'loop' | 'undo' | 'stop' = 'gesture';
 
   constructor(private host: ShadingHost, mount: HTMLElement) {
-    try { const s = JSON.parse(localStorage.getItem(STORE) ?? '{}'); if (typeof s.bridgeUrl === 'string') this.bridgeUrl = s.bridgeUrl; this.atTop = s.atTop === true; } catch { /* defaults */ }
-    this.link = new AutoLink(() => this.bridgeUrl, () => { this.syncFromBridge(); this.render(); });
+    try {
+      const s = JSON.parse(localStorage.getItem(STORE) ?? '{}');
+      this.choice = s.choice && typeof s.choice.bridge === 'string' ? { ...DEFAULT_CHOICE, ...s.choice } : choiceFromUrl(typeof s.bridgeUrl === 'string' ? s.bridgeUrl : undefined);
+      if (typeof s.localNmos === 'number') this.localNmos = s.localNmos;
+      this.atTop = s.atTop === true;
+    } catch { /* defaults */ }
+    this.link = new AutoLink(() => this.bridgeUrl, () => { this.noteBridgeInfo(); this.syncFromBridge(); this.render(); });
     setLiveCamera(() => {
       if (typeof this.target !== 'number') return null;
       const c = this.link.cameras.find((x) => x.cameraNumber === this.target);
@@ -146,14 +163,85 @@ export class ShadingControl {
   toggleBar(force?: boolean) {
     const was = this.open;
     this.open = force ?? !this.open;
-    if (this.open) void this.ensureBridge();
+    this.watchFound(this.open);
+    if (this.open && (this.choice.bridge === LOCAL || this.link.status === 'off')) void this.ensureBridge();
     this.render();
     // focus into the bar when it opens, back to where it came from when it closes
     if (this.open && !was) { this.opener = document.activeElement; this.bar.querySelector<HTMLElement>('input, select, button')?.focus(); }
     if (!this.open && was && this.bar.contains(document.activeElement)) { (document.activeElement as HTMLElement).blur(); restoreFocus(this.opener); }
   }
 
-  private persist() { try { localStorage.setItem(STORE, JSON.stringify({ bridgeUrl: this.bridgeUrl, atTop: this.atTop })); } catch { /* private window */ } }
+  private persist() { try { localStorage.setItem(STORE, JSON.stringify({ choice: this.choice, localNmos: this.localNmos, atTop: this.atTop })); } catch { /* private window */ } }
+
+  /** The local bridge says which NMOS port it has – remembered, so NMOS is selectable next time. */
+  private noteBridgeInfo() {
+    const n = this.link.info?.nmosPort ?? null;
+    if (this.choice.bridge === LOCAL && this.link.kind === 'bridge' && this.link.status === 'open' && n !== this.localNmos && this.link.info) {
+      this.localNmos = n;
+      this.persist();
+    }
+  }
+
+  /** Look for bridges in the network while the bar is open. */
+  private watchFound(on: boolean) {
+    if (!on) { if (this.foundTimer) clearInterval(this.foundTimer); this.foundTimer = null; return; }
+    if (this.foundTimer) return;
+    const base = this.host.scopesHttp?.() ?? location.origin;
+    const poll = async () => {
+      const list = await fetchFound(base);
+      if (JSON.stringify(list) !== JSON.stringify(this.found)) { this.found = list; this.render(); }
+    };
+    void poll();
+    this.foundTimer = setInterval(() => { void poll(); }, 4000);
+  }
+
+  private reconnect() {
+    this.persist();
+    this.link.disconnect();
+    if (this.bridgeUrl) this.link.connect();
+    this.render();
+  }
+
+  /** Bridge choice, control path, start and connect – no address to type (#224). */
+  private connectControls(): HTMLElement {
+    const desk = desktopBridge();
+    const bridges: [string, string][] = [
+      [LOCAL, this.builtIn ? `${T.bridgeLocal} · ${this.builtInText()}` : T.bridgeLocal],
+      ...this.found.map((b) => [keyOf(b), `${b.name}${b.version ? ` · v${b.version}` : ''}`] as [string, string]),
+      [MANUAL, T.bridgeManual],
+    ];
+    if (this.choice.bridge !== LOCAL && this.choice.bridge !== MANUAL && !this.found.some((b) => keyOf(b) === this.choice.bridge)) {
+      bridges.splice(1, 0, [this.choice.bridge, this.choice.bridge]);
+    }
+    const canNmos = nmosAvailable(this.choice, this.found, this.localNmos);
+    const bridgeSel = select(this.choice.bridge, bridges, (v) => {
+      this.choice = { ...this.choice, bridge: v };
+      if (!nmosAvailable(this.choice, this.found, this.localNmos)) this.choice.route = 'bridge';
+      this.reconnect();
+    }, T.bridgeChoiceTitle, { 'data-shading-bridge': '' });
+    const routeSel = select(this.choice.route, [['bridge', T.routeBridge], ['nmos', canNmos ? T.routeNmos : T.routeNmosMissing]], (v) => {
+      if (v === 'nmos' && !canNmos) { this.message = T.nmosUnavailable; this.render(); return; }
+      this.choice = { ...this.choice, route: v === 'nmos' ? 'nmos' : 'bridge' };
+      this.reconnect();
+    }, T.routeTitle, { 'data-shading-route': '' });
+    const running = this.builtIn?.state === 'running' || this.builtIn?.state === 'external';
+    const start = desk && this.choice.bridge === LOCAL && !running
+      ? button(T.startBridge, () => { void this.ensureBridge(); }, { attrs: { class: 'btn', 'data-shading-start': '' } })
+      : null;
+    const open = this.link.status === 'open' || this.link.status === 'connecting';
+    const conn = button(open ? T.disconnect : T.connect, () => {
+      if (open) { this.link.disconnect(); this.render(); } else if (this.choice.bridge === LOCAL && desk) void this.ensureBridge(); else this.reconnect();
+    }, { attrs: { class: 'btn', 'data-shading-connect': '' }, disabled: !this.bridgeUrl });
+    const manual = this.choice.bridge === MANUAL
+      ? textInput(this.choice.manualUrl, (v) => { this.choice = { ...this.choice, manualUrl: v.trim() }; this.reconnect(); }, { title: T.urlTitle, attrs: { class: 'shading-url' } })
+      : null;
+    const cams = this.link.cameras;
+    const linkTxt = this.link.status === 'open' ? (cams.length ? T.linkOpen(cams.length) : T.setupNoCameras) : this.link.status === 'connecting' ? T.linkConnecting : T.linkClosed;
+    return h('div', { class: 'shading-connect', 'data-shading-connect-row': '' },
+      h('label', {}, T.bridgeLabel, ' ', bridgeSel), routeSel, start, conn, manual,
+      h('span', { class: `shading-link ${this.link.status}`, role: 'status' }, linkTxt),
+      !this.found.length && this.choice.bridge !== MANUAL ? h('span', { class: 'hint' }, T.searching) : null);
+  }
 
   private mode(): string | 'sim' {
     if (this.target === 'sim') return 'sim';
@@ -522,8 +610,7 @@ export class ShadingControl {
     const targetSel = select(this.target === null ? '' : String(this.target),
       [['', T.chooseTarget], ['sim', T.simOption], ...cams.map((c) => [String(c.cameraNumber), T.camOption(c.cameraNumber, c.label, c.connected, c.mode)] as [string, string])],
       (v) => { void this.setTarget(v === '' ? null : v === 'sim' ? 'sim' : Number(v)); }, T.targetTitle, { 'data-shading-target': '' });
-    const url = textInput(this.bridgeUrl, (v) => { this.bridgeUrl = v.trim(); this.persist(); this.link.disconnect(); this.link.connect(); }, { title: T.urlTitle, attrs: { class: 'shading-url' } });
-    const linkTxt = this.link.status === 'open' ? (cams.length ? T.linkOpen(cams.length) : T.setupNoCameras) : this.link.status === 'connecting' ? T.linkConnecting : T.linkClosed;
+    const connect = this.connectControls();
     this.valuesEl = h('div', { class: 'shading-values' });
     // no camera reachable yet: the way there, step by step, instead of an empty target list
     const ready = this.link.status === 'open' && cams.length > 0;
@@ -534,10 +621,7 @@ export class ShadingControl {
           ? h('li', {}, T.setupStep1Desktop, h('div', { class: `shading-link ${this.builtIn.state === 'running' || this.builtIn.state === 'external' ? 'open' : ''}`, role: 'status' }, this.builtInText()))
           : h('li', {}, T.setupStep1, ' ', link(BRIDGE_DOWNLOAD, T.setupDownload)),
         h('li', {}, T.setupStep2App, ' ', button(T.camMenu, () => { void this.openCameras(); }, { small: true, disabled: this.link.status !== 'open', attrs: { 'data-shading-cameras': '' } })),
-        // the address only matters for a bridge elsewhere; the built-in one is found on its own
-        this.builtIn?.state === 'running' || this.builtIn?.state === 'external'
-          ? null
-          : h('li', {}, T.setupStep3, h('div', { class: 'shading-setup-url' }, url, h('span', { class: `shading-link ${this.link.status}`, role: 'status' }, linkTxt))),
+        h('li', {}, T.setupStep3, connect),
         h('li', {}, T.setupStep4)),
       button(T.setupSim, () => { void this.setTarget('sim'); }, { attrs: { class: 'btn', 'data-shading-sim': '' } })) : null;
     const arm = checkbox(this.active, h('span', {}, T.active), (on) => (on ? this.activate() : this.deactivate()), '', { 'data-shading-active': '' });
@@ -550,7 +634,7 @@ export class ShadingControl {
       button(this.looping ? T.loopStop : T.loop, () => { void this.matchToReference(); }, { title: T.loopTitle, disabled: this.target === null, attrs: { class: 'btn shading-loop', 'data-shading-loop': '' } }),
       button(T.stop, () => this.emergencyStop(), { title: T.stopTitle, attrs: { class: 'btn shading-stop', 'data-shading-stop': '' } }),
       this.valuesEl,
-      ...(setup ? [setup] : [disclosure('Bridge', [row(url), h('div', { class: 'hint' }, linkTxt), hint(T.help(LIMITS.step, LIMITS.span))], { cls: 'shading-more' })]),
+      ...(setup ? [setup] : [disclosure('Bridge', [connect, hint(T.help(LIMITS.step, LIMITS.span))], { cls: 'shading-more' })]),
       h('span', { class: 'shading-msg', 'data-shading-msg': '', role: 'status' }, this.message),
       iconButton('⇅', T.moveBar, () => { this.atTop = !this.atTop; this.persist(); this.render(); }),
       iconButton('✕', T.close, () => { if (this.active) this.deactivate(); this.toggleBar(false); }),

@@ -146,3 +146,24 @@ test('Kamera-Bridge eingebaut: startet mit Touch Shading, Kamera anlegen, als Zi
   await expect(setup).toHaveCount(0);
   await expect(page.locator('.shading-bar [data-shading-cameras]')).toBeVisible();
 });
+
+test('Bridge wählen statt Adresse tippen: Steuerweg NMOS (IS-12) zeigt dieselbe Kamera (#224)', async () => {
+  test.skip(!existsSync(bridgeBundle), 'ohne eingebaute Kamera-Bridge gebaut (electron/camera-bridge.cjs fehlt)');
+  const { page } = a;
+  if (!(await page.locator('.shading-bar').isVisible())) await menuClick(a, 'shading');
+  const more = page.locator('.shading-more');
+  if (await more.count()) await more.locator('summary').first().click();
+  const bridge = page.locator('[data-shading-bridge]').first();
+  await expect(bridge).toBeVisible();
+  await expect(bridge.locator('option').first()).toContainText('Dieser Rechner');
+  await expect(page.locator('[data-shading-connect]').first()).toHaveText('Trennen');
+  // the built-in bridge reports its NMOS node; then NMOS can be chosen without a port
+  const route = page.locator('[data-shading-route]').first();
+  await expect(route.locator('option[value="nmos"]')).toHaveText('NMOS (IS-12)', { timeout: 15_000 });
+  await route.selectOption('nmos');
+  await expect(page.locator('[data-shading-target] option', { hasText: 'Demo E2E' })).toHaveCount(1, { timeout: 15_000 });
+  await expect(page.locator('[data-shading-target] option', { hasText: 'is12' })).not.toHaveCount(0);
+  await page.screenshot({ path: test.info().outputPath('nmos.png') });
+  await route.selectOption('bridge');
+  await expect(page.locator('[data-shading-target] option', { hasText: 'Demo E2E' })).toHaveCount(1, { timeout: 15_000 });
+});

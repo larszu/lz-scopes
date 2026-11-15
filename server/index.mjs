@@ -44,6 +44,7 @@ import { handleOut10 } from './out10.mjs';
 import { readStamp, stampAge } from './stamp.mjs';
 import { startOwnRtp } from './rtsp.mjs';
 import { announce } from './bonjour.mjs';
+import { cameraBridges } from './cameraBridges.mjs';
 import { recordRoots, freeBytes } from './record.mjs';
 import { StreamRecorder, handleUploadSocket } from './recorder.mjs';
 import { REC_URL, listRecordings, startPlayback } from './playback.mjs';
@@ -1250,6 +1251,10 @@ const server = createServer((req, res) => {
   }
   const mj = /^\/out\/([\w-]+)\.mjpeg$/.exec(path);
   if (mj) return serveMjpeg(mj[1], res);
+  if (path === '/api/camera-bridges') {
+    // LZ Camera Bridges found via DNS-SD (server/cameraBridges.mjs) – names and addresses only
+    return cameraBridges().then((list) => { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(list)); });
+  }
   if (path === '/api/devices/formats') {
     const url = new URL(req.url ?? '/', 'http://x').searchParams.get('url') ?? '';
     const json = (code, body) => { res.writeHead(code, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(body)); };

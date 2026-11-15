@@ -75,6 +75,8 @@ await esbuild.build({
   format: 'cjs',
   external: ['serialport', 'usb', 'node-hid'],
   nodePaths: [join(root, 'node_modules')],
+  // atem-connection loads the native freetype2 at require time (multiviewer labels only): stub it
+  alias: { '@julusian/freetype2': join(root, 'scripts', 'stubs', 'freetype2.cjs') },
   // ssh2's optional native accelerators (cpu-features, sshcrypto.node) are tried with require
   // inside try/catch; left out, ssh2 uses its JavaScript paths
   logLevel: 'warning',

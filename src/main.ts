@@ -13,7 +13,7 @@ import {
 } from './chain';
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
-import { CHANNEL_PAIRS, DIAMOND_ZOOMS, SCOPE_LABELS, diamondZoomView, parseScopeMenu, type DiamondZoom, scopeMenu, scopeMenuValue, isAudio, isWaveform, plotRect, vectorBands, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
+import { CHANNEL_PAIRS, DIAMOND_SPLIT, DIAMOND_ZOOMS, SCOPE_LABELS, diamondZoomView, parseScopeMenu, type DiamondZoom, scopeMenu, scopeMenuValue, isAudio, isWaveform, plotRect, vectorBands, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
 import { inBox, legendPosAt, nearSplit, splitAt, splitPos } from './overlayDrag';
 import { DEFAULT_SKIN, ROI_CLOSE, contentRect, legendBoxes, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, driftSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
 import { attachGestures, onChip } from './gestures';
@@ -491,7 +491,12 @@ streamRoute.bindAdder((url, name) => { const s = addSource('stream', name, url);
  */
 function deviceLive(s: Source) {
   if (s.kind !== 'stream' || !/^(decklink|aja|ndi|device):/.test(s.url)) return;
-  for (const q of state.panels) if (!q.pin) q.sourceId = s.id;
+  // only panels without a real signal take it over (test pattern, nothing, a source that is gone);
+  // a panel that already measures another camera stays on it (#252)
+  for (const q of state.panels) {
+    const cur = sources.find((x) => x.id === q.sourceId);
+    if (!q.pin && (!cur || cur.kind === 'pattern' || cur === s)) q.sourceId = s.id;
+  }
   if (!liveOutputs().size) for (const p of sources.filter((x) => x.kind === 'pattern')) removeSource(p);
   save(); renderPanels();
 }
@@ -520,7 +525,7 @@ function renderSources() {
     const card = h('div', { class: `src ${s.status}` },
       h('div', { class: 'src-head' },
         statusDot(s.status),
-        h('span', { class: 'idx' }, String(i + 1)),
+        h('span', { class: 'idx', style: `--src-col:${sourceColour(s)}` }, String(i + 1)),
         h('input', { class: 'name', value: s.name, 'aria-label': t('main.sources'), onchange: (e: Event) => { s.name = (e.target as HTMLInputElement).value; save(); renderPanels(); } }),
         iconButton('✕', t('main.src.remove'), () => removeSource(s))),
     );
@@ -832,6 +837,10 @@ function bridgeQualitySelects(s: Source, upd: (patch: Partial<SourceSettings>, r
     select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', t('main.native')]], (v) => upd({ width: Number(v) }, true), s.lowLatency && effectiveWidth(set.width, true, s.llConfig.width) !== set.width ? t('main.src.widthLimited', { px: s.llConfig.width }) : t('main.src.widthTitle')),
     select(String(set.fps), [['0', t('main.src.fpsAll')], ['10', '10 fps'], ['25', '25 fps'], ['30', '30 fps']], (v) => upd({ fps: Number(v) }, true), t('main.src.fpsTitle')),
     select(set.yuv ? 'yuv' : String(set.depth), [['8', '8 bit'], ['16', '16 bit'], ['yuv', '16 bit Y′CbCr']], (v) => upd(v === 'yuv' ? { depth: 16, yuv: true } : { depth: Number(v) as 8 | 16, yuv: false }, true), t('main.src.depthTitle')),
+    // delay (#244): fastest (varies) or fixed after capture (constant, nothing dropped for speed)
+    select(set.latency === 'fixed' ? String(set.latencyMs ?? 200) : 'fast',
+      [['fast', t('main.src.latFast')], ...[100, 200, 300, 500].map((ms) => [String(ms), t('main.src.latFixed', { ms })] as [string, string])],
+      (v) => upd(v === 'fast' ? { latency: 'fast' } : { latency: 'fixed', latencyMs: Number(v) }, true), t('main.src.latTitle')),
   ];
 }
 
@@ -958,6 +967,10 @@ const views = new Map<number, PanelView>();
 /** Views of the panels currently in the dock. */
 const openViews = () => dock.openIdx().map((i) => views.get(i)).filter((v): v is PanelView => !!v);
 
+/** Identity colour of a source (by its place in the list): source card, panel head and dock tab. */
+const SOURCE_COLOURS = ['#4cc2ff', '#ffb347', '#7be08a', '#ff7aa8', '#c39bff', '#ffd84d', '#5fe0d2', '#ff8a5c'];
+const sourceColour = (s: Source | null) => (s ? SOURCE_COLOURS[Math.max(0, sources.indexOf(s)) % SOURCE_COLOURS.length] : 'transparent');
+
 function panelSource(p: PanelState) {
   return sources.find((s) => s.id === p.sourceId) ?? sources[0] ?? null;
 }
@@ -1008,7 +1021,10 @@ function fillHead(v: PanelView) {
       const m = parseScopeMenu(val);
       p.scope = m.scope; if (m.picture) p.picture = m.picture; p.view = undefined; if (m.scope === 'vector' || m.scope === 'hls' || m.scope === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
     }, '', { 'aria-label': t('ui.scope') }),
-    multi && select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), t('panel.sourceTitle')),
+    multi && groupedSelect(panelSource(p)?.id ?? '', [
+      ['', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`] as [string, string])],
+      [t('panel.allPanels'), sources.map((s, i) => [`all:${s.id}`, t('panel.allPanelsTo', { n: i + 1, name: s.name })] as [string, string])],
+    ], (val) => (val.startsWith('all:') ? switchAll(val.slice(4)) : switchSource(p, val)), t('panel.sourceTitle'), { class: 'srcsel', style: `--src-col:${sourceColour(panelSource(p))}` }),
     stageChip(p),
     multi && iconButton('📌', p.pin ? t('panel.pinned') : t('panel.pin'), () => { p.pin = !p.pin; save(); fillHead(v); }, { pressed: !!p.pin, attrs: { class: `icon pin${p.pin ? ' on' : ''}` } }),
   ].filter((x): x is HTMLElement => !!x));
@@ -1076,6 +1092,13 @@ function tileSettings(p: PanelState): Node[] {
   return [...rows, ...panelSettings(inner)];
 }
 
+/** Current diamond plot rect of a panel (for the magnifier presets). */
+function diamondFrame(p: PanelState) {
+  const v = [...views.values()].find((x) => state.panels[x.idx] === p);
+  const b = v?.body.getBoundingClientRect();
+  return plotRect('diamond', b?.width || 400, b?.height || 600);
+}
+
 function panelSettings(p: PanelState): Node[] {
   if (p.scope === 'tiles') return tileSettings(p);
   if (isAudio(p.scope)) return audioPanelSettings(p, save);
@@ -1092,7 +1115,7 @@ function panelSettings(p: PanelState): Node[] {
   const global = (s: Setting, label?: string) => rows.push(field(label ?? s.label(), ...settingControl(s)));
   row(t('settings.stage.point'), select(p.stage ?? 'auto', [['auto', t('panel.stageDefault', { stage: STAGE_LABELS[state.stage ?? 'signal'] })], ...STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string])],
     (v) => { p.stage = v === 'auto' ? undefined : v as Stage; save(); refreshHeads(); }, t('panel.stageTitle')));
-  const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv' | 'skinBand' | 'greenBand' | 'greenWedge', label: string, dflt = false) =>
+  const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv' | 'skinBand' | 'greenBand' | 'greenWedge' | 'centreBox', label: string, dflt = false) =>
     checkbox(p[key] ?? dflt, label, (v) => { p[key] = v; save(); refreshHeads(); });
   const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'vector3' || p.scope === 'hls' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot';
   if (scatter) {
@@ -1123,7 +1146,8 @@ function panelSettings(p: PanelState): Node[] {
   }
   if (p.scope === 'diamond') {
     row(t('panel.zoom'), select(p.view ? p.diamondZoom ?? 'full' : 'full', DIAMOND_ZOOMS.map((z) => [z, t(`scope.dzoom.${z}`)] as [string, string]),
-      (v) => { p.diamondZoom = v as DiamondZoom; p.view = diamondZoomView(p.diamondZoom); save(); }, t('panel.zoomTitle')));
+      (v) => { p.diamondZoom = v as DiamondZoom; p.view = diamondZoomView(p.diamondZoom, diamondFrame(p), p.diamondSplit ? DIAMOND_SPLIT : 0); save(); }, t('panel.zoomTitle')));
+    row('Split', checkbox(!!p.diamondSplit, t('panel.diamondSplit'), (v) => { p.diamondSplit = v; p.view = undefined; p.diamondZoom = 'full'; save(); refreshPanelSettings(p); }, t('panel.diamondSplitTitle')));
   }
   if (isWaveform(p.scope)) {
     global(SET.unit);
@@ -1264,6 +1288,7 @@ function panelSettings(p: PanelState): Node[] {
       checkbox((p.gamuts ?? []).includes(g), label, (on) => { const set = new Set(p.gamuts ?? []); if (on) set.add(g); else set.delete(g); p.gamuts = [...set]; save(); });
     row(t('panel.gamutLimits'), gbox('709', '709'), gbox('p3', 'P3'), gbox('2020', '2020'));
     row(t('panel.greenWedge'), check('greenWedge', t('panel.greenWedgeText')));
+    row(t('panel.centreBox'), check('centreBox', t('panel.centreBoxText'), true));
     rows.push(...targetEditor(panelSource(p), matchUi(p)));
   }
   if (p.scope === 'wf-green' || (p.scope === 'vector' && p.greenWedge) || (p.scope === 'picture' && p.picture === 'green')) rows.push(...greenSettings(greenState(), panelSource(p), matchUi(p), p.scope === 'wf-green'));
@@ -1454,7 +1479,12 @@ function toggleSolo(idx: number) {
 
 /** Switching the source in one panel switches every panel that is not pinned. */
 function switchSource(from: PanelState, id: string) {
+  // only this panel (#252): several signals side by side are the point of a multi-panel layout
   from.sourceId = id;
+  save(); renderPanels();
+}
+/** Every panel that is not pinned shows this source (the old behaviour, now an explicit command). */
+function switchAll(id: string) {
   for (const q of state.panels) if (!q.pin) q.sourceId = id;
   save(); renderPanels();
 }

@@ -2,9 +2,9 @@
 import type { Messages } from '../types';
 
 export default {
-  'panel.sourceTitle': 'Source – all panels that are not pinned follow',
+  'panel.sourceTitle': 'Source of this panel (below: switch all panels)',
   'panel.pinned': 'Pinned: keeps its source',
-  'panel.pin': 'Pin: the panel keeps its source when others switch',
+  'panel.pin': 'Pin: the panel keeps its source on “All panels” and new devices',
   'panel.solo': 'Maximise / restore (double-click, Esc)',
   'panel.stageChipTitle': 'Measuring point in the CST/LUT chain (⚙ → Measuring point, key C)',
   'panel.stageTitle': 'Where in the source’s chain (CST/LUT, source card) this panel measures',
@@ -71,6 +71,12 @@ export default {
   'panel.sig.trace': 'Smooth trace',
   'panel.sig.traceTitle': 'Let the trace stand over several frames instead of redrawing it each frame: calmer to read, but the trace is then older than the current picture.',
   'panel.sig.note': 'smoothed:',
+  'panel.diamondSplit': 'Split Diamond (black ends apart)',
+  'panel.diamondSplitTitle': 'Tektronix "Split Diamond": the two diamonds move apart so errors just below black show separately in each half',
+  'panel.centreBox': 'Centre box',
+  'panel.centreBoxText': 'fixed square ±2 % (keeps its size at ×2, ×5)',
+  'panel.allPanels': 'All panels',
+  'panel.allPanelsTo': 'All panels: {n} {name}',
   'panel.sig.noteScaled': 'analysed at {w} of {sw} px (smoothed; Source → Analysis resolution: native)',
   'panel.sig.noteSignal': 'signal {grid}',
   'panel.sig.noteTrace': 'trace {s} s',

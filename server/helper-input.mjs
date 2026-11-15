@@ -182,7 +182,11 @@ export function helperText(payload) {
 export function startHelperStream(ws, { bin, args, label, params, ctx, audio = false }) {
   const depth = params.get('depth') === '8' ? 8 : 16;
   // frame protocol 2 (picture + sound) when the client asks for sound and the helper can deliver it
-  const proto = audio && params.get('audio') === '1' ? 2 : 1;
+  const wantSound = !!audio && params.get('audio') === '1';
+  // pts=1: picture headers with PTS even without sound (fixed playout delay in the client, #244)
+  const proto = wantSound || params.get('pts') === '1' ? 2 : 1;
+  /** latency=fixed: more pictures in flight, nothing dropped for speed – the client buffers anyway */
+  const fixedLatency = params.get('latency') === 'fixed';
   let frameNo = 0, nextPts = NaN, aud = null;
   /** PTS (s) of the pictures handed to ffmpeg, in order; ffmpeg keeps the order (without fps= it keeps every picture) */
   let ptsQueue = [];
@@ -225,12 +229,12 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
     gate.done();
     const pts = ptsQueue.length ? ptsQueue.shift() : NaN;
     const no = frameNo++;
-    if (ws.bufferedAmount < outBytes * 2) { ws.send(proto === 2 ? Buffer.concat([packetHeader('LZV1', no, pts), frame]) : frame, { binary: true }); sent++; } else dropped++;
+    if (ws.bufferedAmount < outBytes * (fixedLatency ? 6 : 2)) { ws.send(proto === 2 ? Buffer.concat([packetHeader('LZV1', no, pts), frame]) : frame, { binary: true }); sent++; } else dropped++;
   };
   /** INFO.audio → packetizer (new one when the format changes), or null. */
   const audioFormat = (info) => {
     const a = info?.audio;
-    const ok = proto === 2 && a && a.format === 's32le' && [2, 8, 16, 32].includes(Number(a.channels)) && Number(a.sampleRate) === 48000;
+    const ok = wantSound && a && a.format === 's32le' && [2, 8, 16, 32].includes(Number(a.channels)) && Number(a.sampleRate) === 48000;
     if (!ok) { aud = null; return null; }
     if (!aud || aud.channels !== Number(a.channels)) {
       const channels = Number(a.channels);
@@ -279,7 +283,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
     lastInfo = info;
     lastFps = f.fps;
     ptsQueue = [];
-    gate = new FrameGate({ fps: f.fps, limit: fpsLimit });
+    gate = new FrameGate({ fps: f.fps, limit: fpsLimit, max: fixedLatency ? 6 : 2 });
     phase = ctx.now && f.fps > 0 ? new PhaseTracker(Math.round(Number(info.fpsNum)), Math.round(Number(info.fpsDen) || 1)) : null;
     const { width, height } = ctx.outputSize(f.width, f.height, maxWidth);
     outBytes = width * height * 4 * (depth / 8); asm = new FrameAssembler(outBytes, sendFrame);
@@ -339,7 +343,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
       if (payload.length !== fmt.bytes) { status = bmsg('helper.frameSize', `Picture size does not match (${payload.length} instead of ${fmt.bytes} bytes)`, { got: payload.length, want: fmt.bytes }); return; }
       // newest picture wins: skip when ffmpeg is still busy with the previous ones
       const pts = nextPts; nextPts = NaN;
-      if (ff.stdin.writableLength > fmt.bytes * 2) { dropped++; return; }
+      if (ff.stdin.writableLength > fmt.bytes * (fixedLatency ? 4 : 2)) { dropped++; return; }
       const go = gate.offer();
       if (go === 'rate') return;
       if (go === 'busy') { dropped++; return; }

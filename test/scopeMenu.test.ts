@@ -30,26 +30,35 @@ describe('scope menu in groups (feedback 11/2026)', () => {
   });
 });
 
-import { diamondPoint, diamondZoomView, vectorCentreBox } from '../src/graticule';
+import { diamondPoint, diamondScale, diamondZoomView, vectorCentreBox } from '../src/graticule';
 import { viewClip } from '../src/view';
 
 describe('diamond magnifier and vector centre box (feedback 11/2026)', () => {
   it('black point sits in the middle at ×4', () => {
-    const v = diamondZoomView('black')!;
+    const v = diamondZoomView('black', { w: 400, h: 600 })!;
     expect(viewClip(v, 0, 0)).toEqual([0, 0]);
   });
   it('white apexes stay on screen when magnified', () => {
     for (const z of ['whiteB', 'whiteR'] as const) {
-      const v = diamondZoomView(z)!, py = z === 'whiteB' ? 0.92 : -0.92;
+      const r = { w: 400, h: 600 }, v = diamondZoomView(z, r)!, py = (z === 'whiteB' ? 2 : -2) * diamondScale(r).sy;
       const [, y] = viewClip(v, 0, py);
       expect(Math.abs(y)).toBeLessThan(1);
     }
-    expect(diamondZoomView('full')).toBeUndefined();
+    expect(diamondZoomView('full', { w: 400, h: 600 })).toBeUndefined();
   });
   it('the centre box does not depend on the gain', () => {
     expect(vectorCentreBox(200)).toBeCloseTo(200 * 0.036);
     // sanity: diamond geometry unchanged
     const r = { x: 0, y: 0, w: 100, h: 200 };
     expect(diamondPoint(r, 0, 0, true)).toEqual([50, 100]);
+  });
+  it('split diamond: black ends apart, diamonds stay squares inside the panel (#248)', () => {
+    const r = { x: 0, y: 0, w: 300, h: 300 };
+    const [, yu] = diamondPoint(r, 0, 0, true, 0.3), [, yl] = diamondPoint(r, 0, 0, false, 0.3);
+    expect(yl - yu).toBeGreaterThan(5);
+    const [, top] = diamondPoint(r, 1, 1, true, 0.3), [, bottom] = diamondPoint(r, 1, 1, false, 0.3);
+    expect(top).toBeGreaterThanOrEqual(0); expect(bottom).toBeLessThanOrEqual(300);
+    const [bx, by] = diamondPoint(r, 1, 0, true, 0.3);
+    expect(Math.abs(bx - 150)).toBeCloseTo(Math.abs(by - yu), 6);
   });
 });

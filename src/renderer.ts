@@ -91,6 +91,7 @@ uniform int uStep, uStepRow, uCols, uMode, uColorize, uCieUv, uSecN, uPair;
 uniform ivec4 uSec; // section per trace instance (-1 = hidden channel)
 uniform vec2 uK;
 uniform float uZoom, uIntensity, uWMin, uWMax, uPointSize;
+uniform vec3 uDiamond; // diamond: x/y scale and split offset (graticule.ts diamondScale)
 uniform vec3 uPanZoom; // gesture view of 2D scopes (view.ts): pos · z + (x, y)
 uniform mat3 uToXYZ;
 uniform vec4 uCie;
@@ -176,9 +177,9 @@ bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
     pos = vec2((float(ch) + x) / 3.0 * 2.0 - 1.0, waveY(v));
     col = ch == 0 || uColorize == 0 ? mono : ch == 1 ? vec3(0.35, 0.55, 1.0) : vec3(1.0, 0.3, 0.35);
   } else if (uMode == 8) {
-    // Tektronix diamond (graticule.ts DIAMOND_SCALE): upper B′+G′ over B′−G′, lower −(R′+G′) over R′−G′
+    // Tektronix diamond (graticule.ts diamondScale): upper B′+G′ over B′−G′, lower −(R′+G′) over R′−G′
     float a = ch == 0 ? rgb.b : rgb.r, s = a + rgb.g;
-    pos = vec2(a - rgb.g, ch == 0 ? s : -s) * vec2(0.92, 0.46);
+    pos = vec2((a - rgb.g) * uDiamond.x, (ch == 0 ? s : -s) * uDiamond.y + (ch == 0 ? uDiamond.z : -uDiamond.z));
     if (uColorize == 1) col = srcCol;
   } else if (uMode == 10) {
     // saturation over luma (graticule.ts drawSatLumGraticule): x = Y′, y = |CbCr| / 0.5 (0…120 %)
@@ -424,6 +425,8 @@ export interface ScatterParams {
   density?: number;
   /** signal low-pass before the measurement (#179): 0 off, 1 = 3×3, 2 = 5×5 */
   smooth?: 0 | 1 | 2;
+  /** diamond: clip-space scale and split (graticule.ts diamondScale) */
+  diamond?: [number, number, number];
   /** only samples whose Y′ lies in this window (vectorscope by tonal range, #180) */
   luma?: [number, number];
 }
@@ -775,6 +778,7 @@ export class Renderer {
       gl.uniform2f(this.u(prog, 'uK'), kr, kb);
       gl.uniform1f(this.u(prog, 'uZoom'), p.zoom);
       gl.uniform3f(this.u(prog, 'uPanZoom'), ...(p.view ?? [1, 0, 0]));
+      gl.uniform3f(this.u(prog, 'uDiamond'), ...(p.diamond ?? [0.92, 0.46, 0]));
       gl.uniform1f(this.u(prog, 'uIntensity'), intensity);
       gl.uniform1f(this.u(prog, 'uPointSize'), dot);
       gl.uniform1f(this.u(prog, 'uWMin'), p.range?.[0] ?? WAVE_MIN);

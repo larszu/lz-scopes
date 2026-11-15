@@ -99,9 +99,9 @@ export function plotRect(scope: ScopeType, w: number, h: number, aspect = 16 / 9
     return { x: (w - s) / 2, y: (h - s) / 2, w: s, h: s };
   }
   if (scope === 'diamond') {
-    // two diamonds on top of each other: width : height = 1 : 2
-    const ph = Math.max(20, Math.min(h - 16, 2 * (w - 16))), pw = ph / 2;
-    return { x: (w - pw) / 2, y: (h - ph) / 2, w: pw, h: ph };
+    // the whole body: zoom and pan use all of it (feedback 11/2026); diamondScale keeps the
+    // diamonds square inside whatever shape the panel has
+    return { x: 8, y: 8, w: Math.max(20, w - 16), h: Math.max(20, h - 16) };
   }
   if (scope === 'hist') return { x: 8, y: 8, w: Math.max(10, w - 16), h: Math.max(10, h - 26) };
   if (scope === 'picture') {
@@ -362,34 +362,44 @@ export interface BarTargetSet { t100: { label: string; cb: number; cr: number }[
 /**
  * Tektronix diamond display (Tektronix application note 25W-15609 "Preventing Illegal Colors"):
  * upper diamond B′+G′ vertical over B′−G′ horizontal, lower diamond −(R′+G′) over R′−G′.
- * Every legal R′G′B′ value (0…1 per channel) lies inside or on both diamonds. Clip-space scale
- * of the trace (renderer.ts mode 8): x = 0.92·(B′−G′), y = 0.46·(B′+G′).
+ * Every legal R′G′B′ value (0…1 per channel) lies inside or on both diamonds. Each diamond is a
+ * square turned by 45° whatever the panel's shape. `split` (Tek "Split Diamond", WFM7200 manual
+ * p. 40) moves the two apart by that fraction of a half diagonal, so the black ends no longer touch.
+ * Clip-space scale of the trace (renderer.ts mode 8): x = sx·(B′−G′), y = sy·(B′+G′) ± off.
  */
-export const DIAMOND_SCALE: [number, number] = [0.92, 0.46];
+export function diamondScale(r: { w: number; h: number }, split = 0): { sx: number; sy: number; off: number } {
+  // a = half diagonal in px; both diamonds + gaps use 92 % of the height, one diamond ≤ 92 % of the width
+  const a = Math.max(1, Math.min((0.92 * r.h) / (4 + 2 * split), 0.46 * r.w));
+  return { sx: (2 * a) / r.w, sy: (2 * a) / r.h, off: (2 * split * a) / r.h };
+}
+/** Split of the diamond display when switched on (0 = Tek standard, touching at black). */
+export const DIAMOND_SPLIT = 0.3;
 
 /** Diamond magnifier (feedback 11/2026): black point or one of the white apexes, ×4. */
 export type DiamondZoom = 'full' | 'black' | 'whiteB' | 'whiteR';
 export const DIAMOND_ZOOMS: DiamondZoom[] = ['full', 'black', 'whiteB', 'whiteR'];
 /** Gesture view (src/view.ts, clip space) that centres the magnified point; undefined = full view. */
-export function diamondZoomView(z: DiamondZoom, mag = 4): { z: number; x: number; y: number } | undefined {
+export function diamondZoomView(z: DiamondZoom, r: { w: number; h: number }, split = 0, mag = 4): { z: number; x: number; y: number } | undefined {
   if (z === 'full') return undefined;
-  // clip y of the white apex: (1 + 1) · 0.46 = 0.92, upper diamond positive
-  const py = z === 'black' ? 0 : z === 'whiteB' ? 2 * DIAMOND_SCALE[1] : -2 * DIAMOND_SCALE[1];
+  const { sy, off } = diamondScale(r, split);
+  // black where the diamonds meet (with split: the upper black end), white at the far apexes
+  const py = z === 'black' ? off : (z === 'whiteB' ? 1 : -1) * (2 * sy + off);
   const lim = mag - 1;
   return { z: mag, x: 0, y: Math.max(-lim, Math.min(lim, -py * mag)) };
 }
 
 /** Diamond plot position (CSS px) of a pair (a = B′ or R′ with G′; upper = the B/G diamond). */
-export function diamondPoint(r: Rect, a: number, g: number, upper: boolean): [number, number] {
-  const x = (a - g) * DIAMOND_SCALE[0], y = (a + g) * DIAMOND_SCALE[1] * (upper ? 1 : -1);
+export function diamondPoint(r: Rect, a: number, g: number, upper: boolean, split = 0): [number, number] {
+  const { sx, sy, off } = diamondScale(r, split);
+  const x = (a - g) * sx, y = (a + g) * sy * (upper ? 1 : -1) + (upper ? off : -off);
   return [r.x + r.w / 2 + (x * r.w) / 2, r.y + r.h / 2 - (y * r.h) / 2];
 }
 
-export function drawDiamondGraticule(ctx: CanvasRenderingContext2D, r: Rect) {
+export function drawDiamondGraticule(ctx: CanvasRenderingContext2D, r: Rect, split = 0) {
   ctx.save();
   ctx.font = FONT; ctx.textBaseline = 'middle';
   const outline = (upper: boolean, level: number, dash: number[]) => {
-    const pts = [diamondPoint(r, 0, 0, upper), diamondPoint(r, level, 0, upper), diamondPoint(r, level, level, upper), diamondPoint(r, 0, level, upper)];
+    const pts = [diamondPoint(r, 0, 0, upper, split), diamondPoint(r, level, 0, upper, split), diamondPoint(r, level, level, upper, split), diamondPoint(r, 0, level, upper, split)];
     ctx.setLineDash(dash);
     ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.stroke();
   };
@@ -402,18 +412,20 @@ export function drawDiamondGraticule(ctx: CanvasRenderingContext2D, r: Rect) {
   ctx.setLineDash([]);
   // centre line and corner names (100 % primaries and their sums)
   ctx.strokeStyle = GRID_DIM;
-  ctx.beginPath(); ctx.moveTo(r.x + r.w / 2, r.y); ctx.lineTo(r.x + r.w / 2, r.y + r.h); ctx.stroke();
+  const top = diamondPoint(r, 1, 1, true, split)[1], bottom = diamondPoint(r, 1, 1, false, split)[1];
+  ctx.beginPath(); ctx.moveTo(r.x + r.w / 2, top - 6); ctx.lineTo(r.x + r.w / 2, bottom + 6); ctx.stroke();
   ctx.fillStyle = LABEL;
   const label = (t: string, [x, y]: [number, number], dx: number, dy: number, align: CanvasTextAlign) => { ctx.textAlign = align; ctx.fillText(t, x + dx, y + dy); };
-  label('B', diamondPoint(r, 1, 0, true), 6, 0, 'left');
-  label('G', diamondPoint(r, 0, 1, true), -6, 0, 'right');
-  label('Cy', diamondPoint(r, 1, 1, true), 0, -2, 'center');
-  label('R', diamondPoint(r, 1, 0, false), 6, 0, 'left');
-  label('G', diamondPoint(r, 0, 1, false), -6, 0, 'right');
-  label('Yl', diamondPoint(r, 1, 1, false), 0, 2, 'center');
+  label('B', diamondPoint(r, 1, 0, true, split), 6, 0, 'left');
+  label('G', diamondPoint(r, 0, 1, true, split), -6, 0, 'right');
+  label('Cy', diamondPoint(r, 1, 1, true, split), 0, -2, 'center');
+  label('R', diamondPoint(r, 1, 0, false, split), 6, 0, 'left');
+  label('G', diamondPoint(r, 0, 1, false, split), -6, 0, 'right');
+  label('Yl', diamondPoint(r, 1, 1, false, split), 0, 2, 'center');
   ctx.textAlign = 'left';
-  ctx.fillText('B′/G′', r.x + 2, r.y + 8);
-  ctx.fillText('R′/G′', r.x + 2, r.y + r.h - 8);
+  const lx = Math.max(r.x + 2, diamondPoint(r, 0, 1, true, split)[0] - 44);
+  ctx.fillText('B′/G′', lx, top + 4);
+  ctx.fillText('R′/G′', lx, bottom - 4);
   ctx.restore();
 }
 
@@ -445,7 +457,7 @@ export function vectorBandRects(r: Rect, big = 0): Rect[] {
 
 /** Half side (CSS px) of the vectorscope's centre box: 2 % of the 100 % circle, independent of the gain. */
 export const vectorCentreBox = (R: number) => Math.max(3, R * 0.9 * 0.02 * 2);
-export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, skinTol = 0, targets?: BarTargetSet, green?: { hue: number; tol: number }) {
+export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, skinTol = 0, targets?: BarTargetSet, green?: { hue: number; tol: number }, centreBox = true) {
   const R = r.w / 2, cx = r.x + R, cy = r.y + R;
   ctx.save();
   ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
@@ -455,9 +467,11 @@ export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: 
   ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
   // fixed centre box (feedback 11/2026): its size ignores the gain, so its corners are a constant
   // reference for "a touch cool, never warm" when the trace is magnified
-  const cb = vectorCentreBox(R);
-  ctx.strokeStyle = GRID;
-  ctx.strokeRect(cx - cb, cy - cb, cb * 2, cb * 2);
+  if (centreBox) {
+    const cb = vectorCentreBox(R);
+    ctx.strokeStyle = GRID;
+    ctx.strokeRect(cx - cb, cy - cb, cb * 2, cb * 2);
+  }
   for (let a = 0; a < 360; a += 10) {
     const rad = (a * Math.PI) / 180, l = a % 30 === 0 ? 0.06 : 0.03;
     ctx.beginPath();

@@ -65,7 +65,9 @@ body { background: var(--surface-0); overflow: hidden; }
 /* ---------------------------------------------------------------- source cards */
 .src { border: var(--src-border); border-top: var(--src-top); border-radius: var(--radius-lg); padding: 7px; display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; background: var(--surface-2); }
 .src-head { display: flex; align-items: center; gap: 6px; }
-.src .idx { color: var(--text-muted); font-family: var(--mono); }
+.src .idx { color: var(--src-col, var(--text-muted)); font-family: var(--mono); font-weight: 600; }
+/* source identity colour (#252): the panel's source select carries the colour of its source card */
+select.srcsel { border-left: 3px solid var(--src-col, transparent); }
 .src .name { flex: 1; min-width: 0; background: transparent; border-color: transparent; font-weight: 600; }
 .src .name:hover, .src .name:focus { border-color: var(--line-2); }
 .src .url { flex: 1; min-width: 0; font-family: var(--mono); font-size: var(--fs-sm); }

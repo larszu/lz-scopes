@@ -5,7 +5,7 @@ import { legendBox, splitPos, type Box } from './overlayDrag';
 import { drawGenlockPanel, type GenlockOptions } from './genlock';
 import { DISPLAY_LABELS, FALSE_COLOR_PRESETS, GAMUTS, mul3, rgbToXyzMatrix, bandRange, gamutConvert, isLog, logBarTargets, transferLabel, ycbcr, type DisplaySpace, type GamutId, type HdrPreview } from './color';
 import {
-  drawChannelPlotGraticule, drawCubeGraticule, drawLutVolume, drawDiamondGraticule, drawSatLumGraticule, diamondPoint, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawHlsGraticule, hsl, hlsPoint, drawWaveGraticule, drawWaveProbe,
+  drawChannelPlotGraticule, drawCubeGraticule, drawLutVolume, drawDiamondGraticule, drawSatLumGraticule, diamondPoint, diamondScale, DIAMOND_SPLIT, drawVectorExtras, type VectorTarget, drawSkinRange, drawCieGraticule, drawHistogram, drawTextBox, drawVectorGraticule, drawHlsGraticule, hsl, hlsPoint, drawWaveGraticule, drawWaveProbe,
   WAVE_ZOOMS, channelLayout, isAudio, isWaveform, plotRect, type WaveChannels, type WaveOpts, type WaveZoom, probeLines, statsLines, vectorPoint, vectorBands, vectorBandRects, FONT, LABEL, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
 import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/panels';
@@ -56,6 +56,10 @@ export interface PanelState {
   picture: PictureMode; hist: 'rgb' | 'luma' | 'split'; log: boolean;
   /** diamond: magnifier preset (graticule.ts diamondZoomView) */
   diamondZoom?: import('./graticule').DiamondZoom;
+  /** diamond: Tek "Split Diamond" – the two diamonds apart, black ends separated (#248) */
+  diamondSplit?: boolean;
+  /** vectorscope: fixed centre box (default on) */
+  centreBox?: boolean;
   /** parades / RGB overlay: 'mono' | 'channel' | 'source' colours */
   paradeColor?: 'mono' | 'channel' | 'source';
   /** vectorscope: gamut boundaries to show */
@@ -789,6 +793,7 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
       ...(crt ? { crt } : {}),
       ...(!crt && p.persist ? { persist: p.persist } : {}),
       ...(p.smooth ? { smooth: p.smooth } : {}),
+      ...(p.scope === 'diamond' ? { diamond: (({ sx, sy, off }) => [sx, sy, off] as [number, number, number])(diamondScale(frame, p.diamondSplit ? DIAMOND_SPLIT : 0)) } : {}),
       ...(p.scope === 'chplot' ? { pair: p.pair ?? 0 } : {}),
       ...(cube ? { cube: {
         space: CUBE_SPACE_ID[cube.space], rot: cubeRotation(cube.yaw, cube.pitch), to2020: gamutConvert(GAMUTS[src.gamut], GAMUTS['2020']),
@@ -830,7 +835,7 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
     if (probeRgb) drawWaveProbe(ctx, p.scope, r, src, probeRgb, wo);
   } else if (p.scope === 'vector') {
     const g = greenOf(o);
-    drawVectorGraticule(ctx, r, src.colorspace, p.zoom, o.skin.tol, vectorTargets(src), p.greenWedge ? { hue: g.hue ?? GREEN_DEFAULT.hue, tol: g.tol } : undefined);
+    drawVectorGraticule(ctx, r, src.colorspace, p.zoom, o.skin.tol, vectorTargets(src), p.greenWedge ? { hue: g.hue ?? GREEN_DEFAULT.hue, tol: g.tol } : undefined, p.centreBox !== false);
     drawVectorExtras(ctx, r, src.colorspace, p.zoom, p.gamuts ?? [], o.targets ?? [], src.transfer, src.gamut, src.hlgLw);
     if (probeRgb) {
       const { cb, cr } = ycbcr(probeRgb[0], probeRgb[1], probeRgb[2], src.colorspace);
@@ -889,11 +894,11 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
     }
     drawCubeGraticule(ctx, r, c, src.gamut, cubeNits(src.transfer), probeRgb ? cubeQOf(c.space, probeRgb, src) : null, src.colorspace);
   } else if (p.scope === 'diamond') {
-    drawDiamondGraticule(ctx, r);
+    drawDiamondGraticule(ctx, r, p.diamondSplit ? DIAMOND_SPLIT : 0);
     if (probeRgb) {
       ctx.strokeStyle = '#00dcff'; ctx.lineWidth = 1.5;
       for (const [a, upper] of [[probeRgb[2], true], [probeRgb[0], false]] as [number, boolean][]) {
-        const [x, y] = diamondPoint(r, a, probeRgb[1], upper);
+        const [x, y] = diamondPoint(r, a, probeRgb[1], upper, p.diamondSplit ? DIAMOND_SPLIT : 0);
         ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.stroke();
       }
     }

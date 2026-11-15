@@ -634,7 +634,8 @@ async function startStream(ws, params) {
     }
   }
 
-  const proto = wantAudio || h264 ? 2 : 1;
+  // pts=1: picture headers even without sound – fixed playout delay in the client (#244)
+  const proto = wantAudio || h264 || params.get('pts') === '1' ? 2 : 1;
   const { audio: _probed, ...videoInfo } = info;
   const msg = { type: 'info', ...videoInfo, decodeMatrix, sourceWidth: info.width, sourceHeight: info.height, sourceFps: info.fps, width, height, depth: outDepth, fps: video ? (fpsLimit || info.fps) : 0 };
   if (interlaced) Object.assign(msg, { interlaced: true });

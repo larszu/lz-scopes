@@ -73,7 +73,7 @@ function start(configDir) {
       // constructor on, and a taken port there would end the main process
       const ports = { ws: await freeOr(COMPANION.ws), http: await freeOr(COMPANION.http) };
       const { BridgeServer } = require(bundle);
-      const s = new BridgeServer(PORT, ports, { persist: true, configDir });
+      const s = new BridgeServer(PORT, ports, { persist: true, configDir, nmosPort: 8640, nmosHost: 'auto', announce: true });
       // errors of the listening sockets (port taken in the meantime …) become a status, not a crash
       const fail = (e) => { status = { state: 'failed', port: PORT, version, message: e && e.message ? e.message : String(e), configDir }; };
       s.httpServer?.on('error', fail);

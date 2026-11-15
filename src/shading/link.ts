@@ -21,6 +21,8 @@ export class AutoLink implements ShadingLink {
   get data() { return this.inner.data; }
   get status() { return this.inner.status; }
   get lastError() { return this.inner.lastError; }
+  /** what the bridge reported about itself (bridge route only) */
+  get info() { return this.inner instanceof CameraBridgeLink ? this.inner.info : null; }
   subscribe(f: () => void) { return this.inner.subscribe(f); }
   request(msg: Record<string, unknown>) { return this.inner.request(msg); }
   connect() {

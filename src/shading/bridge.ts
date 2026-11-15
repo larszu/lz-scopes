@@ -14,6 +14,8 @@ export interface BridgeCamera {
   connected: boolean;
 }
 
+export interface BridgeInfo { version: string; nmosPort: number | null }
+
 export interface CameraPaintState {
   paint: Paint;
   /** per field: 'confirmed' (read from the camera) or 'commanded' (echo of a command) */
@@ -34,6 +36,8 @@ export class CameraBridgeLink {
   data = new Map<number, CameraData>();
   status: 'off' | 'connecting' | 'open' | 'closed' = 'off';
   lastError = '';
+  /** what the bridge says about itself on connect (version, NMOS port) – lz-camera-bridge #291 */
+  info: BridgeInfo | null = null;
   private ws: WebSocket | null = null;
   private retry: ReturnType<typeof setTimeout> | null = null;
   private wanted = false;
@@ -109,6 +113,9 @@ export class CameraBridgeLink {
         const n = Number(k), t = tallyOf(v);
         if (Number.isFinite(n) && t) this.data.set(n, { ...this.data.get(n), tally: t });
       }
+    } else if (m.type === 'bridgeInfo') {
+      const nmos = m.nmos as { port?: unknown } | null | undefined;
+      this.info = { version: String(m.version ?? ''), nmosPort: typeof nmos?.port === 'number' ? nmos.port : null };
     } else if (m.type === 'error') {
       this.lastError = String(m.message ?? T.error);
       if (typeof m.cameraNumber === 'number') this.cameraErrors.set(m.cameraNumber, this.lastError);

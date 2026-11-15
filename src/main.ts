@@ -13,7 +13,7 @@ import {
 } from './chain';
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
-import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, vectorBands, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
+import { CHANNEL_PAIRS, DIAMOND_ZOOMS, SCOPE_LABELS, diamondZoomView, parseScopeMenu, type DiamondZoom, scopeMenu, scopeMenuValue, isAudio, isWaveform, plotRect, vectorBands, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
 import { inBox, legendPosAt, nearSplit, splitAt, splitPos } from './overlayDrag';
 import { DEFAULT_SKIN, ROI_CLOSE, contentRect, legendBoxes, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, driftSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
 import { attachGestures, onChip } from './gestures';
@@ -1004,8 +1004,9 @@ function fillHead(v: PanelView) {
   const [lead, opts] = [v.head.children[0] as HTMLElement, v.head.children[1] as HTMLElement];
   const multi = sources.length > 1 && !isLight(p.scope) && p.scope !== 'tiles';
   lead.replaceChildren(...[
-    select(p.scope, Object.entries(SCOPE_LABELS) as Option[], (val) => {
-      p.scope = val as ScopeType; p.view = undefined; if (val === 'vector' || val === 'hls' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
+    groupedSelect(scopeMenuValue(p.scope, p.picture), scopeMenu(), (val) => {
+      const m = parseScopeMenu(val);
+      p.scope = m.scope; if (m.picture) p.picture = m.picture; p.view = undefined; if (m.scope === 'vector' || m.scope === 'hls' || m.scope === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
     }, '', { 'aria-label': t('ui.scope') }),
     multi && select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), t('panel.sourceTitle')),
     stageChip(p),
@@ -1119,6 +1120,10 @@ function panelSettings(p: PanelState): Node[] {
       [['mono', 'Mono'], ['channel', t('panel.channelColours')], ['source', t('panel.sourceColours')]], (v) => { p.paradeColor = v as PanelState['paradeColor']; save(); }));
   } else if (scatter && p.scope !== 'wf-skin' && p.scope !== 'wf-green' && p.scope !== 'wf-color') {
     row(t('panel.colour'), check('colorize', t('panel.traceInColour')));
+  }
+  if (p.scope === 'diamond') {
+    row(t('panel.zoom'), select(p.view ? p.diamondZoom ?? 'full' : 'full', DIAMOND_ZOOMS.map((z) => [z, t(`scope.dzoom.${z}`)] as [string, string]),
+      (v) => { p.diamondZoom = v as DiamondZoom; p.view = diamondZoomView(p.diamondZoom); save(); }, t('panel.zoomTitle')));
   }
   if (isWaveform(p.scope)) {
     global(SET.unit);

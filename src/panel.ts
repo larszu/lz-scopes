@@ -54,6 +54,8 @@ import { TILE_HEAD, sanitizeTiles, tileAspect, tileGrid, tileLabel, tileSources,
 export interface PanelState {
   scope: ScopeType; sourceId: string; gain: number; colorize: boolean; zoom: number;
   picture: PictureMode; hist: 'rgb' | 'luma' | 'split'; log: boolean;
+  /** diamond: magnifier preset (graticule.ts diamondZoomView) */
+  diamondZoom?: import('./graticule').DiamondZoom;
   /** parades / RGB overlay: 'mono' | 'channel' | 'source' colours */
   paradeColor?: 'mono' | 'channel' | 'source';
   /** vectorscope: gamut boundaries to show */
@@ -756,7 +758,9 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
   const aspect = src && src.width ? src.width / src.height : 16 / 9;
   const frame = plotRect(p.scope, body.w, body.h, aspect);
   const abs = { x: body.x + frame.x, y: body.y + frame.y, w: frame.w, h: frame.h };
-  renderer.clearRect(abs);
+  // the diamond's plot is a narrow 1:2 strip; a black strip of that shape on the app background
+  // looked squashed (feedback 11/2026), so its black field is the whole panel, like a Tek tile
+  renderer.clearRect(p.scope === 'diamond' ? body : abs);
   // gesture zoom (#89): GL through the shader view (scatter) or a larger picture rect; the
   // overlay draws with the zoomed rect `r`, clipped, so graticule and markers follow the trace
   const xv = xyView(p);
@@ -1027,7 +1031,7 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
   }
   if (xv) ctx.restore();
   // smoothing changes what is measured, so the panel says it (#179)
-  const note = smoothNote(p);
+  const note = smoothNote(p, src);
   if (note) {
     ctx.fillStyle = '#ffb300'; ctx.font = FONT; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
     ctx.fillText(note, body.w - 6, body.h - 6);
@@ -1040,8 +1044,12 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
  * away – and a real single-pixel spike with it – and a smoothed trace is older than this frame.
  * Empty when nothing is smoothed; the CRT look is a look, not a filter, and says so itself.
  */
-export function smoothNote(p: PanelState): string {
+export function smoothNote(p: PanelState, src?: Source | null): string {
   const parts: string[] = [];
+  // a reduced analysis width is a low-pass too (area scaling in the bridge): the waveform looks
+  // smoother than on a hardware scope in Flat (feedback 11/2026)
+  const sw = src?.info?.sourceWidth ?? 0;
+  if (isWaveform(p.scope) && src && src.width > 0 && sw > src.width) parts.push(t('panel.sig.noteScaled', { w: src.width, sw }));
   if (p.smooth) parts.push(t('panel.sig.noteSignal', { grid: p.smooth === 2 ? '5×5' : '3×3' }));
   if (p.persist && !p.crt?.on) parts.push(t('panel.sig.noteTrace', { s: p.persist < 0 ? '∞' : num(p.persist / 1000, 1) }));
   return parts.length ? `${t('panel.sig.note')} ${parts.join(' · ')}` : '';

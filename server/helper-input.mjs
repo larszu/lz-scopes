@@ -48,6 +48,40 @@ export const HELPER_PIXELS = {
 export const HELPER_INPUT_FLAGS = ['-flags', 'low_delay', '-thread_type', 'slice'];
 
 /**
+ * Decides which helper pictures go into ffmpeg. Two jobs:
+ * - at most `max` pictures inside ffmpeg at once. Only Node's own write buffer was limited before;
+ *   ffmpeg's internal queues (demuxer, filter, encoder) then filled up whenever scaling took longer
+ *   than a frame, and the delay crept up to 0.5–0.7 s before frames were dropped (feedback 11/2026).
+ *   Counting pictures in and out keeps the newest-picture-wins rule end to end.
+ * - the frame rate cap: pictures are thinned out here instead of with ffmpeg's fps= filter, so
+ *   ffmpeg does less work and every picture written comes out again (needed for the count and the PTS).
+ * A stall (no output for `stallMs`, e.g. ffmpeg restarted or swallowed a picture) resets the count.
+ */
+export class FrameGate {
+  constructor({ max = 2, fps = 0, limit = 0, stallMs = 1000, now = () => Date.now() } = {}) {
+    this.max = max; this.ratio = limit > 0 && fps > limit ? limit / fps : 1; this.stallMs = stallMs; this.now = now;
+    this.inFlight = 0; this.acc = 0; this.last = now();
+  }
+  /** A picture arrives from the helper: 'write' it to ffmpeg, skip it for the 'rate' cap, or drop it ('busy'). */
+  offer() {
+    if (this.ratio < 1) {
+      this.acc += this.ratio;
+      if (this.acc < 1 - 1e-9) return 'rate';
+      this.acc -= 1;
+    }
+    if (this.inFlight >= this.max) {
+      if (this.now() - this.last < this.stallMs) return 'busy';
+      this.inFlight = 0;
+    }
+    if (this.inFlight === 0) this.last = this.now();
+    this.inFlight++;
+    return 'write';
+  }
+  /** ffmpeg delivered a picture. */
+  done() { if (this.inFlight > 0) this.inFlight--; this.last = this.now(); }
+}
+
+/**
  * Splits the helper's stdout into records; never loses bytes across chunk borders.
  * Chunks are collected in a list and joined once per record: Windows pipes deliver a frame
  * in thousands of small chunks, and re-concatenating on every chunk cost O(n²) (NDI at 2 fps).
@@ -152,6 +186,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
   let frameNo = 0, nextPts = NaN, aud = null;
   /** PTS (s) of the pictures handed to ffmpeg, in order; ffmpeg keeps the order (without fps= it keeps every picture) */
   let ptsQueue = [];
+  let gate = new FrameGate();
   const maxWidth = Math.min(3840, Math.max(0, Number(params.get('width') ?? 960) || 0));
   const fpsLimit = Math.min(60, Math.max(0, Number(params.get('fps') ?? 0) || 0));
   const opts = ctx.deviceOptions(params);
@@ -187,9 +222,10 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
   };
   const sendFrame = (frame) => {
     if (ws.readyState !== ws.OPEN) return;
+    gate.done();
     const pts = ptsQueue.length ? ptsQueue.shift() : NaN;
     const no = frameNo++;
-    if (ws.bufferedAmount < outBytes * 2) { ws.send(proto === 2 ? Buffer.concat([packetHeader('LZV1', no, fpsLimit ? NaN : pts), frame]) : frame, { binary: true }); sent++; } else dropped++;
+    if (ws.bufferedAmount < outBytes * 2) { ws.send(proto === 2 ? Buffer.concat([packetHeader('LZV1', no, pts), frame]) : frame, { binary: true }); sent++; } else dropped++;
   };
   /** INFO.audio → packetizer (new one when the format changes), or null. */
   const audioFormat = (info) => {
@@ -243,6 +279,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
     lastInfo = info;
     lastFps = f.fps;
     ptsQueue = [];
+    gate = new FrameGate({ fps: f.fps, limit: fpsLimit });
     phase = ctx.now && f.fps > 0 ? new PhaseTracker(Math.round(Number(info.fpsNum)), Math.round(Number(info.fpsDen) || 1)) : null;
     const { width, height } = ctx.outputSize(f.width, f.height, maxWidth);
     outBytes = width * height * 4 * (depth / 8); asm = new FrameAssembler(outBytes, sendFrame);
@@ -250,7 +287,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
     const { decodeMatrix, decodeRange } = ctx.applyDecodeOverride(ctx.decodeParams(tags), opts);
     // interlaced signal (helper INFO): DeckLink delivers both fields woven in one frame; scale field by field
     const vf = [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}${info.interlaced ? ':interl=1' : ''}`];
-    if (fpsLimit) vf.push(`fps=${fpsLimit}`);
+    // the frame rate cap is applied before ffmpeg (FrameGate), not with fps=
     const rec = recorder?.outputs(3) ?? { args: [], pipes: 0, sessions: [] };
     ff = spawn(ctx.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', ...HELPER_INPUT_FLAGS, ...f.input, '-map', '0:v:0', '-vf', vf.join(','), '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-threads', '1', '-f', 'rawvideo', 'pipe:1', ...rec.args],
       { stdio: ['pipe', 'pipe', 'pipe', ...Array(rec.pipes).fill('pipe')], windowsHide: true });
@@ -303,6 +340,9 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
       // newest picture wins: skip when ffmpeg is still busy with the previous ones
       const pts = nextPts; nextPts = NaN;
       if (ff.stdin.writableLength > fmt.bytes * 2) { dropped++; return; }
+      const go = gate.offer();
+      if (go === 'rate') return;
+      if (go === 'busy') { dropped++; return; }
       if (proto === 2) { ptsQueue.push(pts); if (ptsQueue.length > 64) ptsQueue.shift(); }
       ff.stdin.write(Buffer.from(payload));
     } else if (tag === 'STAT') {

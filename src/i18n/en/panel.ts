@@ -71,6 +71,7 @@ export default {
   'panel.sig.trace': 'Smooth trace',
   'panel.sig.traceTitle': 'Let the trace stand over several frames instead of redrawing it each frame: calmer to read, but the trace is then older than the current picture.',
   'panel.sig.note': 'smoothed:',
+  'panel.sig.noteScaled': 'analysed at {w} of {sw} px (smoothed; Source → Analysis resolution: native)',
   'panel.sig.noteSignal': 'signal {grid}',
   'panel.sig.noteTrace': 'trace {s} s',
   'panel.sig.hint': 'Both change the reading or its age, which is why the panel says so. For an approval, switch both off.',

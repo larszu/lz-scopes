@@ -87,7 +87,7 @@ const FETCH = (k: TexKind) => (k === 'yuv' ? YUV_FETCH_GLSL : k === '16'
 const SAMPLE_GLSL = (k: TexKind) => `
 ${FETCH(k)}
 uniform ivec2 uSize;
-uniform int uStep, uCols, uMode, uColorize, uCieUv, uSecN, uPair;
+uniform int uStep, uStepRow, uCols, uMode, uColorize, uCieUv, uSecN, uPair;
 uniform ivec4 uSec; // section per trace instance (-1 = hidden channel)
 uniform vec2 uK;
 uniform float uZoom, uIntensity, uWMin, uWMax, uPointSize;
@@ -229,7 +229,7 @@ precision highp float; precision highp int;
 ${SAMPLE_GLSL(k)}
 void main() {
   gl_PointSize = uPointSize;
-  ivec2 p = ivec2(gl_VertexID % uCols, gl_VertexID / uCols) * uStep;
+  ivec2 p = ivec2(gl_VertexID % uCols, gl_VertexID / uCols) * ivec2(uStep, uStepRow);
   vec2 pos; vec3 col;
   if (p.y >= uSize.y || p.x >= uSize.x || !plotSample(p, gl_InstanceID, pos, col)) { gl_Position = vec4(9.0); return; }
   vColor = col * uIntensity;
@@ -734,6 +734,10 @@ export class Renderer {
         stepX = Math.max(1, Math.ceil(t.w / Math.max(16, vp.w / sections)));
         stepY = Math.max(1, Math.ceil(t.h / Math.max(1, Math.floor(budget / Math.ceil(t.w / stepX)))));
       } else stepX = stepY = Math.max(1, Math.ceil(Math.sqrt((t.w * t.h) / budget)));
+    } else if (wave) {
+      // waveforms keep every column: skipping columns drops thin edges and overshoots and makes the
+      // trace look low-passed (feedback 11/2026); rows are thinned instead (more samples of the same column)
+      stepX = 1; stepY = Math.max(1, Math.ceil((t.w * t.h) / p.maxSamples));
     } else stepX = stepY = Math.max(1, Math.ceil(Math.sqrt((t.w * t.h) / p.maxSamples)));
     const cols = Math.ceil(t.w / stepX), rows = Math.ceil(t.h / stepY);
     const n = crt ? Math.max(1, cols - 1) * rows : cols * rows;
@@ -762,6 +766,7 @@ export class Renderer {
       gl.uniform1i(this.u(prog, 'uSrc'), 0);
       gl.uniform2i(this.u(prog, 'uSize'), t.w, t.h);
       gl.uniform1i(this.u(prog, 'uStep'), stepX);
+      if (!crt) gl.uniform1i(this.u(prog, 'uStepRow'), stepY);
       gl.uniform1i(this.u(prog, 'uCols'), cols);
       gl.uniform1i(this.u(prog, 'uMode'), MODE_ID[p.mode]);
       this.linearUniforms(prog, src);

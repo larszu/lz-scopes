@@ -6,7 +6,7 @@ import {
   type Colorspace, type GamutId, type Transfer,
 } from './color';
 import { hexLine, targetSignal, type ColorTarget } from './match/core';
-import { CIE_VIEW, CIE_VIEW_UV, WAVE_MAX, WAVE_MIN, type Rect } from './renderer';
+import { CIE_VIEW, CIE_VIEW_UV, WAVE_MAX, WAVE_MIN, type PictureMode, type Rect } from './renderer';
 import { latencyLines, rtpLines } from './latency';
 import type { Source } from './sources';
 import { CUBE_SPACE_LABELS, SIGNAL_SPACES, cubeProject, cubeRotation, cubeWireframe, qFromChl, qFromHsv, qFromIctcp, qFromLab, qFromRgb, qFromXyz, qFromYcc, type CubeSettings } from './cube';
@@ -28,6 +28,42 @@ const SCOPE_IDS: ScopeType[] = [
 /** Panel names in the UI language (keys scope.name.<id>); the order is the order of the menus. */
 const scopeLabels = () => Object.fromEntries(SCOPE_IDS.map((s) => [s, t(`scope.name.${s}` as Key)])) as Record<ScopeType, string>;
 export const SCOPE_LABELS = scopeLabels();
+
+/**
+ * The scope list in groups (feedback 11/2026: one long list was slow to search). Every scope id
+ * sits in exactly one group (test/scopeMenu.test.ts); the order inside a group is the menu order.
+ */
+export const SCOPE_GROUPS: readonly (readonly [group: string, scopes: readonly ScopeType[]])[] = [
+  ['picture', ['picture']],
+  ['waveform', ['wf-luma', 'wf-color', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'wf-skin', 'wf-green', 'minmax']],
+  ['colour', ['vector', 'vector3', 'hls', 'diamond', 'cie', 'cube', 'satlum', 'chplot']],
+  ['measure', ['hist', 'stats', 'timeline', 'qclog', 'noise', 'sdi', 'genlock', 'clock']],
+  ['cameras', ['tiles', 'match', 'skinall', 'chart', 'drift', 'wshading', 'shguide', 'simulcast', 'encoder', 'lens']],
+  ['audio', ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check']],
+  ['light', ['light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch']],
+];
+/** Picture overlays that also appear as entries of their own under "Picture" (a picture panel with that overlay). */
+export const PICTURE_ENTRIES: readonly PictureMode[] = ['false', 'zebra', 'clip', 'peaking', 'gamut', 'skin', 'green', 'neutral', 'luma', 'r103'];
+const PICTURE_ENTRY_KEY: Record<string, Key> = {
+  false: 'settings.scopes.falseColour', zebra: 'scope.ov.zebra', clip: 'scope.ov.clip', peaking: 'focus.overlay', gamut: 'panel.ov.gamut',
+  skin: 'panel.ov.skin', green: 'panel.ov.green', neutral: 'panel.ov.neutral', luma: 'scope.ov.luma', r103: 'scope.ov.r103',
+};
+/** Value of the scope menu for a panel: a picture with an overlay shows as its own entry. */
+export const scopeMenuValue = (scope: ScopeType, picture?: PictureMode) =>
+  scope === 'picture' && picture && picture !== 'normal' && PICTURE_ENTRIES.includes(picture) ? `picture:${picture}` : scope;
+/** Parse a scope menu value back into scope and picture overlay. */
+export function parseScopeMenu(v: string): { scope: ScopeType; picture?: PictureMode } {
+  if (v.startsWith('picture:')) return { scope: 'picture', picture: v.slice(8) as PictureMode };
+  return v === 'picture' ? { scope: 'picture', picture: 'normal' } : { scope: v as ScopeType };
+}
+/** Grouped scope menu (<optgroup>s), optionally without some scopes. */
+export function scopeMenu(skip: (s: ScopeType) => boolean = () => false, pictureEntries = true): [string, [string, string][]][] {
+  return SCOPE_GROUPS.map(([g, list]) => {
+    const opts: [string, string][] = list.filter((s) => !skip(s)).map((s) => [s, SCOPE_LABELS[s]]);
+    if (g === 'picture' && pictureEntries && !skip('picture')) for (const m of PICTURE_ENTRIES) opts.push([`picture:${m}`, t('scope.pictureWith', { overlay: t(PICTURE_ENTRY_KEY[m]) })]);
+    return [t(`scope.group.${g}` as Key), opts] as [string, [string, string][]];
+  }).filter(([, o]) => o.length > 0);
+}
 
 export const isAudio = (s: ScopeType) => s.startsWith('audio-');
 
@@ -331,6 +367,18 @@ export interface BarTargetSet { t100: { label: string; cb: number; cr: number }[
  */
 export const DIAMOND_SCALE: [number, number] = [0.92, 0.46];
 
+/** Diamond magnifier (feedback 11/2026): black point or one of the white apexes, ×4. */
+export type DiamondZoom = 'full' | 'black' | 'whiteB' | 'whiteR';
+export const DIAMOND_ZOOMS: DiamondZoom[] = ['full', 'black', 'whiteB', 'whiteR'];
+/** Gesture view (src/view.ts, clip space) that centres the magnified point; undefined = full view. */
+export function diamondZoomView(z: DiamondZoom, mag = 4): { z: number; x: number; y: number } | undefined {
+  if (z === 'full') return undefined;
+  // clip y of the white apex: (1 + 1) · 0.46 = 0.92, upper diamond positive
+  const py = z === 'black' ? 0 : z === 'whiteB' ? 2 * DIAMOND_SCALE[1] : -2 * DIAMOND_SCALE[1];
+  const lim = mag - 1;
+  return { z: mag, x: 0, y: Math.max(-lim, Math.min(lim, -py * mag)) };
+}
+
 /** Diamond plot position (CSS px) of a pair (a = B′ or R′ with G′; upper = the B/G diamond). */
 export function diamondPoint(r: Rect, a: number, g: number, upper: boolean): [number, number] {
   const x = (a - g) * DIAMOND_SCALE[0], y = (a + g) * DIAMOND_SCALE[1] * (upper ? 1 : -1);
@@ -395,6 +443,8 @@ export function vectorBandRects(r: Rect, big = 0): Rect[] {
   return [0, 1, 2].map((i) => one(r.x + i * w, w));
 }
 
+/** Half side (CSS px) of the vectorscope's centre box: 2 % of the 100 % circle, independent of the gain. */
+export const vectorCentreBox = (R: number) => Math.max(3, R * 0.9 * 0.02 * 2);
 export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: Colorspace, zoom: number, skinTol = 0, targets?: BarTargetSet, green?: { hue: number; tol: number }) {
   const R = r.w / 2, cx = r.x + R, cy = r.y + R;
   ctx.save();
@@ -403,6 +453,11 @@ export function drawVectorGraticule(ctx: CanvasRenderingContext2D, r: Rect, cs: 
   ctx.beginPath(); ctx.arc(cx, cy, R * 0.9, 0, Math.PI * 2); ctx.stroke();
   ctx.strokeStyle = GRID_DIM;
   ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
+  // fixed centre box (feedback 11/2026): its size ignores the gain, so its corners are a constant
+  // reference for "a touch cool, never warm" when the trace is magnified
+  const cb = vectorCentreBox(R);
+  ctx.strokeStyle = GRID;
+  ctx.strokeRect(cx - cb, cy - cb, cb * 2, cb * 2);
   for (let a = 0; a < 360; a += 10) {
     const rad = (a * Math.PI) / 180, l = a % 30 === 0 ? 0.06 : 0.03;
     ctx.beginPath();

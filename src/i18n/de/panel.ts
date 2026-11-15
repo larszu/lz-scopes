@@ -72,6 +72,7 @@ export default {
   'panel.sig.trace': 'Spur glätten',
   'panel.sig.traceTitle': 'Die Spur über mehrere Bilder stehen lassen, statt sie jedes Bild neu zu zeichnen: ruhiger zu lesen, aber die Spur ist dann älter als das aktuelle Bild.',
   'panel.sig.note': 'geglättet:',
+  'panel.sig.noteScaled': 'analysiert mit {w} von {sw} px (geglättet; Quelle → Analyseauflösung: nativ)',
   'panel.sig.noteSignal': 'Signal {grid}',
   'panel.sig.noteTrace': 'Spur {s} s',
   'panel.sig.hint': 'Beides verändert die Messung bzw. ihr Alter, deshalb steht im Panel ein Hinweis. Für eine Abnahme beides aus.',

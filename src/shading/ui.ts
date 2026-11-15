@@ -202,6 +202,14 @@ export class ShadingControl {
     this.render();
   }
 
+  /** open state of the "Bridge" section survives re-rendering (every status change redraws the bar) */
+  private moreOpen = false;
+  private moreSection(connect: HTMLElement): HTMLElement {
+    const d = disclosure('Bridge', [connect, hint(T.help(LIMITS.step, LIMITS.span))], { cls: 'shading-more', open: this.moreOpen });
+    d.addEventListener('toggle', () => { this.moreOpen = (d as HTMLDetailsElement).open; });
+    return d;
+  }
+
   /** Bridge choice, control path, start and connect – no address to type (#224). */
   private connectControls(): HTMLElement {
     const desk = desktopBridge();
@@ -634,7 +642,7 @@ export class ShadingControl {
       button(this.looping ? T.loopStop : T.loop, () => { void this.matchToReference(); }, { title: T.loopTitle, disabled: this.target === null, attrs: { class: 'btn shading-loop', 'data-shading-loop': '' } }),
       button(T.stop, () => this.emergencyStop(), { title: T.stopTitle, attrs: { class: 'btn shading-stop', 'data-shading-stop': '' } }),
       this.valuesEl,
-      ...(setup ? [setup] : [disclosure('Bridge', [connect, hint(T.help(LIMITS.step, LIMITS.span))], { cls: 'shading-more' })]),
+      ...(setup ? [setup] : [this.moreSection(connect)]),
       h('span', { class: 'shading-msg', 'data-shading-msg': '', role: 'status' }, this.message),
       iconButton('⇅', T.moveBar, () => { this.atTop = !this.atTop; this.persist(); this.render(); }),
       iconButton('✕', T.close, () => { if (this.active) this.deactivate(); this.toggleBar(false); }),

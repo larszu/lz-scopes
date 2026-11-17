@@ -544,6 +544,7 @@ export class PtsTracker {
 
 export { packetHeader, AudioPacketizer } from './proto2.mjs';
 import { packetHeader, AudioPacketizer } from './proto2.mjs';
+import { benchFfmpeg } from './bench.mjs';
 
 async function startStream(ws, params) {
   const url = params.get('url') ?? '';
@@ -1240,6 +1241,13 @@ const server = createServer((req, res) => {
     const problem = clockAccess({ remote: req.socket.remoteAddress, origin, host: req.headers.host, store: ORIGINS });
     res.writeHead(200, { 'content-type': 'application/json', ...(origin ? { 'access-control-allow-origin': origin, vary: 'Origin' } : {}) });
     return res.end(JSON.stringify({ allowed: !problem, origin: normalizeOrigin(origin) }));
+  }
+  if (path === '/api/bench') {
+    // performance test (#245): a few seconds of CPU – only for this computer, never for the network
+    const local = /^(::1|127\.|::ffff:127\.)/.test(req.socket.remoteAddress ?? '');
+    const json = (code, body) => { res.writeHead(code, { 'content-type': 'application/json', 'access-control-allow-origin': '*' }); res.end(JSON.stringify(body)); };
+    if (!local) return json(403, { error: 'local only' });
+    return benchFfmpeg(ffmpegCandidates()[0]).then((r) => json(200, r), (e) => json(500, { error: String(e.message ?? e) }));
   }
   if (path === '/api/health') {
     // which ffmpeg runs, read from the binary: origin, version, licence, SRT (UI: Bridge, output menu)

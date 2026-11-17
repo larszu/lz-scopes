@@ -97,6 +97,7 @@ uniform mat3 uToXYZ;
 uniform vec4 uCie;
 ${ROI_GLSL}
 uniform vec4 uSkin;
+uniform float uLowPass; // waveform filter "Low Pass" (Tek, #246): Gaussian σ in analysis px, 0 = Flat
 uniform int uSmooth; // signal low-pass before the measurement (#179): 0 off, 1 = 3×3, 2 = 5×5
 uniform vec2 uLumaWin; // tonal window Y′ lo…hi (vectorscope by tonal range, #180); everything outside is not drawn
 uniform vec3 uTint;
@@ -115,6 +116,19 @@ float waveY(float v) { return (v - uWMin) / (uWMax - uWMin) * 2.0 - 1.0; }
  * averaged away, and so is a real one-pixel spike. The panel says so when it is on.
  */
 vec3 fetchMeasured(ivec2 p) {
+  if (uLowPass > 0.0 && uSmooth <= 0) {
+    // horizontal only, like the waveform filter of a hardware monitor; flat areas keep their level
+    vec3 a = vec3(0.0);
+    float wsum = 0.0;
+    int r = min(8, int(ceil(3.0 * uLowPass)));
+    for (int dx = -8; dx <= 8; dx++) {
+      if (abs(dx) > r) continue;
+      float w = exp(-float(dx * dx) / (2.0 * uLowPass * uLowPass));
+      a += w * fetchRGB(ivec2(clamp(p.x + dx, 0, uSize.x - 1), p.y));
+      wsum += w;
+    }
+    return a / wsum;
+  }
   if (uSmooth <= 0) return fetchRGB(p);
   ivec2 hi = uSize - ivec2(1);
   vec3 s = vec3(0.0);
@@ -425,6 +439,8 @@ export interface ScatterParams {
   density?: number;
   /** signal low-pass before the measurement (#179): 0 off, 1 = 3×3, 2 = 5×5 */
   smooth?: 0 | 1 | 2;
+  /** waveform filter Low Pass: Gaussian σ in analysis px (panel.ts waveLowPass), 0/undefined = Flat */
+  lowPass?: number;
   /** diamond: clip-space scale and split (graticule.ts diamondScale) */
   diamond?: [number, number, number];
   /** only samples whose Y′ lies in this window (vectorscope by tonal range, #180) */
@@ -794,6 +810,7 @@ export class Renderer {
       this.setRois(prog, p.roi);
       gl.uniform4f(this.u(prog, 'uSkin'), p.skin.lo, p.skin.hi, p.skin.tol, p.skin.hue ?? 123);
       gl.uniform1i(this.u(prog, 'uSmooth'), p.smooth ?? 0);
+      gl.uniform1f(this.u(prog, 'uLowPass'), p.lowPass ?? 0);
       gl.uniform2f(this.u(prog, 'uLumaWin'), p.luma?.[0] ?? -1e3, p.luma?.[1] ?? 1e3);
       gl.uniform3fv(this.u(prog, 'uTint'), p.tint);
       if (p.cube) {

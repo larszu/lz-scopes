@@ -58,6 +58,8 @@ export interface PanelState {
   diamondZoom?: import('./graticule').DiamondZoom;
   /** diamond: Tek "Split Diamond" – the two diamonds apart, black ends separated (#248) */
   diamondSplit?: boolean;
+  /** waveforms: 'flat' (full bandwidth) or 'lowpass' (Tek "Low Pass", −3 dB at ≈ 0.06 × sample rate; #246) */
+  waveFilter?: 'flat' | 'lowpass';
   /** vectorscope: fixed centre box (default on) */
   centreBox?: boolean;
   /** parades / RGB overlay: 'mono' | 'channel' | 'source' colours */
@@ -793,6 +795,7 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
       ...(crt ? { crt } : {}),
       ...(!crt && p.persist ? { persist: p.persist } : {}),
       ...(p.smooth ? { smooth: p.smooth } : {}),
+      ...(isWaveform(p.scope) && p.waveFilter === 'lowpass' ? { lowPass: waveLowPass(src) } : {}),
       ...(p.scope === 'diamond' ? { diamond: (({ sx, sy, off }) => [sx, sy, off] as [number, number, number])(diamondScale(frame, p.diamondSplit ? DIAMOND_SPLIT : 0)) } : {}),
       ...(p.scope === 'chplot' ? { pair: p.pair ?? 0 } : {}),
       ...(cube ? { cube: {
@@ -1045,6 +1048,20 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
 }
 
 /**
+ * Gaussian σ (analysis px) of the waveform "Low Pass" (#246). Tektronix WFM5200/WFM7200: −3 dB at
+ * 0.8 MHz (SD, 13.5 MHz), 4.5 MHz (HD, 74.25 MHz), 9 MHz (3G, 148.5 MHz) – always ≈ 0.06 of the
+ * luma sample rate. A Gaussian with −3 dB at f has σ = 0.1325 / f, i.e. ≈ 2.2 source pixels.
+ * A bridge that already scaled the picture down (area filter, a box of k source px) has used part
+ * of that; only the rest is applied here.
+ */
+export function waveLowPass(src: Source | null): number {
+  const sw = src?.info?.sourceWidth || src?.width || 0, w = src?.width || 0;
+  const k = w > 0 && sw > w ? sw / w : 1;
+  const sigma = 0.1325 / 0.0606 / k;
+  return Math.sqrt(Math.max(0.05, sigma * sigma - (k > 1 ? 1 / 12 : 0)));
+}
+
+/**
  * What the panel has to admit about its own reading (#179): a signal low-pass averages noise
  * away – and a real single-pixel spike with it – and a smoothed trace is older than this frame.
  * Empty when nothing is smoothed; the CRT look is a look, not a filter, and says so itself.
@@ -1055,6 +1072,7 @@ export function smoothNote(p: PanelState, src?: Source | null): string {
   // smoother than on a hardware scope in Flat (feedback 11/2026)
   const sw = src?.info?.sourceWidth ?? 0;
   if (isWaveform(p.scope) && src && src.width > 0 && sw > src.width) parts.push(t('panel.sig.noteScaled', { w: src.width, sw }));
+  if (isWaveform(p.scope) && p.waveFilter === 'lowpass') parts.push(t('panel.sig.noteLowPass'));
   if (p.smooth) parts.push(t('panel.sig.noteSignal', { grid: p.smooth === 2 ? '5×5' : '3×3' }));
   if (p.persist && !p.crt?.on) parts.push(t('panel.sig.noteTrace', { s: p.persist < 0 ? '∞' : num(p.persist / 1000, 1) }));
   return parts.length ? `${t('panel.sig.note')} ${parts.join(' · ')}` : '';

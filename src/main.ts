@@ -42,6 +42,7 @@ import { openAvClip } from './avClip';
 import { openTestImages, openTestVideos, type TestMediaHost } from './testMedia';
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
+import { openPerfTest } from './perfTest';
 import { openLedTool } from './led/ui';
 import { mountOpple } from './opple/ui';
 import { isLight, LIGHT_SCOPES, lightPanelSettings } from './opple/panelSettings';
@@ -1153,6 +1154,8 @@ function panelSettings(p: PanelState): Node[] {
     global(SET.unit);
     row(t('panel.marks'), check('marks', t('panel.marksText'), true));
     row('EBU R 103', check('r103', t('panel.r103Text')));
+    row(t('panel.waveFilter'), select(p.waveFilter ?? 'flat', [['flat', t('panel.waveFilterFlat')], ['lowpass', t('panel.waveFilterLow')]],
+      (v) => { p.waveFilter = v as PanelState['waveFilter']; save(); refreshHeads(); }, t('panel.waveFilterTitle')));
     row(t('panel.zoom'), select(p.waveZoom ?? 'full', Object.entries(WAVE_ZOOM_LABELS) as [string, string][], (v) => { p.waveZoom = v as WaveZoom; p.view = undefined; save(); }, t('panel.zoomTitle')));
     const chans = channelsOf(p.scope);
     if (chans.length) {
@@ -2651,6 +2654,14 @@ const menuActions: MenuActions = {
   calibration: () => openCalibrationDialog(),
   colorMatch: () => { void import('./colormatch/ui').then((m) => m.openColorMatch({ sources: () => sources, link: shading.link })); },
   help: () => { setHelpOn(!helpOn()); for (const v of views.values()) fillHead(v); refreshMenu(); },
+  perfTest: () => openPerfTest({
+    version: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '',
+    panels: () => dock.openIdx().map((i) => state.panels[i].scope),
+    // names are the user's own labels; the report is only shown and copied, not sent by itself
+    sources: () => sources.map((s, i) => ({ name: `${i + 1} ${s.kind}`, fps: s.fps, dropped: s.dropped, width: s.width, height: s.height,
+      latency: s.settings.latency === 'fixed' ? `fixed ${s.settings.latencyMs ?? 200} ms` : 'fastest' })),
+    bridgeHttp: () => bridgeUrl().replace(/^ws/, 'http'),
+  }),
   feedback: () => openFeedback({
     version: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '',
     displayFps: () => displayFps,

@@ -32,6 +32,7 @@ import testmedia from './de/testmedia';
 import theme from './de/theme';
 import native from './de/native';
 import sysprofile from './de/sysprofile';
+import perf from './de/perf';
 import opple from './de/opple';
 import led from './de/led';
 import calib from './de/calib';
@@ -75,6 +76,7 @@ export const de: Record<Key, Msg> = {
   ...theme,
   ...native,
   ...sysprofile,
+  ...perf,
   ...opple,
   ...led,
   ...calib,

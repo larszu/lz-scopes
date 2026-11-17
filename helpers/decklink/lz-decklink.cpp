@@ -453,7 +453,7 @@ class Capture : public IDeckLinkInputCallback {
   long width_ = 0, height_ = 0;
   bool interlaced_ = false;
   bool modeSet_ = false;
-  BMDDisplayMode displayMode_ = 0;
+  BMDDisplayMode displayMode_{};  // enum on Windows (MIDL): `= 0` does not compile with MSVC
   BMDPixelFormat pixel_ = bmdFormat10BitYUV;
   std::vector<uint8_t> buf_;
   std::chrono::steady_clock::time_point lastNoSignal_{}, lastVanc_{};

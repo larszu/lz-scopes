@@ -53,8 +53,13 @@ body { background: var(--surface-0); overflow: hidden; }
 .side details { border-top: 1px solid var(--line-1); padding-top: 8px; color: var(--text-muted); }
 .side summary { cursor: pointer; min-height: var(--control-h); display: list-item; }
 .side details .field { margin-top: 6px; }
-.add { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.add span { color: var(--text-muted); margin-right: 2px; }
+.add { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: var(--radius-m, 10px); background: var(--surface-2, rgba(255,255,255,0.03)); }
+.add-title { font-weight: 600; color: var(--text); }
+.add-group { display: grid; grid-template-columns: 7.5em 1fr; gap: 4px 8px; align-items: start; }
+.add-label { color: var(--text-muted); font-size: var(--fs-sm); padding-top: 4px; }
+.add-btns { display: flex; flex-wrap: wrap; gap: 4px; }
+.add-group.found { padding: 8px; border-radius: var(--radius-m, 10px); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+.add-group.found[hidden] { display: none; }
 .side-scrim { display: none; }
 /* narrow windows: the sidebar is a drawer over the scopes */
 @media (max-width: 800px) {
@@ -163,6 +168,9 @@ button.fav.on { color: var(--text); border-color: var(--sel-line); }
 .body { touch-action: none; }
 .body .zoomchip { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); z-index: 2; font-size: var(--fs-xs); line-height: 1.4; padding: 1px 7px; min-height: 0; border: 0; border-radius: var(--radius); background: var(--chip-bg); color: var(--chip-text); font-variant-numeric: tabular-nums; cursor: pointer; opacity: 0.9; }
 .body .zoomchip[hidden] { display: none; }
+.body .gesture-hint { display: none; position: absolute; right: 6px; bottom: 6px; z-index: 2; pointer-events: none; font-size: var(--fs-xs); padding: 2px 8px; border-radius: var(--radius-s, 6px); background: var(--chip-bg); color: var(--chip-text); opacity: 0.75; }
+.body[data-zoomable="1"] .gesture-hint { display: block; }
+.gestures-seen .body .gesture-hint { display: none; }
 .body .zoomchip:hover, .body .zoomchip:focus-visible { opacity: 1; }
 button.pin { opacity: 0.35; filter: grayscale(1); }
 button.pin.on { opacity: 1; filter: none; background: transparent; border-color: transparent; }

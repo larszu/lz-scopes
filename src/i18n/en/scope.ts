@@ -117,4 +117,6 @@ export default {
   'scope.dzoom.black': 'black point ×4',
   'scope.dzoom.whiteB': 'white apex B′/G′ ×4',
   'scope.dzoom.whiteR': 'white apex R′/G′ ×4',
+  'gesture.hint': 'Wheel/pinch = zoom · drag when zoomed = move · double-click = reset',
+  'gesture.hintTouch': 'Pinch = zoom · one finger when zoomed = move · double tap = reset',
 } as const satisfies Messages;

@@ -43,6 +43,7 @@ import { openTestImages, openTestVideos, type TestMediaHost } from './testMedia'
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
 import { openPerfTest } from './perfTest';
+import { watchDevices, type Found } from './deviceScan';
 import { openLedTool } from './led/ui';
 import { mountOpple } from './opple/ui';
 import { isLight, LIGHT_SCOPES, lightPanelSettings } from './opple/panelSettings';
@@ -193,9 +194,12 @@ const moreMenu = popover({ label: '⋯', title: t('ui.more'), heading: t('ui.mor
 moreMenu.id = 'bar-more';
 const side = h('aside', { class: 'side', id: 'side' },
   h('h2', {}, t('main.sources')),
+  // devices first, then how to add more, then the sources (UX analysis 11/2026: "+ Quelle" was
+  // scrolled out of sight below two expanded cards)
+  h('div', { class: 'add-group found', id: 'found', hidden: true }),
+  h('div', { class: 'add', id: 'add' }),
   h('div', { id: 'source-list' }),
   h('div', { class: 'resolve-live', id: 'resolve-live', hidden: true }),
-  h('div', { class: 'add', id: 'add' }),
   h('details', { class: 'gen', id: 'gen-wrap' }, h('summary', {}, t('main.toneGen')), h('div', { id: 'gen' })),
   h('details', { class: 'gen', id: 'opple-wrap' }, h('summary', {}, t('main.lightMeter')), h('div', { id: 'opple' })));
 app.replaceChildren(
@@ -924,20 +928,42 @@ function addSourceOfKind(kind: string) {
     case 'generator': return addAudioSource('generator');
   }
 }
-/** Buttons of the "+ Quelle" bar; built after start-up, because it asks the desktop app. */
+/**
+ * The "+ Quelle" bar, in groups (UX analysis 11/2026, #221): devices, network, files & this
+ * computer, test & sound. Built after start-up, because it asks the desktop app.
+ */
 function renderAddMenu() {
+  const b = (kind: string, label: string, title = '') => button(label, () => addSourceOfKind(kind), { title, small: true });
+  const group = (label: string, ...kids: HTMLElement[]) => h('div', { class: 'add-group' }, h('span', { class: 'add-label' }, label), h('div', { class: 'add-btns' }, ...kids));
   $('#add').replaceChildren(
-  h('span', {}, t('main.add.source')),
-  ...([
-    ['pattern', t('main.pattern.title'), ''], ['stream', t('main.add.stream'), ''], ['resolve', 'DaVinci Resolve', t('main.add.resolveTitle')],
-    ['decklink', 'Blackmagic DeckLink', t('main.add.decklinkTitle')], ['aja', 'AJA', t('main.add.ajaTitle')], ['webcam', t('main.add.webcam'), t('main.add.webcamTitle')], ['screen', t('main.add.screen'), t('main.add.screenTitle')], ['file', t('main.add.file'), ''],
-    // desktop app: the file goes through the bridge by default (full depth). The browser path
-    // stays one click away – it is 8 bit, but it crops and brings the clip's own sound.
-    ...(mediaFilePicker() ? [['file-video', t('main.add.fileVideo'), t('main.add.fileVideoTitle')] as const] : []),
-    ['folder', t('main.add.folder'), t('main.add.folderTitle')], ['audio', 'Audio', t('main.add.audioTitle')],
-  ] as const).map(([kind, label, title]) => button(label, () => addSourceOfKind(kind), { title })),
-  button(t('playback.add'), () => openRecordingsDialog(), { title: t('playback.addTitle') }),
+    h('span', { class: 'add-title' }, t('main.add.source')),
+    group(t('main.add.gDevices'), b('decklink', 'Blackmagic DeckLink', t('main.add.decklinkTitle')), b('aja', 'AJA', t('main.add.ajaTitle')), b('webcam', t('main.add.webcam'), t('main.add.webcamTitle'))),
+    group(t('main.add.gNetwork'), b('stream', t('main.add.stream')), b('resolve', 'DaVinci Resolve', t('main.add.resolveTitle'))),
+    group(t('main.add.gFiles'),
+      b('file', t('main.add.file')),
+      // desktop app: the file goes through the bridge by default (full depth). The browser path
+      // stays one click away – it is 8 bit, but it crops and brings the clip's own sound.
+      ...(mediaFilePicker() ? [b('file-video', t('main.add.fileVideo'), t('main.add.fileVideoTitle'))] : []),
+      b('folder', t('main.add.folder'), t('main.add.folderTitle')), b('screen', t('main.add.screen'), t('main.add.screenTitle')),
+      button(t('playback.add'), () => openRecordingsDialog(), { title: t('playback.addTitle'), small: true })),
+    group(t('main.add.gTest'), b('pattern', t('main.pattern.title')), b('audio', 'Audio', t('main.add.audioTitle'))),
   );
+}
+
+/** Inputs the bridge sees but that are no source yet (src/deviceScan.ts): one click adds them. */
+function renderFound(list: Found[]) {
+  const el = $('#found');
+  el.hidden = !list.length;
+  el.replaceChildren(...(list.length ? [
+    h('span', { class: 'add-label' }, t('main.add.found')),
+    h('div', { class: 'add-btns' }, ...list.map((f) => button(`+ ${f.name}`, () => addFound(f), { small: true, variant: 'primary', title: t('main.add.foundTitle', { kind: f.kind === 'ndi' ? 'NDI®' : f.kind === 'aja' ? 'AJA' : 'DeckLink', url: f.url }) }))),
+  ] : []));
+}
+function addFound(f: Found) {
+  state.sidebar = true; applySidebar();
+  const s = addSource('stream', f.name, f.url, f.kind === 'decklink' ? { depth: 16, deckLinkBits: 10 } : f.kind === 'aja' ? { depth: 16, ajaBits: 10 } : { depth: 16 });
+  s.connectStream(f.url, bridgeUrl());
+  renderFound([]);
 }
 
 /** Add an audio source and, if no audio panel is open, a pinned level/loudness panel for it. */
@@ -988,7 +1014,10 @@ function panelElement(idx: number): HTMLElement {
     const overlay = h('canvas', { class: 'overlay' });
     // zoom level (#89): shown while zoomed, click resets
     const zoom = h('button', { class: 'zoomchip', hidden: true, 'data-zoom': '1', title: t('gesture.chipTitle'), onclick: () => resetView(idx), onpointerdown: (e: Event) => e.stopPropagation() });
-    const body = h('div', { class: 'body' }, blit, overlay, zoom);
+    // one-time hint until the first zoom (UX analysis 11/2026: the gestures were only in a tooltip
+    // of a chip that appears after zooming); hidden by CSS for scopes without zoom
+    const hint = h('span', { class: 'gesture-hint', 'aria-hidden': 'true' }, matchMedia('(pointer: coarse)').matches ? t('gesture.hintTouch') : t('gesture.hint'));
+    const body = h('div', { class: 'body' }, blit, overlay, zoom, hint);
     const head = h('div', { class: 'phead', ondblclick: () => toggleSolo(idx) });
     const el = h('div', { class: 'panel' }, head, body);
     // double click: reset a zoomed view, otherwise solo
@@ -1548,7 +1577,7 @@ function attachPanelGestures(idx: number, p: () => PanelState, body: HTMLElement
     limits: () => viewLimits(p().scope),
     view: () => panelView(p()),
     frame,
-    set: (v) => { setPanelView(p(), v); syncZoomChip(idx); },
+    set: (v) => { setPanelView(p(), v); syncZoomChip(idx); gesturesSeen(); },
     commit: () => save(),
     blocked: () => shading.owns(p().scope),
     primaryTaken: () => ['picture', 'wf-skin', 'wf-green'].includes(p().scope),
@@ -1576,6 +1605,15 @@ function resetView(idx: number): boolean {
   return true;
 }
 
+/** After the first zoom the gesture hints go for good (per computer). */
+const GESTURE_SEEN = 'lzs.gesturesSeen';
+function gesturesSeen() {
+  if (document.documentElement.classList.contains('gestures-seen')) return;
+  document.documentElement.classList.add('gestures-seen');
+  try { localStorage.setItem(GESTURE_SEEN, '1'); } catch { /* private mode */ }
+}
+try { if (localStorage.getItem(GESTURE_SEEN)) document.documentElement.classList.add('gestures-seen'); } catch { /* private mode */ }
+
 /** Zoom chip of a panel: ×2.5 while zoomed. */
 function syncZoomChip(idx: number) {
   const v = views.get(idx), p = state.panels[idx];
@@ -1585,6 +1623,7 @@ function syncZoomChip(idx: number) {
   v.zoom.hidden = !on;
   v.zoom.textContent = on ? `${zoomLabel(z)} ⟲` : '';
   v.zoom.dataset.zoom = String(Math.round(z * 1000) / 1000);
+  v.body.dataset.zoomable = viewLimits(p.scope) && p.scope !== 'cube' ? '1' : '';
 }
 
 /** Skin and green waveforms: drag the lo/hi lines, mouse wheel = hue tolerance. */
@@ -2679,6 +2718,7 @@ const menuActions: MenuActions = {
 };
 mountMenu($('#menubar'), menuState, menuActions);
 renderAddMenu();
+watchDevices(() => bridgeUrl().replace(/^ws/, 'http'), () => sources.map((x) => x.url), renderFound);
 requestAnimationFrame(frame);
 // Control API: the bridge forwards Companion/HTTP commands to this window.
 connectRemote(bridgeUrl, execute, controlState);

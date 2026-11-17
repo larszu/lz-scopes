@@ -373,7 +373,7 @@ export function diamondScale(r: { w: number; h: number }, split = 0): { sx: numb
   return { sx: (2 * a) / r.w, sy: (2 * a) / r.h, off: (2 * split * a) / r.h };
 }
 /** Split of the diamond display when switched on (0 = Tek standard, touching at black). */
-export const DIAMOND_SPLIT = 0.3;
+export const DIAMOND_SPLIT = 0.15;
 
 /** Diamond magnifier (feedback 11/2026): black point or one of the white apexes, ×4. */
 export type DiamondZoom = 'full' | 'black' | 'whiteB' | 'whiteR';

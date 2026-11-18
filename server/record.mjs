@@ -240,11 +240,22 @@ export class Sidecar {
   toJSON() { return this.data; }
 }
 
-/** Writes JSON atomically (temp file + rename): a reader never sees half a file. */
-export async function writeJsonAtomic(file, value) {
-  const tmp = `${file}.tmp`;
-  await writeFile(tmp, JSON.stringify(value, null, 2));
-  await rename(tmp, file);
+/**
+ * Writes JSON atomically (temp file + rename): a reader never sees half a file. Writes to the same
+ * file run one after another: two overlapping writes into one shared .tmp interleaved on Windows
+ * and left trailing bytes of the longer version behind the shorter one (check-windows, #254).
+ */
+const jsonQueue = new Map();
+export function writeJsonAtomic(file, value) {
+  const text = JSON.stringify(value, null, 2);
+  const run = (jsonQueue.get(file) ?? Promise.resolve()).catch(() => {}).then(async () => {
+    const tmp = `${file}.tmp`;
+    await writeFile(tmp, text);
+    await rename(tmp, file);
+  });
+  jsonQueue.set(file, run);
+  void run.finally(() => { if (jsonQueue.get(file) === run) jsonQueue.delete(file); }).catch(() => {});
+  return run;
 }
 
 // ---- HEVC encoder detection

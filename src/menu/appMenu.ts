@@ -58,6 +58,8 @@ export interface MenuActions {
   colorMatch?: () => void;
   /** Help → Send Feedback … (src/feedback) */
   feedback?: () => void;
+  /** Help → Performance test … (src/perfTest.ts) */
+  perfTest?: () => void;
   /** Help → Show scope help (src/help) */
   help?: () => void;
   /** commands added by other modules (registerMenuCommand) */
@@ -179,6 +181,7 @@ export function buildMenu(s: MenuState): TopMenu[] {
         { id: `manual:${lang() === 'de' ? 'en' : 'de'}`, label: lang() === 'de' ? 'Inputs manual (English)' : 'Anleitung Eingänge (Deutsch)' }, // lang-ok: the other language, named in that language
         ...GUIDES.map((g): MenuItem => ({ id: `open:${g.id}`, label: g.label })),
         sep(),
+        { id: 'perfTest', label: t('perf.menu') },
         { id: 'feedback', label: t('feedback.menu') },
         { id: 'open:licenses', label: t('menu.licenses') },
         ...extras('help'),
@@ -219,6 +222,7 @@ export function dispatch(id: string, a: MenuActions) {
     case 'calibration': return a.calibration();
     case 'colormatch': return a.colorMatch?.();
     case 'feedback': return a.feedback?.();
+    case 'perfTest': return a.perfTest?.();
     case 'help': return a.help?.();
     case 'open': { const u = URLS[arg]; if (u) window.open(u, '_blank', 'noopener'); return; }
     case 'manual': return a.manual?.(arg === 'en' ? 'en' : 'de');

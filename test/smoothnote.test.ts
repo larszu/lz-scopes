@@ -34,3 +34,19 @@ describe('note about smoothing', () => {
     expect(smoothNote(panel({ smooth: 1, crt: { on: true, phosphor: 'P31', persist: 1000, glow: 0, beam: 1 } }))).toContain('3×3');
   });
 });
+
+import { waveLowPass } from '../src/panel';
+
+describe('waveform Low Pass like Tektronix (#246)', () => {
+  const src = (w: number, sw: number) => ({ width: w, info: { sourceWidth: sw } }) as unknown as Parameters<typeof waveLowPass>[0];
+  it('≈ 2.2 source pixels at native width (−3 dB at 0.06 × sample rate)', () => {
+    expect(waveLowPass(src(1920, 1920))).toBeCloseTo(2.19, 1);
+  });
+  it('less where the bridge already scaled down (box filter counted)', () => {
+    const s = waveLowPass(src(960, 1920));
+    expect(s).toBeLessThan(1.2); expect(s).toBeGreaterThan(0.9);
+  });
+  it('the note says the trace is filtered', () => {
+    expect(smoothNote(panel({ scope: 'wf-luma', waveFilter: 'lowpass' } as never))).toMatch(/Tiefpass|Low Pass/);
+  });
+});

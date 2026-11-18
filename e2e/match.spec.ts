@@ -8,7 +8,7 @@ test.afterAll(async () => { await a?.close(); });
 /** Panel element showing `scope` (visible). */
 const panelBox = (scope: string) => a.page.evaluate((scope) => {
   const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
-    p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === scope);
+    p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === scope);
   const c = el?.querySelector<HTMLCanvasElement>('canvas.overlay');
   if (!c) return null;
   const r = c.getBoundingClientRect();
@@ -29,7 +29,7 @@ test('Farbabgleich: Messpunkt auf dem 75-%-Gelbbalken erscheint als Farbfeld der
   // source swatch: top-left of the match panel (match/panel.ts: pad 10, title rows 30 px)
   const rgb = await until(async () => {
     const v = await a.page.evaluate(() => {
-      const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === 'match');
+      const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'match');
       const c = el?.querySelector<HTMLCanvasElement>('canvas.overlay');
       if (!c) return null;
       const dpr = c.width / c.getBoundingClientRect().width;

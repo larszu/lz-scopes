@@ -24,6 +24,7 @@ import testmedia from './en/testmedia';
 import theme from './en/theme';
 import native from './en/native';
 import sysprofile from './en/sysprofile';
+import perf from './en/perf';
 import opple from './en/opple';
 import led from './en/led';
 import calib from './en/calib';
@@ -72,6 +73,7 @@ export const en = {
   ...theme,
   ...native,
   ...sysprofile,
+  ...perf,
   ...opple,
   ...led,
   ...calib,

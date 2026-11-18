@@ -57,8 +57,8 @@ Linux-Pakete, iPhone/iPad und die Feinheiten: [Einzelheiten → Installation](do
 
 ## Schnellstart
 
-1. App starten – die erste Quelle ist ein Testbild, alle Panels folgen ihr.
-2. Je Panel eine Quelle wählen: *Testbild*, *Kamera*, *Bildschirm*, *Datei* oder *Stream*.
+1. App starten – die erste Quelle ist ein Testbild. Erkannte DeckLink-, AJA- und NDI-Eingänge stehen oben unter *Gefunden* und sind mit einem Klick angelegt.
+2. *+ Quelle* (Geräte · Netz · Dateien & dieser Rechner · Test & Ton) für weitere Quellen. Jedes Panel misst seine eigene Quelle; *Alle Panels: …* im Quellenmenü des Panels schaltet alle um.
 3. Für einen Stream die URL eintragen, z. B. `rtsp://user:pass@host:554/stream`.
 4. Im Bild einen Rahmen ziehen, um nur diesen Bereich zu messen.
 5. Fenster per Drag-and-drop anordnen, unter *Datei → Layouts …* speichern.
@@ -67,12 +67,13 @@ Tasten: `1`–`6` Layout · `Leertaste` Einfrieren bzw. Wiedergabe · `←`/`→
 
 ## Was es kann
 
-- **Scopes**: Waveform (Luma, Farbe, RGB), RGB-/YRGB-/YCbCr-Parade, Vectorscope (auch nach Tonwert getrennt), HLS, CIE, Diamond, 3D-Farbvolumen, Histogramm, Sättigung über Luma, Kanal-Plot, Messwerte.
+- **Scopes**: Waveform (Luma, Farbe, RGB; Filter Flat oder Tiefpass wie Tektronix), RGB-/YRGB-/YCbCr-Parade, Vectorscope (auch nach Tonwert getrennt, festes Mittenquadrat), HLS, CIE, Diamond (Lupe, Split Diamond), 3D-Farbvolumen, Histogramm, Sättigung über Luma, Kanal-Plot, Messwerte. Die Liste ist nach Gruppen geordnet; Falschfarben, Zebra und Fokus-Peaking stehen unter *Bild*.
+- **Mehrere Signale gleichzeitig**: jedes Panel mit eigener Quelle, Kennfarbe je Quelle. Verzögerung je Quelle *schnellstmöglich* oder *fest* (100–500 ms, immer gleich).
 - **Eingänge**: Kamera, Bildschirm, Datei (über die Brücke bis 16 bit, mit Transport), Ordner, RTSP, SRT, RTMP, NDI, DeckLink/UltraStudio, AJA (KONA, Io, U-TAP), SDI-VANC, DaVinci Resolve.
 - **Richtig messen**: Y′CbCr unbeschnitten (Sub-Black, Super-White), EBU R 103, PQ/HLG in cd/m², Log-Kurven der Hersteller, CST und LUTs je Quelle, Skala in %, 8/10 bit, nits oder Blenden.
 - **Kameras abgleichen**: Referenzkamera mit Geisterspur, Farbtafel-Match mit ΔE und Matrixvorschlag, Hautton aller Kameras in einem Vectorscope, Drift-Wächter, Touch Shading über die [LZ Camera Bridge](https://github.com/larszu/lz-camera-bridge). Kamera-Farbabgleich, der die Kamera selbst nachstellt (Blackmagic REST, Panasonic- und Sony-CGI, Sony VISCA over IP in der Desktop-App, Bridge oder Anleitung), gegen eingebaute oder importierte Kartendefinitionen (JSON, lokal gespeichert).
 - **Im Betrieb**: Alarmrahmen je Panel mit Haltezeit, QC-Protokoll als CSV, Aufzeichnung mit Ringpuffer und synchroner Wiedergabe, Ausgabefenster für den zweiten Schirm, Steuerung über Companion.
-- **Dazu**: Testbilder (SMPTE, PLUGE, Zonenplatte, HDR, LED-Wand), Display-Kalibrierung, Lichtmesser, Uhr und Timecode, Audio mit Lautheit und A/V-Versatz.
+- **Dazu**: *Hilfe → Leistungstest* (Darstellung, Grafikkarte, Prozessor, ffmpeg je Bild – mit Befund), Testbilder (SMPTE, PLUGE, Zonenplatte, HDR, LED-Wand), Display-Kalibrierung, Lichtmesser, Uhr und Timecode, Audio mit Lautheit und A/V-Versatz.
 
 Jede Funktion im Einzelnen, mit dem, was an echter Hardware geprüft ist: **[docs/details.de.md](docs/details.de.md)**.
 

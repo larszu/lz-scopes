@@ -1183,7 +1183,7 @@ function panelSettings(p: PanelState): Node[] {
     global(SET.unit);
     row(t('panel.marks'), check('marks', t('panel.marksText'), true));
     row('EBU R 103', check('r103', t('panel.r103Text')));
-    row(t('panel.waveFilter'), select(p.waveFilter ?? 'flat', [['flat', t('panel.waveFilterFlat')], ['lowpass', t('panel.waveFilterLow')]],
+    row(t('panel.waveFilter'), select(p.waveFilter ?? 'flat', [['flat', t('panel.waveFilterFlat')], ['recon', t('panel.waveFilterRecon')], ['lowpass', t('panel.waveFilterLow')]],
       (v) => { p.waveFilter = v as PanelState['waveFilter']; save(); refreshHeads(); }, t('panel.waveFilterTitle')));
     row(t('panel.zoom'), select(p.waveZoom ?? 'full', Object.entries(WAVE_ZOOM_LABELS) as [string, string][], (v) => { p.waveZoom = v as WaveZoom; p.view = undefined; save(); }, t('panel.zoomTitle')));
     const chans = channelsOf(p.scope);

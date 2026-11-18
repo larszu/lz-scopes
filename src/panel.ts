@@ -9,6 +9,7 @@ import {
   WAVE_ZOOMS, channelLayout, isAudio, isWaveform, plotRect, type WaveChannels, type WaveOpts, type WaveZoom, probeLines, statsLines, vectorPoint, vectorBands, vectorBandRects, FONT, LABEL, type ScopeType, type Unit, type BarTargetSet,
 } from './graticule';
 import { drawAudioBar, drawAudioPanel, type AudioPanelOptions } from './audio/panels';
+import { RECON_FACTOR } from './recon';
 import type { DisplayParams, PictureMode, PictureParams, Rect, Renderer, ScatterMode, ScatterParams, SkinRange } from './renderer';
 import type { Source } from './sources';
 import { barRefs, nearest, type DeRef } from './deltae';
@@ -59,7 +60,7 @@ export interface PanelState {
   /** diamond: Tek "Split Diamond" – the two diamonds apart, black ends separated (#248) */
   diamondSplit?: boolean;
   /** waveforms: 'flat' (full bandwidth) or 'lowpass' (Tek "Low Pass", −3 dB at ≈ 0.06 × sample rate; #246) */
-  waveFilter?: 'flat' | 'lowpass';
+  waveFilter?: 'flat' | 'lowpass' | 'recon';
   /** vectorscope: fixed centre box (default on) */
   centreBox?: boolean;
   /** parades / RGB overlay: 'mono' | 'channel' | 'source' colours */
@@ -796,6 +797,7 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
       ...(!crt && p.persist ? { persist: p.persist } : {}),
       ...(p.smooth ? { smooth: p.smooth } : {}),
       ...(isWaveform(p.scope) && p.waveFilter === 'lowpass' ? { lowPass: waveLowPass(src) } : {}),
+      ...(isWaveform(p.scope) && p.waveFilter === 'recon' ? { recon: RECON_FACTOR } : {}),
       ...(p.scope === 'diamond' ? { diamond: (({ sx, sy, off }) => [sx, sy, off] as [number, number, number])(diamondScale(frame, p.diamondSplit ? DIAMOND_SPLIT : 0)) } : {}),
       ...(p.scope === 'chplot' ? { pair: p.pair ?? 0 } : {}),
       ...(cube ? { cube: {

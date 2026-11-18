@@ -85,6 +85,24 @@ test('Waveform: Filter Tiefpass, Diamond: Split, Vectorscope: Mittenquadrat absc
   }
 });
 
+test('Waveform: Flat rekonstruiert zeichnet eine Spur (#257)', async () => {
+  const { page } = a;
+  await singlePanel(a, 'wf-luma');
+  await page.locator('.panel .pop-trigger', { hasText: '⚙' }).first().click();
+  await page.locator('.psettings select').filter({ has: page.locator('option[value="recon"]') }).selectOption('recon');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(800);
+  const lit = await page.evaluate(() => {
+    const c = [...document.querySelectorAll<HTMLCanvasElement>('.panel canvas.blit')].find((x) => x.getBoundingClientRect().width > 4)!;
+    const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 1] > 60) n++;
+    return n;
+  });
+  expect(lit).toBeGreaterThan(500);
+  await page.screenshot({ path: test.info().outputPath('wf-recon.png') });
+});
+
 test('Quelle: Verzögerung wählbar, gegliederte „+ Quelle“-Leiste', async () => {
   const { page } = a;
   const labels = await page.locator('#add .add-label').allTextContents();

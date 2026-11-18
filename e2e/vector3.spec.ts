@@ -13,7 +13,7 @@ test.afterAll(async () => { await a?.close(); });
 async function circles(a: App) {
   return a.page.evaluate(() => {
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
-      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === 'vector3');
+      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'vector3');
     if (!el) throw new Error('kein sichtbares Panel vector3');
     const c = el.querySelector<HTMLCanvasElement>('canvas.blit')!;
     const dpr = c.width / c.getBoundingClientRect().width;

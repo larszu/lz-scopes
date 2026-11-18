@@ -62,7 +62,7 @@ for (const scheme of ['dark', 'light'] as const) {
       if (w <= 1000) {
         await expect(page.locator('#layouts')).toBeHidden();
         await page.locator('#bar-more .pop-trigger').click();
-        await expect(page.locator('#bar-more .popover .seg')).toBeVisible();
+        await expect(page.locator('#bar-more .popover .seg:not(.scheme-seg)')).toBeVisible();
         await page.waitForTimeout(400); // opening transition (4 px slide)
         await inViewport(page, '#bar-more .popover');
         await page.keyboard.press('Escape');

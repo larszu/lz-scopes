@@ -33,6 +33,7 @@ test('Umfeldleuchtdichte: die nits-Skala sagt, welchen Raum sie annimmt', async 
   await singlePanel(a, 'wf-luma');
   expectOk(await a.control({ cmd: 'setting', key: 'unit', value: 'nits' }));
   // read the pattern as HLG, then the system gamma applies
+  await page.locator('#source-list .src').first().locator('details.src-colour > summary').click();
   await page.locator('#source-list .src').first().locator('select').filter({ hasText: 'auto: SDR' }).selectOption('hlg');
   const plain = await until(async () => { const n = await labelPixels(); return n > 20 ? n : false; }, 30_000, 'Skalenbeschriftung');
 

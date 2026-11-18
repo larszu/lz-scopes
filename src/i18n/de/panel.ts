@@ -6,7 +6,7 @@ export default {
   'panel.sourceTitle': 'Quelle dieses Panels (unten: alle Panels umschalten)',
   'panel.pinned': 'Angeheftet: behält seine Quelle',
   'panel.pin': 'Anheften: Panel behält seine Quelle bei „Alle Panels“ und neuen Geräten',
-  'panel.solo': 'Groß / zurück (Doppelklick, Esc)',
+  'panel.solo': 'Groß / zurück (Doppelklick auf den Kopf, Esc)',
   'panel.stageChipTitle': 'Messpunkt in der CST/LUT-Kette (⚙ → Messpunkt, Taste C)',
   'panel.stageTitle': 'Wo in der Kette der Quelle (CST/LUT, Quellenkarte) dieses Panel misst',
   'panel.gainTitle': 'Doppelklick = Standard',

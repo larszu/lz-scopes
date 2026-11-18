@@ -21,6 +21,7 @@ test('Anteil außerhalb Rec.709: Balken als 709 nichts, als 2020 deutlich', asyn
   expect(inside.share).toBe(0);
 
   // the same code values read as Rec.2020: the saturated bars no longer fit into Rec.709
+  await page.locator('#source-list .src').first().locator('details.src-colour > summary').click();
   await page.locator('#source-list .src').first().locator('select').filter({ hasText: 'Gamut auto' }).selectOption('2020');
   const wide = await until(async () => { const o = await outside(); return o && o.share > 0 ? o : false; }, 30_000, 'Anteil außerhalb steigt');
   // six of the eight bars are saturated, and they fill the upper two thirds of the picture

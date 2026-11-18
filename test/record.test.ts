@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   LineSplitter, Sidecar, escapePattern, estimateRate, hevcBitrate, parseSegmentLine, pickHevcEncoder, recordMode, recordRoots,
-  resolveTarget, safeName, segmentOutputArgs, spaceProblem, stripCredentials, validTake, videoCodecArgs,
+  resolveTarget, safeName, segmentOutputArgs, spaceProblem, stripCredentials, validTake, videoCodecArgs, writeJsonAtomic,
 // @ts-expect-error plain JS module
 } from '../server/record.mjs';
 // @ts-expect-error plain JS module
@@ -86,6 +86,14 @@ describe('ffmpeg arguments', () => {
 });
 
 describe('segment list, space, companion file', () => {
+  it('overlapping companion writes leave the last version, complete', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'lzs-json-')), f = join(d, 'c.json');
+    try {
+      await Promise.all([{ a: 'x'.repeat(20000) }, { b: 1 }, { c: 'y'.repeat(5000) }, { d: 2 }].map((v) => writeJsonAtomic(f, v)));
+      expect(JSON.parse(readFileSync(f, 'utf8'))).toEqual({ d: 2 });
+    } finally { rmSync(d, { recursive: true, force: true }); }
+  });
+
   it('parses CSV lines, also split across chunks', () => {
     expect(parseSegmentLine('cam_000.mkv,0.000000,2.000000')).toEqual({ file: 'cam_000.mkv', start: 0, end: 2 });
     expect(parseSegmentLine('"a,b_001.mkv",2.0,4.04')).toEqual({ file: 'a,b_001.mkv', start: 2, end: 4.04 });

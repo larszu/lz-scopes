@@ -80,7 +80,13 @@ describe.skipIf(!shippedFfmpeg)('ffmpeg: the shipped build of this machine', () 
     // @ts-expect-error plain JS module
     const { deviceArgs } = await import('../server/index.mjs');
     const args = deviceArgs('audio:alsa:null#ch=8');
-    const r = spawnSync(shippedFfmpeg!, ['-hide_banner', ...args, '-t', '0.2', '-f', 'null', '-'], { encoding: 'utf8' });
+    // The alsa-lib null device has no clock: under CI load it sometimes stamps two packets alike,
+    // and ffmpeg ends with 255 after "non monotonically increasing dts" (#243). That is the test
+    // device, not the bridge arguments, so a run may be repeated; a real argument error fails
+    // all three runs.
+    const run = () => spawnSync(shippedFfmpeg!, ['-hide_banner', ...args, '-t', '0.2', '-f', 'null', '-'], { encoding: 'utf8' });
+    let r = run();
+    for (let i = 0; i < 2 && r.status !== 0 && /non monotonically increasing dts/.test(r.stderr); i++) r = run();
     expect(r.status, r.stderr).toBe(0);
     // 8 channels without an order: ffmpeg prints the layout as 7.1 (6144 kb/s = 48 kHz × 16 bit × 8)
     expect(r.stderr).toMatch(/Input #0, alsa[\s\S]*Audio: pcm_s16le, 48000 Hz, (8 channels|7\.1), s16, 6144 kb\/s/);

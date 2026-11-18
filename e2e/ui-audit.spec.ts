@@ -56,7 +56,10 @@ async function geometry(page: Page, sel: string, where: string, f: Finding[]) {
     const el = [...document.querySelectorAll<HTMLElement>(sel)].find((e) => e.getClientRects().length > 0);
     if (!el) return null;
     const b = el.getBoundingClientRect();
-    const pts: [number, number][] = [[b.left + 3, b.top + 3], [b.right - 3, b.top + 3], [b.left + 3, b.bottom - 3], [b.right - 3, b.bottom - 3], [(b.left + b.right) / 2, (b.top + b.bottom) / 2]];
+    // corners inset by the border radius as well: outside a rounded corner the hit test falls
+    // through to whatever lies below, which is not "covered"
+    const rad = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0, k = 3 + rad * 0.3;
+    const pts: [number, number][] = [[b.left + k, b.top + k], [b.right - k, b.top + k], [b.left + k, b.bottom - k], [b.right - k, b.bottom - k], [(b.left + b.right) / 2, (b.top + b.bottom) / 2]];
     const covered = pts.filter(([x, y]) => x >= 0 && y >= 0 && x < innerWidth && y < innerHeight)
       .map(([x, y]) => { const hit = document.elementFromPoint(x, y); return hit && !el.contains(hit) ? `${hit.tagName.toLowerCase()}.${hit.className}`.slice(0, 60) : null; })
       .filter(Boolean);

@@ -58,8 +58,8 @@ Linux packages, iPhone/iPad and the fine print: [details → install](docs/detai
 
 ## Quick start
 
-1. Start the app – the first source is a test pattern, every panel follows it.
-2. Pick a source per panel: *Test pattern*, *Camera*, *Screen*, *File* or *Stream*.
+1. Start the app – the first source is a test pattern. DeckLink, AJA and NDI inputs the app detects show at the top under *Found*; one click adds them.
+2. *+ Source* (devices · network · files & this computer · test & sound) adds more. Every panel measures its own source; *All panels: …* in a panel's source menu switches them all.
 3. For a stream, type the URL, e.g. `rtsp://user:pass@host:554/stream`.
 4. Drag a rectangle in the picture to measure that area only.
 5. Arrange the panels by drag and drop, save them under *File → Layouts …*.
@@ -68,12 +68,13 @@ Keys: `1`–`6` layout · `Space` freeze or play · `←`/`→` one frame · `J`
 
 ## What it does
 
-- **Scopes**: waveform (luma, colour, RGB), RGB/YRGB/YCbCr parade, vectorscope (also split by tonal range), HLS, CIE, diamond, 3D colour volume, histogram, saturation vs luma, channel plot, readings.
+- **Scopes**: waveform (luma, colour, RGB; filter Flat or Low Pass as on Tektronix), RGB/YRGB/YCbCr parade, vectorscope (also split by tonal range, fixed centre box), HLS, CIE, diamond (magnifier, split diamond), 3D colour volume, histogram, saturation vs luma, channel plot, readings. The list is grouped; false colour, zebra and focus peaking sit under *Picture*.
+- **Several signals at once**: every panel with its own source, an identity colour per source. Delay per source *fastest* or *fixed* (100–500 ms, always the same).
 - **Inputs**: camera, screen, file (through the bridge up to 16 bit, with transport), folder, RTSP, SRT, RTMP, NDI, DeckLink/UltraStudio, AJA (KONA, Io, U-TAP), SDI VANC, DaVinci Resolve.
 - **Measuring properly**: unclipped Y′CbCr (sub-black, super-white), EBU R 103, PQ/HLG in cd/m², the manufacturers' log curves, CST and LUTs per source, scale in %, 8/10 bit, nits or stops.
 - **Matching cameras**: reference camera with ghost trace, colour chart match with ΔE and a matrix proposal, skin tones of every camera in one vectorscope, drift guard, Touch Shading through the [LZ Camera Bridge](https://github.com/larszu/lz-camera-bridge), directly or over NMOS IS-12. Camera colour match that drives the camera itself (Blackmagic REST, Panasonic and Sony CGI, Sony VISCA over IP in the desktop app, bridge, or step-by-step guide) against built-in or imported chart definitions (JSON, kept locally).
 - **On the desk**: alarm frames per panel with a hold time, QC log as CSV, recording with ring buffer and synchronised playback, output window for the second screen, control from Companion.
-- **Also**: test patterns (SMPTE, PLUGE, zone plate, HDR, LED wall), display calibration, light meter, clock and time code, audio with loudness and A/V offset.
+- **Also**: *Help → Performance test* (display, graphics card, processor, ffmpeg per picture – with a verdict), test patterns (SMPTE, PLUGE, zone plate, HDR, LED wall), display calibration, light meter, clock and time code, audio with loudness and A/V offset.
 
 Every feature in detail, including what has been tried on real hardware: **[docs/details.md](docs/details.md)**.
 

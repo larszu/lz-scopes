@@ -531,7 +531,11 @@ export class Source {
     for (const [k, v] of Object.entries(bridgeInputParams(url, this.settings))) q.set(k, v);
     // H.264 (#16) is 8 bit 4:2:0 and excludes the unclipped Y′CbCr path (#7)
     if (this.settings.codec === 'h264' && workerAvailable()) q.set('codec', 'h264');
-    else if (this.settings.yuv) { q.set('format', 'yuv'); q.set('depth', '16'); }
+    else if (this.settings.yuv) {
+      q.set('format', 'yuv'); q.set('depth', '16');
+      // DeckLink/AJA at native width: v210 as it comes from the card, unpacked in the frame worker (#258)
+      if (workerAvailable()) q.set('pack', 'v210');
+    }
     if (this.lowLatency && ll.ownRtp) q.set('rtp', 'own');
     // QC metrics from ffmpeg (#202): costs about 6 ms per 1080p frame in the bridge, so only on request
     if (this.settings.signalStats) q.set('signal', '1');

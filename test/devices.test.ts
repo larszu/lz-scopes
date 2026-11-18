@@ -176,12 +176,36 @@ describe('helper protocol (DeckLink/NDI helpers)', () => {
         close() { ws.readyState = 3; ws.emit('close'); done(); },
       });
       startHelperStream(ws, {
-        bin: process.execPath, args: [fake, '--psf', '940', '8'], label: 'DeckLink', params: new URLSearchParams('depth=8&width=96'),
+        // latency=fixed: up to 6 pictures in ffmpeg at once; with the default 2 a slow runner (Windows CI)
+        // drops pictures in the FrameGate while ffmpeg starts – newest picture wins, as intended
+        bin: process.execPath, args: [fake, '--psf', '940', '8'], label: 'DeckLink', params: new URLSearchParams('depth=8&width=96&latency=fixed'),
         ctx: { ffmpeg: ff0, fail: () => ws.close(), outputSize, decodeParams, applyDecodeOverride, deviceOptions },
       });
     });
     expect(msgs.filter((m) => m.type === 'info')).toHaveLength(1);
     expect(frames).toBeGreaterThanOrEqual(6);
+  });
+
+  it('v210 passthrough: Y′CbCr at native width goes out unconverted, without ffmpeg (#258)', async () => {
+    const msgs: Record<string, unknown>[] = [];
+    const frames: Buffer[] = [];
+    await new Promise<void>((done) => {
+      const ws = Object.assign(new EventEmitter(), {
+        OPEN: 1, readyState: 1, bufferedAmount: 0,
+        send(d: Buffer | string) { if (typeof d === 'string') msgs.push(JSON.parse(d)); else frames.push(Buffer.from(d)); },
+        close() { ws.readyState = 3; ws.emit('close'); done(); },
+      });
+      startHelperStream(ws, {
+        bin: process.execPath, args: [fake, '--capture', '940', '5'], label: 'DeckLink', params: new URLSearchParams('depth=16&format=yuv&pack=v210&width=0'),
+        ctx: { ffmpeg: 'no-such-ffmpeg', fail: (_w: unknown, e: unknown) => { msgs.push({ type: 'fail', e }); ws.close(); }, outputSize, decodeParams, applyDecodeOverride, deviceOptions },
+      });
+    });
+    expect(msgs.find((m) => m.type === 'fail')).toBeUndefined();
+    expect(msgs.find((m) => m.type === 'info')).toMatchObject({ width: 96, height: 54, depth: 16, format: 'yuv', yuvRange: 'limited', bits: 10, pack: 'v210' });
+    expect(frames.length).toBe(5);
+    for (const f of frames) expect(f.length).toBe(2 * 128 * 54);
+    // the first word as the card sent it: Cb 512 | Y′ 940 | Cr 512
+    expect(frames[0].readUInt32LE(0)).toBe((512 | (940 << 10) | (512 << 20)) >>> 0);
   });
 
   it.skipIf(!ff0)('sound from a helper: protocol 2, s32 → f32, PTS on pictures, gap in the sample index', async () => {

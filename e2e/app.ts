@@ -113,7 +113,7 @@ export async function until<T>(fn: () => Promise<T | false | null | undefined> |
 export async function waveProfile(page: Page, scope: string, fractions: number[], range: [number, number] = [WAVE_MIN, WAVE_MAX]): Promise<{ level: number; v: number }[][]> {
   return page.evaluate(({ scope, fr, wmin, wmax }) => {
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
-      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === scope);
+      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === scope);
     if (!el) throw new Error(`kein sichtbares Panel ${scope}`);
     const c = el.querySelector<HTMLCanvasElement>('canvas.blit')!;
     const dpr = c.width / c.getBoundingClientRect().width;

@@ -3,7 +3,7 @@ import {
   FALSE_COLOR_PRESETS, HDR_PREVIEW_GLSL, bandRange, bt2446a, bt2446aKnee, hdrToSdr, hlgInverseOetf, hlgGamma, pqEncode, pqDecode,
 } from '../src/color';
 import { t } from '../src/i18n';
-import { DIAMOND_SCALE, diamondPoint, plotRect } from '../src/graticule';
+import { diamondPoint, diamondScale, plotRect } from '../src/graticule';
 import { computeStats } from '../src/sources';
 
 const sdrSignal = (l: number) => Math.pow(l, 1 / 2.4); // BT.1886 inverse, 100 cd/m² peak
@@ -94,15 +94,15 @@ describe('false-colour presets RED / Sony (labels in the active language)', () =
 
 describe('Tektronix diamond', () => {
   const r = plotRect('diamond', 400, 600);
+  const k = diamondScale(r);
   // back from plot position to (a − g, a + g)
   const uv = (x: number, y: number, upper: boolean) => {
-    const u = (x - r.x - r.w / 2) / (r.w / 2) / DIAMOND_SCALE[0];
-    const v = ((r.y + r.h / 2 - y) / (r.h / 2) / DIAMOND_SCALE[1]) * (upper ? 1 : -1);
+    const u = (x - r.x - r.w / 2) / (r.w / 2) / k.sx;
+    const v = ((r.y + r.h / 2 - y) / (r.h / 2) / k.sy) * (upper ? 1 : -1);
     return [u, v];
   };
   const inside = (u: number, v: number) => Math.abs(u) <= v + 1e-9 && v <= 2 - Math.abs(u) + 1e-9;
-  it('plot is twice as high as wide, diamonds are squares turned by 45°', () => {
-    expect(r.h / r.w).toBeCloseTo(2, 6);
+  it('diamonds are squares turned by 45° in any panel shape', () => {
     const [bx, by] = diamondPoint(r, 1, 0, true), [cx, cy] = diamondPoint(r, 1, 1, true), [ox, oy] = diamondPoint(r, 0, 0, true);
     expect(Math.hypot(bx - ox, by - oy)).toBeCloseTo(Math.hypot(cx - bx, cy - by), 6);
   });

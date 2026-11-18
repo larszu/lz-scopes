@@ -14,7 +14,7 @@ test.beforeEach(async () => { expectOk(await a.control({ cmd: 'freeze', mode: 'o
 /** Colour of the brightest pixel around signal `level` in the middle column of the visible wf-luma panel. */
 async function traceColour(level: number) {
   return a.page.evaluate(({ level, wmin, wmax }) => {
-    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === 'wf-luma')!;
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'wf-luma')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.blit')!;
     const dpr = c.width / c.getBoundingClientRect().width;
     const cssW = c.width / dpr, cssH = c.height / dpr;
@@ -88,7 +88,7 @@ test('Kachelansicht: zwei Quellen, je eine Waveform-Kachel', async () => {
 /** Share of strongly red pixels in the visible picture panel (peaking colour red). */
 async function redShare() {
   return a.page.evaluate(() => {
-    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === 'picture')!;
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'picture')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.blit')!;
     const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data;
     let n = 0;
@@ -176,7 +176,7 @@ test('Farbtafel-Match: zwei gleiche Tafeln grün, eine andere rot', async () => 
   await singlePanel(a, 'chart');
   // cells coloured by verdict (match/chartPanel.ts VERDICT at 85 % over the dark panel)
   const cells = () => a.page.evaluate(() => {
-    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === 'chart')!;
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'chart')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
     const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data;
     let green = 0, red = 0;
@@ -202,7 +202,7 @@ test('Drift-Wächter: gleiche Bilder grün, ein anderes Bild rot', async () => {
   await singlePanel(a, 'drift');
   // status squares of the rows (match/driftPanel.ts): green ok, red drifted
   const marks = () => a.page.evaluate(() => {
-    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === 'drift')!;
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'drift')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
     const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data;
     let green = 0, red = 0;
@@ -249,7 +249,7 @@ test('STOP-Skala: Hauptlinie bei der Graukarte (SDR 40,9 %)', async () => {
   expectOk(await a.control({ cmd: 'setting', key: 'unit', value: 'stop' }));
   // major graticule line (src/graticule.ts GRID, solid) at stop 0 on the overlay canvas
   const line = (level: number) => a.page.evaluate(({ level, wmin, wmax }) => {
-    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === 'wf-luma')!;
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'wf-luma')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
     const dpr = c.width / c.getBoundingClientRect().width, cssW = c.width / dpr, cssH = c.height / dpr;
     const r = { x: 44, y: 8, w: cssW - 52, h: cssH - 16 };

@@ -12,7 +12,7 @@ test.afterAll(async () => { await a?.close(); });
 async function cells() {
   return a.page.evaluate(() => {
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
-      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === 'chart')!;
+      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'chart')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
     const px = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data;
     let lit = 0;

@@ -13,7 +13,7 @@ import {
 } from './chain';
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
 import { LUT_SOURCES } from './lutLibrary';
-import { CHANNEL_PAIRS, SCOPE_LABELS, isAudio, isWaveform, plotRect, vectorBands, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
+import { CHANNEL_PAIRS, DIAMOND_SPLIT, DIAMOND_ZOOMS, SCOPE_LABELS, diamondZoomView, parseScopeMenu, type DiamondZoom, scopeMenu, scopeMenuValue, isAudio, isWaveform, plotRect, vectorBands, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
 import { inBox, legendPosAt, nearSplit, splitAt, splitPos } from './overlayDrag';
 import { DEFAULT_SKIN, ROI_CLOSE, contentRect, legendBoxes, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, driftSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
 import { attachGestures, onChip } from './gestures';
@@ -42,6 +42,8 @@ import { openAvClip } from './avClip';
 import { openTestImages, openTestVideos, type TestMediaHost } from './testMedia';
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
+import { openPerfTest } from './perfTest';
+import { watchDevices, type Found } from './deviceScan';
 import { openLedTool } from './led/ui';
 import { mountOpple } from './opple/ui';
 import { isLight, LIGHT_SCOPES, lightPanelSettings } from './opple/panelSettings';
@@ -192,9 +194,12 @@ const moreMenu = popover({ label: '⋯', title: t('ui.more'), heading: t('ui.mor
 moreMenu.id = 'bar-more';
 const side = h('aside', { class: 'side', id: 'side' },
   h('h2', {}, t('main.sources')),
+  // devices first, then how to add more, then the sources (UX analysis 11/2026: "+ Quelle" was
+  // scrolled out of sight below two expanded cards)
+  h('div', { class: 'add-group found', id: 'found', hidden: true }),
+  h('div', { class: 'add', id: 'add' }),
   h('div', { id: 'source-list' }),
   h('div', { class: 'resolve-live', id: 'resolve-live', hidden: true }),
-  h('div', { class: 'add', id: 'add' }),
   h('details', { class: 'gen', id: 'gen-wrap' }, h('summary', {}, t('main.toneGen')), h('div', { id: 'gen' })),
   h('details', { class: 'gen', id: 'opple-wrap' }, h('summary', {}, t('main.lightMeter')), h('div', { id: 'opple' })));
 app.replaceChildren(
@@ -491,7 +496,12 @@ streamRoute.bindAdder((url, name) => { const s = addSource('stream', name, url);
  */
 function deviceLive(s: Source) {
   if (s.kind !== 'stream' || !/^(decklink|aja|ndi|device):/.test(s.url)) return;
-  for (const q of state.panels) if (!q.pin) q.sourceId = s.id;
+  // only panels without a real signal take it over (test pattern, nothing, a source that is gone);
+  // a panel that already measures another camera stays on it (#252)
+  for (const q of state.panels) {
+    const cur = sources.find((x) => x.id === q.sourceId);
+    if (!q.pin && (!cur || cur.kind === 'pattern' || cur === s)) q.sourceId = s.id;
+  }
   if (!liveOutputs().size) for (const p of sources.filter((x) => x.kind === 'pattern')) removeSource(p);
   save(); renderPanels();
 }
@@ -520,7 +530,7 @@ function renderSources() {
     const card = h('div', { class: `src ${s.status}` },
       h('div', { class: 'src-head' },
         statusDot(s.status),
-        h('span', { class: 'idx' }, String(i + 1)),
+        h('span', { class: 'idx', style: `--src-col:${sourceColour(s)}` }, String(i + 1)),
         h('input', { class: 'name', value: s.name, 'aria-label': t('main.sources'), onchange: (e: Event) => { s.name = (e.target as HTMLInputElement).value; save(); renderPanels(); } }),
         iconButton('✕', t('main.src.remove'), () => removeSource(s))),
     );
@@ -832,6 +842,10 @@ function bridgeQualitySelects(s: Source, upd: (patch: Partial<SourceSettings>, r
     select(String(set.width), [['640', '640 px'], ['960', '960 px'], ['1280', '1280 px'], ['1920', '1920 px'], ['0', t('main.native')]], (v) => upd({ width: Number(v) }, true), s.lowLatency && effectiveWidth(set.width, true, s.llConfig.width) !== set.width ? t('main.src.widthLimited', { px: s.llConfig.width }) : t('main.src.widthTitle')),
     select(String(set.fps), [['0', t('main.src.fpsAll')], ['10', '10 fps'], ['25', '25 fps'], ['30', '30 fps']], (v) => upd({ fps: Number(v) }, true), t('main.src.fpsTitle')),
     select(set.yuv ? 'yuv' : String(set.depth), [['8', '8 bit'], ['16', '16 bit'], ['yuv', '16 bit Y′CbCr']], (v) => upd(v === 'yuv' ? { depth: 16, yuv: true } : { depth: Number(v) as 8 | 16, yuv: false }, true), t('main.src.depthTitle')),
+    // delay (#244): fastest (varies) or fixed after capture (constant, nothing dropped for speed)
+    select(set.latency === 'fixed' ? String(set.latencyMs ?? 200) : 'fast',
+      [['fast', t('main.src.latFast')], ...[100, 200, 300, 500].map((ms) => [String(ms), t('main.src.latFixed', { ms })] as [string, string])],
+      (v) => upd(v === 'fast' ? { latency: 'fast' } : { latency: 'fixed', latencyMs: Number(v) }, true), t('main.src.latTitle')),
   ];
 }
 
@@ -914,20 +928,42 @@ function addSourceOfKind(kind: string) {
     case 'generator': return addAudioSource('generator');
   }
 }
-/** Buttons of the "+ Quelle" bar; built after start-up, because it asks the desktop app. */
+/**
+ * The "+ Quelle" bar, in groups (UX analysis 11/2026, #221): devices, network, files & this
+ * computer, test & sound. Built after start-up, because it asks the desktop app.
+ */
 function renderAddMenu() {
+  const b = (kind: string, label: string, title = '') => button(label, () => addSourceOfKind(kind), { title, small: true });
+  const group = (label: string, ...kids: HTMLElement[]) => h('div', { class: 'add-group' }, h('span', { class: 'add-label' }, label), h('div', { class: 'add-btns' }, ...kids));
   $('#add').replaceChildren(
-  h('span', {}, t('main.add.source')),
-  ...([
-    ['pattern', t('main.pattern.title'), ''], ['stream', t('main.add.stream'), ''], ['resolve', 'DaVinci Resolve', t('main.add.resolveTitle')],
-    ['decklink', 'Blackmagic DeckLink', t('main.add.decklinkTitle')], ['aja', 'AJA', t('main.add.ajaTitle')], ['webcam', t('main.add.webcam'), t('main.add.webcamTitle')], ['screen', t('main.add.screen'), t('main.add.screenTitle')], ['file', t('main.add.file'), ''],
-    // desktop app: the file goes through the bridge by default (full depth). The browser path
-    // stays one click away – it is 8 bit, but it crops and brings the clip's own sound.
-    ...(mediaFilePicker() ? [['file-video', t('main.add.fileVideo'), t('main.add.fileVideoTitle')] as const] : []),
-    ['folder', t('main.add.folder'), t('main.add.folderTitle')], ['audio', 'Audio', t('main.add.audioTitle')],
-  ] as const).map(([kind, label, title]) => button(label, () => addSourceOfKind(kind), { title })),
-  button(t('playback.add'), () => openRecordingsDialog(), { title: t('playback.addTitle') }),
+    h('span', { class: 'add-title' }, t('main.add.source')),
+    group(t('main.add.gDevices'), b('decklink', 'Blackmagic DeckLink', t('main.add.decklinkTitle')), b('aja', 'AJA', t('main.add.ajaTitle')), b('webcam', t('main.add.webcam'), t('main.add.webcamTitle'))),
+    group(t('main.add.gNetwork'), b('stream', t('main.add.stream')), b('resolve', 'DaVinci Resolve', t('main.add.resolveTitle'))),
+    group(t('main.add.gFiles'),
+      b('file', t('main.add.file')),
+      // desktop app: the file goes through the bridge by default (full depth). The browser path
+      // stays one click away – it is 8 bit, but it crops and brings the clip's own sound.
+      ...(mediaFilePicker() ? [b('file-video', t('main.add.fileVideo'), t('main.add.fileVideoTitle'))] : []),
+      b('folder', t('main.add.folder'), t('main.add.folderTitle')), b('screen', t('main.add.screen'), t('main.add.screenTitle')),
+      button(t('playback.add'), () => openRecordingsDialog(), { title: t('playback.addTitle'), small: true })),
+    group(t('main.add.gTest'), b('pattern', t('main.pattern.title')), b('audio', 'Audio', t('main.add.audioTitle'))),
   );
+}
+
+/** Inputs the bridge sees but that are no source yet (src/deviceScan.ts): one click adds them. */
+function renderFound(list: Found[]) {
+  const el = $('#found');
+  el.hidden = !list.length;
+  el.replaceChildren(...(list.length ? [
+    h('span', { class: 'add-label' }, t('main.add.found')),
+    h('div', { class: 'add-btns' }, ...list.map((f) => button(`+ ${f.name}`, () => addFound(f), { small: true, variant: 'primary', title: t('main.add.foundTitle', { kind: f.kind === 'ndi' ? 'NDI®' : f.kind === 'aja' ? 'AJA' : 'DeckLink', url: f.url }) }))),
+  ] : []));
+}
+function addFound(f: Found) {
+  state.sidebar = true; applySidebar();
+  const s = addSource('stream', f.name, f.url, f.kind === 'decklink' ? { depth: 16, deckLinkBits: 10 } : f.kind === 'aja' ? { depth: 16, ajaBits: 10 } : { depth: 16 });
+  s.connectStream(f.url, bridgeUrl());
+  renderFound([]);
 }
 
 /** Add an audio source and, if no audio panel is open, a pinned level/loudness panel for it. */
@@ -958,6 +994,10 @@ const views = new Map<number, PanelView>();
 /** Views of the panels currently in the dock. */
 const openViews = () => dock.openIdx().map((i) => views.get(i)).filter((v): v is PanelView => !!v);
 
+/** Identity colour of a source (by its place in the list): source card, panel head and dock tab. */
+const SOURCE_COLOURS = ['#4cc2ff', '#ffb347', '#7be08a', '#ff7aa8', '#c39bff', '#ffd84d', '#5fe0d2', '#ff8a5c'];
+const sourceColour = (s: Source | null) => (s ? SOURCE_COLOURS[Math.max(0, sources.indexOf(s)) % SOURCE_COLOURS.length] : 'transparent');
+
 function panelSource(p: PanelState) {
   return sources.find((s) => s.id === p.sourceId) ?? sources[0] ?? null;
 }
@@ -974,7 +1014,10 @@ function panelElement(idx: number): HTMLElement {
     const overlay = h('canvas', { class: 'overlay' });
     // zoom level (#89): shown while zoomed, click resets
     const zoom = h('button', { class: 'zoomchip', hidden: true, 'data-zoom': '1', title: t('gesture.chipTitle'), onclick: () => resetView(idx), onpointerdown: (e: Event) => e.stopPropagation() });
-    const body = h('div', { class: 'body' }, blit, overlay, zoom);
+    // one-time hint until the first zoom (UX analysis 11/2026: the gestures were only in a tooltip
+    // of a chip that appears after zooming); hidden by CSS for scopes without zoom
+    const hint = h('span', { class: 'gesture-hint', 'aria-hidden': 'true' }, matchMedia('(pointer: coarse)').matches ? t('gesture.hintTouch') : t('gesture.hint'));
+    const body = h('div', { class: 'body' }, blit, overlay, zoom, hint);
     const head = h('div', { class: 'phead', ondblclick: () => toggleSolo(idx) });
     const el = h('div', { class: 'panel' }, head, body);
     // double click: reset a zoomed view, otherwise solo
@@ -1004,10 +1047,14 @@ function fillHead(v: PanelView) {
   const [lead, opts] = [v.head.children[0] as HTMLElement, v.head.children[1] as HTMLElement];
   const multi = sources.length > 1 && !isLight(p.scope) && p.scope !== 'tiles';
   lead.replaceChildren(...[
-    select(p.scope, Object.entries(SCOPE_LABELS) as Option[], (val) => {
-      p.scope = val as ScopeType; p.view = undefined; if (val === 'vector' || val === 'hls' || val === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
+    groupedSelect(scopeMenuValue(p.scope, p.picture), scopeMenu(), (val) => {
+      const m = parseScopeMenu(val);
+      p.scope = m.scope; if (m.picture) p.picture = m.picture; p.view = undefined; if (m.scope === 'vector' || m.scope === 'hls' || m.scope === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
     }, '', { 'aria-label': t('ui.scope') }),
-    multi && select(panelSource(p)?.id ?? '', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`]), (val) => switchSource(p, val), t('panel.sourceTitle')),
+    multi && groupedSelect(panelSource(p)?.id ?? '', [
+      ['', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`] as [string, string])],
+      [t('panel.allPanels'), sources.map((s, i) => [`all:${s.id}`, t('panel.allPanelsTo', { n: i + 1, name: s.name })] as [string, string])],
+    ], (val) => (val.startsWith('all:') ? switchAll(val.slice(4)) : switchSource(p, val)), t('panel.sourceTitle'), { class: 'srcsel', style: `--src-col:${sourceColour(panelSource(p))}` }),
     stageChip(p),
     multi && iconButton('📌', p.pin ? t('panel.pinned') : t('panel.pin'), () => { p.pin = !p.pin; save(); fillHead(v); }, { pressed: !!p.pin, attrs: { class: `icon pin${p.pin ? ' on' : ''}` } }),
   ].filter((x): x is HTMLElement => !!x));
@@ -1075,6 +1122,13 @@ function tileSettings(p: PanelState): Node[] {
   return [...rows, ...panelSettings(inner)];
 }
 
+/** Current diamond plot rect of a panel (for the magnifier presets). */
+function diamondFrame(p: PanelState) {
+  const v = [...views.values()].find((x) => state.panels[x.idx] === p);
+  const b = v?.body.getBoundingClientRect();
+  return plotRect('diamond', b?.width || 400, b?.height || 600);
+}
+
 function panelSettings(p: PanelState): Node[] {
   if (p.scope === 'tiles') return tileSettings(p);
   if (isAudio(p.scope)) return audioPanelSettings(p, save);
@@ -1091,7 +1145,7 @@ function panelSettings(p: PanelState): Node[] {
   const global = (s: Setting, label?: string) => rows.push(field(label ?? s.label(), ...settingControl(s)));
   row(t('settings.stage.point'), select(p.stage ?? 'auto', [['auto', t('panel.stageDefault', { stage: STAGE_LABELS[state.stage ?? 'signal'] })], ...STAGES.map((st) => [st, STAGE_LABELS[st]] as [string, string])],
     (v) => { p.stage = v === 'auto' ? undefined : v as Stage; save(); refreshHeads(); }, t('panel.stageTitle')));
-  const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv' | 'skinBand' | 'greenBand' | 'greenWedge', label: string, dflt = false) =>
+  const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv' | 'skinBand' | 'greenBand' | 'greenWedge' | 'centreBox', label: string, dflt = false) =>
     checkbox(p[key] ?? dflt, label, (v) => { p[key] = v; save(); refreshHeads(); });
   const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'vector3' || p.scope === 'hls' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot';
   if (scatter) {
@@ -1120,10 +1174,17 @@ function panelSettings(p: PanelState): Node[] {
   } else if (scatter && p.scope !== 'wf-skin' && p.scope !== 'wf-green' && p.scope !== 'wf-color') {
     row(t('panel.colour'), check('colorize', t('panel.traceInColour')));
   }
+  if (p.scope === 'diamond') {
+    row(t('panel.zoom'), select(p.view ? p.diamondZoom ?? 'full' : 'full', DIAMOND_ZOOMS.map((z) => [z, t(`scope.dzoom.${z}`)] as [string, string]),
+      (v) => { p.diamondZoom = v as DiamondZoom; p.view = diamondZoomView(p.diamondZoom, diamondFrame(p), p.diamondSplit ? DIAMOND_SPLIT : 0); save(); }, t('panel.zoomTitle')));
+    row('Split', checkbox(!!p.diamondSplit, t('panel.diamondSplit'), (v) => { p.diamondSplit = v; p.view = undefined; p.diamondZoom = 'full'; save(); refreshPanelSettings(p); }, t('panel.diamondSplitTitle')));
+  }
   if (isWaveform(p.scope)) {
     global(SET.unit);
     row(t('panel.marks'), check('marks', t('panel.marksText'), true));
     row('EBU R 103', check('r103', t('panel.r103Text')));
+    row(t('panel.waveFilter'), select(p.waveFilter ?? 'flat', [['flat', t('panel.waveFilterFlat')], ['lowpass', t('panel.waveFilterLow')]],
+      (v) => { p.waveFilter = v as PanelState['waveFilter']; save(); refreshHeads(); }, t('panel.waveFilterTitle')));
     row(t('panel.zoom'), select(p.waveZoom ?? 'full', Object.entries(WAVE_ZOOM_LABELS) as [string, string][], (v) => { p.waveZoom = v as WaveZoom; p.view = undefined; save(); }, t('panel.zoomTitle')));
     const chans = channelsOf(p.scope);
     if (chans.length) {
@@ -1259,6 +1320,7 @@ function panelSettings(p: PanelState): Node[] {
       checkbox((p.gamuts ?? []).includes(g), label, (on) => { const set = new Set(p.gamuts ?? []); if (on) set.add(g); else set.delete(g); p.gamuts = [...set]; save(); });
     row(t('panel.gamutLimits'), gbox('709', '709'), gbox('p3', 'P3'), gbox('2020', '2020'));
     row(t('panel.greenWedge'), check('greenWedge', t('panel.greenWedgeText')));
+    row(t('panel.centreBox'), check('centreBox', t('panel.centreBoxText'), true));
     rows.push(...targetEditor(panelSource(p), matchUi(p)));
   }
   if (p.scope === 'wf-green' || (p.scope === 'vector' && p.greenWedge) || (p.scope === 'picture' && p.picture === 'green')) rows.push(...greenSettings(greenState(), panelSource(p), matchUi(p), p.scope === 'wf-green'));
@@ -1449,7 +1511,12 @@ function toggleSolo(idx: number) {
 
 /** Switching the source in one panel switches every panel that is not pinned. */
 function switchSource(from: PanelState, id: string) {
+  // only this panel (#252): several signals side by side are the point of a multi-panel layout
   from.sourceId = id;
+  save(); renderPanels();
+}
+/** Every panel that is not pinned shows this source (the old behaviour, now an explicit command). */
+function switchAll(id: string) {
   for (const q of state.panels) if (!q.pin) q.sourceId = id;
   save(); renderPanels();
 }
@@ -1510,7 +1577,7 @@ function attachPanelGestures(idx: number, p: () => PanelState, body: HTMLElement
     limits: () => viewLimits(p().scope),
     view: () => panelView(p()),
     frame,
-    set: (v) => { setPanelView(p(), v); syncZoomChip(idx); },
+    set: (v) => { setPanelView(p(), v); syncZoomChip(idx); gesturesSeen(); },
     commit: () => save(),
     blocked: () => shading.owns(p().scope),
     primaryTaken: () => ['picture', 'wf-skin', 'wf-green'].includes(p().scope),
@@ -1538,6 +1605,15 @@ function resetView(idx: number): boolean {
   return true;
 }
 
+/** After the first zoom the gesture hints go for good (per computer). */
+const GESTURE_SEEN = 'lzs.gesturesSeen';
+function gesturesSeen() {
+  if (document.documentElement.classList.contains('gestures-seen')) return;
+  document.documentElement.classList.add('gestures-seen');
+  try { localStorage.setItem(GESTURE_SEEN, '1'); } catch { /* private mode */ }
+}
+try { if (localStorage.getItem(GESTURE_SEEN)) document.documentElement.classList.add('gestures-seen'); } catch { /* private mode */ }
+
 /** Zoom chip of a panel: ×2.5 while zoomed. */
 function syncZoomChip(idx: number) {
   const v = views.get(idx), p = state.panels[idx];
@@ -1547,6 +1623,7 @@ function syncZoomChip(idx: number) {
   v.zoom.hidden = !on;
   v.zoom.textContent = on ? `${zoomLabel(z)} ⟲` : '';
   v.zoom.dataset.zoom = String(Math.round(z * 1000) / 1000);
+  v.body.dataset.zoomable = viewLimits(p.scope) && p.scope !== 'cube' ? '1' : '';
 }
 
 /** Skin and green waveforms: drag the lo/hi lines, mouse wheel = hue tolerance. */
@@ -2616,6 +2693,14 @@ const menuActions: MenuActions = {
   calibration: () => openCalibrationDialog(),
   colorMatch: () => { void import('./colormatch/ui').then((m) => m.openColorMatch({ sources: () => sources, link: shading.link })); },
   help: () => { setHelpOn(!helpOn()); for (const v of views.values()) fillHead(v); refreshMenu(); },
+  perfTest: () => openPerfTest({
+    version: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '',
+    panels: () => dock.openIdx().map((i) => state.panels[i].scope),
+    // names are the user's own labels; the report is only shown and copied, not sent by itself
+    sources: () => sources.map((s, i) => ({ name: `${i + 1} ${s.kind}`, fps: s.fps, dropped: s.dropped, width: s.width, height: s.height,
+      latency: s.settings.latency === 'fixed' ? `fixed ${s.settings.latencyMs ?? 200} ms` : 'fastest' })),
+    bridgeHttp: () => bridgeUrl().replace(/^ws/, 'http'),
+  }),
   feedback: () => openFeedback({
     version: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '',
     displayFps: () => displayFps,
@@ -2633,6 +2718,7 @@ const menuActions: MenuActions = {
 };
 mountMenu($('#menubar'), menuState, menuActions);
 renderAddMenu();
+watchDevices(() => bridgeUrl().replace(/^ws/, 'http'), () => sources.map((x) => x.url), renderFound);
 requestAnimationFrame(frame);
 // Control API: the bridge forwards Companion/HTTP commands to this window.
 connectRemote(bridgeUrl, execute, controlState);

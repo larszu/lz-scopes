@@ -117,13 +117,18 @@ float waveY(float v) { return (v - uWMin) / (uWMax - uWMin) * 2.0 - 1.0; }
  * panel asks for a low-pass (#179). That changes the reading, not only the picture – noise is
  * averaged away, and so is a real one-pixel spike. The panel says so when it is on.
  */
+#ifdef RECON
 float lanczos3(float x) {
   if (abs(x) < 1e-6) return 1.0;
   if (abs(x) >= 3.0) return 0.0;
   float px = 3.14159265359 * x;
   return 3.0 * sin(px) * sin(px / 3.0) / (px * px);
 }
+#endif
+// The filters are compile-time variants (RECON, LOWPASS, SMOOTH; Renderer.scatterProgram): one
+// shader with every loop inlined was too big for SwiftShader (CI) and lost the WebGL context.
 vec3 fetchMeasured(ivec2 p) {
+#ifdef RECON
   if (gSub > 0.0) {
     // sin(x)/x reconstruction between the samples, normalised weights (recon.ts reconAt)
     vec3 a = vec3(0.0);
@@ -135,6 +140,8 @@ vec3 fetchMeasured(ivec2 p) {
     }
     return a / wsum;
   }
+#endif
+#ifdef LOWPASS
   if (uLowPass > 0.0 && uSmooth <= 0) {
     // horizontal only, like the waveform filter of a hardware monitor; flat areas keep their level
     vec3 a = vec3(0.0);
@@ -148,6 +155,8 @@ vec3 fetchMeasured(ivec2 p) {
     }
     return a / wsum;
   }
+#endif
+#ifdef SMOOTH
   if (uSmooth <= 0) return fetchRGB(p);
   ivec2 hi = uSize - ivec2(1);
   vec3 s = vec3(0.0);
@@ -161,6 +170,9 @@ vec3 fetchMeasured(ivec2 p) {
     }
   }
   return s / n;
+#else
+  return fetchRGB(p);
+#endif
 }
 
 bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
@@ -258,13 +270,15 @@ bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
 }`;
 
 
-const SCATTER_VS = (k: TexKind) => `#version 300 es
-precision highp float; precision highp int;
+const SCATTER_VS = (k: TexKind, defs = '') => `#version 300 es
+${defs}precision highp float; precision highp int;
 ${SAMPLE_GLSL(k)}
 void main() {
   gl_PointSize = uPointSize;
   int id = gl_VertexID;
+#ifdef RECON
   if (uRecon > 1) { gSub = float(id % uRecon) / float(uRecon); id /= uRecon; }
+#endif
   ivec2 p = ivec2(id % uCols, id / uCols) * ivec2(uStep, uStepRow);
   vec2 pos; vec3 col;
   if (p.y >= uSize.y || p.x >= uSize.x || !plotSample(p, gl_InstanceID, pos, col)) { gl_Position = vec4(9.0); return; }
@@ -273,8 +287,8 @@ void main() {
   gl_Position = vec4(pos, 0.0, 1.0);
 }`;
 
-const CRT_VS = (k: TexKind) => `#version 300 es
-precision highp float; precision highp int;
+const CRT_VS = (k: TexKind, defs = '') => `#version 300 es
+${defs}precision highp float; precision highp int;
 ${SAMPLE_GLSL(k)}
 ${CRT_VS_MAIN}`;
 
@@ -795,7 +809,10 @@ export class Renderer {
     const fresh = this.sigs.get(key) !== sig;
     this.sigs.set(key, sig);
     if (fresh) {
-      const prog = crt ? this.program(`crt${kind}`, CRT_VS(kind), CRT_FS) : this.program(`scatter${kind}`, SCATTER_VS(kind), SCATTER_FS);
+      // filter variants compiled only when used (see fetchMeasured)
+      const flags = [(p.smooth ?? 0) > 0 ? 'SMOOTH' : '', !crt && (p.lowPass ?? 0) > 0 ? 'LOWPASS' : '', recon > 1 ? 'RECON' : ''].filter(Boolean);
+      const defs = flags.map((f) => `#define ${f}\n`).join(''), tag = flags.join('+');
+      const prog = crt ? this.program(`crt${kind}${tag}`, CRT_VS(kind, defs), CRT_FS) : this.program(`scatter${kind}${tag}`, SCATTER_VS(kind, defs), SCATTER_FS);
       gl.bindFramebuffer(gl.FRAMEBUFFER, acc.fbo);
       gl.viewport(0, 0, acc.w, acc.h);
       gl.disable(gl.SCISSOR_TEST);

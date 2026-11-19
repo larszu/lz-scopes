@@ -49,7 +49,7 @@ export async function launchApp(opts: { profile?: string; port?: number; lang?: 
   const profile = opts.profile ?? mkdtempSync(join(tmpdir(), 'lzs-e2e-'));
   const app = await electron.launch({
     // Linux CI (xvfb, no GPU): no SUID sandbox helper, WebGL through SwiftShader
-    args: [ROOT, ...(process.platform === 'linux' ? ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : [])],
+    args: [ROOT, ...(process.platform === 'linux' ? ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : process.env.LZS_E2E_SWIFTSHADER === '1' ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : [])],
     cwd: ROOT,
     env: { ...process.env, LZS_PORT: String(port), LZS_USER_DATA: profile, LZS_LANG: opts.lang ?? 'de', ELECTRON_ENABLE_LOGGING: '0', ...(opts.hidden ? { LZS_HIDDEN: '1' } : {}), ...opts.env },
     timeout: 120_000,

@@ -3,7 +3,7 @@
 //
 //   node server/index.mjs [--port 4192] [--host 127.0.0.1] [--dev] [--watch-dir <folder> …]
 //
-// WebSocket: ws://host:port/stream?url=<input>&width=960&fps=25&depth=8|16&transport=tcp|udp[&audio=1][&video=0][&format=yuv]
+// WebSocket: ws://host:port/stream?url=<input>&width=960&fps=25&depth=8|16&transport=tcp|udp[&audio=1][&video=0][&format=yuv[&pack=v210]]
 //   text  {type:"info", width, height, depth, fps, codec, transfer, primaries, matrix, range[, proto:2, audio]}
 //   text  {type:"error"|"end", message, code?, params?}  (code: server/messages.mjs)
 //   binary one frame per message, width*height*4 samples (Uint8 or Uint16 LE)

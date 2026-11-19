@@ -83,6 +83,8 @@ export default {
   'settings.clock': 'Uhr / Timecode',
   'settings.bridge': 'Bridge / ffmpeg',
   'settings.audio': 'Audio',
+  'main.src.colour': 'Farbe',
+  'main.src.colourTitle': 'Wandlung, Matrix, Gamut und CST/LUT dieser Quelle',
   'main.src.remove': 'Entfernen',
   'main.src.latFast': 'Verzögerung: schnellstmöglich (schwankt)',
   'main.src.latFixed': 'Verzögerung: fest {ms} ms',

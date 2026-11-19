@@ -187,6 +187,10 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
   const proto = wantSound || params.get('pts') === '1' ? 2 : 1;
   /** latency=fixed: more pictures in flight, nothing dropped for speed – the client buffers anyway */
   const fixedLatency = params.get('latency') === 'fixed';
+  /** format=yuv&pack=v210: the client takes packed Y′CbCr; a v210 helper at native width then goes out unconverted (#258) */
+  const wantYuv = params.get('format') === 'yuv' && depth === 16 && params.get('pack') === 'v210';
+  /** v210 passthrough active: pictures go to the client as they come, without ffmpeg */
+  let pack = false;
   let frameNo = 0, nextPts = NaN, aud = null;
   /** PTS (s) of the pictures handed to ffmpeg, in order; ffmpeg keeps the order (without fps= it keeps every picture) */
   let ptsQueue = [];
@@ -214,6 +218,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
   });
 
   const stopFf = () => {
+    pack = false;
     if (!ff) return;
     const old = ff;
     ff = null;
@@ -285,6 +290,27 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
     ptsQueue = [];
     gate = new FrameGate({ fps: f.fps, limit: fpsLimit, max: fixedLatency ? 6 : 2 });
     phase = ctx.now && f.fps > 0 ? new PhaseTracker(Math.round(Number(info.fpsNum)), Math.round(Number(info.fpsDen) || 1)) : null;
+    // v210 passthrough (#258): Y′CbCr wanted, native width, no recording (that needs ffmpeg) –
+    // the client unpacks it (src/v210.ts); about a third of 16-bit RGBA and no ffmpeg cost
+    if (wantYuv && info.pixel === 'v210' && (maxWidth === 0 || maxWidth >= f.width) && !recorder?.active && !recorder?.ringActive) {
+      pack = true;
+      outBytes = f.bytes;
+      gate = new FrameGate({ fps: f.fps, limit: fpsLimit, max: Infinity });
+      const { decodeMatrix, decodeRange } = ctx.applyDecodeOverride(ctx.decodeParams({ matrix: info.matrix ?? 'unknown', range: info.range ?? 'unknown', height: f.height }), opts);
+      const range = decodeRange === 'full' ? 'full' : 'limited';
+      if (ws.readyState === ws.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'info', width: f.width, height: f.height, depth: 16, fps: fpsLimit || f.fps, sourceWidth: Number(info.sourceWidth) || f.width, sourceHeight: Number(info.sourceHeight) || f.height,
+          codec: `${label}${info.name ? ` · ${info.name}` : ''}`, pixFmt: info.pixel, decodeMatrix,
+          transfer: info.transfer ?? 'unknown', primaries: info.primaries ?? 'unknown', matrix: info.matrix ?? 'unknown', range: info.range ?? 'unknown',
+          format: 'yuv', yuvRange: range, bits: 10, pack: 'v210',
+          ...(info.timecode ? { timecode: info.timecode } : {}),
+          ...(info.interlaced ? { interlaced: true } : {}),
+          ...(proto === 2 ? { proto: 2, audio: audioFormat(info) } : {}),
+        }));
+      }
+      return;
+    }
     const { width, height } = ctx.outputSize(f.width, f.height, maxWidth);
     outBytes = width * height * 4 * (depth / 8); asm = new FrameAssembler(outBytes, sendFrame);
     const tags = { matrix: info.matrix ?? 'unknown', range: info.range ?? 'unknown', height: f.height };
@@ -319,7 +345,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
     if (tag === 'INFO') {
       let info;
       try { info = JSON.parse(payload.toString('utf8')); } catch { return ctx.fail(ws, bmsg('helper.info', 'Helper: INFO is not JSON')); }
-      if (ff && lastInfo && ffKey(info) === ffKey(lastInfo)) { lastInfo = info; return; }
+      if ((ff || pack) && lastInfo && ffKey(info) === ffKey(lastInfo)) { lastInfo = info; return; }
       startFf(info);
     } else if (tag === 'TIME') {
       let tcm;
@@ -339,10 +365,16 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
       if (phase && ctx.now) { const n = ctx.now(); phase.add(n.seconds, n.ref); }
       // pictures again: a "no input signal" from the lock-up phase no longer applies
       if (status && (status.code === 'decklink.noSignal' || status.code === 'aja.noSignal')) status = '';
-      if (!ff || !fmt) return;
+      if ((!ff && !pack) || !fmt) return;
       if (payload.length !== fmt.bytes) { status = bmsg('helper.frameSize', `Picture size does not match (${payload.length} instead of ${fmt.bytes} bytes)`, { got: payload.length, want: fmt.bytes }); return; }
       // newest picture wins: skip when ffmpeg is still busy with the previous ones
       const pts = nextPts; nextPts = NaN;
+      if (pack) {
+        if (gate.offer() === 'rate') return;
+        ptsQueue = [pts];
+        sendFrame(Buffer.from(payload));
+        return;
+      }
       if (ff.stdin.writableLength > fmt.bytes * (fixedLatency ? 4 : 2)) { dropped++; return; }
       const go = gate.offer();
       if (go === 'rate') return;

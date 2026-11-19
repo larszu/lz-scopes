@@ -54,6 +54,10 @@ ffmpeg … -i <url> -map 0:v:0 -an \
 
 Other hosts may produce planar `yuv444p16le` instead of `ayuv64le`, but must then reorder to A, Y′, Cb, Cr before sending.
 
+### Packed v210 (`format=yuv&pack=v210`, #258)
+
+With `pack=v210` as well, a DeckLink/AJA helper source that delivers `v210` goes out **unconverted**, when the requested `width` is 0 or at least the signal width and no recording or ring buffer runs (those need ffmpeg; the bridge then falls back to the path above and sends a new `info`). `info` additionally has `"pack":"v210"`, `bits` 10, `width`/`height` = signal size. Each frame is the helper's v210 picture (6 pixels in 4 LE 32-bit words, rows padded to 48 pixels = 128 bytes), with the 16-byte header in protocol 2. About a third of 16-bit RGBA at the same size. The client unpacks it to the A, Y′, Cb, Cr layout above in the frame worker (`src/v210.ts`); odd pixels get the mean chroma of their neighbours.
+
 ## Protocol 2: picture and sound (`audio=1`)
 
 Opt-in via the request: `/stream?url=…&audio=1` (optionally `&video=0` for audio-only sources). Without `audio=1` everything stays as above; hosts that speak only protocol 1 keep working unchanged (the client recognises protocol 2 by `info.proto`).

@@ -13,6 +13,7 @@ import { meanLuma } from './luma';
 import { decodedFullRange, yuv420ToRgba } from './yuv';
 import { t as tr } from './i18n';
 import { DelayBuffer } from './delayBuffer';
+import { v210Bytes, v210Message } from './v210';
 
 export interface FrameMeta {
   /** Date.now() when the frame arrived here (raw) or left the decoder (H.264) */
@@ -38,7 +39,7 @@ export type Out =
 const post = (m: Out, transfer: Transferable[] = []) => (self as unknown as DedicatedWorkerGlobalScope).postMessage(m, transfer);
 
 let ws: WebSocket | null = null;
-let info: { width: number; height: number; depth: number; proto?: number; decodeMatrix?: string; range?: string; transport?: string; format?: string; audio?: unknown } | null = null;
+let info: { width: number; height: number; depth: number; proto?: number; decodeMatrix?: string; range?: string; transport?: string; format?: string; pack?: string; audio?: unknown } | null = null;
 let waiting: { data: ArrayBuffer; meta: FrameMeta } | null = null;
 let inflight = false, replaced = 0;
 /** fixed playout delay (#244): pictures wait here until their slot; null = newest at once */
@@ -153,7 +154,14 @@ function open(url: string) {
       post({ type: 'text', data: ev.data });
       return;
     }
-    const buf = ev.data as ArrayBuffer, now = Date.now();
+    let buf = ev.data as ArrayBuffer;
+    const now = Date.now();
+    // v210 passthrough (#258): unpack to the Y′CbCr layout here, off the main thread
+    if (info?.pack === 'v210') {
+      const head = info.proto === 2 ? 16 : 0;
+      const lzv = !head || new DataView(buf).getUint32(0, true) === 0x3156_5a4c; // 'LZV1'
+      if (lzv && buf.byteLength === head + v210Bytes(info.width, info.height)) buf = v210Message(buf, info.width, info.height, head);
+    }
     if (info?.proto === 2) {
       const head = new DataView(buf, 0, 16);
       const magic = String.fromCharCode(head.getUint8(0), head.getUint8(1), head.getUint8(2), head.getUint8(3));

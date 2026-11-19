@@ -155,6 +155,8 @@ export function createDock(el: HTMLElement, host: DockHost) {
     },
     openIdx: () => api.panels.map((p) => panelIdx(p.id)),
     setTitle(idx: number) { api.getPanel(panelId(idx))?.api.setTitle(host.title(idx)); },
+    /** The tab element of a panel (source identity colour at its edge, #256), null when not docked. */
+    tabEl(idx: number): HTMLElement | null { return api.getPanel(panelId(idx))?.view.tab.element ?? null; },
     toggleMaximize(idx: number) {
       const p = api.getPanel(panelId(idx));
       if (!p) return;

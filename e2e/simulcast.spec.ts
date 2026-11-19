@@ -31,6 +31,7 @@ test('PQ ramp → SDR clip: grey below reference white, deviating highlights', a
   await singlePanel(a, 'simulcast');
   const panel = page.locator('.panel').filter({ has: page.locator('.phead select', { hasText: 'Simulcast' }) }).first();
   const card = page.locator('#source-list .src').first();
+  await card.locator('details.src-colour > summary').click();
   await card.locator('details.chain > summary').click();
   await card.locator('details.chain .row').first().locator('select').nth(1).selectOption('709');
   await card.locator('details.chain .row').nth(2).locator('select').first().selectOption('clip');

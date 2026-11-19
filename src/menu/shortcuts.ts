@@ -11,6 +11,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: t('keys.g.general'), keys: ['S'], what: t('keys.snapshot') },
   { group: t('keys.g.general'), keys: ['B'], what: t('keys.sidebar') },
   { group: t('keys.g.view'), keys: ['1', '2', '3', '4', '5', '6'], what: t('keys.layout') },
+  { group: t('keys.g.view'), keys: ['Alt+1', 'Alt+2', '…', 'Alt+9'], what: t('keys.allTo') },
   { group: t('keys.g.view'), keys: ['Space'], what: t('keys.freeze') },
   { group: t('keys.g.view'), keys: ['Escape'], what: t('keys.escape') },
   { group: t('keys.g.view'), keys: ['C'], what: t('keys.stage') },

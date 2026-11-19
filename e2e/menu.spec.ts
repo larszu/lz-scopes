@@ -94,6 +94,8 @@ test('Scope-Hilfe: „?“ im Panelkopf öffnet die Karte, Menü schaltet sie au
   await q.first().click();
   const card = a.page.locator('.popover.scopehelp:popover-open');
   await expect(card).toContainText('Ausprobieren');
+  // short card (#256): the task folds out
+  await card.locator('details.help-try > summary').click();
   await card.getByRole('checkbox', { name: 'Ausprobiert' }).check();
   await expect(card).toContainText(/1 von \d+ Aufgaben ausprobiert/);
   await a.page.keyboard.press('Escape');

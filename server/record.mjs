@@ -18,7 +18,7 @@
 
 import { spawn } from 'node:child_process';
 import { createReadStream, statfsSync } from 'node:fs';
-import { mkdir, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, delimiter, join, resolve, sep } from 'node:path';
 import { bmsg } from './messages.mjs';
 
@@ -246,12 +246,26 @@ export class Sidecar {
  * and left trailing bytes of the longer version behind the shorter one (check-windows, #254).
  */
 const jsonQueue = new Map();
+let jsonSeq = 0;
+/** Windows refuses a rename onto a file someone has open (reader, virus scanner): retry briefly (#260). */
+async function renameRetry(from, to, tries = 10) {
+  for (let i = 0; ; i++) {
+    try { return await rename(from, to); } catch (e) {
+      if (i >= tries || !['EPERM', 'EACCES', 'EBUSY'].includes(e?.code)) {
+        await unlink(from).catch(() => {});
+        throw e;
+      }
+      await new Promise((r) => setTimeout(r, 20 * (i + 1)));
+    }
+  }
+}
 export function writeJsonAtomic(file, value) {
   const text = JSON.stringify(value, null, 2);
   const run = (jsonQueue.get(file) ?? Promise.resolve()).catch(() => {}).then(async () => {
-    const tmp = `${file}.tmp`;
+    // own temp name per write: a write that failed half-way never leaves bytes for the next one
+    const tmp = `${file}.${process.pid}.${++jsonSeq}.tmp`;
     await writeFile(tmp, text);
-    await rename(tmp, file);
+    await renameRetry(tmp, file);
   });
   jsonQueue.set(file, run);
   void run.finally(() => { if (jsonQueue.get(file) === run) jsonQueue.delete(file); }).catch(() => {});

@@ -187,9 +187,24 @@ checkGpu((title, body) => {
   gpuWarn.hidden = false;
 }).catch(() => {});
 const freezeBtn = button(t('main.freeze'), () => toggleFreeze(), { title: t('main.freezeTitle'), pressed: false, attrs: { id: 'freeze' } });
+/** Light/dark in the header (#256): Auto · Light · Dark as a compact segment; the scopes stay dark. */
+function schemeSeg(): HTMLElement {
+  const cur = state.scheme ?? DEFAULT_SCHEME;
+  const glyph: Record<SchemePref, string> = { system: '◐', light: '☀', dark: '☾' };
+  return h('div', { class: 'seg scheme-seg', role: 'group', 'aria-label': t('ui.scheme') },
+    (['system', 'light', 'dark'] as SchemePref[]).map((v) => {
+      const label = SCHEMES().find(([k]) => k === v)?.[1] ?? v;
+      return iconButton(glyph[v], label, () => setScheme(v), { pressed: v === cur, title: `${label} – ${t('ui.scheme.title')}` });
+    }));
+}
+function setScheme(v: SchemePref) {
+  state.scheme = v; applyScheme(v); save();
+  document.querySelectorAll('.scheme-seg').forEach((el) => el.replaceWith(schemeSeg()));
+  refreshSettings();
+}
 const sideToggle = iconButton('◧', t('main.side.aria'), () => toggleSidebar(), { title: t('main.side.toggle'), attrs: { id: 'toggle-side' } });
 /** Header overflow (narrow windows): the same layout presets and scale as the header groups. */
-const moreMenu = popover({ label: '⋯', title: t('ui.more'), heading: t('ui.moreTitle'), cls: 'more-body', content: () => [field(t('ui.layouts'), layoutControl()), settingRow(SET.unit),
+const moreMenu = popover({ label: '⋯', title: t('ui.more'), heading: t('ui.moreTitle'), cls: 'more-body', content: () => [field(t('ui.layouts'), layoutControl()), settingRow(SET.unit), field(t('ui.scheme'), schemeSeg()),
   row(button(t('record.all'), () => recordAll(), { title: t('record.allTitle') }), button(t('ring.save'), () => saveRings(), { title: t('ring.saveTitle') }))] });
 moreMenu.id = 'bar-more';
 const side = h('aside', { class: 'side', id: 'side' },
@@ -218,6 +233,7 @@ app.replaceChildren(
     recordAllButton,
     saveRingButton,
     freezeBtn,
+    schemeSeg(),
     iconButton('⚙', t('common.settings'), () => openSettings(), { title: t('main.settingsTitle'), attrs: { id: 'settings-btn' } }),
     iconButton('⛶', t('main.full'), () => toggleFullscreen(), { title: t('main.fullTitle'), attrs: { id: 'full' } })),
   h('div', { class: 'main' },
@@ -252,7 +268,7 @@ const SET = {
   theme: { key: 'theme', kind: 'select', label: () => t('settings.ui.skin'), title: () => t('settings.ui.skinTitle'), hint: () => t('settings.ui.skinHint'),
     options: () => THEMES, get: () => state.theme, set: (v) => { if (isTheme(v)) setTheme(v); } },
   scheme: { key: 'scheme', kind: 'select', label: () => t('ui.scheme'), title: () => t('ui.scheme.title'), hint: () => t('ui.scheme.hint'),
-    options: SCHEMES, get: () => state.scheme ?? DEFAULT_SCHEME, set: (v) => { if (isScheme(v)) { state.scheme = v; applyScheme(v); save(); } } },
+    options: SCHEMES, get: () => state.scheme ?? DEFAULT_SCHEME, set: (v) => { if (isScheme(v)) setScheme(v); } },
   sidebar: { key: 'sidebar', kind: 'toggle', label: () => t('settings.ui.sidebar'), text: () => t('settings.ui.sidebarShow'),
     get: () => state.sidebar, set: (v) => { state.sidebar = v; applySidebar(); save(); } },
   display: { key: 'display', kind: 'select', label: () => t('settings.display'), title: () => t('settings.display.spaceTitle'), hint: () => t('settings.display.spaceHint'),
@@ -594,7 +610,8 @@ function renderSources() {
     }
     const ar = audioRow(s, renderSources);
     if (ar) card.append(ar);
-    if (s.kind !== 'audio') card.append(classRow('stack',
+    // conversion, matrix, gamut and CST/LUT fold into "Colour" (#256): the cards stay short
+    if (s.kind !== 'audio') card.append(colourDetails(s, classRow('stack',
       groupedSelect(set.transfer, transferGroups(`auto: ${transferLabel(s.transfer)} (${s.transferOrigin})`),
         (v) => upd({ transfer: v as SourceSettings['transfer'] }), t('main.src.transferTitle')),
       select(set.colorspace, [['auto', `Matrix auto: ${s.colorspace} (${s.colorspaceOrigin})`], ['709', 'Rec.709'], ['2020', 'Rec.2020'], ['601', 'Rec.601 525 (SMPTE-C)'], ['601-625', 'Rec.601 625 (EBU)']], (v) => upd({ colorspace: v as SourceSettings['colorspace'] }), t('main.src.matrixTitle'))),
@@ -604,8 +621,8 @@ function renderSources() {
           ['Video', (['709', 'p3', '2020', '601', '601-625'] as GamutId[]).map((k) => [k, GAMUTS[k].name])],
           [t('main.src.camAces'), (Object.keys(CAMERA_GAMUTS) as GamutId[]).map((k) => [k, GAMUTS[k].name])],
         ], (v) => upd({ gamut: v as SourceSettings['gamut'] }), t('main.src.gamutTitle')),
-        s.transfer === 'hlg' ? select(String(s.hlgLw), HLG_PEAKS.map((n) => [String(n), t('main.src.hlgDisplay', { n })]), (v) => upd({ hlgLw: Number(v) }), t('main.src.hlgTitle')) : ''));
-    if (s.kind !== 'audio') card.append(chainControls(s, upd));
+        s.transfer === 'hlg' ? select(String(s.hlgLw), HLG_PEAKS.map((n) => [String(n), t('main.src.hlgDisplay', { n })]), (v) => upd({ hlgLw: Number(v) }), t('main.src.hlgTitle')) : ''),
+      chainControls(s, upd)));
     if (s.url === 'resolve:' && s.status === 'live') card.append(resolveRouteRow(s));
     const rr = recordRow(s);
     if (rr) card.append(rr);
@@ -619,6 +636,16 @@ function renderSources() {
     card.addEventListener('drop', (e) => { card.classList.remove('drop'); const f = [...(e.dataTransfer?.files ?? [])]; if (f.length && isLutFile(f[0])) { e.preventDefault(); loadLutInto(s, f[0], e.shiftKey ? 'lut2' : 'lut1'); } });
     return card;
   }));
+}
+
+/** Source cards whose "Colour" block is open (kept across rebuilds of the list). */
+const colourOpen = new Set<string>();
+function colourDetails(s: Source, ...kids: Kid[]): HTMLElement {
+  const d = h('details', { class: 'src-colour', open: colourOpen.has(s.id) || null },
+    h('summary', { title: t('main.src.colourTitle') }, `${t('main.src.colour')}: ${transferLabel(s.transfer)} · ${s.colorspace} · ${GAMUTS[s.gamut].name}`),
+    ...kids);
+  d.addEventListener('toggle', () => { if ((d as HTMLDetailsElement).open) colourOpen.add(s.id); else colourOpen.delete(s.id); });
+  return d;
 }
 
 const isLutFile = (f: File) => LUT_EXTENSIONS.some((x) => f.name.toLowerCase().endsWith(x));
@@ -1021,7 +1048,7 @@ function panelElement(idx: number): HTMLElement {
     const head = h('div', { class: 'phead', ondblclick: () => toggleSolo(idx) });
     const el = h('div', { class: 'panel' }, head, body);
     // double click: reset a zoomed view, otherwise solo
-    body.addEventListener('dblclick', (e) => { if ((e.target as HTMLElement).closest('.zoomchip')) return; if (!resetView(idx)) toggleSolo(idx); });
+    body.addEventListener('dblclick', (e) => { if ((e.target as HTMLElement).closest('.zoomchip')) return; resetView(idx); });
     shading.attach(body, idx, p);
     attachPanelGestures(idx, p, body);
     attachPointer(p(), body);
@@ -1038,6 +1065,15 @@ function panelElement(idx: number): HTMLElement {
  * Panel head: scope, source, stage chip, pin | chips, ⚙ popover | solo. The parts are refilled
  * on changes; the ⚙ popover is kept (an open one stays open) unless the scope changes.
  */
+/** Source identity colour at the panel's tab edge (#256); the dock may not exist yet while it builds. */
+function tintTab(idx: number, on: boolean) {
+  let tab: HTMLElement | null = null;
+  try { tab = dock.tabEl(idx); } catch { return; }
+  if (!tab) return;
+  tab.classList.toggle('srccol', on);
+  tab.style.setProperty('--src-col', sourceColour(panelSource(state.panels[idx])));
+}
+
 function fillHead(v: PanelView) {
   const idx = v.idx, p = state.panels[idx];
   if (!v.head.firstChild) {
@@ -1046,6 +1082,8 @@ function fillHead(v: PanelView) {
   }
   const [lead, opts] = [v.head.children[0] as HTMLElement, v.head.children[1] as HTMLElement];
   const multi = sources.length > 1 && !isLight(p.scope) && p.scope !== 'tiles';
+  // the source's identity colour also at the tab edge (#256), with more than one source
+  tintTab(idx, multi);
   lead.replaceChildren(...[
     groupedSelect(scopeMenuValue(p.scope, p.picture), scopeMenu(), (val) => {
       const m = parseScopeMenu(val);
@@ -1068,7 +1106,9 @@ function fillHead(v: PanelView) {
   const wantHelp = helpOn() && hasHelp(p.scope);
   if (v.help && (!wantHelp || v.helpScope !== p.scope)) { v.help.remove(); v.help = undefined; }
   if (wantHelp && !v.help) {
-    v.help = popover({ label: '?', title: t('help.open', { scope: SCOPE_LABELS[p.scope] }), heading: SCOPE_LABELS[p.scope], align: 'end', cls: 'scopehelp', triggerCls: 'icon pop-trigger help-trigger', content: () => helpCard(state.panels[idx].scope, Object.keys(SCOPE_LABELS)) });
+    v.help = popover({ label: '?', title: t('help.open', { scope: SCOPE_LABELS[p.scope] }), heading: SCOPE_LABELS[p.scope], align: 'end', cls: 'scopehelp', triggerCls: 'icon pop-trigger help-trigger', content: () => helpCard(state.panels[idx].scope, Object.keys(SCOPE_LABELS)),
+      // beside the panel, so the card does not cover the trace it explains (#256)
+      beside: (tr) => tr.closest('.dv-groupview, .panel')?.getBoundingClientRect() });
     v.helpScope = p.scope;
     opts.insertBefore(v.help, v.pop ?? null);
   }
@@ -1183,7 +1223,7 @@ function panelSettings(p: PanelState): Node[] {
     global(SET.unit);
     row(t('panel.marks'), check('marks', t('panel.marksText'), true));
     row('EBU R 103', check('r103', t('panel.r103Text')));
-    row(t('panel.waveFilter'), select(p.waveFilter ?? 'flat', [['flat', t('panel.waveFilterFlat')], ['lowpass', t('panel.waveFilterLow')]],
+    row(t('panel.waveFilter'), select(p.waveFilter ?? 'flat', [['flat', t('panel.waveFilterFlat')], ['recon', t('panel.waveFilterRecon')], ['lowpass', t('panel.waveFilterLow')]],
       (v) => { p.waveFilter = v as PanelState['waveFilter']; save(); refreshHeads(); }, t('panel.waveFilterTitle')));
     row(t('panel.zoom'), select(p.waveZoom ?? 'full', Object.entries(WAVE_ZOOM_LABELS) as [string, string][], (v) => { p.waveZoom = v as WaveZoom; p.view = undefined; save(); }, t('panel.zoomTitle')));
     const chans = channelsOf(p.scope);
@@ -1588,7 +1628,7 @@ function attachPanelGestures(idx: number, p: () => PanelState, body: HTMLElement
     },
     wheelTaken: () => p().scope === 'wf-skin' || p().scope === 'wf-green',
     wheelAtCentre: () => p().scope === 'vector' || p().scope === 'hls',
-  }, () => { if (!resetView(idx)) toggleSolo(idx); });
+  }, () => { resetView(idx); });
 }
 
 /** Back to the unzoomed view (3D volume: also the default rotation). False if nothing to reset. */
@@ -2552,6 +2592,13 @@ function controlState() {
 document.addEventListener('keydown', (e) => {
   if ((e.target as HTMLElement).closest('input, select, textarea')) return;
   const keys = Object.keys(PRESETS);
+  // ⌥1 … ⌥9: all unpinned panels to source 1 … 9 (#256); e.code, because ⌥ changes e.key on a Mac
+  const digit = /^Digit([1-9])$/.exec(e.code);
+  if (e.altKey && !e.ctrlKey && !e.metaKey && digit) {
+    const s = sources[Number(digit[1]) - 1];
+    if (s) { e.preventDefault(); switchAll(s.id); alertHud(t('panel.allPanelsTo', { n: Number(digit[1]), name: s.name })); }
+    return;
+  }
   if (/^[1-6]$/.test(e.key)) setLayout(keys[Number(e.key) - 1]);
   else if (e.key === ' ') { e.preventDefault(); const v = activeVideo(); if (v) v.togglePlay(); else if (!playbackTransport('toggle')) toggleFreeze(); }
   else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {

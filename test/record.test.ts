@@ -91,6 +91,14 @@ describe('segment list, space, companion file', () => {
     try {
       await Promise.all([{ a: 'x'.repeat(20000) }, { b: 1 }, { c: 'y'.repeat(5000) }, { d: 2 }].map((v) => writeJsonAtomic(f, v)));
       expect(JSON.parse(readFileSync(f, 'utf8'))).toEqual({ d: 2 });
+      // a reader polling during the writes only ever sees whole versions, and no temp file stays (#260)
+      let reads = 0;
+      const poll = setInterval(() => { try { JSON.parse(readFileSync(f, 'utf8')); reads++; } catch { reads = -1e9; } }, 1);
+      await Promise.all(Array.from({ length: 40 }, (_, i) => writeJsonAtomic(f, { i, pad: 'z'.repeat((i % 7) * 3000) })));
+      clearInterval(poll);
+      expect(reads).toBeGreaterThanOrEqual(0);
+      expect(JSON.parse(readFileSync(f, 'utf8')).i).toBe(39);
+      expect(readdirSync(d).filter((n) => n.endsWith('.tmp'))).toEqual([]);
     } finally { rmSync(d, { recursive: true, force: true }); }
   });
 

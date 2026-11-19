@@ -34,6 +34,7 @@ test('Messpunkt Signal → nach CST → nach LUT', async () => {
   const cstLevels = STEPS.map((v) => compileChain(ref, 'cst').apply([v, v, v])[1]); // grey stays grey (gamut matrix rows sum to 1)
 
   const card = page.locator('#source-list .src').first();
+  await card.locator('details.src-colour > summary').click();
   await card.locator('details.chain > summary').click();
   await card.locator('details.chain select').first().selectOption(preset.id);
   // LUT 1: 2³ cube, output = 0.5 · input (exact under trilinear interpolation)

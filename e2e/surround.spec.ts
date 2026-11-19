@@ -33,8 +33,16 @@ test('Umfeldleuchtdichte: die nits-Skala sagt, welchen Raum sie annimmt', async 
   await singlePanel(a, 'wf-luma');
   expectOk(await a.control({ cmd: 'setting', key: 'unit', value: 'nits' }));
   // read the pattern as HLG, then the system gamma applies
-  await page.locator('#source-list .src').first().locator('details.src-colour > summary').click();
-  await page.locator('#source-list .src').first().locator('select').filter({ hasText: 'auto: SDR' }).selectOption('hlg');
+  // the card can be rebuilt while the pattern starts (slow CI): choose HLG until it sticks
+  await until(async () => {
+    const card = page.locator('#source-list .src').first();
+    const d = card.locator('details.src-colour');
+    if (!(await d.evaluate((e) => (e as HTMLDetailsElement).open))) await d.locator('> summary').click();
+    const sel = card.locator('select').filter({ has: page.locator('option[value="hlg"]') }).first();
+    if ((await sel.inputValue()) !== 'hlg') await sel.selectOption('hlg');
+    await page.waitForTimeout(300);
+    return (await card.locator('select').filter({ has: page.locator('option[value="hlg"]') }).first().inputValue()) === 'hlg';
+  }, 30_000, 'Quelle als HLG gelesen');
   const plain = await until(async () => { const n = await labelPixels(); return n > 20 ? n : false; }, 30_000, 'Skalenbeschriftung');
 
   // a bright room: the label grows by the note about the surround

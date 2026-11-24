@@ -40,14 +40,17 @@ function scopeTab(tip: string): ITabRenderer {
   if (tip) element.title = tip;
   element.append(content, action);
   const subs: { dispose(): void }[] = [];
+  let closeLabel = (title: string) => title;
   const render = (title: string) => {
     const [n, rest] = splitTitle(title);
     num.textContent = n; name.textContent = n ? ` · ${rest}` : rest;
-    action.setAttribute('aria-label', title);
+    action.setAttribute('aria-label', closeLabel(title));
   };
   return {
     element,
     init: (p) => {
+      const m = p.containerApi.messages;
+      if (m) closeLabel = (title) => m.closeTab(title);
       render(p.title ?? '');
       subs.push(p.api.onDidTitleChange((e) => render(e.title)));
       action.addEventListener('pointerdown', (e) => e.preventDefault());
@@ -138,7 +141,8 @@ export function createDock(el: HTMLElement, host: DockHost) {
         },
       };
     },
-    createTabComponent: () => scopeTab(host.tabTitle ?? ''),
+    defaultTabComponent: 'scope',
+    createTabComponent: (o) => (o.name === 'scope' ? scopeTab(host.tabTitle ?? '') : undefined),
     // the head of the group's active panel, in the same row as the tabs (#261)
     createLeftHeaderActionComponent: (): IHeaderActionsRenderer => {
       const element = document.createElement('div');

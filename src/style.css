@@ -46,6 +46,9 @@ body { background: var(--surface-0); overflow: hidden; }
 .layout-seg .layicon { display: block; flex: none; fill: none; stroke: currentColor; stroke-width: 1; }
 .layout-seg > button.lay[aria-pressed='true'] .layicon rect { fill: color-mix(in srgb, currentColor 22%, transparent); }
 .layout-seg .laytext { font-size: var(--fs-sm); }
+.bar .tools .toolbar { flex-wrap: nowrap; }
+/* medium headers: "Colorist" as icon only (name in the tooltip) */
+@container bar (max-width: 1440px) { .bar .layout-seg .laytext { display: none; } }
 .unit-seg > button { padding-inline: 7px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .more-body .seg { flex-wrap: wrap; }
 .scheme-seg { flex: none; flex-wrap: nowrap; }
@@ -149,8 +152,8 @@ button.fav.on { color: var(--text); border-color: var(--sel-line); }
    group header. A tab alone in its group shows grip and number; stacked tabs keep their names. */
 .lzs-dock .dv-tabs-and-actions-container { container: panel / inline-size; }
 .lzs-dock .dv-tabs-and-actions-container:has(.dock-head > .phead) .dv-void-container { flex: 0 0 4px; }
-.lzs-dock .dv-tabs-container:has(.dv-tab:only-child) .tname { display: none; }
-.lzs-dock .dv-tabs-container:has(.dv-tab:only-child) .dv-tab { padding-inline: 4px 6px; }
+.lzs-dock .dv-single-tab .tname { display: none; }
+.lzs-dock .dv-single-tab .dv-tab { padding-inline: 4px 6px; }
 .lzs-dock .lzs-tab .dv-default-tab-content { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
 .lzs-dock .lzs-tab .tnum { font-variant-numeric: tabular-nums; }
 .lzs-dock .lzs-tab .tgrip { color: var(--text-faint); cursor: grab; letter-spacing: -1px; }

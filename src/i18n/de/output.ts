@@ -29,4 +29,5 @@ export default {
   'output.keysView': 'F Vollbild · Doppelklick Vollbild',
   'output.streamEnded': 'beendet',
   'output.labels8': 'Beschriftung 8 bit',
+  'widget.noSource': 'Keine Quelle angegeben (?src=…)',
 } satisfies Translation<typeof en>;

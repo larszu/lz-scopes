@@ -103,6 +103,8 @@ TypeScript, Vite, Vitest, electron-builder, concurrently, `@types/*`: MIT or Apa
 
 **LUT files for the tests** (`test/fixtures/luts/`, read only by the tests, not shipped): seven files from [djieff/prism](https://github.com/djieff/prism) and [lifeart/openrv-web](https://github.com/lifeart/openrv-web), both **MIT**. They prove that our parsers read what other tools actually write. Source and purpose per file: `test/fixtures/luts/README.md`. `node scripts/luts-fetch.mjs` fetches the larger files of the same collection into `vendor/luts/` on demand; they are not part of the repository.
 
+**BBC HDR production LUTs, test sample** (`test/fixtures/bbc-luts/`, read only by the tests, not shipped): every 4th grid node of LUTs 1a and 7a from [bbc/bbc_hdr_television_production_luts](https://github.com/bbc/bbc_hdr_television_production_luts) (© BBC, **Apache-2.0**, text in `test/fixtures/bbc-luts/LICENSE`; changed: subset only, values unchanged). `node scripts/bbc-luts-fetch.mjs` fetches the full Type I cubes into `vendor/luts/bbc/`. The app does not bundle any BBC LUT; it downloads one from GitHub when the user asks for it (`src/lutLibrary.ts`).
+
 ## Own works
 
 - **Logo and trademark of Lars Zumpe Medienproduktion** (`docs/brand/`, `src/brand/`, `build/icon.png`, `public/icons/`): signet, logo and app icon, unchanged files from the Brand Kit 2.0. Own trademark of Lars Zumpe, **not free to use**: no permission of the licence covers them (see [LICENSE](LICENSE), section 10).

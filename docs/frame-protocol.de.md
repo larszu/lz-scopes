@@ -27,7 +27,7 @@ ffmpeg -rtsp_transport tcp -i <url> -an -map 0:v:0 \
 
 ## Ganze Bilder, Interlace
 
-Jede Binärnachricht enthält genau ein vollständiges Bild (Bridge: `server/frames.mjs`, Test `test/frames.test.ts`). Teile zweier Bilder in einer Nachricht gibt es nicht; der Client tauscht das Bild nur als Ganzes aus. Bei interlaced Quellen (ffprobe `field_order` tt/bb/tb/bt bzw. DeckLink/NDI-Helfer `interlaced`) enthält ein Bild beide Halbbilder verwoben; die Bridge skaliert feldweise (`scale=…:interl=1`), damit die Halbbilder nicht vertikal vermischt werden, und meldet `"interlaced": true` im `info`.
+Jede Binärnachricht enthält genau ein vollständiges Bild (Bridge: `server/frames.mjs`, Test `test/frames.test.ts`). Teile zweier Bilder in einer Nachricht gibt es nicht; der Client tauscht das Bild nur als Ganzes aus. Bei interlaced Quellen (ffprobe `field_order` tt/bb/tb/bt bzw. DeckLink/NDI-Helfer `interlaced`) enthält ein Bild beide Halbbilder verwoben; die Bridge skaliert feldweise (`scale=…:interl=1`), damit die Halbbilder nicht vertikal vermischt werden, und meldet `"interlaced": true` im `info`. Je Quelle (#219, `server/interlace.mjs`) setzt der Parameter `field=auto|progressive|tff|bff` die Reihenfolge der Halbbilder fest (`progressive` = als progressiv behandeln), `deint=1` deinterlaced mit `bwdif=mode=send_frame` auf dem vollen Bild vor dem Skalierer (ein progressives Bild je Vollbild, kein `interl`). `info` trägt dann zusätzlich `"fields": "tff"|"bff"` (zeitlich erstes Halbbild), `"sourceFields"` (was die Quelle meldet), `"fieldsForced": true` (an der Karte eingestellt) und `"deinterlaced": true`.
 
 ## Y′CbCr unbeschnitten (`format=yuv`)
 
@@ -118,7 +118,7 @@ Geräte ohne freien ffmpeg-Weg (DeckLink, AJA, NDI) laufen über einen eigenen H
 | 4 | uint32 LE | Länge n der Nutzlast |
 | 8 | n Byte | Nutzlast |
 
-- `INFO` (JSON, vor dem ersten Bild und bei jedem Formatwechsel): `{"width":1920,"height":1080,"fpsNum":50,"fpsDen":1,"pixel":"v210","matrix":"bt709","range":"tv","transfer":"unknown","primaries":"unknown","name":"1080i50","timecode":"10:00:00:00"}`. Optional `sourceWidth`/`sourceHeight`: Größe des Signals, wenn der Helfer das Bild schon verkleinert hat (NDI `--width`).
+- `INFO` (JSON, vor dem ersten Bild und bei jedem Formatwechsel): `{"width":1920,"height":1080,"fpsNum":50,"fpsDen":1,"pixel":"v210","matrix":"bt709","range":"tv","transfer":"unknown","primaries":"unknown","name":"1080i50","timecode":"10:00:00:00"}`. Optional `sourceWidth`/`sourceHeight`: Größe des Signals, wenn der Helfer das Bild schon verkleinert hat (NDI `--width`). Optional `interlaced` (beide Halbbilder verwoben in einem Bild) und `fieldOrder` `"tff"`/`"bff"` (DeckLink: `GetFieldDominance`); ohne `fieldOrder` nimmt die Bridge bei 480/486 Zeilen unteres, sonst oberes Halbbild zuerst an.
 - `FRAM`: ein Bild im Format `pixel`, Zeilen ohne weiteres Padding. `pixel` ∈ `v210` (48 Pixel je 128 Byte), `uyvy422`, `p216le`, `rgb48le`, `bgra`, `bgr0`, `rgba`, `rgb0`, `nv12`, `yuv420p`.
 - `STAT` (JSON `{"message":"…","code":"…"}`): Zustand, z. B. „no input signal“ (`code` optional, siehe oben). `code` `ndi.stats` mit `params` `{fps, received, ndiDropped, skipped, queue, connections}` (je Sekunde) wertet die Bridge als Zähler aus.
 - `ERR `: Fehler als JSON `{"message":"…","code":"…","params":{…}}` oder als reiner Text; der Helfer beendet sich danach.

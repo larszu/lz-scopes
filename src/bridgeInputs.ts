@@ -64,6 +64,23 @@ export function decodeRow(s: Source, ui: BridgeUi): Node | null {
       (v) => ui.upd({ decodeRange: v as SourceSettings['decodeRange'] }, true), t('bridgeui.rangeTitle')));
 }
 
+/**
+ * Field order and de-interlacing of an interlaced bridge source (#219, server/interlace.mjs).
+ * The de-interlacing choice appears once the source is (or is set to be) interlaced.
+ */
+export function interlaceRow(s: Source, ui: BridgeUi): Node | null {
+  if (s.kind !== 'stream' || s.url === 'resolve:' || s.url.startsWith('test:')) return null;
+  const set = s.settings, info = s.info;
+  const field = set.fieldOrder ?? 'auto';
+  const reported = info?.sourceFields ? t(info.sourceFields === 'bff' ? 'bridgeui.fieldsBff' : 'bridgeui.fieldsTff') : info ? t('bridgeui.fieldsProgressive') : '';
+  const interlaced = !!info?.interlaced || field === 'tff' || field === 'bff' || !!set.deinterlace;
+  return row(
+    select(field, [['auto', `${t('bridgeui.fieldsAuto')}${reported ? ` (${reported})` : ''}`], ['progressive', t('bridgeui.fieldsProgressive')], ['tff', t('bridgeui.fieldsTff')], ['bff', t('bridgeui.fieldsBff')]],
+      (v) => ui.upd({ fieldOrder: v as SourceSettings['fieldOrder'] }, true), t('bridgeui.fieldsTitle')),
+    interlaced ? select(set.deinterlace ? '1' : '0', [['0', t('bridgeui.deintOff')], ['1', t('bridgeui.deintOn')]],
+      (v) => ui.upd({ deinterlace: v === '1' }, true), t('bridgeui.deintTitle')) : '');
+}
+
 /** Button that lists capture devices of the bridge's machine (ffmpeg). */
 export function deviceButton(ui: BridgeUi): HTMLElement {
   return button(t('bridgeui.device'), async (e: Event) => {

@@ -20,6 +20,30 @@ DeckLink liefert in `VideoInputFrameArrived` ganze Frames (bei interlaced Modi b
 
 - Helfer `interlaced: true` bzw. ffprobe `field_order` tt/bb/tb/bt → Skalierung feldweise (`scale=…:interl=1`, ffmpeg-Option „set interlacing“, lokal geprüft: ffmpeg 9.0.1, Test mit verwobenen Halbbildern 235/16 bleibt getrennt statt grau gemischt).
 - `info.interlaced` → Messwerte-Panel zeigt „interlaced – beide Halbbilder als ein Bild, feldweise skaliert“.
-- Kein Deinterlacing: Scopes messen Signalwerte, ein Deinterlacer würde sie verändern. Das Bild enthält beide Halbbilder (zwei Zeitpunkte); innerhalb eines Halbbilds ist es gleichzeitig.
+- Standard ohne Deinterlacing: Scopes messen Signalwerte, ein Deinterlacer würde sie verändern. Das Bild enthält beide Halbbilder (zwei Zeitpunkte); innerhalb eines Halbbilds ist es gleichzeitig.
+
+### Je Quelle umschaltbar (#219, `server/interlace.mjs`)
+
+An der Quellkarte (Bridge-Quellen) zwei Auswahlfelder:
+
+- **Halbbilder**: auto (wie gemeldet) / Progressiv / Oberes Halbbild zuerst / Unteres Halbbild zuerst. Fest eingestellt gilt die Quelle als interlaced (bzw. progressiv) unabhängig von der Meldung; Parameter `field=`.
+- **Deinterlacing**: aus (Halbbilder getrennt, wie oben) / ein. Ein: `bwdif=mode=send_frame:parity=<tff|bff>:deint=all` vor dem Skalierer, auf dem vollen Bild; danach normales Skalieren ohne `interl`. Parameter `deint=1`. Bei Helfer-Quellen fällt damit der v210-Durchgang (#258) weg, weil ffmpeg rechnen muss.
+
+Herkunft der Reihenfolge (zeitlich erstes Halbbild):
+
+| Quelle | Wert | Grundlage |
+|---|---|---|
+| ffprobe `field_order` | tt, bt → oberes; bb, tb → unteres | libavutil `AVFieldOrder` (tb = „top coded first, bottom displayed first“); entscheidend ist die Anzeige-Reihenfolge. Gleiche Zuordnung wie das QuickTime-Atom `fiel` (9 = unteres zuerst angezeigt, 14 = oberes). |
+| DeckLink-Helfer | `fieldOrder` aus `GetFieldDominance()` | DeckLink SDK, `BMDFieldDominance` (`bmdUpperFieldFirst` / `bmdLowerFieldFirst`) |
+| AJA-/NDI-Helfer | ohne eigene Angabe: 480/486 Zeilen unteres, sonst oberes zuerst | übliche Digitalaufnahme von 525-Zeilen-Video (SMPTE ST 125 / BT.656; DV-NTSC und DeckLink-NTSC sind „lower first“), 625 Zeilen und 1080i (SMPTE ST 274) oberes zuerst. Annahme, an der Karte änderbar. |
+
+Messwerte:
+
+- Halbbilder getrennt: jede Zeile im Bild stammt aus genau einem Halbbild; durch `interl=1` mischt das Verkleinern keine Zeilen beider Halbbilder. Waveform, Vectorscope, Histogramm und Statistik zeigen beide Halbbilder zusammen (zwei Zeitpunkte), aber jeder Wert ist ein Signalwert. Die Reihenfolge ändert daran nichts; sie zählt erst beim Deinterlacing.
+- Deinterlacing ein: bwdif (Bob Weaver, aus yadif und w3fdif abgeleitet) behält die Zeilen des ersten Halbbilds und errechnet die des zweiten in bewegten Stellen aus Nachbarzeilen und Nachbarbildern; in ruhigen Stellen bleiben die Zeilen erhalten. In bewegten Stellen sind die Werte also gerechnet, keine Messwerte. Falsche Reihenfolge = ruckelnde, zitternde Bewegung. bwdif braucht das nächste Bild: ein Bild mehr Verzögerung.
+- Die QC-Messung (signalstats, #202) und der Timecode (showinfo) laufen immer vor dem Deinterlacer, also auf dem Signal selbst.
+- Mit Bildraten-Begrenzung (fps-Feld) sieht der Deinterlacer bei Helfer-Quellen nur die durchgelassenen Bilder; seine zeitlichen Nachbarn liegen dann weiter auseinander, die errechneten Zeilen in Bewegung werden ungenauer.
+
+Geprüft lokal mit ffmpeg (`test/interlace.test.ts`): Filterketten und ein verwobenes Testbild (Halbbilder 235/16) – getrennt bleibt jede Zeile 235 oder 16, deinterlaced entsteht ein Bild ohne Zeilenwechsel. Ungeprüft mit echter Hardware (DeckLink/AJA/NDI mit 1080i/576i/480i).
 
 Ungeprüft: echte UltraStudio/DeckLink-Hardware (keine vorhanden). Laut Helfer-Code kommen auch dort ganze Frames; ob das mit einem UltraStudio so funktioniert, muss Lars mit Gerät bestätigen.

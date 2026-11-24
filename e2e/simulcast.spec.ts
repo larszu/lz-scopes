@@ -12,7 +12,7 @@ test.afterAll(async () => { await a?.close(); });
 /** RGB of the overlay canvas of the simulcast panel at fractions of its picture area (ramp = top 70 %). */
 async function pick(fx: number[], fy: number) {
   return a.page.evaluate(({ fx, fy }) => {
-    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'simulcast')!;
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && p.dataset.scope === 'simulcast')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
     const dpr = c.width / c.getBoundingClientRect().width, w = c.width / dpr, h = c.height / dpr;
     let pw = w, ph = w / (16 / 9);
@@ -29,7 +29,7 @@ test('PQ ramp → SDR clip: grey below reference white, deviating highlights', a
   page.on('pageerror', (e) => errors.push(e.message));
   expectOk(await a.control({ cmd: 'pattern.select', pattern: 'pq-ramp' }));
   await singlePanel(a, 'simulcast');
-  const panel = page.locator('.panel').filter({ has: page.locator('.phead select', { hasText: 'Simulcast' }) }).first();
+  const panel = page.locator('.panel[data-scope="simulcast"]').first();
   const card = page.locator('#source-list .src').first();
   await card.locator('details.src-colour > summary').click();
   await card.locator('details.chain > summary').click();

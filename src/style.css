@@ -40,6 +40,13 @@ body { background: var(--surface-0); overflow: hidden; }
   #full { display: none; }
   .bar { gap: 4px; padding: 4px 6px; }
 }
+/* layouts as icon segment, scale as compact segment (#262) */
+.layout-seg, .unit-seg { flex-wrap: nowrap; }
+.layout-seg > button.lay { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding-inline: 6px; min-width: var(--control-h); }
+.layout-seg .layicon { display: block; flex: none; fill: none; stroke: currentColor; stroke-width: 1; }
+.layout-seg > button.lay[aria-pressed='true'] .layicon rect { fill: color-mix(in srgb, currentColor 22%, transparent); }
+.layout-seg .laytext { font-size: var(--fs-sm); }
+.unit-seg > button { padding-inline: 7px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .more-body .seg { flex-wrap: wrap; }
 .scheme-seg { flex: none; flex-wrap: nowrap; }
 
@@ -121,7 +128,8 @@ button.fav.on { color: var(--text); border-color: var(--sel-line); }
   --dv-separator-border: var(--line-1);
   --dv-paneview-header-border-color: var(--line-1);
   --dv-tabs-and-actions-container-font-size: var(--fs-sm);
-  --dv-tabs-and-actions-container-height: 24px;
+  /* one row for tab and panel head (#261) */
+  --dv-tabs-and-actions-container-height: calc(var(--control-h) + 2px);
   --dv-drag-over-background-color: var(--drag-bg);
   --dv-drag-over-border-color: var(--drag-border);
   --dv-sash-color: transparent;
@@ -137,6 +145,20 @@ button.fav.on { color: var(--text); border-color: var(--sel-line); }
   .lzs-dock { --dv-tabs-and-actions-container-height: var(--control-h); }
   .dv-sash::after { content: ''; position: absolute; inset: -12px; }
 }
+/* one head per panel (#261, src/dock.ts): tab (drag handle) and panel head share the row of the
+   group header. A tab alone in its group shows grip and number; stacked tabs keep their names. */
+.lzs-dock .dv-tabs-and-actions-container { container: panel / inline-size; }
+.lzs-dock .dv-tabs-and-actions-container:has(.dock-head > .phead) .dv-void-container { flex: 0 0 4px; }
+.lzs-dock .dv-tabs-container:has(.dv-tab:only-child) .tname { display: none; }
+.lzs-dock .dv-tabs-container:has(.dv-tab:only-child) .dv-tab { padding-inline: 4px 6px; }
+.lzs-dock .lzs-tab .dv-default-tab-content { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+.lzs-dock .lzs-tab .tnum { font-variant-numeric: tabular-nums; }
+.lzs-dock .lzs-tab .tgrip { color: var(--text-faint); cursor: grab; letter-spacing: -1px; }
+.compact .lzs-tab .tgrip { display: none; }
+.lzs-dock .dv-left-actions-container { flex: 1 1 auto; min-width: 0; display: flex; }
+.dock-head { flex: 1 1 auto; min-width: 0; display: flex; }
+.dock-head:empty { display: none; }
+.dock-head > .phead { flex: 1 1 auto; min-width: 0; background: transparent; border-bottom: 0; padding: 0 4px; }
 .dock-content { width: 100%; height: 100%; }
 .dock-content > .panel { width: 100%; height: 100%; border: 0; border-radius: 0; }
 
@@ -158,6 +180,12 @@ button.fav.on { color: var(--text); border-color: var(--sel-line); }
   .phead .plead > select, .phead button.icon { min-height: 36px; }
 }
 /* narrow panels: chips give way, the source select shrinks first */
+/* "Settings" next to the ⚙ from 360 px panel width (#261) */
+.phead .pop-trigger .plabel { display: none; }
+@container panel (min-width: 360px) {
+  .phead .pop-trigger:not(.help-trigger) { display: inline-flex; align-items: center; gap: 4px; }
+  .phead .pop-trigger .plabel { display: inline; font-size: var(--fs-sm); }
+}
 @container panel (max-width: 360px) {
   .phead .stagechip, .phead .llchip { display: none; }
   .phead .plead > select { max-width: 110px; }

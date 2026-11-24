@@ -7,6 +7,8 @@ export default {
   'main.resume': '▶ Resume',
   'main.addPanel': 'Add panel',
   'main.unitTitle': 'Waveform scale',
+  'main.unitSeg.bitTitle': 'Code values 8 / 10 bit – click again to switch between 8 and 10 bit',
+  'main.unitSeg.stop': 'Stops',
   'settings.ui.skinTitle': 'Colours of the user interface',
   'settings.ui.skinHint': 'Only the user interface changes. Measurement displays (traces, graticules, false colour) stay the same in every skin.',
   'settings.ui.sidebarShow': 'Show sources (B)',

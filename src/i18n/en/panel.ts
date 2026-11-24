@@ -6,6 +6,7 @@ export default {
   'panel.pinned': 'Pinned: keeps its source',
   'panel.pin': 'Pin: the panel keeps its source on “All panels” and new devices',
   'panel.solo': 'Maximise / restore (double-click on the head, Esc)',
+  'panel.tabDrag': 'Drag to move, split or stack the panel',
   'panel.stageChipTitle': 'Measuring point in the CST/LUT chain (⚙ → Measuring point, key C)',
   'panel.stageTitle': 'Where in the source’s chain (CST/LUT, source card) this panel measures',
   'panel.gainTitle': 'Double-click = default',

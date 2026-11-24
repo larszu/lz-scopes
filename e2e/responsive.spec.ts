@@ -80,11 +80,11 @@ for (const scheme of ['dark', 'light'] as const) {
       }
 
       // panel ⚙ popover: inside the viewport; a bottom sheet on phones
-      await page.locator('.panel .pop-trigger').first().click();
-      const pop = page.locator('.panel .popover:popover-open');
+      await page.locator('.phead .pop-trigger').first().click();
+      const pop = page.locator('.phead .popover:popover-open');
       await expect(pop).toBeVisible();
       await page.waitForTimeout(400);
-      await inViewport(page, '.panel .popover:popover-open');
+      await inViewport(page, '.phead .popover:popover-open');
       if (w <= 640) await expect(pop).toHaveClass(/sheet/);
       await page.screenshot({ path: join(SHOTS, `${tag}-popover.png`) });
       await page.keyboard.press('Escape');

@@ -10,6 +10,7 @@ import { channelInfo, layoutKnown, type ChannelInfo } from './dsp/layouts';
 import { IdentDetector, type IdentReport } from './dsp/ident';
 import { AvSyncMeter } from './dsp/avsync';
 import { toDb } from './dsp/truepeak';
+import { Envelope } from './dsp/envelope';
 import { t } from '../i18n';
 
 const RING = 32768;
@@ -30,6 +31,8 @@ export class AudioAnalysis {
   readonly ident: IdentDetector;
   /** A/V offset (bridge streams with PTS); fed by the source */
   readonly av: AvSyncMeter;
+  /** sample min/max per 10 ms for the last 30 s (picture history panel, #196) */
+  readonly env: Envelope;
   /** latest samples per channel; `frames` counts everything ever pushed */
   private ring: Float32Array[];
   frames = 0;
@@ -64,6 +67,7 @@ export class AudioAnalysis {
     this.names = this.info.map((c) => c.name);
     this.ident = new IdentDetector(fs, this.info);
     this.av = new AvSyncMeter(fs);
+    this.env = new Envelope(fs, this.channels);
     this.loud.onStep = (m, s) => {
       this.histM[this.histHead] = m; this.histS[this.histHead] = s;
       let tp = 0;
@@ -93,6 +97,7 @@ export class AudioAnalysis {
     this.frames += n;
     this.version++;
     this.lastPush = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    this.env.push(planar, n, this.lastPush);
     if (this.ltc) { this.ltc.process(planar[Math.min(this.ltcChannel, this.channels - 1)], n); this.ltcAt = this.lastPush; }
   }
 

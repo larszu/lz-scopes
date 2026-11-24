@@ -14,13 +14,13 @@ import { num, onLangChange, t, type Key } from './i18n';
 import { bridgeText } from './i18n/bridgeMessage';
 import { stopLabel, stopTicks, stopsOf } from './stops';
 
-export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'vector3' | 'hls' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats' | 'tiles' | 'noise' | 'wshading' | 'skinall' | 'chart' | 'drift' | 'shguide'
+export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'vector3' | 'hls' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'strip' | 'qclog' | 'hist' | 'stats' | 'tiles' | 'noise' | 'wshading' | 'skinall' | 'chart' | 'drift' | 'shguide'
   | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock' | 'genlock' | 'simulcast' | 'encoder' | 'lens' | 'sdi'
   | 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map' | 'light-spectrum' | 'light-swatch';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits' | 'stop';
 
 const SCOPE_IDS: ScopeType[] = [
-  'picture', 'wf-luma', 'wf-color', 'wf-skin', 'wf-green', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'vector3', 'hls', 'cie', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'qclog', 'timeline', 'hist', 'stats', 'match', 'simulcast', 'encoder', 'lens', 'sdi', 'tiles', 'noise', 'wshading', 'skinall', 'chart', 'drift', 'shguide',
+  'picture', 'wf-luma', 'wf-color', 'wf-skin', 'wf-green', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'vector3', 'hls', 'cie', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'qclog', 'timeline', 'strip', 'hist', 'stats', 'match', 'simulcast', 'encoder', 'lens', 'sdi', 'tiles', 'noise', 'wshading', 'skinall', 'chart', 'drift', 'shguide',
   'audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check', 'clock', 'genlock',
   // Opple Light Master (src/opple/scopes.ts, LIGHT_LABELS)
   'light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch',
@@ -37,7 +37,7 @@ export const SCOPE_GROUPS: readonly (readonly [group: string, scopes: readonly S
   ['picture', ['picture']],
   ['waveform', ['wf-luma', 'wf-color', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'wf-skin', 'wf-green', 'minmax']],
   ['colour', ['vector', 'vector3', 'hls', 'diamond', 'cie', 'cube', 'satlum', 'chplot']],
-  ['measure', ['hist', 'stats', 'timeline', 'qclog', 'noise', 'sdi', 'genlock', 'clock']],
+  ['measure', ['hist', 'stats', 'timeline', 'strip', 'qclog', 'noise', 'sdi', 'genlock', 'clock']],
   ['cameras', ['tiles', 'match', 'skinall', 'chart', 'drift', 'wshading', 'shguide', 'simulcast', 'encoder', 'lens']],
   ['audio', ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check']],
   ['light', ['light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch']],

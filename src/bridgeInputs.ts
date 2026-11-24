@@ -1,5 +1,5 @@
-// Source-card controls for inputs that live in the bridge: capture devices (device:…)
-// with mode/pixel format, Blackmagic DeckLink and AJA cards through the native helpers, and the
+// Inputs that live in the bridge, added from "+ Quelle" (#221): capture devices (device:…),
+// NDI®, DeckLink and AJA; and their source-card controls: mode/pixel format, Blackmagic DeckLink and AJA cards through the native helpers, and the
 // explicit decode matrix of the bridge's Y′CbCr → R′G′B′ step.
 
 import type { Source, SourceSettings } from './sources';
@@ -7,6 +7,7 @@ import { t } from './i18n';
 import { bridgeText } from './i18n/bridgeMessage';
 import { button, h, hint, link, openModal, row, select } from './ui';
 import { openDeckLinkSetup, type DeckLinkStatus } from './decklinkSetup';
+import { ndiName } from './deviceScan';
 import { ajaInputName, openAjaSetup, type AjaStatus } from './ajaSetup';
 
 export interface BridgeUi {
@@ -81,25 +82,29 @@ export function interlaceRow(s: Source, ui: BridgeUi): Node | null {
       (v) => ui.upd({ deinterlace: v === '1' }, true), t('bridgeui.deintTitle')) : '');
 }
 
-/** Button that lists capture devices of the bridge's machine (ffmpeg). */
-export function deviceButton(ui: BridgeUi): HTMLElement {
-  return button(t('bridgeui.device'), async (e: Event) => {
-    const btn = e.currentTarget as HTMLElement;
-    let list: { name: string; url: string; kind?: string }[] = [];
-    try { list = await (await fetch(`${ui.http()}/api/devices`)).json(); } catch { /* bridge missing */ }
-    const video = list.filter((d) => d.kind !== 'audio'), audio = list.filter((d) => d.kind === 'audio');
-    if (!video.length) { ui.hud(t('bridgeui.noCaptureDevices')); return; }
-    // sound to the picture from the same ffmpeg process (#audio=…): A/V timestamps comparable (#24)
-    const snd = select('', [['', t('bridgeui.noSound')], ...audio.map((d) => [d.url, t('bridgeui.soundOf', { name: d.name })] as [string, string])], () => {}, t('bridgeui.soundTitle'));
-    const guess = audio.find((a) => video.some((v) => v.name === a.name)) ?? audio.find((a) => /capture|hdmi|usb3/i.test(a.name));
-    if (guess) snd.value = guess.url;
-    btn.replaceWith(select('', [['', t('bridgeui.chooseDevice')], ...video.map((d) => [d.url, d.name] as [string, string])], (v) => {
-      if (!v) return;
+/**
+ * "+ Quelle → Capture-Gerät (Bridge)": capture devices of the bridge's machine (ffmpeg
+ * dshow/AVFoundation/V4L2), one click per device, with the sound to go with it (#221).
+ */
+export async function addCaptureDevice(http: () => string, hud: (m: string) => void, add: (url: string, name: string) => void) {
+  let list: { name: string; url: string; kind?: string }[] | null = null;
+  try { list = await (await fetch(`${http()}/api/devices`)).json(); } catch { /* bridge missing */ }
+  if (!list) { hud(t('bridgeui.bridgeUnreachable')); return; }
+  const video = list.filter((d) => d.kind !== 'audio'), audio = list.filter((d) => d.kind === 'audio');
+  if (!video.length) { hud(t('bridgeui.noCaptureDevices')); return; }
+  // sound to the picture from the same ffmpeg process (#audio=…): A/V timestamps comparable (#24)
+  const snd = select('', [['', t('bridgeui.noSound')], ...audio.map((d) => [d.url, t('bridgeui.soundOf', { name: d.name })] as [string, string])], () => {}, t('bridgeui.soundTitle'));
+  const guess = audio.find((a) => video.some((v) => v.name === a.name)) ?? audio.find((a) => /capture|hdmi|usb3/i.test(a.name));
+  if (guess) snd.value = guess.url;
+  const m = openModal({ title: t('bridgeui.chooseDevice'), size: 'sm', body: [
+    ...(audio.length ? [row(snd)] : []),
+    ...video.map((d) => button(d.name, () => {
+      m.close();
       // audio:<api>:<name> → #audio=<name> (ALSA: hw:…)
       const a = snd.value.replace(/^audio:[a-z]+:/, '');
-      ui.connect(a ? `${v}#audio=${a}` : v, video.find((d) => d.url === v)?.name);
-    }), snd);
-  }, { small: true, title: t('bridgeui.deviceTitle') });
+      add(a ? `${d.url}#audio=${a}` : d.url, d.name);
+    }, { attrs: { style: 'display:block;width:100%;margin-bottom:6px' } })),
+  ] });
 }
 
 const deckLinkStatus = async (ui: BridgeUi): Promise<DeckLinkStatus | null> => {
@@ -126,23 +131,6 @@ export async function addDeckLink(http: () => string, hud: (m: string) => void, 
   pick(st);
 }
 
-/** DeckLink/UltraStudio via the native helper; without a usable device the setup steps open. */
-export function deckLinkButton(ui: BridgeUi): HTMLElement {
-  return button('DeckLink…', async (e: Event) => {
-    const btn = e.currentTarget as HTMLElement;
-    const st = await deckLinkStatus(ui);
-    if (!st) { ui.hud(t('bridgeui.bridgeUnreachable')); return; }
-    const choose = (s: DeckLinkStatus) => {
-      deckLinkDevices.set(ui.http(), s.devices);
-      const sel = select('', [['', t('bridgeui.chooseDecklink')], ...s.devices.map((d) => [`decklink:${d.index}`, d.name] as [string, string])], (v) => { if (v) ui.connect(v, s.devices.find((d) => `decklink:${d.index}` === v)?.name); });
-      if (btn.isConnected) btn.replaceWith(sel);
-      if (s.devices.length === 1) ui.connect(`decklink:${s.devices[0].index}`, s.devices[0].name);
-    };
-    if (!st.available || !st.devices.length) { openDeckLinkSetup(st, () => deckLinkStatus(ui), choose); return; }
-    choose(st);
-  }, { small: true, title: t('bridgeui.decklinkTitle') });
-}
-
 /** 8/10 bit for DeckLink sources. */
 export function deckLinkRow(s: Source, ui: BridgeUi): Node | null {
   if (!s.url.startsWith('decklink:')) return null;
@@ -156,7 +144,7 @@ export function deckLinkRow(s: Source, ui: BridgeUi): Node | null {
 
 const CONNECTOR_NAMES: Record<string, string> = { sdi: 'SDI', hdmi: 'HDMI', optical: 'Optical SDI', component: 'Component', composite: 'Composite', svideo: 'S-Video' };
 
-/** SDI/HDMI … when the device has more than one input (list from DeckLink…, else fetched once). */
+/** SDI/HDMI … when the device has more than one input (list from adding the source, else fetched once). */
 function inputSelect(s: Source, ui: BridgeUi): Node | '' {
   const index = Number(s.url.slice('decklink:'.length));
   const list = deckLinkDevices.get(ui.http());
@@ -195,23 +183,6 @@ export async function addAja(http: () => string, hud: (m: string) => void, add: 
   pick(st);
 }
 
-/** AJA KONA/Io/U-TAP via the native helper; without a usable card the setup steps open. */
-export function ajaButton(ui: BridgeUi): HTMLElement {
-  return button('AJA…', async (e: Event) => {
-    const btn = e.currentTarget as HTMLElement;
-    const st = await ajaStatus(ui);
-    if (!st) { ui.hud(t('bridgeui.bridgeUnreachable')); return; }
-    const choose = (s: AjaStatus) => {
-      ajaDevices.set(ui.http(), s.devices);
-      const sel = select('', [['', t('bridgeui.chooseAja')], ...s.devices.map((d) => [`aja:${d.index}`, ajaLabel(d)] as [string, string])], (v) => { if (v) ui.connect(v, s.devices.find((d) => `aja:${d.index}` === v)?.name); });
-      if (btn.isConnected) btn.replaceWith(sel);
-      if (s.devices.length === 1) ui.connect(`aja:${s.devices[0].index}`, s.devices[0].name);
-    };
-    if (!st.available || !st.devices.length) { openAjaSetup(st, () => ajaStatus(ui), choose); return; }
-    choose(st);
-  }, { small: true, title: t('bridgeui.ajaTitle') });
-}
-
 /** 8/10 bit, input connector and setup for AJA sources. */
 export function ajaRow(s: Source, ui: BridgeUi): Node | null {
   if (!s.url.startsWith('aja:')) return null;
@@ -222,7 +193,7 @@ export function ajaRow(s: Source, ui: BridgeUi): Node | null {
       { small: true, variant: 'ghost', title: t('bridgeui.ajaSetupTitle') }));
 }
 
-/** SDI 1 / SDI 2 / HDMI 1 … with the format detected on each (list from AJA…, else fetched once). */
+/** SDI 1 / SDI 2 / HDMI 1 … with the format detected on each (list from adding the source, else fetched once). */
 function ajaInputSelect(s: Source, ui: BridgeUi): Node | '' {
   const index = Number(s.url.slice('aja:'.length));
   const list = ajaDevices.get(ui.http());
@@ -244,19 +215,17 @@ interface NdiStatus { available: boolean; helper: boolean; runtime: boolean; ver
 export const NDI_NOTICE = 'NDI® is a registered trademark of Vizrt NDI AB.';
 const ndiLink = () => { const a = link('https://ndi.video/', 'ndi.video'); a.title = NDI_NOTICE; return a; };
 
-/** NDI® sources found by the helper on the bridge's machine; says plainly when the runtime is missing. */
-export function ndiButton(ui: BridgeUi): HTMLElement {
-  return button('NDI®…', async (e: Event) => {
-    const btn = e.currentTarget as HTMLElement;
-    btn.textContent = 'NDI® …';
-    let st: NdiStatus | null = null;
-    try { st = await (await fetch(`${ui.http()}/api/ndi`)).json(); } catch { /* bridge missing */ }
-    btn.textContent = 'NDI®…';
-    if (!st) { ui.hud(t('bridgeui.bridgeUnreachable')); return; }
-    if (!st.available) { ui.hud(t('bridgeui.ndiUnavailable', { why: bridgeText(st, 'error') || t('bridgeui.ndiNeeds') })); return; }
-    if (!st.sources.length) { ui.hud(t('bridgeui.noNdiSources')); return; }
-    btn.replaceWith(select('', [['', t('bridgeui.chooseNdi')], ...st.sources.map((s) => [`ndi:${s.name}`, s.name] as [string, string])], (v) => { if (v) ui.connect(v, v.slice(4).replace(/^.*\((.*)\)$/, '$1').slice(0, 40)); }));
-  }, { small: true, title: `${t('bridgeui.ndiTitle')} ${NDI_NOTICE}` });
+/** "+ Quelle → NDI®": sources the helper on the bridge's machine finds; says plainly when the runtime is missing. */
+export async function addNdi(http: () => string, hud: (m: string) => void, add: (url: string, name: string) => void) {
+  let st: NdiStatus | null = null;
+  try { st = await (await fetch(`${http()}/api/ndi`)).json(); } catch { /* bridge missing */ }
+  if (!st) { hud(t('bridgeui.bridgeUnreachable')); return; }
+  if (!st.available) { hud(t('bridgeui.ndiUnavailable', { why: bridgeText(st, 'error') || t('bridgeui.ndiNeeds') })); return; }
+  if (!st.sources.length) { hud(t('bridgeui.noNdiSources')); return; }
+  const m = openModal({ title: t('bridgeui.chooseNdi'), size: 'sm', body: [
+    ...st.sources.map((x) => button(x.name, () => { m.close(); add(`ndi:${x.name}`, ndiName(x.name)); }, { attrs: { style: 'display:block;width:100%;margin-bottom:6px' } })),
+    h('p', { class: 'hint' }, ndiLink(), ` · ${NDI_NOTICE}`),
+  ] });
 }
 
 /** Link and trademark notice on NDI sources (NDI SDK licence). */

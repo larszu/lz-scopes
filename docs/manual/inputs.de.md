@@ -67,7 +67,7 @@ Während die Timeline läuft, beantwortet Resolve keine Scripting-Anfrage. Stand
 
 Resolve kann das Viewer-Bild ohne Bedienoberfläche ausgeben: **Arbeitsbereich → Video Clean Feed** auf einen zweiten Bildschirm. Mit Blackmagic Desktop Video geht es auch über eine DeckLink- oder UltraStudio-Karte.
 
-- **Über eine Capture-Karte (empfohlen):** Den Ausgang auf eine Capture-Karte führen, im selben oder einem anderen Rechner. In LZ Scopes eine Quelle **RTSP / Netz** anlegen und **Gerät…** oder **DeckLink…** wählen (siehe *Capture-Karten*). So bleiben 10 bit erhalten, und kein Bildschirm-Farbmanagement ist dazwischen.
+- **Über eine Capture-Karte (empfohlen):** Den Ausgang auf eine Capture-Karte führen, im selben oder einem anderen Rechner. In LZ Scopes **+ Quelle → Blackmagic DeckLink** oder **Capture-Gerät (Bridge)** wählen (siehe *Capture-Karten*). So bleiben 10 bit erhalten, und kein Bildschirm-Farbmanagement ist dazwischen.
 - **Über Bildschirm-Capture:** **+ Quelle → Bildschirm/Fenster** und den Clean-Feed-Bildschirm wählen. Das ist schnell eingerichtet, misst aber nur 8 bit. Außerdem rechnet das Betriebssystem das Bild in den Bildschirmfarbraum um. Für eine Farbbeurteilung ist dieser Weg nicht geeignet.
 
 ## Fenster mit Zuschnitt (Resolve, Lightroom, Capture One)
@@ -109,15 +109,15 @@ Den Farbraum des Exports stellst du an der Quelle ein, etwa Transfer **sRGB** f�
 
 ## Capture-Karten, DeckLink, AJA, NDI®
 
-In einer Quelle **RTSP / Netz** stehen unter dem Adressfeld diese Knöpfe:
+Geräte legst du unter **+ Quelle** an: **Blackmagic DeckLink**, **AJA** und **Capture-Gerät (Bridge)** stehen bei *Geräte*, **NDI®** bei *Netz*. Was die Bridge schon sieht, steht ganz oben unter **Gefunden** – DeckLink- und AJA-Eingänge, NDI-Quellen und Capture-Geräte. Ein Klick legt es als Quelle an; von selbst kommt nichts dazu, weil jede gemessene Quelle Rechenzeit kostet.
 
-![Stream-Karte mit Gerät…, DeckLink…, NDI®…, Ordner…](img/stream-card.png)
+- **Capture-Gerät (Bridge)**: Karten, die sich als Systemgerät melden (USB-Capture, Magewell, Blackmagic mit WDM- oder AVFoundation-Treiber). Die Bridge nimmt das Rohformat mit der höchsten Bittiefe, das die Karte anbietet. Modus, Bildrate und Pixelformat lassen sich fest wählen.
+- **Blackmagic DeckLink**: Blackmagic DeckLink und UltraStudio über den DeckLink-Helfer, mit 10 bit, eingebettetem Ton (bis 16 Kanäle, 48 kHz), Formaterkennung, Timecode und SDI-Zusatzdaten. Der Ton geht mit Zeitstempeln an die Audiomessung, der A/V-Versatz lässt sich also messen. Dafür muss Blackmagic Desktop Video installiert sein (siehe *Blackmagic Desktop Video einrichten*). Mit einem Gerät verbindet die App sofort, bei mehreren erscheint eine Liste. Fehlt der Helfer, der Treiber oder das Gerät, öffnen sich die Einrichtungsschritte.
+- **AJA**: AJA KONA, Io, U-TAP und andere AJA-Karten über den AJA-Helfer (libajantv2), mit 10 bit, eingebettetem Ton (bis 16 Kanäle, 48 kHz), Formaterkennung, Timecode, HDR-Kennung aus der SDI-VPID bzw. dem HDMI-InfoFrame und SDI-Zusatzdaten. Dafür muss der AJA-Treiber installiert sein (siehe *AJA-Karte einrichten*). Karten mit mehreren Eingängen bekommen eine Eingangsliste (SDI 1, SDI 2 … HDMI 1, jeweils mit dem dort erkannten Format). 4K/UHD: Auf 12G-Karten (KONA 5, Io 4K Plus …) nimmt ein SDI-Eingang UHD/4K auf; auf 3G-Karten mit 4K bietet die Liste **SDI 1–4 · Quad 2SI** und **SDI 1–4 · Quad Square Division** an (am Signal kann die Karte beides nicht unterscheiden: das wählen, was die Quelle sendet); 4K über HDMI geht an HDMI 1. Ein 4K-Bild hat in 10 bit rund 22 MB – bei 50/60 fps kann die Bridge Bilder auslassen, 8 bit halbiert die Datenmenge. Noch nicht mit einer Karte getestet.
+- **NDI®**: NDI-Quellen im Netz. Dafür muss die NDI-Runtime von [ndi.video](https://ndi.video/) installiert sein. LZ Scopes liefert sie nicht mit.
+- **Ordner…** an einer Quelle **RTSP / Netz**: siehe oben.
 
-- **Gerät…**: Karten, die sich als Systemgerät melden (USB-Capture, Magewell, Blackmagic mit WDM- oder AVFoundation-Treiber). Die Bridge nimmt das Rohformat mit der höchsten Bittiefe, das die Karte anbietet. Modus, Bildrate und Pixelformat lassen sich fest wählen.
-- **DeckLink…**: Blackmagic DeckLink und UltraStudio über den DeckLink-Helfer, mit 10 bit, eingebettetem Ton (bis 16 Kanäle, 48 kHz), Formaterkennung, Timecode und SDI-Zusatzdaten. Der Ton geht mit Zeitstempeln an die Audiomessung, der A/V-Versatz lässt sich also messen. Dafür muss Blackmagic Desktop Video installiert sein (siehe *Blackmagic Desktop Video einrichten*). Mit einem Gerät verbindet die App sofort, bei mehreren erscheint eine Liste. Fehlt der Helfer, der Treiber oder das Gerät, öffnen sich die Einrichtungsschritte.
-- **AJA…**: AJA KONA, Io, U-TAP und andere AJA-Karten über den AJA-Helfer (libajantv2), mit 10 bit, eingebettetem Ton (bis 16 Kanäle, 48 kHz), Formaterkennung, Timecode, HDR-Kennung aus der SDI-VPID bzw. dem HDMI-InfoFrame und SDI-Zusatzdaten. Dafür muss der AJA-Treiber installiert sein (siehe *AJA-Karte einrichten*). Karten mit mehreren Eingängen bekommen eine Eingangsliste (SDI 1, SDI 2 … HDMI 1, jeweils mit dem dort erkannten Format). 4K/UHD: Auf 12G-Karten (KONA 5, Io 4K Plus …) nimmt ein SDI-Eingang UHD/4K auf; auf 3G-Karten mit 4K bietet die Liste **SDI 1–4 · Quad 2SI** und **SDI 1–4 · Quad Square Division** an (am Signal kann die Karte beides nicht unterscheiden: das wählen, was die Quelle sendet); 4K über HDMI geht an HDMI 1. Ein 4K-Bild hat in 10 bit rund 22 MB – bei 50/60 fps kann die Bridge Bilder auslassen, 8 bit halbiert die Datenmenge. Noch nicht mit einer Karte getestet.
-- **NDI®…**: NDI-Quellen im Netz. Dafür muss die NDI-Runtime von [ndi.video](https://ndi.video/) installiert sein. LZ Scopes liefert sie nicht mit.
-- **Ordner…**: siehe oben.
+**Blackmagic unter Windows:** Sieht LZ Scopes nur ein „Blackmagic WDM Device“, ist das der Kameratreiber der Karte: 8 bit, ohne Ton und meist ohne Bild. Unter **Gefunden** steht dann ein Hinweis mit **Über DeckLink verbinden**. Das ist der Weg, den OBS „Blackmagic Source“ nennt: 10 bit, eingebetteter Ton, Timecode. Dasselbe gilt für eine UltraStudio, die unter macOS als Kamera erscheint.
 
 Unter **Wandlung** und **Pegel** stellst du Matrix und Wertebereich fest ein, wenn eine Karte ihr Signal falsch oder gar nicht kennzeichnet.
 
@@ -130,14 +130,14 @@ Das Messwerte-Panel zeigt unter *Abtastung*, wie die Bridge das Signal behandelt
 
 ### AJA-Karte einrichten
 
-**AJA…** öffnet diese Schritte, solange keine Karte nutzbar ist; **Einrichtung …** an einer AJA-Quelle öffnet sie jederzeit. Erledigte Schritte sind abgehakt, **Erneut prüfen** fragt die Bridge neu.
+**+ Quelle → AJA** öffnet diese Schritte, solange keine Karte nutzbar ist; **Einrichtung …** an einer AJA-Quelle öffnet sie jederzeit. Erledigte Schritte sind abgehakt, **Erneut prüfen** fragt die Bridge neu.
 
 1. **macOS / Windows:** auf [aja.com/support](https://www.aja.com/support) das Produkt wählen und die **AJA Desktop Software** installieren (sie enthält den Treiber); unter macOS den AJA-Treiber bei Nachfrage unter **Systemeinstellungen → Allgemein → Anmeldeobjekte & Erweiterungen** erlauben, dann neu starten. **Linux:** Der Treiber gehört zu [libajantv2](https://github.com/aja-video/libajantv2): in `driver/linux` `make` ausführen, dann `sudo ./load_ajantv2`; die Karte erscheint als `/dev/ajantv20`.
 2. Von einer AJA-Karte kann immer nur ein Programm aufnehmen: AJA ControlRoom, Premiere, Resolve oder andere Software, die die Karte nutzt, beenden. Eine von einem anderen Programm gehaltene Karte steht in der Liste als *belegt*.
 
 ### Blackmagic Desktop Video einrichten
 
-**DeckLink…** öffnet diese Schritte, solange kein Gerät nutzbar ist; **Einrichtung …** an einer DeckLink-Quelle öffnet sie jederzeit. Erledigte Schritte sind abgehakt, **Erneut prüfen** fragt die Bridge neu und verbindet, sobald ein Gerät gefunden ist.
+**+ Quelle → Blackmagic DeckLink** öffnet diese Schritte, solange kein Gerät nutzbar ist; **Einrichtung …** an einer DeckLink-Quelle öffnet sie jederzeit. Erledigte Schritte sind abgehakt, **Erneut prüfen** fragt die Bridge neu und verbindet, sobald ein Gerät gefunden ist.
 
 ![Einrichtungsschritte für DeckLink / UltraStudio](img/decklink-setup.png)
 

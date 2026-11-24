@@ -9,6 +9,7 @@ import type { Lut } from './lut';
 import type { Source } from './sources';
 import { RGC, RGC_GLSL, rgcScale } from './rgc';
 import { CUBE_GLSL, CUBE_SCALE } from './cube';
+import { SURFACE_GLSL, SURFACE_HEIGHT } from './hecto';
 import { t } from './i18n';
 import { R103, R103_GLSL, YUV_FETCH_GLSL, yuvScale } from './ycbcr';
 import { intersect } from './view';
@@ -17,9 +18,9 @@ import { BLUR_FS, CRT_DISPLAY_FS, CRT_FS, CRT_VS_MAIN, PERSIST_FS, PHOSPHORS, be
 /** Beam segments per CRT scope and frame (each is a quad, far more fill than a point). */
 const CRT_BUDGET = 150_000;
 
-export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'hls' | 'cie' | 'skin' | 'diamond' | 'cube' | 'satlum' | 'chplot';
-const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7, diamond: 8, cube: 9, satlum: 10, chplot: 11, hls: 12 };
-const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1, diamond: 2, cube: 1, satlum: 1, chplot: 1, hls: 1 };
+export type ScatterMode = 'luma' | 'rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'hls' | 'cie' | 'skin' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'surface';
+const MODE_ID: Record<ScatterMode, number> = { luma: 0, rgb: 1, parade: 2, yrgb: 3, ycbcr: 4, vector: 5, cie: 6, skin: 7, diamond: 8, cube: 9, satlum: 10, chplot: 11, hls: 12, surface: 13 };
+const INSTANCES: Record<ScatterMode, number> = { luma: 1, rgb: 3, parade: 3, yrgb: 4, ycbcr: 3, vector: 1, cie: 1, skin: 1, diamond: 2, cube: 1, satlum: 1, chplot: 1, hls: 1, surface: 1 };
 
 export type PictureMode = 'normal' | 'false' | 'zebra' | 'clip' | 'luma' | 'skin' | 'green' | 'gamut' | 'r103' | 'neutral' | 'peaking';
 // 'green' = the skin overlay with the green qualifier's range (panel.ts passes it as skin)
@@ -108,6 +109,7 @@ out float vW;
 ${SKIN_GLSL}
 ${LINEAR_GLSL}
 ${CUBE_GLSL}
+${SURFACE_GLSL}
 
 float waveY(float v) { return (v - uWMin) / (uWMax - uWMin) * 2.0 - 1.0; }
 
@@ -239,6 +241,13 @@ bool plotSample(ivec2 p, int ch, out vec2 pos, out vec3 col) {
     // 3D colour volume (cube.ts): rotated, orthographic
     pos = (uRot * cubeQ(rgb)).xy * ${CUBE_SCALE.toFixed(4)} * uView.x + uView.yz;
     if (uColorize == 1) col = srcCol;
+  } else if (uMode == 13) {
+    // Hectorscope (hecto.ts surfaceQ): picture x/y as the floor, the value as the height, same rotation as the volume
+    float v = uSurf.x < 0.5 ? Y : uSurf.x < 1.5 ? rgb.r : uSurf.x < 2.5 ? rgb.g : uSurf.x < 3.5 ? rgb.b : length(vec2(cb, cr)) / 0.5;
+    float yy = (float(p.y) + 0.5) / float(uSize.y);
+    vec3 q = vec3((x - 0.5) * 2.0, (v - 0.5) * ${SURFACE_HEIGHT.toFixed(4)}, (yy - 0.5) * 2.0 * uSurf.y);
+    pos = (uRot * q).xy * ${CUBE_SCALE.toFixed(4)} * uView.x + uView.yz;
+    col = uSurf.z > 0.5 ? srcCol : surfRamp(v);
   } else if (uMode == 12) {
     // HLS vectorscope (graticule.ts hsl/hlsPoint): HSL hue as the angle from the matrix's YUV red, HSL saturation as the radius
     vec3 c = clamp(rgb, 0.0, 1.0);
@@ -462,6 +471,8 @@ export interface ScatterParams {
   sec?: number[]; secN?: number;
   /** 3D volume (cube.ts): space id, row-major rotation, source → BT.2020, source white XYZ, cd/m² of 1.0 */
   cube?: { space: number; rot: number[]; to2020: number[]; white: number[]; nits: number; view?: { zoom: number; panX: number; panY: number } };
+  /** Hectorscope (hecto.ts): axis id, picture colours instead of the height ramp, grid columns, rotation and view */
+  surface?: { axis: number; source: boolean; cols: number; rot: number[]; view: { zoom: number; panX: number; panY: number } };
   /** channel plot: 0 R/G, 1 R/B, 2 G/B, 3 Y/Cb, 4 Y/Cr, 5 Cb/Cr */
   pair?: number;
   /** digital display: persistence τ in ms (trace history; −1 = infinite), as in the CRT mode */
@@ -778,7 +789,7 @@ export class Renderer {
     const acc = this.accum(key, vp.w, vp.h);
     const kind = this.texKind(src, t);
     const crt = p.crt?.on ? p.crt : null;
-    const wave = p.mode !== 'vector' && p.mode !== 'hls' && p.mode !== 'cie' && p.mode !== 'diamond' && p.mode !== 'cube' && p.mode !== 'satlum' && p.mode !== 'chplot';
+    const wave = p.mode !== 'vector' && p.mode !== 'hls' && p.mode !== 'cie' && p.mode !== 'diamond' && p.mode !== 'cube' && p.mode !== 'satlum' && p.mode !== 'chplot' && p.mode !== 'surface';
     // Flat reconstructed (#257): more points per sample, waveforms in the point scatter only
     const recon = !crt && wave && (p.recon ?? 1) > 1 ? Math.round(p.recon ?? 1) : 1;
     // Normalise so that the display brightness does not depend on source or panel size.
@@ -797,12 +808,14 @@ export class Renderer {
       // trace look low-passed (feedback 11/2026); rows are thinned instead (more samples of the same column)
       stepX = 1; stepY = Math.max(1, Math.ceil((t.w * t.h * recon) / p.maxSamples));
     } else stepX = stepY = Math.max(1, Math.ceil(Math.sqrt((t.w * t.h) / p.maxSamples)));
+    // Hectorscope: a fixed floor grid (Auflösung), never more points than the sample budget
+    if (p.surface && !crt) stepX = stepY = Math.max(stepX, Math.ceil(t.w / Math.max(8, p.surface.cols)));
     const cols = Math.ceil(t.w / stepX), rows = Math.ceil(t.h / stepY);
     const n = crt ? Math.max(1, cols - 1) * rows : cols * rows * recon;
     const area = (vp.w / sections) * vp.h;
     // the 3D volume spreads the points thinly: bigger dots and more weight so colours stay visible
-    const dot = !crt && !wave ? Math.max(1, Math.round(this.dpr)) * (p.mode === 'cube' ? 3 : 1) : 1;
-    const intensity = ((wave ? 0.9 : 0.6) * area) / n / (dot * dot) * (p.mode === 'cube' ? 6 : 1) * (p.density ?? 1);
+    const dot = !crt && !wave ? Math.max(1, Math.round(this.dpr)) * (p.mode === 'cube' ? 3 : p.mode === 'surface' ? 2 : 1) : 1;
+    const intensity = ((wave ? 0.9 : 0.6) * area) / n / (dot * dot) * (p.mode === 'cube' ? 6 : p.mode === 'surface' ? 4 : 1) * (p.density ?? 1);
 
     // Only re-scatter when the frame or a parameter changed; otherwise reuse the accumulation.
     const sig = `${ghost?.snapshot ? `snap:${ghost.snapshot}:${t.seq}` : `${src.id}:${src.frameSeq}`}:${t.w}x${t.h}:${acc.w}x${acc.h}:${src.colorspace}:${src.transfer}:${src.gamut}:${src.hlgLw}:${chainOf(src)?.sig ?? ''}:${JSON.stringify(baseOf(src).yuv)}:${baseOf(src).colorspace}:${this.dpr}:${JSON.stringify(p)}`;
@@ -863,6 +876,11 @@ export class Renderer {
         gl.uniform3fv(this.u(prog, 'uWhiteXYZ'), p.cube.white);
         gl.uniform1f(this.u(prog, 'uCubeNits'), p.cube.nits);
         gl.uniform3f(this.u(prog, 'uView'), p.cube.view?.zoom ?? 1, p.cube.view?.panX ?? 0, p.cube.view?.panY ?? 0);
+      }
+      if (p.surface) {
+        gl.uniformMatrix3fv(this.u(prog, 'uRot'), false, colMajor(p.surface.rot));
+        gl.uniform3f(this.u(prog, 'uView'), p.surface.view.zoom, p.surface.view.panX, p.surface.view.panY);
+        gl.uniform4f(this.u(prog, 'uSurf'), p.surface.axis, t.h / t.w, p.surface.source ? 1 : 0, 0);
       }
       gl.bindVertexArray(this.vao);
       if (crt) {

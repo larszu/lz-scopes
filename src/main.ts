@@ -15,7 +15,7 @@ import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts }
 import { LUT_SOURCES } from './lutLibrary';
 import { CHANNEL_PAIRS, DIAMOND_SPLIT, DIAMOND_ZOOMS, SCOPE_LABELS, diamondZoomView, parseScopeMenu, type DiamondZoom, scopeMenu, scopeMenuValue, isAudio, isWaveform, plotRect, vectorBands, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
 import { inBox, legendPosAt, nearSplit, splitAt, splitPos } from './overlayDrag';
-import { DEFAULT_SKIN, ROI_CLOSE, contentRect, legendBoxes, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, driftSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
+import { DEFAULT_SKIN, ROI_CLOSE, contentRect, legendBoxes, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, driftSources, tilePlan, panelView, is3d, rotate3d, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
 import { attachGestures, onChip } from './gestures';
 import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
@@ -24,6 +24,7 @@ import { connectRemote } from './remote';
 import { DEFAULT_ALARM, DEFAULT_QC, QC_LABELS, QC_TYPES, evaluate as evaluateQc, frameFingerprint, qcLog, toCsv, type AlarmSettings, type QcSettings } from './qclog';
 import { GRIDS } from './history';
 import { CUBE_SPACE_LABELS, DEFAULT_CUBE, type CubeSettings, type CubeSpace } from './cube';
+import { DEFAULT_SURFACE, SURFACE_RES, TOP_VIEW, type SurfaceAxis, type SurfaceSettings } from './hecto';
 import { DEFAULT_CRT, PERSIST_CHOICES, PHOSPHORS, type CrtSettings, type Phosphor } from './crt';
 import type { Command } from '../server/control.mjs';
 import type { GenConfig } from './audio/dsp/signals';
@@ -46,6 +47,8 @@ import { openPerfTest } from './perfTest';
 import { watchDevices, type Found } from './deviceScan';
 import { openLedTool } from './led/ui';
 import { mountOpple } from './opple/ui';
+import { lightStore } from './opple/store';
+import { lightControlState } from './opple/target';
 import { isLight, LIGHT_SCOPES, lightPanelSettings } from './opple/panelSettings';
 import { ledSettings, pictureSize } from './led/wall';
 import { Renderer, type PictureMode, type SkinRange } from './renderer';
@@ -1187,7 +1190,7 @@ function panelSettings(p: PanelState): Node[] {
     (v) => { p.stage = v === 'auto' ? undefined : v as Stage; save(); refreshHeads(); }, t('panel.stageTitle')));
   const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv' | 'skinBand' | 'greenBand' | 'greenWedge' | 'centreBox', label: string, dflt = false) =>
     checkbox(p[key] ?? dflt, label, (v) => { p[key] = v; save(); refreshHeads(); });
-  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'vector3' || p.scope === 'hls' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot';
+  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'vector3' || p.scope === 'hls' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'surface' || p.scope === 'satlum' || p.scope === 'chplot';
   if (scatter) {
     row(t('panel.brightness'), slider(Math.log2(p.gain), (v) => { p.gain = 2 ** v; save(); }, { min: -3, max: 3, step: 0.1, reset: 0, title: t('panel.gainTitle') }));
   }
@@ -1211,7 +1214,7 @@ function panelSettings(p: PanelState): Node[] {
   if (p.scope === 'parade' || p.scope === 'yrgb' || p.scope === 'wf-rgb') {
     row(t('panel.colour'), select(p.paradeColor ?? (p.scope === 'wf-rgb' || p.colorize ? 'channel' : 'mono'),
       [['mono', 'Mono'], ['channel', t('panel.channelColours')], ['source', t('panel.sourceColours')]], (v) => { p.paradeColor = v as PanelState['paradeColor']; save(); }));
-  } else if (scatter && p.scope !== 'wf-skin' && p.scope !== 'wf-green' && p.scope !== 'wf-color') {
+  } else if (scatter && p.scope !== 'wf-skin' && p.scope !== 'wf-green' && p.scope !== 'wf-color' && p.scope !== 'surface') {
     row(t('panel.colour'), check('colorize', t('panel.traceInColour')));
   }
   if (p.scope === 'diamond') {
@@ -1258,6 +1261,18 @@ function panelSettings(p: PanelState): Node[] {
       row('', checkbox(!!c.lutInput, t('panel.cube.inputGrid'), (v) => setCube({ lutInput: v })), checkbox(!!c.lutOnly, t('panel.cube.lutOnly'), (v) => setCube({ lutOnly: v })));
     }
     rows.push(hint(t('panel.cube.hint')));
+  }
+  if (p.scope === 'surface') {
+    const c = { ...DEFAULT_SURFACE, ...p.surface };
+    const setSurf = (patch: Partial<SurfaceSettings>) => { p.surface = { ...c, ...patch }; Object.assign(c, patch); save(); };
+    row(t('panel.surface.axis'), select(c.axis, (['luma', 'r', 'g', 'b', 'sat'] as SurfaceAxis[]).map((k) => [k, t(`scope.surface.axis.${k}`)] as [string, string]), (v) => setSurf({ axis: v as SurfaceAxis }),
+      t('panel.surface.axisTitle')));
+    row(t('panel.colour'), select(c.colour, [['height', t('panel.surface.height')], ['source', t('panel.sourceColours')]], (v) => setSurf({ colour: v as SurfaceSettings['colour'] })));
+    row(t('panel.surface.res'), select(String(c.res), SURFACE_RES.map((n) => [String(n), t('panel.surface.cols', { n })] as [string, string]), (v) => setSurf({ res: Number(v) }),
+      t('panel.surface.resTitle')));
+    row(t('panel.surface.view'), button(t('panel.surface.top'), () => { setSurf({ ...TOP_VIEW, colour: 'height' }); refreshPanelSettings(p); }, { small: true, title: t('panel.surface.topTitle') }),
+      button(t('panel.surface.angled'), () => setSurf({ yaw: DEFAULT_SURFACE.yaw, pitch: DEFAULT_SURFACE.pitch }), { small: true }));
+    rows.push(hint(t('panel.surface.hint')));
   }
   if (p.scope === 'chplot') {
     row(t('panel.channels'), select(String(p.pair ?? 0), CHANNEL_PAIRS.map((n, i) => [String(i), n] as [string, string]), (v) => { p.pair = Number(v); save(); }));
@@ -1340,7 +1355,7 @@ function panelSettings(p: PanelState): Node[] {
     row(t('panel.cie.share'), checkbox(p.gamutShare !== false, t('panel.cie.shareText'), (v) => { p.gamutShare = v; save(); refreshPanelSettings(p); }));
     if (p.gamutShare !== false) rows.push(hint(t('panel.cie.shareHint')));
   }
-  if (scatter) {
+  if (scatter && p.scope !== 'surface') {
     const c = { ...DEFAULT_CRT, ...p.crt };
     const setCrt = (patch: Partial<CrtSettings>, rebuild = false) => { p.crt = { ...c, ...patch }; Object.assign(c, patch); save(); if (rebuild) refreshPanelSettings(p); };
     row(t('panel.display'), select(c.on ? 'crt' : 'digital', [['digital', 'digital'], ['crt', t('panel.crt')]], (v) => setCrt({ on: v === 'crt' }, true),
@@ -1621,11 +1636,8 @@ function attachPanelGestures(idx: number, p: () => PanelState, body: HTMLElement
     commit: () => save(),
     blocked: () => shading.owns(p().scope),
     primaryTaken: () => ['picture', 'wf-skin', 'wf-green'].includes(p().scope),
-    rotates: () => p().scope === 'cube',
-    rotate: (dx, dy) => {
-      const c = { ...DEFAULT_CUBE, ...p().cube };
-      p().cube = { ...c, yaw: ((c.yaw + dx * 0.5 + 540) % 360) - 180, pitch: Math.max(-90, Math.min(90, c.pitch + dy * 0.5)) };
-    },
+    rotates: () => is3d(p().scope),
+    rotate: (dx, dy) => rotate3d(p(), dx, dy),
     wheelTaken: () => p().scope === 'wf-skin' || p().scope === 'wf-green',
     wheelAtCentre: () => p().scope === 'vector' || p().scope === 'hls',
   }, () => { resetView(idx); });
@@ -1639,6 +1651,10 @@ function resetView(idx: number): boolean {
     const c = { ...DEFAULT_CUBE, ...p.cube };
     if (isIdentity(panelView(p)) && c.yaw === DEFAULT_CUBE.yaw && c.pitch === DEFAULT_CUBE.pitch) return false;
     p.cube = { ...c, yaw: DEFAULT_CUBE.yaw, pitch: DEFAULT_CUBE.pitch };
+  } else if (p.scope === 'surface') {
+    const c = { ...DEFAULT_SURFACE, ...p.surface };
+    if (isIdentity(panelView(p)) && c.yaw === DEFAULT_SURFACE.yaw && c.pitch === DEFAULT_SURFACE.pitch) return false;
+    p.surface = { ...c, yaw: DEFAULT_SURFACE.yaw, pitch: DEFAULT_SURFACE.pitch };
   } else if (isIdentity(panelView(p))) return false;
   setPanelView(p, IDENTITY);
   save(); syncZoomChip(idx);
@@ -1663,7 +1679,7 @@ function syncZoomChip(idx: number) {
   v.zoom.hidden = !on;
   v.zoom.textContent = on ? `${zoomLabel(z)} ⟲` : '';
   v.zoom.dataset.zoom = String(Math.round(z * 1000) / 1000);
-  v.body.dataset.zoomable = viewLimits(p.scope) && p.scope !== 'cube' ? '1' : '';
+  v.body.dataset.zoomable = viewLimits(p.scope) && !is3d(p.scope) ? '1' : '';
 }
 
 /** Skin and green waveforms: drag the lo/hi lines, mouse wheel = hue tolerance. */
@@ -2582,6 +2598,8 @@ function controlState() {
     generator: { running: generator.running, signal: generator.cfg.signal, level: generator.cfg.level, freq: generator.cfg.freq, channels: generator.cfg.channels ?? 2 },
     /** local recordings (src/record/record.ts) */
     recording: recordingState(),
+    /** light measurement (#184, src/opple/target.ts): target, latest reading, distance to the target */
+    light: lightControlState(lightStore()),
     /** global settings (command "setting"): key, kind, value, choices or range */
     settings: describeSettings(REMOTE_SETTINGS),
   };

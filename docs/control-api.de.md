@@ -27,6 +27,9 @@ Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen
 |---|---|
 | `state` | – (Antwort `result` = Zustand) |
 | `source.select` | `source`; `panel` optional (ohne = alle Panels) |
+| `source.split` | `source`, `layout` (`2x2`, `3x3`, `4x4`, `2+8`, `1+5`; `none` entfernt die Kachel-Kameras), `inset` optional (Rand je Seite als Anteil der Kachelhöhe, 0 … 0,25, Vorgabe 0,1). Legt je Multiviewer-Kachel eine Kamera an (#217), die Antwort nennt die Kameras |
+| `panel.split` | `panel` (Bild-Panel), `mode` `toggle`/`on`/`off`, `source` optional (B), `spread` optional (`true` = die anderen nicht angepinnten Panels folgen). Der Split ist dann die Quelle `Split Panel N` (#177) |
+| `panel.follow` | `panel`, `follow` (Bild-Panel, dessen Quelle samt Split dieses Panel zeigt; `0` = wieder die eigene Quelle) |
 | `layout.preset` | `preset`: 1–6, Kennung (`lc`) oder Beschriftung (`2x2`, `Colorist`) |
 | `layout.load` | `name` einer gespeicherten Layout-Konfiguration |
 | `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `hls`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `qclog`, `hist`, `stats`, `tiles`, `noise`, `wshading`, `skinall`, `chart`, `drift`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `clock`, `genlock`) |

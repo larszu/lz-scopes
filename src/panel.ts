@@ -80,6 +80,8 @@ export interface PanelState {
   alarm?: AlarmSettings;
   /** Pinned panels keep their source when another panel switches. */
   pin?: boolean;
+  /** 0-based index of a picture panel whose source this panel follows, its A/B split included (#177) */
+  follow?: number;
   /** waveforms: EBU R 103 −5/105 % lines (off by default) and reference marks (BT.2408 / 18 % grey, on by default) */
   r103?: boolean; marks?: boolean;
   /** CIE scope in CIE 1976 u′v′ */
@@ -126,7 +128,9 @@ export interface PanelState {
    * picture: A/B comparison. `b` = 'stage:signal|cst|lut' (same source) or 'src:<id>';
    * split = divider at `pos` (drag it in the picture; 'wipe' = older saved name), diff = max |A − B| × `gain`.
    */
-  ab?: { mode: 'off' | 'split' | 'wipe' | 'diff' | 'crop' | 'butterfly'; b: string; pos?: number; gain?: number };
+  ab?: { mode: 'off' | 'split' | 'wipe' | 'diff' | 'crop' | 'butterfly'; b: string; pos?: number; gain?: number;
+    /** switching the split on lets the other unpinned panels (not picture panels) follow this one (#177) */
+    spread?: boolean };
   /** picture: overlay legend position (fractions of the free space, default bottom-left) */
   legendPos?: { x: number; y: number };
   /** picture: ACES 1.3 reference gamut compression as a preview (picture and gamut warning, not the scopes) */

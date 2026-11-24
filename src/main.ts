@@ -80,6 +80,9 @@ import { hasHelp, helpCard, helpOn, setHelpOn } from './help/scopeHelp';
 import { hasGhost, sanitizeRef, type RefSettings } from './ghost';
 import { PEAK_COLOURS, PEAK_DEFAULT, type PeakColour } from './focus';
 import { MAX_TILES, TILE_SCOPES, sanitizeTiles, type TileSettings } from './tiles';
+import { CameraSource, SplitSource, isDerived } from './derived';
+import { LAYOUT_LABELS, isLayout, layoutTiles, sanitizeCamera, type Frac, type LayoutId, type SavedCamera } from './cameras';
+import { openCameraSplit, type SplitChoice } from './cameraSplit';
 
 installFeedbackLog();
 declare const __APP_VERSION__: string | undefined;
@@ -110,7 +113,7 @@ interface Persisted {
   scenes: OverlayScene[]; activeScene: string;
   /** name of the last loaded layout configuration ('' after a preset) */
   layoutName: string;
-  sources: { kind: SourceKind; name: string; url: string; settings: SourceSettings; pattern?: PatternState; audioIn?: AudioInput }[];
+  sources: { kind: SourceKind; name: string; url: string; settings: SourceSettings; pattern?: PatternState; audioIn?: AudioInput; camera?: SavedCamera }[];
   /** tone generator settings (never saved as running) and output device */
   gen?: Partial<GenConfig>;
   genSink?: string;
@@ -160,10 +163,15 @@ let frozen = false;
 let fpsFrames = 0, displayFps = 0, fpsT = performance.now();
 
 function save() {
+  // inputs that come back on their own, and the cameras made from them (#217) in list order;
+  // a camera names its input by its place in the saved list. Splits (#177) come from the panels.
+  const kept = (s: Source) => s.kind === 'stream' || s.kind === 'pattern' || s.kind === 'audio';
+  const list = sources.filter((s) => kept(s) || (s instanceof CameraSource && kept(s.parent)));
   const p: Persisted = {
     ...state,
-    sources: sources.filter((s) => s.kind === 'stream' || s.kind === 'pattern' || s.kind === 'audio')
-      .map((s) => ({ kind: s.kind, name: s.name, url: s.url, settings: s.settings, pattern: s.pattern, ...(s.kind === 'audio' ? { audioIn: s.audioIn } : {}) })),
+    sources: list.map((s) => s instanceof CameraSource
+      ? { kind: s.kind, name: s.name, url: '', settings: {} as SourceSettings, camera: { parent: list.indexOf(s.parent), crop: s.crop, inset: s.inset, tile: s.tile } }
+      : { kind: s.kind, name: s.name, url: s.url, settings: s.settings, pattern: s.pattern, ...(s.kind === 'audio' ? { audioIn: s.audioIn } : {}) }),
   };
   try { localStorage.setItem(STORE_KEY, JSON.stringify(p)); } catch { /* ignore */ }
 }
@@ -523,11 +531,161 @@ function deviceLive(s: Source) {
 }
 
 function removeSource(s: Source) {
+  for (const c of sources.filter((x) => x instanceof CameraSource && x.parent === s)) removeSource(c);
   if (refState().sourceId === s.id) setRef({ sourceId: '' });
   s.stop();
   renderer.dropSource(s.id);
   sources.splice(sources.indexOf(s), 1);
   renderSources(); renderPanels(); save(); refreshMenu();
+}
+
+// ---------------------------------------------------------------- cameras (#217) and splits (#177)
+
+/** A camera from `parent`, placed after the input and its other cameras. */
+function addCamera(parent: Source, crop: Frac, inset: number, name: string, tile: string) {
+  const c = new CameraSource(parent, crop, inset, name, tile);
+  c.onChange = () => renderSources();
+  let at = sources.indexOf(parent) + 1;
+  while (at < sources.length && sources[at] instanceof CameraSource && (sources[at] as CameraSource).parent === parent) at++;
+  sources.splice(at < 1 ? sources.length : at, 0, c);
+  return c;
+}
+const tileCameras = (parent: Source) => sources.filter((x): x is CameraSource => x instanceof CameraSource && x.parent === parent && x.fromTile);
+/** Default name of a new camera: numbers run on across all cameras of other inputs. */
+const cameraName = (parent: Source, k: number) => t('cam.defaultName', { n: sources.filter((x) => x instanceof CameraSource && x.parent !== parent).length + k + 1 });
+
+/**
+ * Split an input into cameras (#217). Cameras of an earlier split of this input are re-used in
+ * order (panels keep showing "Cam 2"), extra ones removed. Returns the cameras.
+ */
+function splitInput(parent: Source, c: SplitChoice): CameraSource[] {
+  const old = tileCameras(parent);
+  const want = layoutTiles(c.layout).map((crop, k) => ({ crop, k, ...c.tiles[k] })).filter((x) => x.on !== false);
+  const out = want.map((w, j) => {
+    const tile = `${LAYOUT_LABELS[c.layout]} · ${w.k + 1}`, name = w.name || cameraName(parent, w.k);
+    const cam = old[j];
+    if (cam) { cam.name = name; cam.rehang(parent, w.crop, c.inset, tile); return cam; }
+    return addCamera(parent, w.crop, c.inset, name, tile);
+  });
+  for (const cam of old.slice(want.length)) removeSource(cam);
+  renderSources(); renderPanels(); save(); refreshMenu();
+  return out;
+}
+/** The split as the dialog shows it again (layout from the tile label, names, left-out tiles). */
+function currentSplit(parent: Source): SplitChoice | undefined {
+  const cams = tileCameras(parent);
+  const m = /^(.+) · \d+$/.exec(cams[0]?.tile ?? '');
+  const layout = m ? (Object.keys(LAYOUT_LABELS) as LayoutId[]).find((k) => LAYOUT_LABELS[k] === m[1]) : undefined;
+  if (!layout) return undefined;
+  const tiles = layoutTiles(layout).map((_, k) => {
+    const cam = cams.find((x) => x.tile === `${LAYOUT_LABELS[layout]} · ${k + 1}`);
+    return { name: cam?.name ?? cameraName(parent, k), on: !!cam };
+  });
+  return { layout, inset: cams[0].inset, tiles };
+}
+function openSplitDialog(parent: Source) {
+  const has = tileCameras(parent).length > 0;
+  openCameraSplit({
+    input: parent, current: currentSplit(parent), defaultName: (k) => cameraName(parent, k),
+    apply: (c) => { const cams = splitInput(parent, c); alertHud(t('cam.created', { n: cams.length, input: parent.name })); },
+    remove: has ? () => { for (const cam of tileCameras(parent)) removeSource(cam); } : undefined,
+  });
+}
+
+/** Picture panel with its A/B split switched on. */
+const splitOn = (p: PanelState | undefined) => !!p && p.scope === 'picture' && !!p.ab && (p.ab.mode === 'split' || p.ab.mode === 'wipe');
+const splitSourceOf = (idx: number) => sources.find((x): x is SplitSource => x instanceof SplitSource && x.panel === idx) ?? null;
+
+/**
+ * Keep one split source per open picture panel with the split on (#177), fed with its A, B
+ * and line. Returns true when one appeared or went.
+ */
+function syncSplits(): boolean {
+  let open: number[] = [];
+  try { open = dock.openIdx(); } catch { return false; }
+  let changed = false;
+  for (const sp of sources.filter((x): x is SplitSource => x instanceof SplitSource)) {
+    if (open.includes(sp.panel) && splitOn(state.panels[sp.panel])) continue;
+    sp.stop(); renderer.dropSource(sp.id); sources.splice(sources.indexOf(sp), 1); changed = true;
+  }
+  for (const idx of open) {
+    const p = state.panels[idx];
+    if (!splitOn(p)) continue;
+    let sp = splitSourceOf(idx);
+    if (!sp) { sp = new SplitSource(idx); sp.onChange = () => renderSources(); sources.push(sp); changed = true; }
+    const a = panelSource(p), bRef = p.ab!.b;
+    const b = bRef.startsWith('src:') ? sources.find((x) => x.id === bRef.slice(4)) ?? null : null;
+    // a split of a split would feed itself
+    sp.input = { a: a instanceof SplitSource ? null : a, b: b instanceof SplitSource ? null : b, pos: splitPos(p.ab!), stageB: !bRef.startsWith('src:') };
+  }
+  if (changed) renderPanels();
+  return changed;
+}
+/** Cameras and splits take the new pictures of their inputs (once per drawn frame). */
+function syncDerived() {
+  let moved = syncSplits();
+  for (const s of sources) if (s instanceof CameraSource) moved = s.sync() || moved;
+  for (const s of sources) if (s instanceof SplitSource) moved = s.sync() || moved;
+  if (moved) renderSources();
+}
+
+/** Switch the A/B split of picture panel `idx` on or off (head button, control API). */
+function setSplit(idx: number, on: boolean, b?: Source) {
+  const p = state.panels[idx];
+  if (p.scope !== 'picture') return;
+  const had = p.ab;
+  const ab = { ...(had ?? { mode: 'off' as const, b: 'stage:cst', pos: 0.5, gain: 4 }) };
+  if (on) {
+    // B: as chosen; first time (or B gone): the next video input after A
+    const a = panelSource(p);
+    if (b) ab.b = `src:${b.id}`;
+    else if (!had || (ab.b.startsWith('src:') && !sources.some((x) => `src:${x.id}` === ab.b))) {
+      const vids = sources.filter((x) => x.kind !== 'audio' && !(x instanceof SplitSource));
+      const next = vids.slice(vids.indexOf(a!) + 1).concat(vids).find((x) => x !== a);
+      if (next) ab.b = `src:${next.id}`;
+    }
+    ab.mode = 'split';
+  } else ab.mode = 'off';
+  p.ab = ab;
+  if (on && ab.spread) spreadSplit(idx);
+  save(); renderPanels(); refreshPanelSettings(p);
+}
+/** The other unpinned panels that are not picture panels follow picture panel `idx` (#177). */
+function spreadSplit(idx: number) {
+  for (const j of dock.openIdx()) {
+    const q = state.panels[j];
+    if (j !== idx && q && !q.pin && q.scope !== 'picture' && !isAudio(q.scope) && !isLight(q.scope)) q.follow = idx;
+  }
+}
+function followPanel(p: PanelState, idx: number | undefined) {
+  if (idx === undefined || state.panels[idx] === p) delete p.follow; else p.follow = idx;
+  save(); renderPanels();
+}
+
+/** Card of a camera or a split: what it is made of; colour and chain belong to the input. */
+function derivedCard(s: CameraSource | SplitSource, i: number): HTMLElement {
+  const head = h('div', { class: 'src-head' },
+    statusDot(s.status),
+    h('span', { class: 'idx', style: `--src-col:${sourceColour(s)}` }, String(i + 1)),
+    s instanceof CameraSource
+      ? h('input', { class: 'name', value: s.name, 'aria-label': t('main.sources'), onchange: (e: Event) => { s.name = (e.target as HTMLInputElement).value; save(); renderPanels(); } })
+      : h('span', { class: 'name' }, s.name),
+    iconButton('✕', s instanceof CameraSource ? t('main.src.remove') : t('panel.splitOff'), () => (s instanceof CameraSource ? removeSource(s) : setSplit(s.panel, false))));
+  const card = h('div', { class: `src derived ${s.status}`, 'data-derived': s.kind }, head);
+  if (s instanceof CameraSource) {
+    const size = s.cropSize;
+    const inputs = sources.filter((x) => x !== s.parent && x.kind !== 'audio' && !isDerived(x));
+    card.append(
+      row(s.fromTile ? chip(t('cam.badge', { size: size ? `${size[0]}×${size[1]}` : '–' }), { tone: 'warn', cls: 'camchip', title: t('cam.badgeTitle') }) : chip(t('cam.whole')),
+        h('span', { class: 'hint' }, s.tile ? t('cam.ofTile', { input: s.parent.name, tile: s.tile }) : t('cam.of', { input: s.parent.name }))),
+      ...(inputs.length ? [row(select('', [['', t('cam.replace')], ...inputs.map((x) => [x.id, `${sources.indexOf(x) + 1} ${x.name}`] as [string, string])], (v) => {
+        const to = sources.find((x) => x.id === v);
+        if (to) { s.rehang(to); save(); renderSources(); renderPanels(); }
+      }, t('cam.replaceTitle')))] : []),
+      hint(t('cam.colour', { input: s.parent.name })));
+  } else card.append(hint(t('split.card', { n: s.panel + 1 })));
+  card.append(h('div', { class: 'msg', 'data-msg': s.id, role: s.status === 'error' ? 'alert' : null }, s.message));
+  return card;
 }
 
 /** A control row with a layout class: 'opts' = grid of short selects, 'stack' = one long select per line. */
@@ -536,6 +694,7 @@ function classRow(cls: 'opts' | 'stack', ...kids: Parameters<typeof row>) { cons
 function renderSources() {
   const pb = playbackBar();
   $('#source-list').replaceChildren(...(pb ? [pb] : []), ...sources.map((s, i) => {
+    if (isDerived(s)) return derivedCard(s, i);
     const set = s.settings;
     const upd = (patch: Partial<SourceSettings>, reconnect = false) => {
       Object.assign(s.settings, patch); save();
@@ -548,6 +707,7 @@ function renderSources() {
         statusDot(s.status),
         h('span', { class: 'idx', style: `--src-col:${sourceColour(s)}` }, String(i + 1)),
         h('input', { class: 'name', value: s.name, 'aria-label': t('main.sources'), onchange: (e: Event) => { s.name = (e.target as HTMLInputElement).value; save(); renderPanels(); } }),
+        s.kind !== 'audio' && button(t('cam.split'), () => openSplitDialog(s), { small: true, title: t('cam.splitTitle'), attrs: { class: 'btn mini camsplit-open' } }),
         iconButton('✕', t('main.src.remove'), () => removeSource(s))),
     );
     if (s.kind === 'stream') {
@@ -1055,7 +1215,15 @@ const openViews = () => dock.openIdx().map((i) => views.get(i)).filter((v): v is
 const SOURCE_COLOURS = ['#4cc2ff', '#ffb347', '#7be08a', '#ff7aa8', '#c39bff', '#ffd84d', '#5fe0d2', '#ff8a5c'];
 const sourceColour = (s: Source | null) => (s ? SOURCE_COLOURS[Math.max(0, sources.indexOf(s)) % SOURCE_COLOURS.length] : 'transparent');
 
-function panelSource(p: PanelState) {
+function panelSource(p: PanelState, depth = 0): Source | null {
+  // following a picture panel (#177): its split while that is a source, else whatever it shows
+  if (p.follow !== undefined && depth < 4) {
+    const q = state.panels[p.follow];
+    if (q && q !== p && q.scope === 'picture') {
+      if (splitOn(q) && q.ab!.b.startsWith('src:')) { const sp = splitSourceOf(p.follow); if (sp) return sp; }
+      return panelSource(q, depth + 1);
+    }
+  }
   return sources.find((s) => s.id === p.sourceId) ?? sources[0] ?? null;
 }
 
@@ -1112,6 +1280,9 @@ function fillHead(v: PanelView) {
   }
   const [lead, opts] = [v.head.children[0] as HTMLElement, v.head.children[1] as HTMLElement];
   const multi = sources.length > 1 && !isLight(p.scope) && p.scope !== 'tiles';
+  // picture panels this one can follow (#177)
+  let followable: number[] = [];
+  try { followable = dock.openIdx().filter((j) => j !== idx && state.panels[j]?.scope === 'picture'); } catch { /* dock not built yet */ }
   // the source's identity colour also at the tab edge (#256), with more than one source
   tintTab(idx, multi);
   lead.replaceChildren(...[
@@ -1119,14 +1290,17 @@ function fillHead(v: PanelView) {
       const m = parseScopeMenu(val);
       p.scope = m.scope; if (m.picture) p.picture = m.picture; p.view = undefined; if (m.scope === 'vector' || m.scope === 'hls' || m.scope === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
     }, '', { 'aria-label': t('ui.scope') }),
-    multi && groupedSelect(panelSource(p)?.id ?? '', [
+    multi && groupedSelect(p.follow !== undefined && followable.includes(p.follow) ? `follow:${p.follow}` : panelSource(p)?.id ?? '', [
       ['', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`] as [string, string])],
+      ...(followable.length ? [[t('panel.followGroup'), followable.map((j) => [`follow:${j}`, t('panel.followPanel', { n: j + 1 })] as [string, string])] as [string, [string, string][]]] : []),
       [t('panel.allPanels'), sources.map((s, i) => [`all:${s.id}`, t('panel.allPanelsTo', { n: i + 1, name: s.name })] as [string, string])],
-    ], (val) => (val.startsWith('all:') ? switchAll(val.slice(4)) : switchSource(p, val)), t('panel.sourceTitle'), { class: 'srcsel', style: `--src-col:${sourceColour(panelSource(p))}` }),
+    ], (val) => (val.startsWith('all:') ? switchAll(val.slice(4)) : val.startsWith('follow:') ? followPanel(p, Number(val.slice(7))) : switchSource(p, val)), t('panel.sourceTitle'), { class: 'srcsel', style: `--src-col:${sourceColour(panelSource(p))}` }),
+    // A/B split in one click (#177); ⚙ holds B, the line and "other panels follow"
+    p.scope === 'picture' && iconButton('◧', splitOn(p) ? t('panel.splitOff') : t('panel.splitOn'), () => setSplit(idx, !splitOn(p)), { pressed: splitOn(p), attrs: { class: `icon splitbtn${splitOn(p) ? ' on' : ''}` } }),
     stageChip(p),
     multi && iconButton('📌', p.pin ? t('panel.pinned') : t('panel.pin'), () => { p.pin = !p.pin; save(); fillHead(v); }, { pressed: !!p.pin, attrs: { class: `icon pin${p.pin ? ' on' : ''}` } }),
   ].filter((x): x is HTMLElement => !!x));
-  (opts.firstChild as HTMLElement).replaceChildren(...[latencyChip(p), roiChip(p)].filter((x): x is HTMLElement => !!x));
+  (opts.firstChild as HTMLElement).replaceChildren(...[latencyChip(p), cameraChip(p), roiChip(p)].filter((x): x is HTMLElement => !!x));
   if (!v.pop || v.popScope !== p.scope) {
     v.pop?.remove();
     v.pop = popover({ label: '⚙', title: t('panel.settingsOf', { scope: SCOPE_LABELS[p.scope] }), heading: SCOPE_LABELS[p.scope], align: 'end', cls: 'psettings', content: () => panelSettings(state.panels[idx]) });
@@ -1495,7 +1669,11 @@ function panelSettings(p: PanelState): Node[] {
     row('Overlay', select(p.picture, [['normal', t('panel.ov.normal')], ['false', t('settings.scopes.falseColour')], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', t('panel.ov.skin')], ['green', t('panel.ov.green')], ['luma', 'Luma'], ['gamut', t('panel.ov.gamut')], ['r103', 'EBU R 103'], ['neutral', t('panel.ov.neutral')], ['peaking', t('focus.overlay')]], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
     const ab = p.ab ?? { mode: 'off' as const, b: 'stage:cst', pos: 0.5, gain: 4 };
     const setAb = (patch: Partial<NonNullable<PanelState['ab']>>, rebuild = false) => {
-      p.ab = { ...ab, ...patch }; Object.assign(ab, patch); save(); refreshHeads();
+      const wasOn = splitOn(p);
+      p.ab = { ...ab, ...patch }; Object.assign(ab, patch);
+      const idx = state.panels.indexOf(p);
+      if (!wasOn && splitOn(p) && ab.spread && idx >= 0) spreadSplit(idx);
+      save(); renderPanels();
       if (rebuild) refreshPanelSettings(p);
     };
     row(t('panel.ab'), select(ab.mode === 'wipe' ? 'split' : ab.mode, [['off', t('common.off')], ['split', t('panel.abSplit')], ['diff', t('panel.abDiff')], ['crop', t('panel.abCrop')], ['butterfly', t('panel.abButterfly')]], (v) => setAb({ mode: v as 'off' }, true),
@@ -1510,6 +1688,9 @@ function panelSettings(p: PanelState): Node[] {
       if (ab.mode === 'crop' || ab.mode === 'butterfly') rows.push(hint(t('panel.abCropHint')));
       if (ab.mode === 'split' || ab.mode === 'wipe') {
         row(t('panel.wipePos'), slider(splitPos(ab), (v) => setAb({ pos: v }), { min: 0, max: 1, step: 0.01, reset: 0.5, title: t('panel.wipeDrag') }));
+        // the split as a source for the other panels (#177)
+        row('', checkbox(!!ab.spread, t('panel.abSpread'), (v) => setAb({ spread: v }), t('panel.abSpreadTitle')));
+        rows.push(hint(ab.b.startsWith('src:') ? t('panel.abSplitSource', { name: t('split.name', { n: state.panels.indexOf(p) + 1 }) }) : t('panel.abSplitStage')));
       }
       if (ab.mode === 'diff') row(t('panel.gainAb'), select(String(ab.gain ?? 4), [['1', '×1'], ['4', '×4'], ['16', '×16'], ['64', '×64']], (v) => setAb({ gain: Number(v) }), t('panel.gainAbTitle')));
     }
@@ -1548,6 +1729,16 @@ function panelSettings(p: PanelState): Node[] {
 
 function refreshHeads() { views.forEach(fillHead); }
 
+/** Panel-head chip for a camera from a multiviewer tile (#217): its size, and what it is not good for. */
+function cameraChip(p: PanelState): Node | string {
+  const s = panelSource(p);
+  if (!(s instanceof CameraSource) || !s.fromTile || isAudio(p.scope) || isLight(p.scope)) return '';
+  const size = s.cropSize;
+  // sharpness, noise and focus peaking say little on a scaled tile: there the chip warns
+  const weak = p.scope === 'noise' || (p.scope === 'picture' && p.picture === 'peaking');
+  return chip(t('cam.badge', { size: size ? `${size[0]}×${size[1]}` : '–' }), { tone: weak ? 'warn' : undefined, cls: 'camchip', title: t('cam.badgeTitle') });
+}
+
 /** Header chip while a ROI is active: shows it and switches it off with one click. */
 function roiChip(p: PanelState): Node | string {
   const s = panelSource(p);
@@ -1582,12 +1773,12 @@ function toggleSolo(idx: number) {
 /** Switching the source in one panel switches every panel that is not pinned. */
 function switchSource(from: PanelState, id: string) {
   // only this panel (#252): several signals side by side are the point of a multi-panel layout
-  from.sourceId = id;
+  from.sourceId = id; delete from.follow;
   save(); renderPanels();
 }
 /** Every panel that is not pinned shows this source (the old behaviour, now an explicit command). */
 function switchAll(id: string) {
-  for (const q of state.panels) if (!q.pin) q.sourceId = id;
+  for (const q of state.panels) if (!q.pin) { q.sourceId = id; delete q.follow; }
   save(); renderPanels();
 }
 
@@ -1917,6 +2108,7 @@ Source.onArrive = (s) => {
 };
 
 function drawAll(now: number) {
+  syncDerived();
   const g = grid.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const displaySpace = state.display === 'auto' ? detected.space : state.display;
@@ -2362,10 +2554,34 @@ function execute(c: Command): unknown {
     case 'state': return controlState();
     case 'source.select': {
       const s = need(findSource(c.source), `Source ${c.source} not found`);
-      if (c.panel !== undefined) state.panels[panelIndex(c.panel)].sourceId = s.id;
-      else state.panels.forEach((p) => (p.sourceId = s.id));
+      if (c.panel !== undefined) { const q = state.panels[panelIndex(c.panel)]; q.sourceId = s.id; delete q.follow; }
+      else state.panels.forEach((p) => { p.sourceId = s.id; delete p.follow; });
       save(); renderPanels();
       return { source: s.name };
+    }
+    case 'source.split': {
+      const s = need(findSource(c.source), `Source ${c.source} not found`);
+      if (isDerived(s) || s.kind === 'audio') throw new Error(`${s.name} is not an input that can be split`);
+      if (c.layout === 'none') { const n = tileCameras(s).length; for (const cam of tileCameras(s)) removeSource(cam); return { removed: n }; }
+      const layout = need(isLayout(c.layout) ? c.layout : null, `Layout ${c.layout} unknown`);
+      const cams = splitInput(s, { layout, inset: typeof c.inset === 'number' ? c.inset : 0.1, tiles: layoutTiles(layout).map((_, k) => ({ name: cameraName(s, k), on: true })) });
+      return { cameras: cams.map((x) => ({ index: sources.indexOf(x) + 1, id: x.id, name: x.name, tile: x.tile })) };
+    }
+    case 'panel.split': {
+      const i = panelIndex(c.panel), p = state.panels[i];
+      if (p.scope !== 'picture') throw new Error(`Panel ${i + 1} is not a picture panel`);
+      const b = c.source !== undefined ? need(findSource(c.source), `Source ${c.source} not found`) : undefined;
+      if (typeof c.spread === 'boolean') p.ab = { ...(p.ab ?? { mode: 'off', b: 'stage:cst', pos: 0.5, gain: 4 }), spread: c.spread };
+      setSplit(i, mode(splitOn(p)), b);
+      return { panel: i + 1, split: splitOn(p), b: p.ab?.b };
+    }
+    case 'panel.follow': {
+      const i = panelIndex(c.panel);
+      if (c.follow === 0) { followPanel(state.panels[i], undefined); return { panel: i + 1, follow: null }; }
+      const j = panelIndex(c.follow);
+      if (state.panels[j].scope !== 'picture') throw new Error(`Panel ${j + 1} is not a picture panel`);
+      followPanel(state.panels[i], j);
+      return { panel: i + 1, follow: j + 1 };
     }
     case 'layout.preset': {
       const keys = Object.keys(PRESETS), r = c.preset;
@@ -2656,9 +2872,19 @@ document.addEventListener('keydown', (e) => {
 // LUTs referenced by saved chains come back from the browser's LUT store
 lutListeners.add(() => { renderSources(); refreshHeads(); needClear = true; });
 refreshRecent().then(() => renderSources());
+// restored[k] = the source of saved entry k (cameras name their input by that index, #217)
+const restored: (Source | null)[] = [];
+const laterCameras: { cam: SavedCamera; name: string }[] = [];
 for (const saved of state.sources) {
+  if (saved.kind === 'camera') {
+    const cam = sanitizeCamera(saved.camera), parent = cam ? restored[cam.parent] : null;
+    if (cam && parent && !isDerived(parent)) restored.push(addCamera(parent, cam.crop, cam.inset, saved.name, cam.tile ?? ''));
+    else { restored.push(null); if (cam) laterCameras.push({ cam, name: saved.name }); }
+    continue;
+  }
   [saved.settings.chain?.lut1, saved.settings.chain?.lut2].forEach((n) => { if (n) ensureLut(n); });
   const s = addSource(saved.kind, saved.name, saved.url, saved.settings);
+  restored.push(s);
   if (saved.pattern) Object.assign(s.pattern, saved.pattern);
   if (saved.audioIn) Object.assign(s.audioIn, saved.audioIn);
   // own images (img:…) and logo patterns come from IndexedDB: started once that is read
@@ -2666,6 +2892,9 @@ for (const saved of state.sources) {
   if (s.kind === 'audio' && s.audioIn.mode === 'generator') s.startAudio();
   if (s.kind === 'audio' && s.audioIn.mode === 'bridge' && s.audioIn.bridgeUrl) s.startAudio(undefined, bridgeUrl());
 }
+// a camera re-hung to an input further down the list
+for (const { cam, name } of laterCameras) { const parent = restored[cam.parent]; if (parent && !isDerived(parent)) addCamera(parent, cam.crop, cam.inset, name, cam.tile ?? ''); }
+if (laterCameras.length || restored.some((x) => x instanceof CameraSource)) { renderSources(); renderPanels(); save(); }
 // own images and logo from IndexedDB (#52); the change listener starts their pattern sources
 loadUserPatterns();
 mountOpple($('#opple'), {

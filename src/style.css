@@ -178,6 +178,17 @@ button.fav.on { color: var(--text); border-color: var(--sel-line); }
 button.pin { opacity: 0.35; filter: grayscale(1); }
 button.pin.on { opacity: 1; filter: none; background: transparent; border-color: transparent; }
 .stagechip { max-width: 40%; }
+/* A/B split in the picture panel head (#177): pressed = on */
+button.splitbtn.on { background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-text); }
+@container panel (max-width: 360px) { .phead .camchip { display: none; } }
+/* cameras from a multiviewer (#217): "Split …" dialog and the cards of cameras and splits */
+.src .camsplit-open { flex: none; }
+.src.derived .name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camsplit .camsplit-view { display: block; width: 100%; height: auto; border-radius: var(--radius-s); background: #000; cursor: pointer; margin: var(--sp-2) 0; }
+.camsplit .camsplit-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--sp-1) var(--sp-2); margin: var(--sp-2) 0; }
+.camsplit .camsplit-tile { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.camsplit .camsplit-tile input[type='text'], .camsplit .camsplit-tile input:not([type]) { flex: 1; min-width: 0; }
+.camsplit .camsplit-layouts .seg { flex-wrap: wrap; }
 button.roichip { background: var(--warn-bg); border-color: var(--warn); color: var(--warn-text); }
 .body .ask { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 5; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; max-width: calc(100% - 16px); background: var(--surface-2); border: 1px solid var(--warn); border-radius: var(--radius-lg); padding: 6px 8px; color: var(--warn-text); }
 

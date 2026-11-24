@@ -23,10 +23,16 @@ const MODES = ['toggle', 'on', 'off'];
 export const SETTING_KEYS = ['theme', 'scheme', 'sidebar', 'display', 'hdrPreview', 'surround', 'unit', 'tint', 'precision', 'falseColour', 'skinLuma', 'skinHue', 'zebra', 'stage', 'deRef', 'lowLatency', 'refSource', 'refMode', 'refOpacity'];
 export const GEN_SIGNALS = ['sine', 'square', 'triangle', 'saw', 'white', 'pink', 'pink-band', 'sweep', 'steps', 'ebu-ident', 'glits', 'ident-lr', 'polarity', 'avsync', 'blits', 'ebu-multi'];
 
+/** Multiviewer layouts of "Split …" (src/cameras.ts LAYOUTS) and 'none'. */
+export const SPLIT_LAYOUTS = ['2x2', '3x3', '4x4', '2+8', '1+5', 'none'];
+
 /** Every command with a short description (GET /api/control/commands, docs). */
 export const COMMANDS = {
   'state': 'Query the state',
   'source.select': 'Select a source: source (number, name or id), panel (optional; none = all panels)',
+  'source.split': 'Split a source into cameras, one per multiviewer tile (#217): source, layout (2x2, 3x3, 4x4, 2+8, 1+5; none = remove its tile cameras), inset (border per side as share of the tile height, 0 … 0.25, optional)',
+  'panel.split': 'A/B split of a picture panel (#177): panel, mode toggle|on|off, source (B, optional), spread (true = the other unpinned panels follow, optional)',
+  'panel.follow': 'A panel follows a picture panel, its A/B split included (#177): panel, follow (picture panel; 0 = its own source again)',
   'layout.preset': 'Layout preset: preset (1–6, id such as lc or label such as 2×2)',
   'layout.load': 'Load a saved layout configuration: name',
   'panel.scope': 'Scope of a panel: panel, scope',
@@ -109,6 +115,20 @@ export function validateCommand(raw) {
   switch (cmd) {
     case 'state': break;
     case 'source.select': check(reqRef('source')); check(optRef('panel')); break;
+    case 'source.split': {
+      check(reqRef('source'));
+      if (!SPLIT_LAYOUTS.includes(/** @type {string} */ (c.layout))) errors.push(`layout: ${SPLIT_LAYOUTS.join(', ')}`); else out.layout = c.layout;
+      if (c.inset !== undefined && c.inset !== '') { const v = Number(c.inset); if (!Number.isFinite(v) || v < 0 || v > 0.25) errors.push('inset: 0 … 0.25'); else out.inset = v; }
+      break;
+    }
+    case 'panel.split':
+      check(reqRef('panel')); check(optMode()); check(optRef('source'));
+      if (c.spread !== undefined && typeof c.spread !== 'boolean') errors.push('spread: true/false'); else if (c.spread !== undefined) out.spread = c.spread;
+      break;
+    case 'panel.follow':
+      check(reqRef('panel'));
+      if (c.follow === 0 || c.follow === '0') out.follow = 0; else check(reqRef('follow'));
+      break;
     case 'layout.preset': check(reqRef('preset')); break;
     case 'layout.load': check(reqRef('name')); break;
     case 'panel.scope':

@@ -11,7 +11,7 @@
 export const CODECS10 = ['hevc10', 'hevc422', 'v210', 'prores'];
 
 export const OVERLAY_SCOPES = ['wf-luma', 'wf-color', 'wf-skin', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'hls', 'cie', 'hist'];
-export const AUDIO_SCOPES = ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check'];
+export const AUDIO_SCOPES = ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check', 'audio-surround', 'audio-field', 'audio-spl', 'audio-rta'];
 /** Opple Light Master views (src/opple/scopes.ts) */
 export const LIGHT_SCOPES = ['light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch'];
 export const PANEL_SCOPES = ['picture', ...OVERLAY_SCOPES, 'vector3', 'wf-green', 'match', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'timeline', 'qclog', 'stats', 'simulcast', 'encoder', 'lens', 'sdi', 'tiles', 'noise', 'wshading', 'skinall', 'chart', 'drift', 'shguide', ...AUDIO_SCOPES, 'clock', 'genlock', ...LIGHT_SCOPES];

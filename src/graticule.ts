@@ -15,13 +15,13 @@ import { bridgeText } from './i18n/bridgeMessage';
 import { stopLabel, stopTicks, stopsOf } from './stops';
 
 export type ScopeType = 'picture' | 'wf-luma' | 'wf-color' | 'wf-skin' | 'wf-green' | 'match' | 'wf-rgb' | 'parade' | 'yrgb' | 'ycbcr' | 'vector' | 'vector3' | 'hls' | 'cie' | 'diamond' | 'cube' | 'satlum' | 'chplot' | 'minmax' | 'timeline' | 'qclog' | 'hist' | 'stats' | 'tiles' | 'noise' | 'wshading' | 'skinall' | 'chart' | 'drift' | 'shguide'
-  | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'clock' | 'genlock' | 'simulcast' | 'encoder' | 'lens' | 'sdi'
+  | 'audio-meter' | 'audio-loudness' | 'audio-spectrum' | 'audio-phase' | 'audio-check' | 'audio-surround' | 'audio-field' | 'audio-spl' | 'audio-rta' | 'clock' | 'genlock' | 'simulcast' | 'encoder' | 'lens' | 'sdi'
   | 'light-cie' | 'light-vector' | 'light-bands' | 'light-trend' | 'light-map' | 'light-spectrum' | 'light-swatch';
 export type Unit = 'percent' | 'bit8' | 'bit10' | 'nits' | 'stop';
 
 const SCOPE_IDS: ScopeType[] = [
   'picture', 'wf-luma', 'wf-color', 'wf-skin', 'wf-green', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'vector3', 'hls', 'cie', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'qclog', 'timeline', 'hist', 'stats', 'match', 'simulcast', 'encoder', 'lens', 'sdi', 'tiles', 'noise', 'wshading', 'skinall', 'chart', 'drift', 'shguide',
-  'audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check', 'clock', 'genlock',
+  'audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check', 'audio-surround', 'audio-field', 'audio-spl', 'audio-rta', 'clock', 'genlock',
   // Opple Light Master (src/opple/scopes.ts, LIGHT_LABELS)
   'light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch',
 ];
@@ -39,7 +39,7 @@ export const SCOPE_GROUPS: readonly (readonly [group: string, scopes: readonly S
   ['colour', ['vector', 'vector3', 'hls', 'diamond', 'cie', 'cube', 'satlum', 'chplot']],
   ['measure', ['hist', 'stats', 'timeline', 'qclog', 'noise', 'sdi', 'genlock', 'clock']],
   ['cameras', ['tiles', 'match', 'skinall', 'chart', 'drift', 'wshading', 'shguide', 'simulcast', 'encoder', 'lens']],
-  ['audio', ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check']],
+  ['audio', ['audio-meter', 'audio-loudness', 'audio-surround', 'audio-spectrum', 'audio-rta', 'audio-phase', 'audio-field', 'audio-spl', 'audio-check']],
   ['light', ['light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch']],
 ];
 /** Picture overlays that also appear as entries of their own under "Picture" (a picture panel with that overlay). */

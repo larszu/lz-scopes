@@ -382,6 +382,35 @@ AudioContext mit der Abtastrate des Streams, AudioWorklet mit Ringpuffer (`src/a
 - Echte Hardware: Mehrkanal-Interface, Dante, A/V-Versatz gegen Kamera/Capture, Kalibrierung über HDMI-Schleife.
 - Tech 3341 #7/#8 und Tech 3342 #5/#6 mit den EBU-Programmdateien (nicht im Repo, Urheberrecht).
 
+## (i) Audio-Panels #183, #186, #187 (11/2026)
+
+Neue Panels: `audio-surround`, `audio-field`, `audio-spl`, `audio-rta` (`src/audio/soundPanels.ts`), Rechenkern in `src/audio/dsp/weighting.ts`, `spl.ts`, `stereofield.ts`. Pegelbezug überall AES17: 0 dBFS = Effektivwert eines Sinus mit Vollaussteuerung.
+
+### i.1 Schallpegel (IEC 61672-1:2013)
+
+- Frequenzbewertung A und C nach Annex E, Gl. (E.1)–(E.6): Polfrequenzen f1 = 20,598997 Hz, f2 = 107,65265 Hz, f3 = 737,86223 Hz, f4 = 12194,217 Hz, Normierung A1000 = −2,000 dB, C1000 = −0,062 dB. Die Norm selbst wurde nicht als PDF geöffnet; die Konstanten sind die in Annex E abgedruckten, wie sie in zahlreichen Umsetzungen stehen (**Sekundärquelle**). Die Formel trifft die Nennwerte der Tabelle 3 auf 0,1 dB (test/spl.test.ts).
+- Digitales Filter: analoger Prototyp (Doppelpole f1 und f4, Einzelpole f2 und f3, Nullstellen bei 0 Hz) per bilinearer Transformation, jede Polfrequenz vorverzerrt, bei 1 kHz auf 0 dB normiert. Abweichung von Annex E bei 48 kHz: ≤ 0,03 dB bis 1 kHz, +0,3 dB bei 4 kHz, +0,7 dB bei 8 kHz, +0,6 dB bei 10 kHz, −0,2 dB bei 12,5 kHz, −3,0 dB bei 16 kHz, −11,8 dB bei 20 kHz. Bei 44,1 kHz ähnlich, bei 96 kHz unter 0,5 dB bis 16 kHz. Die Toleranzgrenzen der Klasse 1 (Tabelle 3) wurden nicht aus der Norm geprüft; der Test hält nur die Werte bei 16 kHz gegen +2,5/−16 dB (**Einschätzung**, Grenzwerte aus Sekundärquellen).
+- Zeitbewertung F (τ = 125 ms) und S (τ = 1 s) als Exponentialmittel auf x² (§5.8); Abklingrate im Test 34,7 dB/s bzw. 4,3 dB/s. L_eq,T als energetischer Mittelwert über 100-ms-Blöcke (gleitend, bis 60 min, oder seit Rücksetzen). Spitzenpegel L_Cpeak = 20 lg(√2·|x|max) + Kalibrierung (Spitze eines Sinus liegt 3,01 dB über seinem Effektivwert).
+- Kalibrierung: eine Zahl „dB SPL bei 0 dBFS“ je Panel; mit einem 94-dB-Kalibrator = 94 − Anzeige in dBFS. 0 = unkalibriert.
+- DIN 15905-5 (Veranstaltungen): Beurteilungspegel L_Aeq über 30 min ≤ 99 dB(A), L_Cpeak ≤ 135 dB(C). Die Werte stammen aus Sekundärquellen; die Norm wurde nicht geöffnet. Das Panel färbt nur, es ersetzt keine Messung nach der Norm (keine Beurteilungszuschläge, kein geeichtes Gerät).
+
+### i.2 RTA (IEC 61260-1:2014)
+
+Bänder im Basis-10-System: G = 10^(3/10), fr = 1000 Hz; b ungerade fm = fr·G^(x/b), b gerade fm = fr·G^((2x+1)/(2b)); Bandgrenzen fm·G^(∓1/(2b)). Berechnung aus einer Hann-FFT (16384, ab 1/12 Oktave 32768 Punkte): jedes Bin trägt anteilig zu seiner Überdeckung mit dem Band bei, geteilt durch die äquivalente Rauschbandbreite 1,5 Bins. Ein Band schmaler als ein Bin zeigt damit die Leistungsdichte dieses Bins – kein echtes Filter nach IEC 61260-1 (keine Prüfung der Filterflanken). Nennbeschriftung nach der R10-Reihe (Annex E). Spitzen fallen mit 6 dB/s (eigene Festlegung). Schnappschüsse speichern die Z-bewertete Kurve ohne Kalibrierung im Panel (Projekt), damit sie Pegelachse und Kalibrierung folgen.
+
+### i.3 Stereofeld je Band (#186)
+
+Aus den Hann-Spektren L(k), R(k) desselben Fensters je Band: P_L, P_R, X = Σ Re(L·R*), über die Korrelationszeit des Panels exponentiell gemittelt. Korrelation r = X/√(P_L·P_R) (die bandbegrenzte Form von r = ΣLR/√(ΣL²ΣR²) des Phasenmessers), Breite w = P_S/(P_M+P_S) mit M = (L+R)/2, S = (L−R)/2, Balance (P_R−P_L)/(P_R+P_L). Mono-Verträglichkeit: Pegeländerung der Monosumme gegenüber dem Stereoprogramm, K-bewertet nach BS.1770-5: ΔL = 10 lg(Σ g·P_M / Σ g·(P_L+P_R)/2); 0 dB mono, −3 dB unkorreliert. Für Korrelation je Band und Monoverlust gibt es keine frei zugängliche Norm; die Definitionen sind **eigene Festlegungen**, ebenso die Farbschwellen (Mono > −3,5 dB grün, > −6 dB gelb).
+
+### i.4 Surround-Stern (#183)
+
+Achsen in den Sollrichtungen der Kanäle (layouts.ts, BS.2051-Zuordnung als Einschätzung, siehe h.2), LFE nach hinten. Radius = Effektivwert über 300 ms, −60 … 0 dBFS, Ring bei −18 dBFS (EBU R 68). Phasenbalken je Kanalpaar (L/R, Ls/Rs, Lb/Rb, …) mit der Korrelation über die eingestellte Zeit. Eigene Kanalnamen je Panel (Projekt) wirken in Pegelmesser und Stern; der Pegelmesser beschriftet bei mehr als zwei Kanälen die AES3-Paare 1/2, 3/4, ….
+
+### i.5 Geprüft / ungeprüft
+
+- Geprüft: vitest (Bewertungskurven, Zeitkonstanten, L_eq, Bänder, Stereofeld mit synthetischen Signalen) und e2e mit der Generator-Schleife (1 kHz −18 dBFS → LAF −18,0, L_Cpeak −15,0, Mono 0,0 dB, Korrelation +1,00).
+- **Ungeprüft:** mit echtem Messmikrofon und Schallkalibrator, gegen einen geeichten Schallpegelmesser, mit echtem 5.1-Material über die Bridge, gegen Smaart oder ein anderes RTA.
+
 ---
 
 ## Quellen

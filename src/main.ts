@@ -1171,7 +1171,7 @@ function diamondFrame(p: PanelState) {
 
 function panelSettings(p: PanelState): Node[] {
   if (p.scope === 'tiles') return tileSettings(p);
-  if (isAudio(p.scope)) return audioPanelSettings(p, save);
+  if (isAudio(p.scope)) return audioPanelSettings(p, save, () => refreshPanelSettings(p));
   if (isLight(p.scope)) return lightPanelSettings(p, save);
   if (p.scope === 'simulcast') return simulcastPanelSettings(p, save);
   if (p.scope === 'encoder') return encoderPanelSettings(p, save, sources);

@@ -73,7 +73,7 @@ Tasten: `1`–`6` Layout · `Leertaste` Einfrieren bzw. Wiedergabe · `←`/`→
 - **Richtig messen**: Y′CbCr unbeschnitten (Sub-Black, Super-White; DeckLink/AJA bei nativer Breite als v210 ohne ffmpeg), EBU R 103, PQ/HLG in cd/m², Log-Kurven der Hersteller, CST und LUTs je Quelle, Skala in %, 8/10 bit, nits oder Blenden.
 - **Kameras abgleichen**: Referenzkamera mit Geisterspur, Farbtafel-Match mit ΔE und Matrixvorschlag, Hautton aller Kameras in einem Vectorscope, Drift-Wächter, Touch Shading über die [LZ Camera Bridge](https://github.com/larszu/lz-camera-bridge). Kamera-Farbabgleich, der die Kamera selbst nachstellt (Blackmagic REST, Panasonic- und Sony-CGI, Sony VISCA over IP in der Desktop-App, Bridge oder Anleitung), gegen eingebaute oder importierte Kartendefinitionen (JSON, lokal gespeichert).
 - **Im Betrieb**: Alarmrahmen je Panel mit Haltezeit, QC-Protokoll als CSV, Aufzeichnung mit Ringpuffer und synchroner Wiedergabe, Ausgabefenster für den zweiten Schirm, Steuerung über Companion.
-- **Dazu**: *Hilfe → Leistungstest* (Darstellung, Grafikkarte, Prozessor, ffmpeg je Bild – mit Befund), Testbilder (SMPTE, PLUGE, Zonenplatte, HDR, LED-Wand), Display-Kalibrierung, Lichtmesser, Uhr und Timecode, Audio mit Lautheit und A/V-Versatz.
+- **Dazu**: *Hilfe → Leistungstest* (Darstellung, Grafikkarte, Prozessor, ffmpeg je Bild – mit Befund), Testbilder (SMPTE, PLUGE, Zonenplatte, HDR, LED-Wand), Display-Kalibrierung, Lichtmesser, Uhr und Timecode, Audio mit Lautheit, Surround-Stern, Stereofeld je Band, Schallpegel (dBA/dBC, Leq) und RTA sowie A/V-Versatz.
 
 Jede Funktion im Einzelnen, mit dem, was an echter Hardware geprüft ist: **[docs/details.de.md](docs/details.de.md)**.
 

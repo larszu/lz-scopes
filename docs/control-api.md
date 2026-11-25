@@ -32,7 +32,7 @@ Every command is a JSON object with `cmd`. Panels, sources, presets and scenes c
 | `panel.follow` | `panel`, `follow` (picture panel whose source – and split – this panel shows; `0` = its own source again) |
 | `layout.preset` | `preset`: 1–6, id (`lc`) or label (`2x2`, `Colorist`) |
 | `layout.load` | `name` of a saved layout configuration |
-| `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `hls`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `strip`, `qclog`, `hist`, `stats`, `tiles`, `noise`, `wshading`, `skinall`, `chart`, `drift`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `audio-check`, `audio-surround`, `audio-field`, `audio-spl`, `audio-rta`, `clock`, `genlock`) |
+| `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `hls`, `cie`, `diamond`, `cube`, `surface`, `satlum`, `chplot`, `minmax`, `timeline`, `strip`, `qclog`, `hist`, `stats`, `tiles`, `noise`, `wshading`, `skinall`, `chart`, `drift`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `audio-check`, `audio-surround`, `audio-field`, `audio-spl`, `audio-rta`, `clock`, `genlock`) |
 | `panel.maximize` | `panel`, `mode` `toggle`\|`on`\|`off`; `off` without `panel` = restore |
 | `freeze` | `mode` `toggle`\|`on`\|`off`; all sources at the same moment of the scene (measured latency taken out) |
 | `qc.clear` | – (clear the QC log; state `qc`: `active`, `total`, `last`) |
@@ -75,6 +75,9 @@ Answer: `{ ok, result?, error?, state }`. `error` is an English text naming the 
   "audio": { "source": "Camera 1", "momentary": -22.8, "shortTerm": -23.1, "integrated": -23.0, "lra": 4.2, "maxTP": -2.1,
              "paused": false, "seconds": 312, "avOffsetMs": 12.5, "ident": "EBU stereo ident (R 49)", "identProblems": [] },
   "generator": { "running": false, "signal": "sine", "level": -18, "freq": 1000, "channels": 2 },
+  "light": { "target": { "schema": "lz-scopes.light-target/1", "label": "Key", "place": "Stage left", "note": "", "time": "2026-11-24T10:00:00.000Z", "device": "LM3",
+             "lux": 1200, "quantity": "lx", "ev100": 8.91, "x": 0.4232, "y": 0.3990, "u": 0.2435, "v": 0.5165, "cct": 3200, "duv": 0 },
+             "latest": { "…": "same fields, without label/place/note" }, "delta": { "duv": 0.0042, "cct": 180, "duvDiff": 0.0011, "ev": -0.35 }, "points": 12 },
   "recording": { "active": 1, "sources": [{ "name": "Camera 1", "id": "s1", "seconds": 312, "take": "20261010-213005" }], "ring": [{ "name": "Camera 2", "id": "s2", "pre": 60, "buffered": 60 }] },
   "settings": [{ "key": "unit", "kind": "select", "label": "Scale", "value": "percent", "options": ["percent", "bit8", "bit10", "nits"] }, …],
   "sources": [], "layouts": [], "presets": [], "panels": [], "scenes": [], "patterns": []
@@ -83,7 +86,7 @@ Answer: `{ ok, result?, error?, state }`. `error` is an English text naming the 
 
 Names (sources, scenes, patterns, ident) appear as they are shown in the app; user-defined names stay as entered.
 
-`outside` is the share of the active source outside the target gamut of an open CIE panel (#181; `null` without such a panel), `far` the part clearly outside – the same rule as the gamut warning in the picture. `clip`, `yMin`, `yMax` are percentages (to 0.1) of the active source – the source shown by most visible panels. Without statistics they are `null`. `audio` refers to the active source with audio (otherwise the first one with audio); values in LUFS/LU/dBTP rounded to 0.1, `avOffsetMs` according to ITU-R BT.1359-1 (+ = audio ahead of picture), `null` without a reading. `layoutName` is the last loaded layout configuration or the label of the preset.
+`outside` is the share of the active source outside the target gamut of an open CIE panel (#181; `null` without such a panel), `far` the part clearly outside – the same rule as the gamut warning in the picture. `clip`, `yMin`, `yMax` are percentages (to 0.1) of the active source – the source shown by most visible panels. Without statistics they are `null`. `audio` refers to the active source with audio (otherwise the first one with audio); values in LUFS/LU/dBTP rounded to 0.1, `avOffsetMs` according to ITU-R BT.1359-1 (+ = audio ahead of picture), `null` without a reading. `layoutName` is the last loaded layout configuration or the label of the preset. `light` (#184) is the light measurement: `target` the point remembered as target (★ in the light meter; `null` without one), `latest` the latest reading of the active meter, `delta` the latest reading minus the target (Δu′v′ CIE 1976, ΔCCT K, ΔDuv, brightness in EV). `ev100` is EV at ISO 100 with the incident-light constant C = 250 (flat receptor, ISO 2720). Other tools (light-planner for fixtures, camera-bridge for camera paint) read the target here; the copied/saved target JSON in the app has the same fields plus the spectrum of spectrometer readings.
 
 Over WebSocket you receive `{type:"hello", connected, state, commands}` on connecting, `{type:"state", state}` on every change (at most four times per second), `{type:"connected", connected}` when the main window appears or goes away, and `{type:"result", id, ok, result?, error?}` for every command (the command's `id` is echoed).
 

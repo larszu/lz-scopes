@@ -32,7 +32,7 @@ Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen
 | `panel.follow` | `panel`, `follow` (Bild-Panel, dessen Quelle samt Split dieses Panel zeigt; `0` = wieder die eigene Quelle) |
 | `layout.preset` | `preset`: 1–6, Kennung (`lc`) oder Beschriftung (`2x2`, `Colorist`) |
 | `layout.load` | `name` einer gespeicherten Layout-Konfiguration |
-| `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `hls`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `strip`, `qclog`, `hist`, `stats`, `tiles`, `noise`, `wshading`, `skinall`, `chart`, `drift`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `audio-check`, `audio-surround`, `audio-field`, `audio-spl`, `audio-rta`, `clock`, `genlock`) |
+| `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `hls`, `cie`, `diamond`, `cube`, `surface`, `satlum`, `chplot`, `minmax`, `timeline`, `strip`, `qclog`, `hist`, `stats`, `tiles`, `noise`, `wshading`, `skinall`, `chart`, `drift`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `audio-check`, `audio-surround`, `audio-field`, `audio-spl`, `audio-rta`, `clock`, `genlock`) |
 | `panel.maximize` | `panel`, `mode` `toggle`\|`on`\|`off`; `off` ohne `panel` = zurück |
 | `freeze` | `mode` `toggle`\|`on`\|`off`; alle Quellen im selben Moment der Szene (gemessene Latenz ausgeglichen) |
 | `qc.clear` | – (QC-Protokoll leeren; Zustand `qc`: `active`, `total`, `last`) |
@@ -75,6 +75,9 @@ Antwort: `{ ok, result?, error?, state }`. `error` ist ein englischer Text, der 
   "audio": { "source": "Kamera 1", "momentary": -22.8, "shortTerm": -23.1, "integrated": -23.0, "lra": 4.2, "maxTP": -2.1,
              "paused": false, "seconds": 312, "avOffsetMs": 12.5, "ident": "EBU-Stereo-Ident (R 49)", "identProblems": [] },
   "generator": { "running": false, "signal": "sine", "level": -18, "freq": 1000, "channels": 2 },
+  "light": { "target": { "schema": "lz-scopes.light-target/1", "label": "Key", "place": "Stage left", "note": "", "time": "2026-11-24T10:00:00.000Z", "device": "LM3",
+             "lux": 1200, "quantity": "lx", "ev100": 8.91, "x": 0.4232, "y": 0.3990, "u": 0.2435, "v": 0.5165, "cct": 3200, "duv": 0 },
+             "latest": { "…": "same fields, without label/place/note" }, "delta": { "duv": 0.0042, "cct": 180, "duvDiff": 0.0011, "ev": -0.35 }, "points": 12 },
   "recording": { "active": 1, "sources": [{ "name": "Kamera 1", "id": "s1", "seconds": 312, "take": "20261010-213005" }], "ring": [{ "name": "Kamera 2", "id": "s2", "pre": 60, "buffered": 60 }] },
   "settings": [{ "key": "unit", "kind": "select", "label": "Skala", "value": "percent", "options": ["percent", "bit8", "bit10", "nits"] }, …],
   "sources": [], "layouts": [], "presets": [], "panels": [], "scenes": [], "patterns": []
@@ -83,7 +86,7 @@ Antwort: `{ ok, result?, error?, state }`. `error` ist ein englischer Text, der 
 
 Namen (Quellen, Szenen, Testbilder, Ident) stehen so da, wie die App sie zeigt; selbst vergebene Namen bleiben, wie eingegeben.
 
-`outside` ist der Anteil der aktiven Quelle außerhalb des Zielfarbraums eines offenen CIE-Panels (#181; `null`, wenn keines offen ist), `far` der Teil deutlich außerhalb – dieselbe Regel wie die Gamut-Warnung in der Bildansicht. `clip`, `yMin`, `yMax` sind Prozent (0,1-genau) der aktiven Quelle – das ist die Quelle, die die meisten sichtbaren Panels zeigen. Ohne Statistik stehen sie auf `null`. `audio` gilt für die aktive Quelle mit Ton (sonst die erste mit Ton), Werte in LUFS/LU/dBTP auf 0,1 gerundet, `avOffsetMs` nach ITU-R BT.1359-1 (+ = Ton vor Bild), `null` ohne Messwert. `layoutName` ist die zuletzt geladene Layout-Konfiguration bzw. die Beschriftung der Vorlage.
+`outside` ist der Anteil der aktiven Quelle außerhalb des Zielfarbraums eines offenen CIE-Panels (#181; `null`, wenn keines offen ist), `far` der Teil deutlich außerhalb – dieselbe Regel wie die Gamut-Warnung in der Bildansicht. `clip`, `yMin`, `yMax` sind Prozent (0,1-genau) der aktiven Quelle – das ist die Quelle, die die meisten sichtbaren Panels zeigen. Ohne Statistik stehen sie auf `null`. `audio` gilt für die aktive Quelle mit Ton (sonst die erste mit Ton), Werte in LUFS/LU/dBTP auf 0,1 gerundet, `avOffsetMs` nach ITU-R BT.1359-1 (+ = Ton vor Bild), `null` ohne Messwert. `layoutName` ist die zuletzt geladene Layout-Konfiguration bzw. die Beschriftung der Vorlage. `light` (#184) ist die Lichtmessung: `target` der als Ziel gemerkte Punkt (★ im Lichtmesser; `null` ohne Ziel), `latest` die letzte Messung des aktiven Geräts, `delta` letzte Messung minus Ziel (Δu′v′ CIE 1976, ΔCCT in K, ΔDuv, Helligkeit in EV). `ev100` ist EV bei ISO 100 mit der Lichtmess-Konstante C = 250 (flacher Empfänger, ISO 2720). Andere Werkzeuge (light-planner für die Leuchten, camera-bridge für den Farbabgleich der Kamera) lesen das Ziel hier; das in der App kopierte bzw. gespeicherte Ziel-JSON hat dieselben Felder und dazu das Spektrum bei Spektrometer-Messungen.
 
 Über WebSocket kommen `{type:"hello", connected, state, commands}` beim Verbinden, `{type:"state", state}` bei jeder Änderung (höchstens viermal pro Sekunde), `{type:"connected", connected}` wenn das Hauptfenster kommt oder geht, und `{type:"result", id, ok, result?, error?}` auf jeden Befehl (die `id` des Befehls wird zurückgegeben).
 

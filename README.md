@@ -74,7 +74,7 @@ Keys: `1`–`6` layout · `Space` freeze or play · `←`/`→` one frame · `J`
 - **Measuring properly**: unclipped Y′CbCr (sub-black, super-white; DeckLink/AJA at native width as v210 without ffmpeg), EBU R 103, PQ/HLG in cd/m², the manufacturers' log curves, CST and LUTs per source, scale in %, 8/10 bit, nits or stops.
 - **Matching cameras**: reference camera with ghost trace, colour chart match with ΔE and a matrix proposal, skin tones of every camera in one vectorscope, drift guard, Touch Shading through the [LZ Camera Bridge](https://github.com/larszu/lz-camera-bridge), directly or over NMOS IS-12. Camera colour match that drives the camera itself (Blackmagic REST, Panasonic and Sony CGI, Sony VISCA over IP in the desktop app, bridge, or step-by-step guide) against built-in or imported chart definitions (JSON, kept locally).
 - **On the desk**: alarm frames per panel with a hold time, QC log as CSV, recording with ring buffer and synchronised playback, output window for the second screen, control from Companion.
-- **Also**: *Help → Performance test* (display, graphics card, processor, ffmpeg per picture – with a verdict), test patterns (SMPTE, PLUGE, zone plate, HDR, LED wall), display calibration, light meter, clock and time code, audio with loudness and A/V offset.
+- **Also**: *Help → Performance test* (display, graphics card, processor, ffmpeg per picture – with a verdict), test patterns (SMPTE, PLUGE, zone plate, HDR, LED wall), display calibration, light meter, clock and time code, audio with loudness, surround star, stereo field per band, sound level (dBA/dBC, Leq) and RTA, and A/V offset.
 
 Every feature in detail, including what has been tried on real hardware: **[docs/details.md](docs/details.md)**.
 

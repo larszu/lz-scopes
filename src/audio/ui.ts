@@ -11,11 +11,12 @@ import { ALL_CASES, type CaseResult } from './dsp/testsignals';
 import { toDb } from './dsp/truepeak';
 import { generator, listDevices } from './io';
 import { AUDIO_DEFAULTS, TARGETS, fmt1, type AudioPanelOptions } from './panels';
+import { SNAP_COLOURS, resetSplHold, rtaCurve } from './soundPanels';
 import { channelInfo } from './dsp/layouts';
 import { avCalibration, calibratedLead, onAvCalibration, setAvCalibration } from './avcal';
 import { monitorSink } from '../sources';
 import { lang, t } from '../i18n';
-import { button, checkbox, download, field, filePicker, h, hint, numberInput, row, select, type Kid } from '../ui';
+import { button, checkbox, download, field, filePicker, h, hint, numberInput, row, select, textInput, type Kid } from '../ui';
 
 
 // ---------------------------------------------------------------- generator
@@ -288,7 +289,7 @@ async function protocolPng(s: Source): Promise<Blob | null> {
 
 // ---------------------------------------------------------------- panel ⚙
 
-export function audioPanelSettings(p: PanelState, save: () => void): Node[] {
+export function audioPanelSettings(p: PanelState, save: () => void, refresh: () => void = () => {}): Node[] {
   const o = (p.audio ??= {});
   const v = <K extends keyof AudioPanelOptions>(k: K) => (o[k] ?? AUDIO_DEFAULTS[k]) as NonNullable<AudioPanelOptions[K]>;
   const rows: Node[] = [];
@@ -313,6 +314,55 @@ export function audioPanelSettings(p: PanelState, save: () => void): Node[] {
     row('Zoom', pick('zoom', [['0', 'auto'], ['1', '×1'], ['2', '×2'], ['4', '×4'], ['8', '×8']], Number));
     row(t('audio.set.correlation'), pick('corrMs', [['100', '100 ms'], ['300', '300 ms'], ['600', '600 ms'], ['1000', '1 s'], ['3000', '3 s']], Number));
     rows.push(hint(t('audio.set.phaseHint')));
+  }
+  if (p.scope === 'audio-meter' || p.scope === 'audio-surround') {
+    row(t('audio.set.labels'), textInput(v('labels'), (s) => { o.labels = s.trim(); save(); }, { placeholder: 'L, R, C, LFE, Ls, Rs', title: t('audio.set.labelsTitle'), mono: true }));
+  }
+  if (p.scope === 'audio-surround' || p.scope === 'audio-field') {
+    row(t('audio.set.correlation'), pick('corrMs', [['100', '100 ms'], ['300', '300 ms'], ['600', '600 ms'], ['1000', '1 s'], ['3000', '3 s']], Number));
+  }
+  if (p.scope === 'audio-surround') rows.push(hint(t('audio.set.surroundHint')));
+  if (p.scope === 'audio-field') {
+    row(t('audio.set.fieldBands'), pick('fieldFrac', [['3', t('audio.set.third')], ['1', t('audio.set.octave')]], Number));
+    row(t('audio.set.yaw'), pick('yaw', [['-60', '−60°'], ['-30', '−30°'], ['0', '0°'], ['30', '30°'], ['60', '60°'], ['90', '90°']], Number));
+    rows.push(hint(t('audio.set.fieldHint')));
+  }
+  if (p.scope === 'audio-spl' || p.scope === 'audio-rta') {
+    row(t('audio.channel'), numberInput(v('ch') + 1, (x) => { o.ch = Math.max(0, Math.round(x) - 1); save(); }, { min: 1, max: 64, step: 1, clamp: true, title: t('audio.set.chTitle') }));
+    row(t('audio.set.cal'), numberInput(v('cal'), (x) => { o.cal = x; save(); }, { min: 0, max: 200, step: 0.1, clamp: true, title: t('audio.set.calTitle') }), 'dB SPL');
+  }
+  if (p.scope === 'audio-spl') {
+    row(t('audio.set.weight'), pick('weight', [['A', 'A'], ['C', 'C'], ['Z', t('audio.set.weightZ')]], (s) => s as 'A'));
+    row(t('audio.set.time'), pick('time', [['F', t('audio.set.fast')], ['S', t('audio.set.slow')]], (s) => s as 'F'));
+    row(t('audio.set.leq'), pick('leqMin', [['1', '1 min'], ['5', '5 min'], ['15', '15 min'], ['30', '30 min'], ['60', '60 min'], ['0', t('audio.set.sinceReset')]], Number));
+    row('', button(t('audio.set.holdReset'), () => resetSplHold(p), { small: true, title: t('audio.set.holdResetTitle') }));
+    rows.push(hint(t('audio.set.splHint')));
+  }
+  if (p.scope === 'audio-rta') {
+    row(t('audio.set.banding'), pick('frac', [1, 3, 6, 12, 24, 48].map((b) => [String(b), `1/${b} ${t('audio.set.oct')}`]), Number));
+    row(t('audio.set.yAxis'), pick('rtaWeight', [['Z', 'dBZ'], ['A', 'dB(A)'], ['C', 'dB(C)']], (s) => s as 'Z'));
+    row(t('audio.set.xAxis'), pick('xlin', [['false', t('audio.set.log')], ['true', t('audio.set.lin')]], (s) => s === 'true'));
+    row(t('audio.set.smooth'), pick('smooth', [['0', t('audio.set.off')], ['0.5', t('audio.set.light')], ['0.85', t('audio.set.strong')]], Number));
+    row('', checkbox(v('peakFall'), t('audio.set.peakFall'), (x) => { o.peakFall = x; save(); }));
+    // snapshots: named comparison lines, stored with the panel (project)
+    let snapName = '';
+    const snaps = o.snaps ?? [];
+    const name = textInput('', (s) => { snapName = s; }, { placeholder: t('audio.set.snapName', { n: snaps.length + 1 }), live: true, onEnter: () => take() });
+    const take = () => {
+      const c = rtaCurve(p);
+      if (!c) return;
+      o.snaps = [...snaps, { name: snapName.trim() || t('audio.set.snapName', { n: snaps.length + 1 }), at: Date.now(), ...c }].slice(-SNAP_COLOURS.length);
+      save(); refresh();
+    };
+    rows.push(field(t('audio.set.snapshot'), name, button(t('audio.set.snapTake'), take, { small: true, title: t('audio.set.snapTakeTitle') })));
+    snaps.forEach((sn, i) => {
+      const upd = (patch: Partial<typeof sn> | null) => { const next = [...snaps]; if (patch) next[i] = { ...sn, ...patch }; else next.splice(i, 1); o.snaps = next; save(); refresh(); };
+      row('',
+        h('span', { style: `color:${SNAP_COLOURS[i % SNAP_COLOURS.length]}` }, '– –'),
+        checkbox(sn.on !== false, sn.name, (x) => upd({ on: x }), new Date(sn.at).toLocaleString(lang() === 'de' ? 'de-DE' : 'en-GB')),
+        button(t('audio.set.snapRemove'), () => upd(null), { small: true }));
+    });
+    rows.push(hint(t('audio.set.rtaHint')));
   }
   if (p.scope === 'audio-meter') rows.push(hint(t('audio.set.meterHint')));
   if (p.scope === 'audio-loudness') rows.push(hint(t('audio.set.loudnessHint')));

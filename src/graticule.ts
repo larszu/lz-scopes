@@ -764,7 +764,13 @@ export function statsLines(src: Source, displayFps: number): string[] {
     `${col('scope.stats.analysis')}${src.width}×${src.height}  ${src.yuv ? t('scope.stats.yuvPath', { range: src.yuv.full ? 'full' : 'narrow', bits: src.yuv.bits }) : `${src.depth} bit R′G′B′`}`,
   ];
   if (info?.note) lines.push(`${col('scope.stats.note')}${bridgeText(info, 'note')}`);
-  if (info) lines.push(`${col('scope.stats.scan')}${info.interlaced ? t('scope.stats.interlaced') : t('scope.stats.progressive')}; ${t('scope.stats.wholeFrames')}`);
+  if (info) {
+    // #219: field order and de-interlacing of the bridge (server/interlace.mjs)
+    const scan = info.deinterlaced ? t('scope.stats.deinterlaced') : info.interlaced ? t('scope.stats.interlaced') : t('scope.stats.progressive');
+    const order = info.interlaced && info.fields ? `, ${t(info.fields === 'bff' ? 'scope.stats.bff' : 'scope.stats.tff')}` : '';
+    const forced = info.fieldsForced ? ` (${t('scope.stats.forced')})` : '';
+    lines.push(`${col('scope.stats.scan')}${scan}${order}${forced}; ${t('scope.stats.wholeFrames')}`);
+  }
   if (info) {
     lines.push(`${col('scope.stats.source')}${info.sourceWidth}×${info.sourceHeight}  ${info.codec ?? ''} ${info.pixFmt ?? ''}`);
     if (info.transport === 'h264') lines.push(`${col('scope.stats.transport')}${t('scope.stats.h264')}`);

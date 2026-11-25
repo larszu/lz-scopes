@@ -131,7 +131,7 @@ async function main(argv) {
   const arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
   const file = arg('--sdp-file');
   const iface = arg('--iface') ?? '';
-  if (!file) { record('ERR ', { message: 'ST 2110 receiver: --sdp-file missing', code: 'st2110.noSdp' }); process.exit(2); }
+  if (!file) { record('ERR ', { message: 'ST 2110 receiver: --sdp-file missing' }); process.exit(2); }
   let rx = null, last = '';
   const open = async () => {
     let text = '';
@@ -139,7 +139,7 @@ async function main(argv) {
     if (text === last) return;
     last = text;
     rx?.stop(); rx = null;
-    if (!text.trim()) { record('STAT', { message: 'No SDP active for this input', code: 'st2110.noSdp' }); return; }
+    if (!text.trim()) { record('STAT', { message: 'Network input not connected – no SDP active', code: 'st2110.noSdp' }); return; }
     try {
       rx = new Receiver(text, {
         iface,

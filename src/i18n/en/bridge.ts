@@ -92,6 +92,13 @@ export default {
   'bridge.ndi.dropping': 'NDI: {lost} pictures lost in the last second (network {ndi}, helper {helper})',
   'bridge.ndi.recovered': 'NDI: no losses again ({fps} fps)',
   'bridge.ndi.format': 'NDI format {fourcc} not supported',
+  'bridge.st2110.noInput': 'No network input {id}',
+  'bridge.st2110.noSdp': 'Network input not connected – no SDP active',
+  'bridge.st2110.badSdp': 'SDP not usable: {reason}',
+  'bridge.st2110.socket': 'Network: {reason}',
+  'bridge.st2110.noPackets': 'No packets on {group}:{port}',
+  'bridge.st2110.broken': 'ST 2110: {n} incomplete frames in the last second ({lost} packets lost so far)',
+  'bridge.st2110.recovered': 'ST 2110: complete frames again',
 
   'bridge.record.denied': 'Recording only from the local app (same origin) or with the control token',
   'bridge.record.unsupported': 'This source cannot be recorded in the bridge',

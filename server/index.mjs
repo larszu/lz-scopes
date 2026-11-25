@@ -48,6 +48,8 @@ import { cameraBridges } from './cameraBridges.mjs';
 import { recordRoots, freeBytes } from './record.mjs';
 import { StreamRecorder, handleUploadSocket } from './recorder.mjs';
 import { REC_URL, listRecordings, startPlayback } from './playback.mjs';
+import { St2110Service } from './st2110/service.mjs';
+import { InterfaceLoad } from './st2110/netif.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -93,6 +95,7 @@ export function validateInput(url) {
   if (/^aja:\d{1,2}$/.test(url)) return null;
   if (/^ndi:[^\n\r\0]{1,200}$/.test(url) && !url.slice(4).startsWith('-')) return null;
   if (/^folder:[\w .-]{1,80}$/.test(url)) return null;
+  if (/^st2110:[a-z0-9][a-z0-9-]{0,31}$/.test(url)) return null;
   if (REC_URL.test(url)) return null;
   if (MEDIA_URL.test(url)) return mediaFile(url) ? null : bmsg('media.notReleased', 'File no longer released – open it again');
   if (url.startsWith('-')) return bmsg('input.invalid', 'Invalid source');
@@ -555,6 +558,7 @@ async function startStream(ws, params) {
   if (url.startsWith('aja:')) return startAja(ws, params, url);
   if (url.startsWith('ndi:')) return startNdi(ws, params, url);
   if (url.startsWith('folder:')) return startFolder(ws, params, url);
+  if (url.startsWith('st2110:')) return startSt2110(ws, params, url);
   if (url.startsWith('rec:')) {
     const ffmpeg = ffmpegCandidates()[0];
     if (!ffmpeg) return fail(ws, bmsg('ffmpeg.missing', 'ffmpeg not found'));
@@ -1212,6 +1216,30 @@ function startNdi(ws, params, url) {
   });
 }
 
+// ---- ST 2110-20 / ST 2022-6 network inputs (server/st2110/, #228, #240)
+/** Created on first use; startBridge puts the SDP files into the config folder. */
+let ST2110 = null;
+const st2110 = () => (ST2110 ??= new St2110Service({}));
+
+/**
+ * `st2110:<input>`: the software receiver (server/st2110/receiver.mjs) as a helper process in
+ * Node (in the desktop app: Electron's own binary as Node). It watches the input's SDP file, so
+ * an NMOS activation switches the source without reopening it.
+ */
+function startSt2110(ws, params, url) {
+  const id = url.slice('st2110:'.length);
+  const inp = st2110().inputs.get(id);
+  if (!inp) return fail(ws, bmsg('st2110.noInput', `No network input ${id}`, { id }));
+  const ffmpeg = ffmpegCandidates()[0];
+  if (!ffmpeg) return fail(ws, bmsg('ffmpeg.missing', 'ffmpeg not found'));
+  const receiver = fileURLToPath(new URL('./st2110/receiver.mjs', import.meta.url));
+  startHelperStream(ws, {
+    bin: process.execPath, args: [receiver, '--sdp-file', st2110().inputs.file(id), ...(inp.iface ? ['--iface', inp.iface] : [])],
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, label: 'ST 2110', params,
+    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions, now: clockNow, recorder: helperRecorder(ws, url, ffmpeg), onStats: (st) => st2110().inputs.setStats(id, st) },
+  });
+}
+
 /** Recorder factory for the helper inputs (DeckLink, AJA, NDI): encoded recording, no sound. */
 function helperRecorder(ws, url, ffmpeg) {
   return ({ restart, media }) => new StreamRecorder({
@@ -1313,6 +1341,7 @@ const server = createServer((req, res) => {
     return;
   }
   if (path === '/api/control' || path === '/api/control/commands') return handleControlHttp(req, res, path);
+  if (path === '/api/st2110' || path.startsWith('/api/st2110/')) return st2110().handle(req, res, path, accessProblem);
   if (path === '/api/meter') {
     // colour meter (ArgyllCMS spotread, server/meter.mjs): local app only
     const problem = controlAccess({ remote: req.socket.remoteAddress, origin: req.headers.origin, host: req.headers.host });
@@ -1410,6 +1439,9 @@ function serveMjpeg(name, res) {
 //   ← {type:'config', iface, delayReq}   {type:'rtp', group, port, rateNum, rateDen} | {type:'rtp', off:true}
 const clockClients = new Set();
 let ptpMon = null, ptpKey = '', rtpMon = null, clockStopTimer = null;
+/** receive load and PTP hardware clocks per interface (Linux; server/st2110/netif.mjs), once a second */
+const ifaceLoad = new InterfaceLoad();
+let netif = { at: 0, list: [] };
 const clockWss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 16 * 1024 });
 
 async function ensurePtp(iface, delayReq) {
@@ -1438,8 +1470,9 @@ clockWss.on('connection', (ws) => {
   ensurePtp(cfg.iface, cfg.delayReq).catch(() => {});
   const tick = setInterval(() => {
     if (ws.readyState !== ws.OPEN || !ptpMon) return;
+    if (Date.now() - netif.at >= 1000) netif = { at: Date.now(), list: ifaceLoad.sample() };
     ws.send(JSON.stringify({
-      type: 'ptp', ...ptpMon.status(), ifaces: ipv4Interfaces(), serverUtcMs: Date.now(),
+      type: 'ptp', ...ptpMon.status(), ifaces: ipv4Interfaces(), netif: netif.list, serverUtcMs: Date.now(),
       rtp: rtpMon ? { ...rtpMon.status(), ref: clockNow().ref } : null,
     }));
   }, 250);
@@ -1622,7 +1655,7 @@ function handleAllow(req, res) {
  * Start the bridge. Used by the CLI below and by the desktop app (electron/main.cjs),
  * which passes port 0 for a free port and its own dist folder.
  */
-export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false, controlToken, watchDirs, recordDirs, mediaFiles, configDir, allowOrigins = [] } = {}) {
+export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false, controlToken, watchDirs, recordDirs, mediaFiles, configDir, allowOrigins = [], nmosPort = Number(process.env.LZS_NMOS_PORT) || 0, nmosRegistry = process.env.LZS_NMOS_REGISTRY ?? '' } = {}) {
   if (dist) DIST = resolve(dist);
   ORIGINS = new OriginStore(configDir ? join(configDir, 'allowed-origins.json') : defaultOriginsFile());
   for (const o of allowOrigins) ORIGINS.allowTemporarily(o);
@@ -1631,6 +1664,7 @@ export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false
   // a file that is not there must not keep the bridge from starting (CLI, LZS_MEDIA_FILE)
   if (mediaFiles) for (const f of mediaFiles) { try { addMediaFile(f); } catch (e) { console.warn(`media file not released: ${e.message}`); } }
   if (controlToken !== undefined) CONTROL_TOKEN = controlToken;
+  if (configDir && !ST2110) ST2110 = new St2110Service({ dir: join(configDir, 'st2110') });
   DEV = dev;
   return new Promise((ok, fail) => {
     server.once('error', fail);
@@ -1638,8 +1672,13 @@ export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false
       const p = server.address().port;
       // the iPhone/iPad app finds a bridge that listens on the network via Bonjour (server/bonjour.mjs)
       const mdns = await announce({ port: p, host });
-      ok({ port: p, bonjour: mdns?.name ?? null, close: () => {
-        mdns?.stop(); server.close();
+      // NMOS node (IS-04/IS-05) only on request: it opens its own port on the network
+      let nmos = null;
+      if (nmosPort > 0) {
+        try { nmos = await st2110().startNmos({ port: nmosPort, registry: nmosRegistry }); } catch (e) { console.warn(`NMOS node not started: ${e.message}`); }
+      }
+      ok({ port: p, bonjour: mdns?.name ?? null, nmos: nmos ? nmos.port : null, close: () => {
+        mdns?.stop(); server.close(); ST2110?.stop();
         // open sockets end too, and with them their ffmpeg processes (stream, playback, recording)
         for (const w of [wss, outWss, clockWss, meterWss, uploadWss, ctlWss]) for (const c of w.clients) c.terminate();
       } });
@@ -1653,7 +1692,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   // --media-file <file>: release a file as the input `file:<name>` (the desktop app does this
   // from its file dialog; on the command line it makes a clip available without a server)
   const mediaFiles = args.flatMap((a, i) => (a === '--media-file' && args[i + 1] ? [args[i + 1]] : []));
-  startBridge({ port, host, dev: DEV, mediaFiles, configDir: arg('config-dir', process.env.LZS_CONFIG_DIR), allowOrigins }).then(({ port: p, bonjour }) => {
-    console.log(`lz-scopes bridge on http://${host}:${p}${DEV ? ' (dev)' : ''} · ffmpeg: ${ffmpegCandidates()[0] ?? 'not found'}${bonjour ? ` · Bonjour: ${bonjour}` : ''}`);
+  // --nmos-port <n> [--nmos-registry http://host:port]: NMOS node for the ST 2110 inputs (#240)
+  const nmosPort = Number(arg('nmos-port', process.env.LZS_NMOS_PORT ?? 0)) || 0;
+  startBridge({ port, host, dev: DEV, mediaFiles, configDir: arg('config-dir', process.env.LZS_CONFIG_DIR), allowOrigins, nmosPort, nmosRegistry: arg('nmos-registry', process.env.LZS_NMOS_REGISTRY ?? '') }).then(({ port: p, bonjour, nmos }) => {
+    console.log(`lz-scopes bridge on http://${host}:${p}${DEV ? ' (dev)' : ''} · ffmpeg: ${ffmpegCandidates()[0] ?? 'not found'}${bonjour ? ` · Bonjour: ${bonjour}` : ''}${nmos ? ` · NMOS node on port ${nmos}` : ''}`);
   });
 }

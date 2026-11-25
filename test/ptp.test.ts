@@ -122,6 +122,32 @@ describe('PTP monitor with synthetic packets', () => {
     expect(st.offsetNs).toBeCloseTo(250_000, -1);
     expect(st.pathDelayIncluded).toBe(false);
   });
+  it('grandmaster list: every leader with OUI and its time against the selected one; changes logged (#231)', () => {
+    let nowNs = S - 37n * 1_000_000_000n;
+    const mon = new PtpMonitor({ now: () => nowNs, taiMinusUtc: () => 37 });
+    // a second, worse leader (priority1 200) whose clock runs 40 µs behind the first
+    const OTHER = '0011220000000002';
+    const other = (b: Buffer) => { const c = Buffer.from(b); Buffer.from(OTHER, 'hex').copy(c, 20); return c; };
+    const ann2 = other(announce()); ann2[47] = 200; Buffer.from(OTHER, 'hex').copy(ann2, 53);
+    mon.onPacket(announce(), { address: '192.0.2.1' }, nowNs);
+    mon.onPacket(ann2, { address: '192.0.2.2' }, nowNs);
+    const t1 = S;
+    nowNs = t1 - 37n * 1_000_000_000n + 100_000n;
+    mon.onPacket(buildPtp({ type: MSG.SYNC, clockIdentity: GM, sequenceId: 1, body: tsBytes(t1) }), {}, nowNs);
+    mon.onPacket(other(buildPtp({ type: MSG.SYNC, clockIdentity: GM, sequenceId: 1, body: tsBytes(t1 - 40_000n) })), {}, nowNs);
+    const st = mon.status();
+    expect(st.timestamps).toBe('software');
+    const list = st.grandmasters as { identity: string; selected: boolean; oui: string | null; deltaNs: number | null }[];
+    expect(list.length).toBe(2);
+    const sel = list.find((g) => g.selected)!, oth = list.find((g) => !g.selected)!;
+    expect(sel.identity).toBe('aa:bb:cc:ff:fe:00:00:01');
+    expect(sel.oui).toBe('AA-BB-CC');
+    expect(oth.oui).toBeNull(); // not an EUI-48 based identity
+    expect(oth.deltaNs).toBeCloseTo(-40_000, -1);
+    // the selected leader alone steers the offset
+    expect(st.offsetNs).toBeCloseTo(100_000, -1);
+    expect(st.events[0]).toMatchObject({ domain: 127, from: null, to: 'aa:bb:cc:ff:fe:00:00:01' });
+  });
   it('port errors are explained', () => {
     expect(errorText({ code: 'EACCES' }, 319)).toMatchObject({ code: 'ptp.permission', params: { port: 319 }, message: expect.stringMatching(/permission/) });
     expect(errorText({ code: 'EADDRINUSE' }, 320)).toMatchObject({ code: 'ptp.inUse', message: expect.stringMatching(/in use/) });

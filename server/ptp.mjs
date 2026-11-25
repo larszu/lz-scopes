@@ -22,12 +22,20 @@
 //
 // All receive/send times are software timestamps of this process (performance clock);
 // offsets and delays are estimates in the order of 0.1–1 ms and are labelled as such.
+// Node's dgram sockets cannot ask for SO_TIMESTAMPING; on Linux the monitor reports which
+// interfaces have a PTP hardware clock (server/st2110/netif.mjs) but does not use it (#231).
+//
+// Grandmaster list (#231): every Announce source of every domain, with the OUI taken from the
+// clock identity (IEEE 1588-2008 §7.5.2.2.2: an EUI-64 built from an EUI-48 carries FF-FE in
+// octets 3–4, the first three octets are the OUI [Wissen, standard not opened]) and the time
+// difference of its Sync to the selected grandmaster of the domain (software, both raw offsets).
 
 import dgram from 'node:dgram';
 import { randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { taiMinusUtc as leapTaiMinusUtc } from './leap.mjs';
+import { ouiOf } from './st2110/netif.mjs';
 import { bmsg, field } from './messages.mjs';
 
 export const PTP_PRIMARY = '224.0.1.129';
@@ -156,6 +164,8 @@ export class PtpMonitor {
     this.ourId = randomBytes(8).toString('hex');
     this.seq = 0; this.pendingReq = new Map();
     this.timer = null;
+    /** grandmaster changes per domain (newest last, at most 50) */
+    this.events = [];
   }
 
   nowMs() { return Number(this.now() / 1_000_000n); }
@@ -192,7 +202,7 @@ export class PtpMonitor {
   domain(d) {
     let s = this.domains.get(d);
     if (!s) {
-      s = { announces: new Map(), syncs: new Map(), fus: new Map(), sm: null, smAt: 0, offsets: [], delays: [], lastSyncAt: 0, lastOffsetNs: NaN, meanPathDelayNs: NaN, delayAt: 0 };
+      s = { announces: new Map(), syncs: new Map(), fus: new Map(), sm: null, smAt: 0, offsets: [], delays: [], lastSyncAt: 0, lastOffsetNs: NaN, meanPathDelayNs: NaN, delayAt: 0, rawBySrc: new Map(), gm: null };
       this.domains.set(d, s);
     }
     return s;
@@ -221,18 +231,19 @@ export class PtpMonitor {
     const src = `${m.clockIdentity}-${m.portNumber}`;
     if (m.type === MSG.ANNOUNCE) {
       d.announces.set(src, { ...m, address: rinfo?.address, at });
+      this.watchGm(m.domain, d, at);
     } else if (m.type === MSG.SYNC) {
       const s = { seq: m.sequenceId, rx: rxUtcNs, at, twoStep: m.twoStep, corr: m.correctionNs, origin: m.timestampNs };
       d.syncs.set(src, s);
-      if (!m.twoStep) this.offset(m.domain, d, s, m.timestampNs, 0);
+      if (!m.twoStep) this.offset(m.domain, d, s, m.timestampNs, 0, src);
       else {
         // Sync (port 319) and Follow_Up (port 320) arrive on different sockets: either order
         const fu = d.fus.get(src);
-        if (fu && fu.seq === m.sequenceId) this.offset(m.domain, d, s, fu.ts, fu.corr);
+        if (fu && fu.seq === m.sequenceId) this.offset(m.domain, d, s, fu.ts, fu.corr, src);
       }
     } else if (m.type === MSG.FOLLOW_UP) {
       const s = d.syncs.get(src);
-      if (s && s.seq === m.sequenceId) this.offset(m.domain, d, s, m.timestampNs, m.correctionNs);
+      if (s && s.seq === m.sequenceId) this.offset(m.domain, d, s, m.timestampNs, m.correctionNs, src);
       else d.fus.set(src, { seq: m.sequenceId, ts: m.timestampNs, corr: m.correctionNs });
     } else if (m.type === MSG.DELAY_RESP) {
       if (m.requestingClockIdentity !== this.ourId) return;
@@ -248,9 +259,25 @@ export class PtpMonitor {
     }
   }
 
-  offset(domainNo, d, s, originNs, fuCorr) {
+  /** Grandmaster change of a domain → event log (#231, #239). */
+  watchGm(domainNo, d, at) {
+    const b = this.best(domainNo);
+    const id = b ? b.grandmasterIdentity : null;
+    if (id === d.gm) return;
+    if (d.gm !== null || id !== null) this.events.push({ at, domain: domainNo, from: d.gm ? clockIdText(d.gm) : null, to: id ? clockIdText(id) : null, address: b?.address ?? null });
+    while (this.events.length > 50) this.events.shift();
+    d.gm = id;
+  }
+
+  offset(domainNo, d, s, originNs, fuCorr, src = null) {
     // differences in BigInt first: PTP times in ns exceed the 53-bit precision of a Number
     const t2 = this.localPtp(s.rx, domainNo);
+    // local − this leader, for the grandmaster list (each leader against the same local clock)
+    const rawSrc = Number(t2 - originNs) - (s.corr + fuCorr);
+    if (src) d.rawBySrc.set(src, { raw: rawSrc, at: s.at });
+    // only the selected leader steers the shown offset
+    const best = this.best(domainNo);
+    if (src && best && `${best.clockIdentity}-${best.portNumber}` !== src) return;
     d.t1 = originNs; d.t2 = t2; d.corr = s.corr + fuCorr;
     // local − GM, still containing the one-way path delay (subtracted when measured)
     const raw = Number(t2 - originNs) - d.corr;
@@ -287,6 +314,33 @@ export class PtpMonitor {
     return bestD;
   }
 
+  /**
+   * All leaders seen in the last 10 s, every domain: identity, quality, OUI, whether it is the
+   * selected grandmaster of its domain and its Sync time against that one (ns, software).
+   */
+  grandmasters() {
+    const now = this.nowMs();
+    const out = [];
+    for (const [dn, d] of [...this.domains].sort((a, b) => a[0] - b[0])) {
+      const best = this.best(dn);
+      const bestKey = best ? `${best.clockIdentity}-${best.portNumber}` : null;
+      const ref = bestKey ? d.rawBySrc.get(bestKey) : null;
+      for (const [key, a] of d.announces) {
+        if (now - a.at > 10000) continue;
+        const mine = d.rawBySrc.get(key);
+        // (local − selected) − (local − leader) = leader − selected: negative = this leader runs behind
+        const delta = mine && ref && now - mine.at < 5000 && now - ref.at < 5000 ? ref.raw - mine.raw : null;
+        out.push({
+          domain: dn, identity: clockIdText(a.grandmasterIdentity), leader: `${clockIdText(a.clockIdentity)}/${a.portNumber}`, address: a.address ?? null,
+          oui: ouiOf(a.grandmasterIdentity), clockClass: a.clockClass, clockAccuracy: a.clockAccuracy, variance: a.offsetScaledLogVariance,
+          priority1: a.priority1, priority2: a.priority2, stepsRemoved: a.stepsRemoved, timeSource: TIME_SOURCES[a.timeSource] ?? `0x${a.timeSource.toString(16)}`,
+          selected: key === bestKey, deltaNs: key === bestKey ? 0 : delta, seenMsAgo: now - a.at,
+        });
+      }
+    }
+    return out;
+  }
+
   rate(domain, type) {
     const a = this.counts.get(`${domain}:${type}`) ?? [];
     const now = this.nowMs();
@@ -296,7 +350,7 @@ export class PtpMonitor {
 
   status(prefer = 127) {
     const now = this.nowMs();
-    const base = { running: this.running, ...field('error', this.error), since: this.started, delayReq: this.delayReq, iface: this.iface, estimate: 'software' };
+    const base = { running: this.running, ...field('error', this.error), since: this.started, delayReq: this.delayReq, iface: this.iface, estimate: 'software', timestamps: 'software', grandmasters: this.grandmasters(), events: this.events.slice(-10) };
     const dn = this.activeDomain(prefer);
     const domains = [...this.domains.keys()].sort((a, b) => a - b);
     if (dn === null) return { ...base, state: this.error ? 'error' : 'none', domains };

@@ -91,6 +91,13 @@ export default {
   'bridge.ndi.dropping': 'NDI: {lost} Bilder in der letzten Sekunde verloren (Netz {ndi}, Helfer {helper})',
   'bridge.ndi.recovered': 'NDI: wieder ohne Verluste ({fps} fps)',
   'bridge.ndi.format': 'NDI-Format {fourcc} nicht unterstützt',
+  'bridge.st2110.noInput': 'Kein Netz-Eingang {id}',
+  'bridge.st2110.noSdp': 'Netz-Eingang nicht verbunden – kein SDP aktiv',
+  'bridge.st2110.badSdp': 'SDP nicht nutzbar: {reason}',
+  'bridge.st2110.socket': 'Netz: {reason}',
+  'bridge.st2110.noPackets': 'Keine Pakete auf {group}:{port}',
+  'bridge.st2110.broken': 'ST 2110: {n} unvollständige Bilder in der letzten Sekunde (bisher {lost} Pakete verloren)',
+  'bridge.st2110.recovered': 'ST 2110: wieder vollständige Bilder',
 
   'bridge.record.denied': 'Aufnahme nur aus der lokalen App (gleiche Herkunft) oder mit dem Steuer-Token',
   'bridge.record.unsupported': 'Diese Quelle lässt sich in der Bridge nicht aufnehmen',

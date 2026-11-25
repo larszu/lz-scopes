@@ -12,7 +12,7 @@ import {
   type ChainSettings, type CstSettings, type Stage, type ToneMap,
 } from './chain';
 import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts } from './lut';
-import { LUT_SOURCES } from './lutLibrary';
+import { BBC_LUTS, BBC_LUT_REPO, LUT_SOURCES, bbcLutMismatch, bbcLutName, loadBbcLut, type BbcLut } from './lutLibrary';
 import { CHANNEL_PAIRS, DIAMOND_SPLIT, DIAMOND_ZOOMS, SCOPE_LABELS, diamondZoomView, parseScopeMenu, type DiamondZoom, scopeMenu, scopeMenuValue, isAudio, isWaveform, plotRect, vectorBands, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
 import { inBox, legendPosAt, nearSplit, splitAt, splitPos } from './overlayDrag';
 import { DEFAULT_SKIN, ROI_CLOSE, contentRect, legendBoxes, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, driftSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
@@ -728,12 +728,34 @@ function chainControls(s: Source, upd: (p: Partial<SourceSettings>) => void): No
     (ch.lut1 || ch.lut2) && row(
       groupedSelect(out.transfer ?? 'auto', transferGroups(t('main.chain.lutOutTransfer')), (v) => setChain({ lutOut: { ...out, transfer: v === 'auto' ? undefined : v as CstSettings['transfer'] } }), t('main.chain.lutOutTitle')),
       groupedSelect(out.gamut ?? 'auto', [['', [['auto', t('main.chain.lutOutGamut')]]], ...gamutGroups()], (v) => setChain({ lutOut: { ...out, gamut: v === 'auto' ? undefined : v as GamutId } }))),
-    row(button(t('main.lut.vendor'), () => showLutLibrary(), { small: true, title: t('main.lut.vendorTitle') })),
+    row(button(t('main.lut.vendor'), () => showLutLibrary(s), { small: true, title: t('main.lut.vendorTitle') })),
     hint(t('main.chain.dropHint')));
 }
 
-function showLutLibrary() {
-  openModal({ title: t('main.lut.vendorHead'), cls: 'lutlib', size: 'lg', body: [
+/** Download a BBC HDR LUT into LUT 1 of a source; its output space becomes the LUT output (#210). */
+async function loadBbcInto(s: Source | undefined, l: BbcLut, m: { close(): void }) {
+  try {
+    await loadBbcLut(l);
+    if (!s) { await refreshRecent(); renderSources(); alertHud(t('main.lut.bbcStored', { name: bbcLutName(l) })); return; }
+    const ch = s.settings.chain ?? {};
+    // what reaches LUT 1: the CST output if the CST is on, else the source itself
+    const at = ch.cst?.on ? { transfer: ch.cst.transfer, gamut: ch.cst.gamut } : { transfer: s.transfer, gamut: s.gamut };
+    s.settings.chain = { ...ch, lut1: bbcLutName(l), lutOut: { transfer: l.out.transfer, gamut: l.out.gamut, lw: l.lw } };
+    save(); await refreshRecent(); renderSources(); refreshHeads(); needClear = true;
+    m.close();
+    const warn = bbcLutMismatch(l, at);
+    alertHud(t('main.lut.loaded', { file: bbcLutName(l), slot: 'LUT 1', source: s.name }) + (warn ? ` – ⚠ ${warn}` : ''));
+  } catch (e) { alertHud(t('main.lut.bbcFailed', { error: (e as Error).message })); }
+}
+
+function showLutLibrary(s?: Source) {
+  const m = openModal({ title: t('main.lut.vendorHead'), cls: 'lutlib', size: 'lg', body: [
+    kicker(t('main.lut.bbcHead')),
+    hint(t('main.lut.bbcHint')),
+    h('div', { class: 'table-wrap' }, table(BBC_LUTS.map((l) => [l.id, l.label,
+      button(s ? t('main.lut.bbcLoad') : t('main.lut.bbcStore'), () => void loadBbcInto(s, l, m), { small: true, title: s ? t('main.lut.bbcLoadTitle', { source: s.name }) : t('main.lut.bbcStoreTitle') })]))),
+    h('p', { class: 'hint' }, link(BBC_LUT_REPO, t('main.lut.bbcRepo'))),
+    kicker(t('main.lut.vendorKicker')),
     hint(t('main.lut.vendorHint')),
     h('div', { class: 'table-wrap' }, table(LUT_SOURCES.map((l) => [l.vendor, l.looks, l.url ? link(l.url, t('main.lut.download')) : '–', h('span', { class: 'hint' }, l.note)]))),
   ] });

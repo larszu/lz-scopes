@@ -11,6 +11,7 @@ import { RGC, RGC_GLSL, rgcScale } from './rgc';
 import { CUBE_GLSL, CUBE_SCALE } from './cube';
 import { t } from './i18n';
 import { R103, R103_GLSL, YUV_FETCH_GLSL, yuvScale } from './ycbcr';
+import { V210_UNPACK_FS, v210RowWords } from './v210';
 import { intersect } from './view';
 import { BLUR_FS, CRT_DISPLAY_FS, CRT_FS, CRT_VS_MAIN, PERSIST_FS, PHOSPHORS, beamSigma, persistDecay, type CrtSettings } from './crt';
 
@@ -448,7 +449,11 @@ void main() {
   o = vec4(c, 1.0);
 }`;
 
-interface SrcTex { tex: WebGLTexture; w: number; h: number; u16: boolean; seq: number }
+/**
+ * `packed`: v210 sources (#258) – the words as uploaded (R32UI, v210RowWords(w) × h) and the
+ * framebuffer the unpack pass writes into `tex` (RGBA16UI A, Y′, Cb, Cr like format=yuv).
+ */
+interface SrcTex { tex: WebGLTexture; w: number; h: number; u16: boolean; seq: number; packed?: { tex: WebGLTexture; fbo: WebGLFramebuffer } }
 interface Accum { tex: WebGLTexture; fbo: WebGLFramebuffer; w: number; h: number }
 
 export interface ScatterParams {
@@ -614,11 +619,12 @@ export class Renderer {
     if (!src.ready) return null;
     const gl = this.gl;
     const u16 = src.data !== null && src.depth === 16;
+    const v210 = src.data instanceof Uint32Array && src.pack === 'v210';
     let t = this.textures.get(src.id);
     const w = src.width, h = src.height;
-    if (t && t.seq === src.frameSeq && t.w === w && t.h === h && t.u16 === u16) return t;
-    if (!t || t.u16 !== u16) {
-      if (t) gl.deleteTexture(t.tex);
+    if (t && t.seq === src.frameSeq && t.w === w && t.h === h && t.u16 === u16 && !!t.packed === v210) return t;
+    if (!t || t.u16 !== u16 || !!t.packed !== v210) {
+      if (t) this.deleteSrcTex(t);
       const tex = gl.createTexture()!;
       t = { tex, w: 0, h: 0, u16, seq: -1 };
       this.textures.set(src.id, t);
@@ -628,6 +634,10 @@ export class Renderer {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     }
+    // a new size is announced before its first picture: the old one does not fit, and a failed
+    // texImage2D would leave the texture without level 0 (every later texSubImage2D fails too)
+    if (src.data && src.data.length !== (v210 ? v210RowWords(w) : w * 4) * h) return null;
+    if (v210) return this.unpackV210(src, t, w, h);
     gl.bindTexture(gl.TEXTURE_2D, t.tex);
     const same = t.w === w && t.h === h;
     try {
@@ -646,6 +656,59 @@ export class Renderer {
     }
     t.w = w; t.h = h; t.seq = src.frameSeq;
     return t;
+  }
+
+  /**
+   * v210 (#258): upload the packed words as they came – a third of the 8 B/px of the unpacked
+   * layout – and unpack them on the GPU once per picture into `t.tex` (RGBA16UI, V210_UNPACK_FS).
+   * The scopes then read it exactly like a format=yuv texture.
+   */
+  private unpackV210(src: Source, t: SrcTex, w: number, h: number): SrcTex {
+    const gl = this.gl, tw = v210RowWords(w);
+    const nearest = () => {
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    };
+    const same = t.w === w && t.h === h && !!t.packed;
+    if (!t.packed) {
+      const tex = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, tex); nearest();
+      t.packed = { tex, fbo: gl.createFramebuffer()! };
+    }
+    gl.bindTexture(gl.TEXTURE_2D, t.packed.tex);
+    if (same) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, tw, h, gl.RED_INTEGER, gl.UNSIGNED_INT, src.data!);
+    else {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32UI, tw, h, 0, gl.RED_INTEGER, gl.UNSIGNED_INT, src.data!);
+      gl.bindTexture(gl.TEXTURE_2D, t.tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16UI, w, h, 0, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, t.packed.fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t.tex, 0);
+    }
+    // the callers set framebuffer, viewport, program and textures after this; scissor and blend
+    // may belong to them and come back as they were
+    const scissor = gl.isEnabled(gl.SCISSOR_TEST), blend = gl.isEnabled(gl.BLEND);
+    gl.disable(gl.SCISSOR_TEST); gl.disable(gl.BLEND);
+    const prog = this.program('v210unpack', PICTURE_VS, V210_UNPACK_FS);
+    gl.useProgram(prog);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.packed.fbo);
+    gl.viewport(0, 0, w, h);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, t.packed.tex);
+    gl.uniform1i(this.u(prog, 'uPacked'), 0);
+    gl.uniform1i(this.u(prog, 'uW'), w);
+    gl.uniform4f(this.u(prog, 'uUv'), 0, 0, 1, 1);
+    gl.bindVertexArray(this.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    if (scissor) gl.enable(gl.SCISSOR_TEST);
+    if (blend) gl.enable(gl.BLEND);
+    t.w = w; t.h = h; t.seq = src.frameSeq;
+    return t;
+  }
+
+  private deleteSrcTex(t: SrcTex) {
+    this.gl.deleteTexture(t.tex);
+    if (t.packed) { this.gl.deleteTexture(t.packed.tex); this.gl.deleteFramebuffer(t.packed.fbo); }
   }
 
   private accum(key: string, w: number, h: number): Accum {
@@ -710,7 +773,7 @@ export class Renderer {
 
   dropSource(id: string) {
     const t = this.textures.get(id);
-    if (t) { this.gl.deleteTexture(t.tex); this.textures.delete(id); }
+    if (t) { this.deleteSrcTex(t); this.textures.delete(id); }
   }
 
   /** CSS-pixel rect (relative to canvas) → GL viewport in device pixels (origin bottom-left). */

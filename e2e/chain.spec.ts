@@ -54,7 +54,7 @@ test('Messpunkt Signal → nach CST → nach LUT', async () => {
       throw e;
     });
   };
-  const chip = page.locator('.panel .stagechip');
+  const chip = page.locator('.phead .stagechip');
 
   await check(STEPS, 'Signal');
   await page.locator('.brand').click();

@@ -8,6 +8,8 @@ export default {
   'main.resume': '▶ Weiter',
   'main.addPanel': 'Panel hinzufügen',
   'main.unitTitle': 'Skala der Waveforms',
+  'main.unitSeg.bitTitle': 'Codewerte 8 / 10 bit – nochmal klicken wechselt zwischen 8 und 10 bit',
+  'main.unitSeg.stop': 'Blende',
   'settings.ui.skinTitle': 'Farben der Bedienoberfläche',
   'settings.ui.skinHint': 'Nur die Bedienoberfläche ändert sich. Messdarstellungen (Spuren, Graticule, Falschfarben) bleiben in allen Varianten gleich.',
   'settings.ui.sidebarShow': 'Quellen anzeigen (B)',

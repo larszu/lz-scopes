@@ -1,7 +1,7 @@
 import './vendor/dockview.css';
 import {
   $, button, checkbox, chip, field, filePicker, groupedSelect, h, hint, iconButton, download, modal, numberInput, openModal, popover, row,
-  link, segmented, select, settingControl, settingRow, settingsForm, slider, statusDot, table, textInput, applySetting, describeSettings, kicker, type Kid, type Option, type PopoverEl, type Setting,
+  link, select, settingControl, settingsForm, slider, statusDot, table, textInput, applySetting, describeSettings, kicker, type Kid, type Option, type PopoverEl, type Setting,
 } from './ui';
 import './style.css';
 import { DEFAULT_SCHEME, DEFAULT_THEME, SCHEMES, THEMES, applyScheme, applyTheme, currentSignet, isScheme, isTheme, type SchemePref, type UiTheme } from './theme';
@@ -41,7 +41,7 @@ import { PATTERNS, RESOLUTIONS, patternById } from './patterns';
 import { addUserImages, favouritePatterns, isFavourite, loadUserPatterns, onUserPatternsChange, setFavourite } from './userPatterns';
 import { openAvClip } from './avClip';
 import { openTestImages, openTestVideos, type TestMediaHost } from './testMedia';
-import { PRESETS, createDock, panelId, panelIdx } from './dock';
+import { PRESETS, createDock, panelId, panelIdx, presetIcon } from './dock';
 import { attachLongPress } from './longPress';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
 import { openPerfTest } from './perfTest';
@@ -214,7 +214,7 @@ function setScheme(v: SchemePref) {
 }
 const sideToggle = iconButton('◧', t('main.side.aria'), () => toggleSidebar(), { title: t('main.side.toggle'), attrs: { id: 'toggle-side' } });
 /** Header overflow (narrow windows): the same layout presets and scale as the header groups. */
-const moreMenu = popover({ label: '⋯', title: t('ui.more'), heading: t('ui.moreTitle'), cls: 'more-body', content: () => [field(t('ui.layouts'), layoutControl()), settingRow(SET.unit), field(t('ui.scheme'), schemeSeg()),
+const moreMenu = popover({ label: '⋯', title: t('ui.more'), heading: t('ui.moreTitle'), cls: 'more-body', content: () => [field(t('ui.layouts'), layoutControl()), field(t('settings.scopes.scale'), unitSeg()), field(t('ui.scheme'), schemeSeg()),
   row(button(t('record.all'), () => recordAll(), { title: t('record.allTitle') }), button(t('ring.save'), () => saveRings(), { title: t('ring.saveTitle') }))] });
 moreMenu.id = 'bar-more';
 const side = h('aside', { class: 'side', id: 'side' },
@@ -323,16 +323,39 @@ const REMOTE_SETTINGS: Setting[] = Object.values(SET).filter((s) => s.key !== 'l
 
 // ---------------------------------------------------------------- header
 
-/** Layout presets as one segmented control, plus "add panel". */
+/** Layout presets as an icon segment (#262; the name in the tooltip, "Colorist" also as text), plus "add panel". */
 function layoutControl() {
-  return h('span', { class: 'toolbar' },
-    segmented(state.layout, Object.entries(PRESETS).map(([k, l], i) => [k, l.label, t('main.layoutTitle', { name: l.label, n: i + 1 })] as const), (k) => setLayout(k), t('ui.layouts')),
-    button(t('main.addPanelBtn'), () => addScopePanel(), { title: t('main.addPanel') }));
+  const seg = h('div', { class: 'seg layout-seg', role: 'group', 'aria-label': t('ui.layouts') },
+    Object.entries(PRESETS).map(([k, l], i) => {
+      const b = button([presetIcon(k), k === 'lc' && h('span', { class: 'laytext' }, l.label)], () => setLayout(k),
+        { pressed: k === state.layout, title: t('main.layoutTitle', { name: l.label, n: i + 1 }), attrs: { 'aria-label': l.label, 'data-layout': k } });
+      b.classList.add('lay');
+      return b;
+    }));
+  return h('span', { class: 'toolbar' }, seg, button(t('main.addPanelBtn'), () => addScopePanel(), { title: t('main.addPanel') }));
+}
+
+/** last bit depth picked in the scale segment (the "bit" button switches 8 ↔ 10 when pressed again) */
+let lastBits: Unit = 'bit10';
+/** Waveform scale as a compact segment % · bit · nits · stops (#262); the settings window keeps the full list. */
+function unitSeg(): HTMLElement {
+  const cur = state.unit;
+  if (cur === 'bit8' || cur === 'bit10') lastBits = cur;
+  const opt = (u: Unit) => String(UNIT_OPTIONS().find(([k]) => k === u)?.[1] ?? u);
+  const isBits = cur === 'bit8' || cur === 'bit10';
+  const items: [Unit, string, string, boolean][] = [
+    ['percent', '%', opt('percent'), cur === 'percent'],
+    [isBits ? (cur === 'bit8' ? 'bit10' : 'bit8') : lastBits, lastBits === 'bit8' ? '8 bit' : '10 bit', t('main.unitSeg.bitTitle'), isBits],
+    ['nits', 'nits', opt('nits'), cur === 'nits'],
+    ['stop', t('main.unitSeg.stop'), opt('stop'), cur === 'stop'],
+  ];
+  return h('div', { class: 'seg unit-seg', role: 'group', 'aria-label': `${t('settings.scopes.scale')} – ${t('main.unitTitle')}` },
+    items.map(([u, label, title, on]) => button(label, () => SET.unit.set(u), { pressed: on, title })));
 }
 
 function renderHeader() {
   $('#layouts').replaceChildren(layoutControl());
-  $('#globals').replaceChildren(...settingControl(SET.unit));
+  $('#globals').replaceChildren(unitSeg());
   moreMenu.refresh();
   refreshMenu();
   refreshSettings();
@@ -1245,8 +1268,10 @@ function panelElement(idx: number): HTMLElement {
     // of a chip that appears after zooming); hidden by CSS for scopes without zoom
     const hint = h('span', { class: 'gesture-hint', 'aria-hidden': 'true' }, matchMedia('(pointer: coarse)').matches ? t('gesture.hintTouch') : t('gesture.hint'));
     const body = h('div', { class: 'body' }, blit, overlay, zoom, hint);
-    const head = h('div', { class: 'phead', ondblclick: () => toggleSolo(idx) });
-    const el = h('div', { class: 'panel' }, head, body);
+    // one row with the dock tab (#261, src/dock.ts places it); right click = the ⚙ popover
+    const head = h('div', { class: 'phead', 'data-panel': String(idx), ondblclick: () => toggleSolo(idx),
+      oncontextmenu: (e: Event) => { e.preventDefault(); views.get(idx)?.pop?.open(); } });
+    const el = h('div', { class: 'panel', 'data-panel': String(idx) }, head, body);
     // double click: reset a zoomed view, otherwise solo
     body.addEventListener('dblclick', (e) => { if ((e.target as HTMLElement).closest('.zoomchip')) return; resetView(idx); });
     shading.attach(body, idx, p);
@@ -1287,6 +1312,8 @@ function fillHead(v: PanelView) {
   // picture panels this one can follow (#177)
   let followable: number[] = [];
   try { followable = dock.openIdx().filter((j) => j !== idx && state.panels[j]?.scope === 'picture'); } catch { /* dock not built yet */ }
+  // the scope by name on panel and head (tests and the control API find panels by it)
+  v.el.dataset.scope = p.scope; v.head.dataset.scope = p.scope;
   // the source's identity colour also at the tab edge (#256), with more than one source
   tintTab(idx, multi);
   lead.replaceChildren(...[
@@ -1307,9 +1334,10 @@ function fillHead(v: PanelView) {
   (opts.firstChild as HTMLElement).replaceChildren(...[latencyChip(p), cameraChip(p), roiChip(p)].filter((x): x is HTMLElement => !!x));
   if (!v.pop || v.popScope !== p.scope) {
     v.pop?.remove();
-    v.pop = popover({ label: '⚙', title: t('panel.settingsOf', { scope: SCOPE_LABELS[p.scope] }), heading: SCOPE_LABELS[p.scope], align: 'end', cls: 'psettings', content: () => panelSettings(state.panels[idx]),
-      // tablets: a sheet over this panel (#185)
-      over: (tr) => tr.closest('.panel')?.getBoundingClientRect() });
+    // "Settings" next to the ⚙ from 360 px panel width (CSS container query)
+    v.pop = popover({ label: ['⚙', h('span', { class: 'plabel' }, t('common.settings'))], title: t('panel.settingsOf', { scope: SCOPE_LABELS[p.scope] }), heading: SCOPE_LABELS[p.scope], align: 'end', cls: 'psettings', content: () => panelSettings(state.panels[idx]),
+      // tablets: a sheet over this panel (#185); the head may sit in the dock's group header (#261)
+      over: () => v.el.getBoundingClientRect() });
     v.popScope = p.scope;
     opts.append(v.pop);
   }
@@ -2980,7 +3008,9 @@ registerMenuCommand('scopes', { id: 'avclip', label: t('avclip.menu'), title: t(
 registerMenuCommand('scopes', { id: 'cameras', label: SHADING_T.camMenu, title: SHADING_T.camMenuTitle }, () => { void shading.openCameras(); });
 const dock = createDock($('#dock'), {
   element: panelElement,
+  head: (idx) => { panelElement(idx); return views.get(idx)!.head; },
   title: panelTitle,
+  tabTitle: t('panel.tabDrag'),
   onLayout: () => {
     needClear = true;
     clearTimeout(layoutSave);

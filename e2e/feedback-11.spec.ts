@@ -8,7 +8,7 @@ let a: App;
 test.beforeAll(async () => { a = await launchApp(); });
 test.afterAll(async () => { await a?.close(); });
 
-const head = (a: App) => a.page.locator('.panel .phead select').first();
+const head = (a: App) => a.page.locator('.phead select').first();
 
 test('Scope-Liste in Gruppen, Falschfarben als eigener Eintrag unter Bild', async () => {
   const { page } = a;
@@ -36,7 +36,7 @@ test('Diamond: schwarzes Feld über das ganze Panel, Lupe auf den Schwarzpunkt',
   });
   expect(Math.max(...corner)).toBeLessThan(6);
   await page.screenshot({ path: test.info().outputPath('diamond.png') });
-  await page.locator('.panel .pop-trigger', { hasText: '⚙' }).first().click();
+  await page.locator('.phead .pop-trigger', { hasText: '⚙' }).first().click();
   const zoom = page.locator('.psettings select').filter({ has: page.locator('option[value="black"]') });
   await zoom.selectOption('black');
   await page.waitForTimeout(500);
@@ -58,7 +58,7 @@ test('Quellenwahl im Panelkopf ändert nur dieses Panel; „Alle Panels“ schal
   expectOk(await a.control({ cmd: 'layout.preset', preset: 3 }));
   const st = await a.state();
   const [s1, s2] = st.sources;
-  const srcSel = page.locator('.panel .phead select.srcsel').first();
+  const srcSel = page.locator('.phead select.srcsel').first();
   await srcSel.selectOption(s2.id);
   // the control state names the panel's source by name
   await until(async () => (await a.state()).panels[0].source === s2.name, 10_000, 'Panel 1 auf Quelle 2');
@@ -75,7 +75,7 @@ test('Waveform: Filter Tiefpass, Diamond: Split, Vectorscope: Mittenquadrat absc
   for (const [scope, value] of [['wf-luma', 'lowpass'], ['diamond', 'split'], ['vector', 'box']] as const) {
     await singlePanel(a, scope);
     await page.waitForTimeout(400);
-    await page.locator('.panel .pop-trigger', { hasText: '⚙' }).first().click();
+    await page.locator('.phead .pop-trigger', { hasText: '⚙' }).first().click();
     if (value === 'lowpass') await page.locator('.psettings select').filter({ has: page.locator('option[value="lowpass"]') }).selectOption('lowpass');
     else if (value === 'split') await page.locator('.psettings label', { hasText: 'Split Diamond' }).click();
     else await page.locator('.psettings label', { hasText: 'festes Quadrat' }).click();
@@ -88,7 +88,7 @@ test('Waveform: Filter Tiefpass, Diamond: Split, Vectorscope: Mittenquadrat absc
 test('Waveform: Flat rekonstruiert zeichnet eine Spur (#257)', async () => {
   const { page } = a;
   await singlePanel(a, 'wf-luma');
-  await page.locator('.panel .pop-trigger', { hasText: '⚙' }).first().click();
+  await page.locator('.phead .pop-trigger', { hasText: '⚙' }).first().click();
   await page.locator('.psettings select').filter({ has: page.locator('option[value="recon"]') }).selectOption('recon');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(800);

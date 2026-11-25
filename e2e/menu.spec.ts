@@ -89,7 +89,7 @@ test('Feedback senden: Bericht zeigt genau die gewählten Daten', async () => {
 });
 
 test('Scope-Hilfe: „?“ im Panelkopf öffnet die Karte, Menü schaltet sie aus und an', async () => {
-  const q = a.page.locator('.panel button[title^="Was ist"]');
+  const q = a.page.locator('.phead button[title^="Was ist"]');
   await expect(q.first()).toBeVisible();
   await q.first().click();
   const card = a.page.locator('.popover.scopehelp:popover-open');

@@ -33,7 +33,7 @@ test('ST 352 flags PQ, the scopes read SDR: warning, then the switch', async () 
   await expect(async () => {
     await page.keyboard.press('Escape');
     await inject();
-    await panel.getByRole('button', { name: 'Settings: SDI Signal Info' }).click();
+    await page.locator('.phead').getByRole('button', { name: 'Settings: SDI Signal Info' }).click();
     await expect(follow).toBeVisible({ timeout: 1500 });
   }).toPass({ timeout: 45_000 });
   await follow.click();

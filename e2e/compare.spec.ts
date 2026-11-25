@@ -14,7 +14,7 @@ test.beforeEach(async () => { expectOk(await a.control({ cmd: 'freeze', mode: 'o
 /** Colour of the brightest pixel around signal `level` in the middle column of the visible wf-luma panel. */
 async function traceColour(level: number) {
   return a.page.evaluate(({ level, wmin, wmax }) => {
-    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'wf-luma')!;
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && p.dataset.scope === 'wf-luma')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.blit')!;
     const dpr = c.width / c.getBoundingClientRect().width;
     const cssW = c.width / dpr, cssH = c.height / dpr;
@@ -36,8 +36,8 @@ test('Referenzkamera eingefroren: Geisterspur in Magenta am alten Pegel', async 
   await until(async () => (await traceColour(0.5))[1] > 60, 60_000, 'Graustufe 50 % sichtbar');
   expectOk(await a.control({ cmd: 'setting', key: 'refMode', value: 'frozen' }));
   // … the panel shows it (⚙ → Referenzspur einblenden)
-  await a.page.locator('.panel .pop-trigger:not(.help-trigger) >> visible=true').first().click();
-  await a.page.locator('.panel .popover:popover-open').getByRole('checkbox', { name: 'Referenzspur einblenden' }).check();
+  await a.page.locator('.phead .pop-trigger:not(.help-trigger) >> visible=true').first().click();
+  await a.page.locator('.phead .popover:popover-open').getByRole('checkbox', { name: 'Referenzspur einblenden' }).check();
   await a.page.keyboard.press('Escape');
   // … and the live picture changes to black: live trace at 0 %, magenta ghost stays at 50 %
   expectOk(await a.control({ cmd: 'pattern.select', pattern: 'black' }));
@@ -88,7 +88,7 @@ test('Kachelansicht: zwei Quellen, je eine Waveform-Kachel', async () => {
 /** Share of strongly red pixels in the visible picture panel (peaking colour red). */
 async function redShare() {
   return a.page.evaluate(() => {
-    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'picture')!;
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && p.dataset.scope === 'picture')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.blit')!;
     const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data;
     let n = 0;
@@ -100,8 +100,8 @@ async function redShare() {
 test('Fokus-Peaking: Kanten des Schachbretts rot, Graufläche ohne', async () => {
   expectOk(await a.control({ cmd: 'pattern.select', pattern: 'checker' }));
   await singlePanel(a, 'picture');
-  await a.page.locator('.panel .pop-trigger:not(.help-trigger) >> visible=true').first().click();
-  await a.page.locator('.panel .popover:popover-open').getByRole('combobox', { name: 'Overlay' }).selectOption('peaking');
+  await a.page.locator('.phead .pop-trigger:not(.help-trigger) >> visible=true').first().click();
+  await a.page.locator('.phead .popover:popover-open').getByRole('combobox', { name: 'Overlay' }).selectOption('peaking');
   await a.page.keyboard.press('Escape');
   await until(async () => (await redShare()) > 0.002, 30_000, 'rote Kanten');
   expectOk(await a.control({ cmd: 'pattern.select', pattern: 'gray50' }));
@@ -143,8 +143,8 @@ test('Shading-Assistent: Ablauf mit Schritten, Weiter hakt ab', async () => {
   });
   // camera line, progress, seven steps, instruction, values, state
   await until(async () => (await rows()) >= 12, 30_000, 'Zeilen des Ablaufs');
-  await a.page.locator('.panel .pop-trigger:not(.help-trigger) >> visible=true').first().click();
-  await a.page.locator('.panel .popover:popover-open [data-shguide-next]').click();
+  await a.page.locator('.phead .pop-trigger:not(.help-trigger) >> visible=true').first().click();
+  await a.page.locator('.phead .popover:popover-open [data-shguide-next]').click();
   await a.page.keyboard.press('Escape');
   const st = await a.page.evaluate(() => JSON.stringify(localStorage));
   expect(st).toContain('blackBal');
@@ -176,7 +176,7 @@ test('Farbtafel-Match: zwei gleiche Tafeln grün, eine andere rot', async () => 
   await singlePanel(a, 'chart');
   // cells coloured by verdict (match/chartPanel.ts VERDICT at 85 % over the dark panel)
   const cells = () => a.page.evaluate(() => {
-    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'chart')!;
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && p.dataset.scope === 'chart')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
     const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data;
     let green = 0, red = 0;
@@ -202,7 +202,7 @@ test('Drift-Wächter: gleiche Bilder grün, ein anderes Bild rot', async () => {
   await singlePanel(a, 'drift');
   // status squares of the rows (match/driftPanel.ts): green ok, red drifted
   const marks = () => a.page.evaluate(() => {
-    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'drift')!;
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && p.dataset.scope === 'drift')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
     const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data;
     let green = 0, red = 0;
@@ -249,7 +249,7 @@ test('STOP-Skala: Hauptlinie bei der Graukarte (SDR 40,9 %)', async () => {
   expectOk(await a.control({ cmd: 'setting', key: 'unit', value: 'stop' }));
   // major graticule line (src/graticule.ts GRID, solid) at stop 0 on the overlay canvas
   const line = (level: number) => a.page.evaluate(({ level, wmin, wmax }) => {
-    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'wf-luma')!;
+    const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && p.dataset.scope === 'wf-luma')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
     const dpr = c.width / c.getBoundingClientRect().width, cssW = c.width / dpr, cssH = c.height / dpr;
     const r = { x: 44, y: 8, w: cssW - 52, h: cssH - 16 };

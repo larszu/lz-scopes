@@ -1,14 +1,63 @@
 // Docking layout (dockview-core, the framework-free sibling of the flexlayout grid in
 // multicam-planner): drag panels by their tab to split, stack or rearrange, drag the
 // sashes to resize. The presets 1 … 3×3, 1/1 and 1+3 only build a starting layout.
+//
+// One head per panel (#261): the dock tab stays the drag handle (dockview drags, splits and
+// stacks by the tab), and the panel's own head (scope, source, chips, ?, ⚙, ⤢) sits in the
+// same row, in the group's left header slot. The slot shows the head of the group's active
+// panel. A tab alone in its group shows only grip and number; stacked tabs keep their names.
+// Compact mode (phones) keeps the plain tabs and puts the head back into the panel.
 
-import { createDockview, type DockviewApi, type IContentRenderer } from 'dockview-core';
+import { createCloseButton, createDockview, type DockviewApi, type IContentRenderer, type IHeaderActionsRenderer, type ITabRenderer } from 'dockview-core';
 
 export interface DockHost {
   /** Build (or return) the element for panel idx. */
   element: (idx: number) => HTMLElement;
+  /** The head row of panel idx (built with the element); the dock places it. */
+  head: (idx: number) => HTMLElement;
   title: (idx: number) => string;
+  /** tooltip of the tab (drag handle) */
+  tabTitle?: string;
   onLayout: () => void;
+}
+
+/** Split a panel title "3 · Waveform" into number and name for the tab. */
+export function splitTitle(title: string): [num: string, name: string] {
+  const i = title.indexOf(' · ');
+  return i < 0 ? ['', title] : [title.slice(0, i), title.slice(i + 3)];
+}
+
+/** Dock tab: grip, number and name (the name is hidden by CSS while the tab is alone), close. */
+function scopeTab(tip: string): ITabRenderer {
+  const num = document.createElement('span'); num.className = 'tnum';
+  const name = document.createElement('span'); name.className = 'tname';
+  const grip = document.createElement('span'); grip.className = 'tgrip'; grip.setAttribute('aria-hidden', 'true'); grip.textContent = '⠿';
+  const content = document.createElement('div'); content.className = 'dv-default-tab-content';
+  content.append(grip, num, name);
+  const action = document.createElement('div'); action.className = 'dv-default-tab-action'; action.setAttribute('role', 'button'); action.tabIndex = -1;
+  const x = createCloseButton(); x.setAttribute('aria-hidden', 'true'); action.append(x);
+  const element = document.createElement('div'); element.className = 'dv-default-tab lzs-tab';
+  if (tip) element.title = tip;
+  element.append(content, action);
+  const subs: { dispose(): void }[] = [];
+  let closeLabel = (title: string) => title;
+  const render = (title: string) => {
+    const [n, rest] = splitTitle(title);
+    num.textContent = n; name.textContent = n ? ` · ${rest}` : rest;
+    action.setAttribute('aria-label', closeLabel(title));
+  };
+  return {
+    element,
+    init: (p) => {
+      const m = p.containerApi.messages;
+      if (m) closeLabel = (title) => m.closeTab(title);
+      render(p.title ?? '');
+      subs.push(p.api.onDidTitleChange((e) => render(e.title)));
+      action.addEventListener('pointerdown', (e) => e.preventDefault());
+      action.addEventListener('click', (e) => { e.preventDefault(); p.api.close(); });
+    },
+    dispose: () => subs.splice(0).forEach((d) => d.dispose()),
+  };
 }
 
 /** Build order plus target size per panel as fraction of the dock [width, height]. */
@@ -45,10 +94,45 @@ export const PRESETS: Record<string, { label: string; build: (add: Adder) => voi
 };
 type Adder = (idx: number, ref?: number, direction?: 'right' | 'below') => void;
 
+/** Header icon of each preset (#262): the panel rectangles as [x, y, w, h] in 0 … 1. */
+export const PRESET_ICONS: Record<string, [number, number, number, number][]> = {
+  l1: [[0, 0, 1, 1]],
+  l2: [[0, 0, 0.5, 1], [0.5, 0, 0.5, 1]],
+  l4: [[0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]],
+  lc: [[0, 0, 0.62, 0.62], [0.62, 0, 0.38, 0.31], [0.62, 0.31, 0.38, 0.31], [0, 0.62, 0.42, 0.38], [0.42, 0.62, 0.38, 0.38], [0.8, 0.62, 0.2, 0.38]],
+  l6: [0, 1, 2].flatMap((c) => [0, 1].map((r) => [c / 3, r / 2, 1 / 3, 1 / 2] as [number, number, number, number])),
+  l9: [0, 1, 2].flatMap((c) => [0, 1, 2].map((r) => [c / 3, r / 3, 1 / 3, 1 / 3] as [number, number, number, number])),
+  l2v: [[0, 0, 1, 0.5], [0, 0.5, 1, 0.5]],
+  l1w: [[0, 0, 1, 0.5], [0, 0.5, 1 / 3, 0.5], [1 / 3, 0.5, 1 / 3, 0.5], [2 / 3, 0.5, 1 / 3, 0.5]],
+};
+
+/** Small outline icon of a preset (18 × 12 px, currentColor). */
+export function presetIcon(key: string): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg', W = 18, H = 12;
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', String(W)); svg.setAttribute('height', String(H));
+  svg.setAttribute('aria-hidden', 'true'); svg.classList.add('layicon');
+  for (const [x, y, w, h] of PRESET_ICONS[key] ?? PRESET_ICONS.l1) {
+    const r = document.createElementNS(NS, 'rect');
+    r.setAttribute('x', String(x * (W - 1) + 0.5)); r.setAttribute('y', String(y * (H - 1) + 0.5));
+    r.setAttribute('width', String(Math.max(1, w * (W - 1)))); r.setAttribute('height', String(Math.max(1, h * (H - 1))));
+    r.setAttribute('rx', '1');
+    svg.append(r);
+  }
+  return svg;
+}
+
 export const panelId = (idx: number) => `p${idx}`;
 export const panelIdx = (id: string) => Number(id.slice(1));
 
 export function createDock(el: HTMLElement, host: DockHost) {
+  /** compact mode (see setCompact); read by the renderers below */
+  let compact = false, saved: unknown = null;
+  /** the head goes back on top of its panel (compact mode) */
+  const headIntoPanel = (idx: number) => {
+    const panel = host.element(idx), head = host.head(idx);
+    if (head.parentElement !== panel) panel.prepend(head);
+  };
   const api: DockviewApi = createDockview(el, {
     className: 'dockview-theme-abyss lzs-dock',
     disableFloatingGroups: true,
@@ -60,7 +144,29 @@ export function createDock(el: HTMLElement, host: DockHost) {
         init: (p) => {
           const idx = (p.params as { idx: number }).idx;
           element.replaceChildren(host.element(idx));
+          if (compact) headIntoPanel(idx);
         },
+      };
+    },
+    defaultTabComponent: 'scope',
+    createTabComponent: (o) => (o.name === 'scope' ? scopeTab(host.tabTitle ?? '') : undefined),
+    // the head of the group's active panel, in the same row as the tabs (#261)
+    createLeftHeaderActionComponent: (): IHeaderActionsRenderer => {
+      const element = document.createElement('div');
+      element.className = 'dock-head';
+      const subs: { dispose(): void }[] = [];
+      return {
+        element,
+        init: ({ api: groupApi, group }) => {
+          const show = () => {
+            const p = group.activePanel;
+            if (compact || !p) { element.replaceChildren(); return; }
+            element.replaceChildren(host.head(panelIdx(p.id)));
+          };
+          subs.push(groupApi.onDidActivePanelChange(show));
+          show();
+        },
+        dispose: () => subs.splice(0).forEach((d) => d.dispose()),
       };
     },
   });
@@ -83,7 +189,6 @@ export function createDock(el: HTMLElement, host: DockHost) {
    * The full layout is kept aside and comes back unchanged when the window gets wide again;
    * layoutJSON() returns it, so a narrow window never overwrites the saved layout.
    */
-  let compact = false, saved: unknown = null;
   const enterCompact = () => {
     const idxs = api.panels.map((p) => panelIdx(p.id));
     // the first panel (usually the picture) is in front; dockview's active panel is just the last one built

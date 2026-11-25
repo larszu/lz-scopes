@@ -213,6 +213,16 @@ src.connectFrames('ws://bridge/scope/1');
 view.setSource(src);
 ```
 
+Without code, as a page (#238, `src/widget.ts`): the bridge serves `?widget=<scopes>&src=<input>`, e.g.
+`/?widget=wf-luma,vector&src=decklink:0` or `&src=pattern:smpte75-lz` – up to four of the single-source
+scopes (`WIDGET_SCOPES` in `src/workspace.ts`), optional `&frames=ws://…/scope/3`, `&bridge=ws://…`,
+`&unit=`, `&lang=de|en`, `&selectors=1`. Fits an `<iframe>` (Companion, camera bridge, own pages); every
+widget reads the stream on its own. Panel ⚙ → *Embed* builds the link and the iframe code.
+
+Workspaces (#238): saved layouts appear as tabs above the dock; switching keeps the changes of the tab
+left behind. 🔗 builds a link `#ws=<name>~<payload>` (layout configuration, deflate + base64url, in the
+fragment, without source addresses) that opens the workspace as a tab in another browser.
+
 ## Limits
 
 - Only bridge streams in *16 bit Y′CbCr* mode and the 16-bit patterns keep sub-black and super-white; 8 / 16 bit R′G′B′ streams and browser sources are clipped to 0-100 %, the R 103 check then says so.

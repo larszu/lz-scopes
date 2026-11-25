@@ -1,7 +1,7 @@
 import './vendor/dockview.css';
 import {
   $, button, checkbox, chip, field, filePicker, groupedSelect, h, hint, iconButton, download, modal, numberInput, openModal, popover, row,
-  link, select, settingControl, settingsForm, slider, statusDot, table, textInput, applySetting, describeSettings, kicker, type Kid, type Option, type PopoverEl, type Setting,
+  link, select, settingControl, tabs, settingsForm, slider, statusDot, table, textInput, applySetting, describeSettings, kicker, type Kid, type Option, type PopoverEl, type Setting,
 } from './ui';
 import './style.css';
 import { DEFAULT_SCHEME, DEFAULT_THEME, SCHEMES, THEMES, applyScheme, applyTheme, currentSignet, isScheme, isTheme, type SchemePref, type UiTheme } from './theme';
@@ -44,6 +44,7 @@ import { openAvClip } from './avClip';
 import { openTestImages, openTestVideos, type TestMediaHost } from './testMedia';
 import { PRESETS, createDock, panelId, panelIdx, presetIcon } from './dock';
 import { attachLongPress } from './longPress';
+import { WIDGET_SCOPES, decodeWorkspace, encodeWorkspace, freeName, iframeSnippet, nextName, shareFromHash, shareUrl, widgetUrl } from './workspace';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
 import { openPerfTest } from './perfTest';
 import { openEventLog, openValueCards } from './opsUi';
@@ -255,7 +256,10 @@ app.replaceChildren(
     side,
     // narrow windows: tapping next to the sources drawer closes it
     h('div', { class: 'side-scrim', title: t('ui.closeSidebar'), onclick: () => toggleSidebar(false) }),
-    h('section', { class: 'dockwrap', id: 'grid' }, h('canvas', { id: 'gl' }), h('div', { id: 'dock' }))));
+    // workspace tabs (#238) above the dock; hidden until a workspace is saved
+    h('div', { class: 'workarea' },
+      h('nav', { class: 'ws-tabs', id: 'ws-tabs', hidden: true, 'aria-label': t('main.ws.tabs') }),
+      h('section', { class: 'dockwrap', id: 'grid' }, h('canvas', { id: 'gl' }), h('div', { id: 'dock' })))));
 
 const grid = $('#grid');
 const glCanvas = $<HTMLCanvasElement>('#gl');
@@ -360,6 +364,7 @@ function unitSeg(): HTMLElement {
 
 function renderHeader() {
   $('#layouts').replaceChildren(layoutControl());
+  renderWsTabs();
   $('#globals').replaceChildren(unitSeg());
   moreMenu.refresh();
   refreshMenu();
@@ -449,7 +454,9 @@ function setTheme(t: UiTheme) {
 }
 
 function setLayout(k: string) {
-  state.layout = k; state.layoutName = ''; save(); renderHeader(); dock.applyPreset(k);
+  // a workspace tab (#238) stays active and keeps the new arrangement when it is left
+  state.layout = k; if (!(state.layoutName in loadLayouts())) state.layoutName = '';
+  save(); renderHeader(); dock.applyPreset(k);
 }
 
 // Layouts and Ausgabe: tool dialogs opened from the menu (Datei → Layouts …, Ausgabe → Ausgabe öffnen …)
@@ -1810,6 +1817,7 @@ function panelSettings(p: PanelState): Node[] {
     row(t('settings.scopes.scale'), check('log', t('panel.log')));
   }
   if (scatter) global(SET.precision);
+  if (WIDGET_SCOPES.includes(p.scope)) row(t('main.wg.row'), button(t('main.wg.button'), () => widgetDialog(p), { small: true, title: t('main.wg.buttonTitle') }));
   return rows;
 }
 
@@ -2487,6 +2495,7 @@ function renderLayoutMenu() {
         { title: t('main.lay.load', { date: new Date(all[n].saved).toLocaleString(lang() === 'de' ? 'de-DE' : 'en-GB') }), pressed: n === state.layoutName, attrs: { class: `lname${n === state.layoutName ? ' on' : ''}` } }),
       iconButton('↻', t('main.lay.overwrite'), () => { all[n] = currentLayout(); storeLayouts(all); renderLayoutMenu(); }, { small: true }),
       iconButton('⤓', t('main.lay.export'), () => downloadJson(all[n], `lz-scopes-layout-${n}.json`), { small: true }),
+      iconButton('🔗', t('main.ws.share'), () => { void shareWorkspace(n, all[n]); }, { small: true, attrs: { 'data-share': n } }),
       iconButton('✕', t('main.lay.delete'), () => { delete all[n]; storeLayouts(all); renderLayoutMenu(); }, { small: true })))
       : [hint(t('main.lay.none'))]),
     row(name, button(t('main.lay.save'), saveAs, { variant: 'primary' })),
@@ -2494,6 +2503,95 @@ function renderLayoutMenu() {
       button(t('main.lay.exportAll'), () => downloadJson(all, 'lz-scopes-layouts.json')),
       button(t('main.lay.import'), () => importLayouts(renderLayoutMenu))),
   );
+  renderWsTabs();
+}
+
+// ---------------------------------------------------------------- workspaces (#238, src/workspace.ts)
+// The saved layouts are the workspaces: one tab each above the dock. Switching keeps the changes
+// of the workspace left behind in its tab; a link opens a workspace on another device.
+
+function renderWsTabs() {
+  const nav = document.getElementById('ws-tabs');
+  if (!nav) return;
+  const names = Object.keys(loadLayouts());
+  const wasHidden = nav.hidden;
+  nav.hidden = names.length === 0;
+  if (wasHidden !== nav.hidden) needClear = true;
+  if (nav.hidden) { nav.replaceChildren(); return; }
+  nav.replaceChildren(
+    tabs({ items: names.map((n) => ({ id: n, label: n, title: t('main.ws.tabTitle', { name: n }) })), current: state.layoutName, onSelect: switchWorkspace, label: t('main.ws.tabs'), cls: 'ws-list' }),
+    iconButton('＋', t('main.ws.new'), () => newWorkspace(), { small: true, attrs: { class: 'icon ws-new' } }),
+    iconButton('🔗', t('main.ws.shareCurrent'), () => { void shareWorkspace(state.layoutName || t('main.ws.prefix'), currentLayout()); }, { small: true, attrs: { class: 'icon ws-share' } }),
+  );
+}
+
+/** Keep the current state in the active workspace (when there is one). */
+function keepActiveWorkspace(all: Record<string, LayoutConfig>) {
+  if (state.layoutName && all[state.layoutName]) all[state.layoutName] = currentLayout();
+}
+
+function switchWorkspace(n: string) {
+  if (n === state.layoutName) return;
+  const all = loadLayouts();
+  if (!all[n]) return;
+  keepActiveWorkspace(all); storeLayouts(all);
+  applyLayout(all[n]); state.layoutName = n; save(); renderHeader();
+}
+
+function newWorkspace() {
+  const all = loadLayouts();
+  keepActiveWorkspace(all);
+  const n = nextName(t('main.ws.prefix'), Object.keys(all));
+  all[n] = currentLayout(); storeLayouts(all);
+  state.layoutName = n; save(); renderHeader();
+}
+
+/** Page URL other devices can open: this page when served over http(s), else the bridge (it serves the app). */
+const appBase = () => (/^https?:$/.test(location.protocol) ? `${location.origin}${location.pathname}` : `${bridgeUrl().replace(/^ws/, 'http')}/`);
+
+/** A dialog with a link (and optional extra snippets) to copy. */
+function linkDialog(title: string, items: [label: string, text: string][], note: string) {
+  const copy = (text: string) => navigator.clipboard?.writeText(text).then(() => alertHud(t('main.ws.copied')), () => {});
+  openModal({ title, size: 'md', cls: 'link-dlg', body: [
+    hint(note),
+    ...items.map(([label, text]) => field(label,
+      h('textarea', { class: 'mono link-text', readonly: true, rows: text.length > 160 ? 4 : 2, onfocus: (e: Event) => (e.target as HTMLTextAreaElement).select() }, text),
+      button(t('main.ws.copy'), () => { void copy(text); }, { small: true }))),
+  ] });
+}
+
+async function shareWorkspace(name: string, cfg: LayoutConfig) {
+  const url = shareUrl(appBase(), await encodeWorkspace(name, cfg));
+  linkDialog(t('main.ws.shareTitle', { name }), [[t('main.ws.link'), url]], t('main.ws.linkHint'));
+}
+
+/** Same arrangement and scopes (the save date does not count). */
+const sameLayout = (a: LayoutConfig, b: LayoutConfig) => JSON.stringify({ ...a, saved: '' }) === JSON.stringify({ ...b, saved: '' });
+
+/** `#ws=…` in the address: add that workspace (or find it again) and switch to it. */
+async function openSharedWorkspace() {
+  const enc = shareFromHash(location.hash);
+  if (!enc) return;
+  history.replaceState(null, '', `${location.pathname}${location.search}`);
+  const got = await decodeWorkspace(enc);
+  if (!got) { alertHud(t('main.ws.badLink')); return; }
+  const cfg = got.config as unknown as LayoutConfig;
+  cfg.saved ||= new Date().toISOString();
+  const all = loadLayouts();
+  keepActiveWorkspace(all);
+  const n = all[got.name] && sameLayout(all[got.name], cfg) ? got.name : freeName(got.name, Object.keys(all));
+  all[n] = cfg; storeLayouts(all);
+  applyLayout(cfg); state.layoutName = n; save(); renderHeader();
+  alertHud(t('main.ws.opened', { name: n }));
+}
+
+/** Link and iframe code that shows this panel's scope alone (src/widget.ts). */
+function widgetDialog(p: PanelState) {
+  const s = panelSource(p);
+  const src = s?.kind === 'pattern' ? `pattern:${s.pattern.id}` : s?.kind === 'stream' && s.url ? s.url : '';
+  if (!src) { alertHud(t('main.wg.noSource')); return; }
+  const url = widgetUrl(appBase(), { scopes: [p.scope], src, unit: p.unit ?? state.unit, lang: lang(), ...(state.bridge.trim() && /^https?:$/.test(location.protocol) ? { bridge: bridgeUrl() } : {}) });
+  linkDialog(t('main.wg.title', { scope: SCOPE_LABELS[p.scope] }), [[t('main.ws.link'), url], ['iframe', iframeSnippet(url, `LZ Scopes · ${SCOPE_LABELS[p.scope]}`)]], t('main.wg.hint'));
 }
 
 // ---------------------------------------------------------------- outputs
@@ -3078,6 +3176,9 @@ const dock = createDock($('#dock'), {
 });
 let layoutSave = 0;
 if (!(state.dock && dock.restore(state.dock))) dock.applyPreset(state.layout);
+// a shared workspace link (#238): #ws=… opens that workspace as a tab
+void openSharedWorkspace();
+addEventListener('hashchange', () => { void openSharedWorkspace(); });
 // narrow windows and phones: the panels as tabs of one group (dragging stays on wide screens)
 const compactQuery = matchMedia('(max-width: 640px), (max-width: 900px) and (max-height: 500px)');
 const applyCompact = () => { dock.setCompact(compactQuery.matches); needClear = true; };

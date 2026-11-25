@@ -4,6 +4,7 @@
 //   fake-helper.mjs --list            → one JSON line
 //   fake-helper.mjs --capture <y10> <frames>   (each frame preceded by a TIME record)
 //   fake-helper.mjs --psf <y10> <frames>       (as --capture, plus an INFO per frame whose mode name flips p ↔ PsF)
+//   fake-helper.mjs --interlaced <y10> <frames> (as --capture, INFO interlaced with lower field first, #219)
 //   fake-helper.mjs --reference <n>            → one JSON line in the shape of lz-decklink --reference
 //   fake-helper.mjs --audio                    → 5 frames with FPTS and 2-channel sound (AUDI), one sound packet missing
 //   fake-helper.mjs --ndi-stats                → three lz-ndi counter records (fine, losses, fine)
@@ -63,7 +64,7 @@ const words = [c | (y << 10) | (c << 20), y | (c << 10) | (y << 20), c | (y << 1
 const row = Math.ceil(w / 48) * 128;
 const frame = Buffer.alloc(row * h);
 for (let i = 0; i < frame.length; i += 4) frame.writeUInt32LE(words[(i / 4) % 4] >>> 0, i);
-const info = { width: w, height: h, fpsNum: 25, fpsDen: 1, pixel: 'v210', matrix: 'bt709', range: 'tv', name: 'Fake 1080i50', timecode: '10:00:00:00' };
+const info = { width: w, height: h, fpsNum: 25, fpsDen: 1, pixel: 'v210', matrix: 'bt709', range: 'tv', name: 'Fake 1080i50', timecode: '10:00:00:00', ...(mode === '--interlaced' ? { interlaced: true, fieldOrder: 'bff' } : {}) };
 rec('INFO', info);
 rec('STAT', { message: 'Signal erkannt' });
 let k = 0;

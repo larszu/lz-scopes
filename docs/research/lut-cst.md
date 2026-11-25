@@ -49,6 +49,28 @@ Geprüft am 29.09.2026. Nur tatsächlich geöffnete Seiten. Ergebnis: **Keine He
 
 Dass DaVinci Resolve Hersteller-LUTs mitliefert, beruht vermutlich auf eigenen Vereinbarungen; für LZ Scopes folgt daraus nichts.
 
+## BBC-HDR-LUTs (#210)
+
+Geprüft am 24.11.2026: [bbc/bbc_hdr_television_production_luts](https://github.com/bbc/bbc_hdr_television_production_luts), Version 1.8 vom 16.09.2026, Commit `dd27445`. Lizenz **Apache 2.0** (GitHub-Lizenzfeld, `LICENSE`, Kopf jeder `.cube`-Datei: „Moved to Open Source licence – No changes to functionality from 1.7“). Weitergabe ist erlaubt, mit Lizenztext und Kennzeichnung von Änderungen; eine `NOTICE`-Datei hat das Repository nicht.
+
+**Umsetzung:** Mitgeliefert wird trotzdem keine LUT, weil jede 33³-Datei rund 1 MB groß ist (65³: 7 MB). Die LUT-Sammlung (`src/lutLibrary.ts`, Knopf *LUT-Sammlung …* unter *CST / LUT*) lädt eine Datei auf Klick von GitHub, fest auf den Commit, legt sie wie eine gezogene Datei in IndexedDB ab, setzt sie in LUT 1 und stellt den LUT-Ausgang (Transfer, Gamut, HLG-Lw 1000) auf das Ziel der LUT. Passt der Eingang nicht (Quelle bzw. CST-Ausgang ≠ LUT-Eingang), sagt das die Meldung. Ohne Internet: Datei aus dem Repository holen und auf die Karte ziehen. `npm run luts:bbc` holt dieselben Dateien nach `vendor/luts/bbc/`.
+
+**Nur Type I.** Laut *Implementation Guidelines for HLG Format Conversion LUTs* (BBC, 09/2026, `Documentation/BBC_HDRTV_HLG_LUT_Implementation_Guide.pdf`) arbeiten Type-I-LUTs im Nennbereich (Eingang und Ausgang 0 = Schwarz, 1 = 100 %), „intended for software applications“. Type II/III erwarten den vollen 10-bit-Container (0 = Code 0, 1 = Code 1023, Schwarz bei 64/1023) und gehören in Hardware-LUT-Geräte. Die Kette von LZ Scopes gibt der LUT Nenn-R′G′B′; eine Type-III-LUT wäre dort um den Narrow-Range-Versatz falsch. Angeboten werden die Type-I-Primärwandlungen 1a, 2a, 3a, 5a, 7a, 8a. Die Szenenlicht-LUTs 4 und 6 gibt es nur als Type III und fehlen deshalb.
+
+**Abgleich mit der eigenen Rechnung** (`test/bbcLuts.test.ts`, Stichprobe jedes vierten Gitterpunkts in `test/fixtures/bbc-luts/`):
+
+| LUT | gegen | größte Abweichung an den Knoten | Urteil |
+|---|---|---|---|
+| 7a HLG → PQ 1000 | `signalToLinear(hlg, 1000)` → `linearToSignal(pq)` | 0,8·10⁻⁴ | stimmt (BT.2100-3, Systemgamma 1,2 bei 1000 cd/m²) |
+| 1a PQ 1000 → HLG | `signalToLinear(pq)` → `linearToSignal(hlg, 1000)`, Ausgang auf 0–1 begrenzt | 1,6·10⁻⁴ | stimmt, auch das Clipping über 1000 cd/m² |
+| 3a BT.709 → HLG direkt (Displaylicht) | SDR BT.1886 γ 2,4, 100 % = 203 cd/m², Gamut 709 → 2020, HLG 1000 | bis 0,12 | **weicht ab**, siehe unten |
+
+Zur LUT 3: Beide bilden 100 % SDR auf 75 % HLG ab. Darunter liegt die BBC tiefer: 75-%-Weiß der RP-219-Balken ergibt laut Release Notes v1.8 (Annex 1, Tabelle „LUT 3“) 0,6145, die CST von LZ Scopes 0,6329; 40 % Grau 0,3107 gegen 0,3566; 15 % Grau 0,1004 gegen 0,1337. Für Grau entspricht die BBC-Kurve einem SDR-Exponenten von etwa 2,75 statt 2,4. Welches SDR-Displaymodell die BBC dafür annimmt, steht in den gelesenen Abschnitten nicht. Bis das geklärt ist, ist die SDR → HLG-Wandlung der CST nicht BBC-gleich. Messungen „nach CST“ und „nach LUT 3a“ unterscheiden sich also in den Mitten; das ist kein Fehler des LUT-Wegs.
+
+Nicht geprüft: 2a (Tone-Mapping der BBC, nicht BT.2390), 5a und 8a (eigene BBC-Kurven, kein Gegenstück in der CST), alle Type-II/III-Varianten.
+
+Zweite Vergleichsquelle aus dem Issue: [PeterTh/PtBi](https://github.com/PeterTh/PtBi) ist GPL-3.0. Daraus wird nichts übernommen.
+
 ## Gamma-Erkennung
 
 Die Transferfunktion wird nur aus den Stream-Metadaten erkannt (ffprobe `color_transfer`): `bt709`/`smpte170m`/`bt2020-10/12` → BT.1886, `gamma22` → γ 2,2, `gamma28` → γ 2,8, `iec61966-2-1` → sRGB, `linear`, `smpte2084` → PQ, `arib-std-b67` → HLG. Fehlen die Metadaten, zeigt die Quellenkarte „nicht signalisiert, Annahme“ bzw. „keine Metadaten, Annahme“. Aus dem Bild selbst lässt sich die Kurve nicht bestimmen. Log-Kurven werden nie signalisiert.

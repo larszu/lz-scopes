@@ -11,8 +11,24 @@ import { Source, type SourceSettings } from './sources';
 import type { Transfer } from './color';
 import { WHOLE, composeSplit, copyCrop, cropPixels, isWhole, type Frac } from './cameras';
 import { t } from './i18n';
+import { unpackV210 } from './v210';
 
 type Status = Source['status'];
+
+/**
+ * The input's raw frame with one sample per channel: a packed v210 frame (#258) is unpacked to
+ * 16-bit A Y′ Cb Cr once per input frame, because crop and split copy pixels.
+ */
+const unpacked = new WeakMap<Source, { seq: number; buf: Uint16Array }>();
+function pixelsOf(s: Source): Uint8Array | Uint16Array | null {
+  if (!s.data) return null;
+  if (s.pack !== 'v210') return s.data as Uint8Array | Uint16Array;
+  const n = s.width * s.height * 4;
+  let c = unpacked.get(s);
+  if (!c || c.buf.length !== n) { c = { seq: -1, buf: new Uint16Array(n) }; unpacked.set(s, c); }
+  if (c.seq !== s.frameSeq) { unpackV210(s.data as Uint32Array, s.width, s.height, c.buf); c.seq = s.frameSeq; }
+  return c.buf;
+}
 
 /** Common part: mirror the input's status and decoding, keep the own picture. */
 abstract class Derived extends Source {
@@ -86,9 +102,10 @@ export class CameraSource extends Derived {
     const moved = this.mirror('live');
     const r = cropPixels(this.crop, this.inset, p.width, p.height);
     this.take(`${p.frameSeq}:${p.width}x${p.height}:${r.join(',')}:${p.data ? 'd' : 'e'}`, () => {
-      if (p.data && p.data.length >= p.width * p.height * 4) {
-        this.data = copyCrop(p.data, p.width, r); this.element = null;
-        this.depth = p.depth; this.yuv = p.yuv;
+      const px = pixelsOf(p);
+      if (px && px.length >= p.width * p.height * 4) {
+        this.data = copyCrop(px, p.width, r); this.element = null;
+        this.depth = p.pack ? 16 : p.depth; this.yuv = p.yuv;
       } else if (p.element) {
         const c = this.ownCanvas(r[2], r[3]);
         c.getContext('2d')!.drawImage(p.element, r[0], r[1], r[2], r[3], 0, 0, r[2], r[3]);
@@ -123,14 +140,16 @@ export class SplitSource extends Derived {
     if (!a || stageB || !b) { const moved = this.mirror('error', stageB ? t('split.stageB') : t('split.noB')); this.clear(); return moved; }
     if (!a.ready || !b.ready) { const moved = this.mirror('connecting', t('split.waiting')); this.clear(); return moved; }
     const bothData = !!a.data && !!b.data, bothElement = !a.data && !b.data && !!a.element && !!b.element;
-    const sameFormat = bothData && a.depth === b.depth && JSON.stringify(a.yuv) === JSON.stringify(b.yuv)
-      && a.data!.length >= a.width * a.height * 4 && b.data!.length >= b.width * b.height * 4;
+    const pa = pixelsOf(a), pb = pixelsOf(b);
+    const depthOf = (s: Source) => (s.pack ? 16 : s.depth);
+    const sameFormat = bothData && depthOf(a) === depthOf(b) && JSON.stringify(a.yuv) === JSON.stringify(b.yuv)
+      && pa!.length >= a.width * a.height * 4 && pb!.length >= b.width * b.height * 4;
     if (!(sameFormat || bothElement)) { const moved = this.mirror('error', t('split.mixed')); this.clear(); return moved; }
     const moved = this.mirror('live');
     this.take(`${a.frameSeq}:${b.frameSeq}:${a.width}x${a.height}:${b.width}x${b.height}:${pos}`, () => {
       if (sameFormat) {
-        this.data = composeSplit(a.data!, a.width, a.height, b.data!, b.width, b.height, pos);
-        this.element = null; this.depth = a.depth; this.yuv = a.yuv;
+        this.data = composeSplit(pa!, a.width, a.height, pb!, b.width, b.height, pos);
+        this.element = null; this.depth = depthOf(a); this.yuv = a.yuv;
       } else {
         const c = this.ownCanvas(a.width, a.height), ctx = c.getContext('2d')!;
         const cut = Math.round(pos * a.width);

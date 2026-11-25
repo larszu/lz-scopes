@@ -25,6 +25,7 @@ import { FrameAssembler } from './frames.mjs';
 import { COMMANDS, controlAccess, isLoopback as isLoopbackAddr, validateCommand } from './control.mjs';
 import { applyDecodeOverride, deviceInputArgs, deviceOptions, formatListArgs, parseDeviceUrl, parseFormatList, pickPixfmt } from './devices.mjs';
 import { helperList, helperPath, startHelperStream } from './helper-input.mjs';
+import { interlaceInfo, interlaceOptions, interlacePlan, probeFieldOrder } from './interlace.mjs';
 import { resolveFolder, startFolderStream, watchRoots } from './folder.mjs';
 import { resolveStatus } from './resolve.mjs';
 import { createPlaybackWatch } from './resolveWatch.mjs';
@@ -607,10 +608,13 @@ async function startStream(ws, params) {
     // H.264: stay in Y'CbCr with the source matrix, narrow range; the browser converts with decodeMatrix (src/yuv.ts)
     ? [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}:out_color_matrix=${decodeMatrix}:out_range=limited`, 'format=yuv420p']
     : [yp?.yuv ? `scale=${width}:${height}:flags=area:${yp.scale}` : `scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}`];
-  // interlaced sources: scale each field on its own (swscale interl) so the two fields of a
-  // frame are not blended vertically; the frame itself stays one picture (both fields woven)
-  const interlaced = isInterlaced(info.fieldOrder);
-  if (interlaced) vf[0] = vf[0].replace(/^scale=([^,]*)/, 'scale=$1:interl=1');
+  // interlaced sources (server/interlace.mjs, #219): by default scale each field on its own
+  // (swscale interl) so the two fields of a frame are not blended vertically; the frame itself
+  // stays one picture (both fields woven). Per source: field order forced, or de-interlaced with
+  // bwdif on the full picture before the scaler.
+  const fieldPlan = video ? interlacePlan(probeFieldOrder(info.fieldOrder), interlaceOptions(params)) : interlacePlan(null);
+  if (fieldPlan.interl) vf[0] = vf[0].replace(/^scale=([^,]*)/, 'scale=$1:interl=1');
+  if (fieldPlan.filter) vf.unshift(fieldPlan.filter);
   if (fpsLimit) vf.push(`fps=${fpsLimit}`);
   // time code of every source frame (before scale/fps): showinfo side data, see ShowinfoTracker
   const wantTc = video && params.get('tc') !== '0';
@@ -639,7 +643,7 @@ async function startStream(ws, params) {
   const proto = wantAudio || h264 || params.get('pts') === '1' ? 2 : 1;
   const { audio: _probed, ...videoInfo } = info;
   const msg = { type: 'info', ...videoInfo, decodeMatrix, sourceWidth: info.width, sourceHeight: info.height, sourceFps: info.fps, width, height, depth: outDepth, fps: video ? (fpsLimit || info.fps) : 0 };
-  if (interlaced) Object.assign(msg, { interlaced: true });
+  Object.assign(msg, interlaceInfo(fieldPlan));
   if (clip) msg.clip = { duration: clip.duration, fps: clip.fps, loop: clip.loop };
   if (own) msg.rtp = { own: true, transport: own.info.transport, codec: own.info.codec };
   else if (ownNote) msg.rtp = { own: false, ...field('note', ownNote) };

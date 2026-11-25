@@ -77,7 +77,16 @@ export function onBridgeRecord(s: Source, m: Record<string, unknown>) {
     if (prev?.state === 'recording' || prev?.state === 'starting') recs.delete(s.id);
     if (m.code) ctx?.hud(bridgeMessage(m as never));
   } else {
-    recs.set(s.id, { ...(m as object), state: 'recording', note: m.noteCode ? bridgeMessage({ message: String(m.note), code: String(m.noteCode), params: m.noteParams as Record<string, unknown> }) : undefined, since: prev?.since ?? Date.now() } as RecState);
+    const next = { ...(m as object), state: 'recording', note: m.noteCode ? bridgeMessage({ message: String(m.note), code: String(m.noteCode), params: m.noteParams as Record<string, unknown> }) : undefined, since: prev?.since ?? Date.now() } as RecState;
+    recs.set(s.id, next);
+    // A running take reports its progress (bytes, minutes left) several times a second. That is
+    // text in the status line, not a new card: rebuilding the whole source list for it moved the
+    // stop button away under the pointer on a slow machine (CI: "element was detached").
+    if (prev?.state === 'recording' && prev.note === next.note && prev.mode === next.mode && prev.codec === next.codec) {
+      const el = document.querySelector<HTMLElement>(`[data-recstat="${s.id}"]`);
+      if (el) el.textContent = statusText(s);
+      return;
+    }
   }
   ctx?.changed();
 }

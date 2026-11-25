@@ -37,6 +37,7 @@ import sim from './en/sim';
 import enc from './en/enc';
 import lens from './en/lens';
 import sdi from './en/sdi';
+import ops from './en/ops';
 
 
 import tools from './en/tools';
@@ -87,6 +88,7 @@ export const en = {
   ...enc,
   ...lens,
   ...sdi,
+  ...ops,
 };
 
 export type Key = keyof typeof en;

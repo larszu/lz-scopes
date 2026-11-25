@@ -119,6 +119,26 @@ curl -s -H "$J" -H 'Authorization: Bearer geheim' -d '{"cmd":"freeze"}' http://s
 
 Im Browser öffnet `output.open` ein Fenster nur, wenn Pop-ups für die Seite erlaubt sind; die Desktop-App öffnet es immer.
 
+## Ereignisprotokoll und Prometheus
+
+Die Bridge führt ein **Ereignisprotokoll ohne Schwellwerte** (`server/eventlog.mjs`, Ringpuffer mit 2000 Einträgen, bis zum Neustart der Bridge): jede Änderung am Fluss eines Streams (Start, Stopp, Ende, Fehler), an seinem Bildformat und seinen Tonkanälen, am PTP-Zustand, an Domäne, Grandmaster, Taktklasse und UTC-Versatz, am Lock-Zustand des Grandmasters (ST 2059-2 SM-TLV) und am ST-2110-RTP-Strom, den das Uhr-Panel beobachtet. PTP und RTP werden nur verfolgt, solange das Uhr-Panel ihre Monitore laufen lässt. In der App: Quellen → Ereignisprotokoll …
+
+| Pfad | Antwort |
+|---|---|
+| `GET /api/events` | `{ max, total, events: [{ id, t, kind, source, item, from, to }] }`, `?since=<id>` für die neueren |
+| `GET /api/events?format=csv` | dasselbe als CSV (Semikolon, Zeiten in UTC) |
+| `DELETE /api/events` | leert das Protokoll |
+| `GET /metrics` | Prometheus-Textformat 0.0.4: Streams (Bilder, verworfen, Bytes, Größe, fps), PTP (Zustand, Versatz, Jitter, Laufzeit, Taktklasse, Lock-Status), RTP (Pakete, Verzug, Raster), Zahl der Ereignisse |
+
+Zugriff: von diesem Rechner immer, von anderen nur mit dem Steuer-Token (`Authorization: Bearer <token>`), Webseiten fremder Herkunft nie. Quellen erscheinen ohne Benutzername, Passwort und Query. Beispiel für die Abfrage:
+
+```yaml
+scrape_configs:
+  - job_name: lz-scopes
+    static_configs: [{ targets: ['studio.local:4192'] }]
+    authorization: { credentials: geheim }   # nur wenn Prometheus auf einem anderen Rechner läuft
+```
+
 ## Companion-Modul
 
 `companion/` enthält das Modul `companion-module-lz-scopes` (API `@companion-module/base` ~1.14.1, wie das Modul in lz-camera-bridge) mit Aktionen für die Befehle oben (außer `record.event`), Feedbacks (Aufnahme läuft, Ringpuffer läuft, Verbunden, Eingefroren, Quelle aktiv, Clipping/Y′ über Schwelle, Layout, Szene, Ausgabe offen, Stream läuft, Panel maximiert, Videodatei läuft, Tongenerator läuft, I/LRA angehalten, Max True Peak über Schwelle, Ident-Befund), Variablen (auch Lautheit M/S/I/LRA, True Peak, A/V-Versatz, Ident, laufende Aufnahmen und Aufnahmedauer) und Presets.

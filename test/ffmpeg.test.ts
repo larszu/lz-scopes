@@ -1,10 +1,10 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ffmpegCandidates, ffmpegFor, ffmpegInfo, ffmpegOrigin, hostTarget, licenseOf, noFfmpegMessage, outputProtocols } from '../server/ffmpeg.mjs';
+import { broadcastFormats, ffmpegCandidates, ffmpegFor, ffmpegInfo, ffmpegOrigin, hostTarget, licenseOf, listedNames, noFfmpegMessage, outputProtocols } from '../server/ffmpeg.mjs';
 import { checkFlags, configureFlags } from '../scripts/ffmpeg-fetch.mjs';
 import { shippedFfmpeg } from './shippedFfmpeg';
-import { bridgeFfmpegText, ffmpegLine, pushFfmpegText, sourceFfmpegText, type FfmpegInfo } from '../src/ffmpegInfo';
+import { bridgeFfmpegText, ffmpegLine, formatsLine, pushFfmpegText, sourceFfmpegText, type FfmpegInfo } from '../src/ffmpegInfo';
 import { setLang } from '../src/i18n';
 
 setLang('de'); // the UI texts below are checked in German
@@ -109,5 +109,22 @@ describe('ffmpeg: what the UI says', () => {
     expect(pushFfmpegText('rtmp://h/a', { ok: true, ffmpeg: noSrt })).toMatch(/SRT nein/);
     expect(sourceFfmpegText('rtsp://h/1', { ok: true, ffmpeg: shipped })).toBe('');
     expect(sourceFfmpegText('srt://h:9000', { ok: true, ffmpeg: noSrt, ffmpegSrt: shipped })).toMatch(/^SRT-Empfang mit ffmpeg 9\.0\.2/);
+  });
+});
+
+describe('ffmpeg: broadcast formats (#233)', () => {
+  const decs = 'Decoders:\n V..... = Video\n ------\n VFS..D prores               Apple ProRes\n A....D dolby_e              Dolby E\n A....D ac3                  ATSC A/52A\n';
+  const demux = 'File formats:\n D. = Demuxing supported\n --\n D   s337m           SMPTE 337M\n D   sdp             SDP\n';
+  it('names from -decoders / -demuxers, without the legend', () => {
+    expect([...listedNames(decs)]).toEqual(['prores', 'dolby_e', 'ac3']);
+    expect([...listedNames(demux)]).toEqual(['s337m', 'sdp']);
+  });
+  it('decoder and demuxer both needed for Dolby E; JPEG XS absent', () => {
+    const f = broadcastFormats(listedNames(decs), listedNames(demux));
+    expect(f).toMatchObject({ prores: true, dolbyE: true, ac3: true, jpegxs: false, jpeg2000: false, sdp: true });
+    expect(broadcastFormats(listedNames(decs), new Set()).dolbyE).toBe(false);
+    const line = formatsLine({ path: 'x', origin: 'vendor', version: '9', license: null, srt: true, inputSrt: true, formats: f });
+    expect(line).toMatch(/^liest ProRes, Dolby E, AC-3\/E-AC-3, SDP\/RTP · nicht JPEG XS/);
+    expect(formatsLine({ path: 'x', origin: 'vendor', version: '9', license: null, srt: true, inputSrt: true })).toBe('');
   });
 });

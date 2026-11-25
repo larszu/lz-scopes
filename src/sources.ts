@@ -6,6 +6,7 @@ import type { ChainSettings, Compiled } from './chain';
 import { patternById, renderPattern } from './patterns';
 import { AudioAnalysis } from './audio/analysis';
 import { AudioTap, StreamMonitor, generator, measurementConstraints } from './audio/io';
+import { listenFor } from './audio/dsp/downmix';
 import { GRID_W, History, gridFromData, summarise } from './history';
 import { lineExtremes, neutralCast, type LineExtremes, type NeutralCast } from './minmax';
 import { r103Check, rgbDecoder, yuvDecoder, type Decode, type R103Result, type YuvCoding } from './ycbcr';
@@ -965,6 +966,7 @@ export class Source {
       if (this.audio !== a) { m.close(); return; }
       this.monitor = m; this.monitorError = m.error;
       m.setPair(monitorSink.pair);
+      if (monitorSink.listen !== `p${monitorSink.pair}`) m.setMatrix(listenFor(a.info, monitorSink.listen));
       m.onStats = () => this.onChange();
       this.onChange();
     }).catch((e) => { this.monitorError = (e as Error).message; this.onChange(); });
@@ -1300,5 +1302,6 @@ export function yuvOf(info: StreamInfo): YuvCoding | null {
 }
 
 /** Output device and channel pair for listening to bridge sound (set from the UI). */
-export const monitorSink = { id: '', pair: 0 };
+/** Output device and what is heard: pair index, and `listen` = "p<n>" | "s<n>" | "loro" | "ltrt" (dsp/downmix.ts). */
+export const monitorSink = { id: '', pair: 0, listen: 'p0' };
 

@@ -9,6 +9,7 @@ import { LtcReader } from './dsp/ltc';
 import { channelInfo, layoutKnown, type ChannelInfo } from './dsp/layouts';
 import { IdentDetector, type IdentReport } from './dsp/ident';
 import { AvSyncMeter } from './dsp/avsync';
+import { S337Detector } from './dsp/s337';
 import { toDb } from './dsp/truepeak';
 import { t } from '../i18n';
 
@@ -30,6 +31,8 @@ export class AudioAnalysis {
   readonly ident: IdentDetector;
   /** A/V offset (bridge streams with PTS); fed by the source */
   readonly av: AvSyncMeter;
+  /** ST 337 bursts (Dolby E, AC-3, E-AC-3 …) in the channel pairs (#234) */
+  readonly s337 = new S337Detector();
   /** latest samples per channel; `frames` counts everything ever pushed */
   private ring: Float32Array[];
   frames = 0;
@@ -82,6 +85,7 @@ export class AudioAnalysis {
     this.level.process(planar, n);
     this.loud.process(planar, n);
     this.ident.push(planar, n);
+    this.s337.push(planar, n);
     for (let c = 0; c < this.channels; c++) {
       const r = this.ring[c], x = planar[c];
       const pos = this.frames % RING;

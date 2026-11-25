@@ -9,6 +9,20 @@ export interface FfmpegInfo {
   license: string | null;
   srt: boolean;
   inputSrt: boolean;
+  /** broadcast formats this ffmpeg can read (#233; server/ffmpeg.mjs BROADCAST_FORMATS); missing on old bridges */
+  formats?: Partial<Record<BroadcastFormat, boolean>>;
+}
+export type BroadcastFormat = 'prores' | 'jpegxs' | 'jpeg2000' | 'dnxhd' | 'dolbyE' | 'ac3' | 's302m' | 'sdp';
+const FORMAT_NAMES: [BroadcastFormat, string][] = [
+  ['prores', 'ProRes'], ['jpegxs', 'JPEG XS'], ['jpeg2000', 'JPEG 2000'], ['dnxhd', 'DNxHD/HR'], ['dolbyE', 'Dolby E'], ['ac3', 'AC-3/E-AC-3'], ['s302m', 'SMPTE 302M'], ['sdp', 'SDP/RTP'],
+];
+
+/** „Liest: ProRes, JPEG 2000 … · nicht: JPEG XS“ – '' when the bridge does not report it. */
+export function formatsLine(i: FfmpegInfo | null | undefined): string {
+  const f = i?.formats;
+  if (!f) return '';
+  const yes = FORMAT_NAMES.filter(([k]) => f[k]).map(([, n]) => n), no = FORMAT_NAMES.filter(([k]) => f[k] === false).map(([, n]) => n);
+  return t('source.ffmpeg.formats', { yes: yes.join(', ') || '–', no: no.join(', ') || '–' });
 }
 export interface BridgeHealth { ok: boolean; ffmpeg?: FfmpegInfo | null; ffmpegSrt?: FfmpegInfo | null }
 

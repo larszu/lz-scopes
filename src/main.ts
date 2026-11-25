@@ -62,7 +62,7 @@ import { mountResolveLive } from './resolveLive';
 import { attachResolvePlayback, isLocalHost, routeText } from './resolvePlayback';
 import { openManual } from './manual';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
-import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
+import { bridgeFfmpegText, fetchBridgeHealth, formatsLine, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
 import { SOURCE_ITEMS, mountMenu, refreshMenu, registerMenuCommand, type MenuActions, type MenuState } from './menu/appMenu';
 import { openSettings, refreshSettings, registerSettingsSection } from './menu/settings';
 import { initPlayback, onPlaybackMessage, openRecordingsDialog, playbackBar, sourceGone, transport as playbackTransport } from './record/playback';
@@ -461,7 +461,7 @@ let bridgeHealth: BridgeHealth | null = null;
 async function refreshFfmpegInfo() {
   bridgeHealth = await fetchBridgeHealth(bridgeUrl().replace(/^ws/, 'http'));
   const el = ffmpegInfoEl;
-  el.textContent = bridgeFfmpegText(bridgeHealth);
+  el.textContent = [bridgeFfmpegText(bridgeHealth), formatsLine(bridgeHealth?.ffmpeg)].filter(Boolean).join(' · ');
   el.title = bridgeHealth?.ffmpeg?.path ?? '';
   if (sources.some((x) => x.kind === 'stream' && /^srt:/i.test(x.url))) renderSources();
   // no answer (bridge still starting, first ffmpeg run slow): ask again, never show a stale guess
@@ -2457,6 +2457,13 @@ function execute(c: Command): unknown {
       }
       return { source: s.name };
     }
+    case 'av.reset': {
+      const list = c.source !== undefined ? [need(findSource(c.source), `Source ${c.source} not found`)] : sources.filter((x) => x.audio);
+      const withAudio = list.filter((x) => x.audio);
+      if (!withAudio.length) throw new Error(c.source !== undefined ? `${list[0].name} has no audio` : 'No source with audio');
+      for (const x of withAudio) { x.audio!.av.reset(); x.audio!.av.history.reset(); }
+      return { sources: withAudio.map((x) => ({ name: x.name })) };
+    }
     case 'audio.reset': case 'audio.pause': {
       const list = c.source !== undefined ? [need(findSource(c.source), `Source ${c.source} not found`)] : sources.filter((x) => x.audio);
       const withAudio = list.filter((x) => x.audio);
@@ -2527,6 +2534,13 @@ function audioState() {
     source: s.name, momentary: r1(a.loud.momentary), shortTerm: r1(a.loud.shortTerm), integrated: r1(a.loud.integrated),
     lra: r1(a.loud.lra), maxTP: r1(tp), paused: a.paused, seconds: Math.round(a.loud.measuredSeconds),
     avOffsetMs: r1(av.medianMs), ident: id.kind && id.kind !== 'tone' ? id.label : '',
+    /** long-run A/V history (#236): mean, drift ms/h, pairs beyond the BT.1359 limits */
+    ...(() => {
+      const h = a.av.history.stats();
+      return { avMeanMs: r1(h.meanMs), avMinMs: r1(h.minMs), avMaxMs: r1(h.maxMs), avDriftMsPerHour: r1(h.driftMsPerHour), avPairs: h.pairs, avBeyondDetect: h.beyondDetect, avBeyondAccept: h.beyondAccept, avSince: h.from };
+    })(),
+    /** ST 337 data in channel pairs (#234): pair 1 = channels 1/2 */
+    nonPcm: a.s337.result(a.fs).map((b) => ({ pair: b.pair + 1, type: b.name, dataType: b.dataType, bits: b.bits, stream: b.stream, codec: b.bsi?.codec ?? null, mode: b.bsi?.mode ?? null, dialnorm: b.bsi?.dialnorm ?? null })),
     identProblems: id.findings.filter((f) => f.level === 'bad').map((f) => f.text),
   };
 }

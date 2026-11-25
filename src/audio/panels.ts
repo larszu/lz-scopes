@@ -12,6 +12,7 @@ import { TP_MARK, type AudioAnalysis } from './analysis';
 import { spectrumDb, thirdOctaveBands, thirdOctaveCentres, tiltDb } from './dsp/fft';
 import { toDb } from './dsp/truepeak';
 import { AV_RATING_TEXT, BT1359, rateAv } from './dsp/avsync';
+import type { S337Burst } from './dsp/s337';
 import { avCalibration } from './avcal';
 import { lang, t } from '../i18n';
 
@@ -115,9 +116,13 @@ function drawMeter(ctx: CanvasRenderingContext2D, a: AudioAnalysis, b: Box, o: R
     ctx.strokeStyle = c; ctx.globalAlpha = 0.7; ctx.beginPath(); ctx.moveTo(pk.x - 2, y + 0.5); ctx.lineTo(pk.x + pk.w, y + 0.5); ctx.stroke(); ctx.globalAlpha = 1;
     ctx.fillStyle = c; ctx.textAlign = 'left'; ctx.fillText(mark, pk.x + pk.w + 2, y); ctx.textAlign = 'right';
   }
-  const bw = Math.max(4, Math.min(22, (pk.w - 4) / n - 4));
+  // up to 16 channels as before; more (2110-30 / MADI, up to 64, #234) get narrower bars and
+  // a label on every k-th bar so they still fit the panel
+  const gap = n > 16 ? 1 : 4;
+  const bw = Math.max(n > 16 ? 1 : 4, Math.min(22, (pk.w - 4) / n - gap));
+  const every = n > 16 ? Math.max(1, Math.ceil(16 / (bw + gap))) : 1;
   for (let c = 0; c < n; c++) {
-    const x = pk.x + 3 + c * (bw + 4);
+    const x = pk.x + 3 + c * (bw + gap);
     const sp = toDb(lv.peakOver(c, 100)), tp = toDb(lv.truePeakOver(c, 100)), hold = toDb(lv.truePeakOver(c, 3000));
     ctx.fillStyle = '#15181c'; ctx.fillRect(x, pk.y, bw, pk.h);
     // segments by colour: green below −18, amber up to −1, red above
@@ -130,7 +135,7 @@ function drawMeter(ctx: CanvasRenderingContext2D, a: AudioAnalysis, b: Box, o: R
     if (Number.isFinite(tp)) { ctx.fillStyle = '#ffffff'; ctx.fillRect(x, yDb(tp) - 1, bw, 2); }
     if (Number.isFinite(hold)) { ctx.fillStyle = hold > TP_MAX ? BAD : '#cfd3d8'; ctx.fillRect(x, yDb(hold) - 0.5, bw, 1); }
     ctx.fillStyle = TEXT; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText(a.names[c] ?? String(c + 1), x + bw / 2, pk.y + pk.h + 4);
+    if (c % every === 0) ctx.fillText(a.names[c] ?? String(c + 1), x + bw / 2, pk.y + pk.h + 4);
     const mtp = toDb(lv.maxTP[c]);
     if (bw >= 20 || n === 1) {
       ctx.fillStyle = mtp > TP_MAX ? BAD : TEXT; ctx.textBaseline = 'bottom';
@@ -439,6 +444,14 @@ export function drawAudioBar(ctx: CanvasRenderingContext2D, a: AudioAnalysis, b:
 
 // ---------------------------------------------------------------- ident + A/V offset
 
+/** One line per ST 337 burst: pair, data type, bits, stream, AC-3 header if read. */
+export function nonPcmText(b: S337Burst, names: string[], fs: number): string {
+  const pair = `${names[b.pair * 2] ?? b.pair * 2 + 1}/${names[b.pair * 2 + 1] ?? b.pair * 2 + 2}`;
+  const per = b.period ? ` · ${fmt1((b.period / fs) * 1000)} ms` : '';
+  const bsi = b.bsi ? ` · ${b.bsi.codec} ${b.bsi.mode}${b.bsi.kbps ? ` ${b.bsi.kbps} kbit/s` : ''} · dialnorm ${b.bsi.dialnorm} dB` : '';
+  return t('audio.chk.nonPcm', { pair, type: b.name, bits: b.bits, stream: b.stream }) + per + bsi + (b.error ? ` · ${t('audio.chk.nonPcmError')}` : '');
+}
+
 function drawCheck(ctx: CanvasRenderingContext2D, a: AudioAnalysis, b: Box) {
   const pad = 10, split = b.w >= 620;
   const left: Box = { x: b.x + pad, y: b.y + pad, w: split ? b.w / 2 - pad * 1.5 : b.w - 2 * pad, h: split ? b.h - 2 * pad : b.h * 0.5 - pad };
@@ -454,6 +467,12 @@ function drawCheck(ctx: CanvasRenderingContext2D, a: AudioAnalysis, b: Box) {
   for (const f of r.findings.slice(0, 8)) {
     ctx.fillStyle = col[f.level]; ctx.fillText(f.level === 'ok' ? '✓' : f.level === 'info' ? '·' : '!', left.x, y);
     ctx.fillStyle = f.level === 'info' ? '#8a9098' : TEXT; ctx.fillText(f.text, left.x + 14, y, left.w - 14);
+    y += 15;
+  }
+  // non-PCM data in channel pairs (ST 337, #234)
+  for (const b of a.s337.result(a.fs).slice(0, 4)) {
+    ctx.fillStyle = WARN;
+    ctx.fillText(nonPcmText(b, a.names, a.fs), left.x, y, left.w);
     y += 15;
   }
   y += 4;
@@ -502,4 +521,34 @@ function drawCheck(ctx: CanvasRenderingContext2D, a: AudioAnalysis, b: Box) {
   const cal = avCalibration();
   ctx.fillStyle = '#6b7078';
   ctx.fillText(t('audio.av.legend', { ms: fmt1(cal.videoLeadMs) }) + (cal.note ? '' : t('audio.av.uncalibrated')), right.x, sc.y + sc.h + 17, right.w);
+  drawAvHistory(ctx, a, { x: right.x, y: sc.y + sc.h + 34, w: right.w, h: right.y + right.h - (sc.y + sc.h + 34) });
+}
+
+/** Long-run history (#236): one line of numbers, then min/max per minute of the last hour on the BT.1359 bands. */
+function drawAvHistory(ctx: CanvasRenderingContext2D, a: AudioAnalysis, b: Box) {
+  if (b.h < 14) return;
+  const h = a.av.history, s = h.stats();
+  if (!s.pairs || s.from === null || s.to === null) return;
+  const sign = (v: number | null) => (v === null ? '–' : `${v > 0.05 ? '+' : ''}${fmt1(v)}`);
+  const mins = Math.max(1, Math.round((s.to - s.from) / 60_000));
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.fillStyle = s.beyondAccept ? BAD : s.beyondDetect ? WARN : '#8a9098';
+  ctx.fillText(t('audio.av.history', { dur: mins >= 120 ? `${fmt1(mins / 60)} h` : `${mins} min`, n: s.pairs, mean: sign(s.meanMs), min: sign(s.minMs), max: sign(s.maxMs), out: s.beyondDetect }), b.x, b.y, b.w);
+  ctx.fillStyle = '#8a9098';
+  ctx.fillText(s.driftMsPerHour === null ? t('audio.av.driftWait') : t('audio.av.drift', { v: sign(s.driftMsPerHour) }), b.x, b.y + 15, b.w);
+  const g: Box = { x: b.x + 4, y: b.y + 34, w: b.w - 8, h: Math.min(60, b.h - 40) };
+  if (g.h < 20) return;
+  const bk = h.buckets.slice(-60), lo = -200, hi = 100;
+  const ys = (v: number) => g.y + g.h - ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * g.h;
+  ctx.fillStyle = 'rgba(63, 165, 90, 0.18)'; ctx.fillRect(g.x, ys(BT1359.detect[1]), g.w, ys(BT1359.detect[0]) - ys(BT1359.detect[1]));
+  ctx.strokeStyle = GRID_DIM; ctx.beginPath(); ctx.moveTo(g.x, ys(0) + 0.5); ctx.lineTo(g.x + g.w, ys(0) + 0.5); ctx.stroke();
+  const bw = g.w / 60, now = Math.floor(s.to / 60_000);
+  for (const k of bk) {
+    const x = g.x + g.w - (now - k.t / 60_000 + 1) * bw;
+    if (x < g.x) continue;
+    const out = k.min < BT1359.detect[0] || k.max > BT1359.detect[1];
+    ctx.fillStyle = out ? WARN : TEXT;
+    ctx.fillRect(x, ys(k.max), Math.max(1, bw - 1), Math.max(1, ys(k.min) - ys(k.max)));
+  }
+  ctx.fillStyle = LABEL; ctx.fillText(t('audio.av.historyAxis'), g.x, g.y + g.h + 2, g.w);
 }

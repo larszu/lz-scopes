@@ -45,6 +45,7 @@ export const COMMANDS = {
   'transport': 'Video file: op play|pause|toggle|stop|next|prev|forward|rewind|start|end, source (optional)',
   'audio.reset': 'Reset loudness (I, LRA, max M/S, max TP, counters, log; Tech 3341): source (optional; none = all sources with sound)',
   'audio.pause': 'Pause/resume I and LRA (Tech 3341): mode toggle|on|off, source (optional; none = all sources with sound)',
+  'av.reset': 'Clear the A/V offset measurement and its long-run history: source (optional; none = all sources with sound)',
   'generator': 'Tone generator: mode toggle|on|off, signal (optional), freq (Hz, optional), level (dBFS, optional; above −6 only with force: true)',
   'record': 'Local recording: mode toggle|on|off, source (optional; none = all recordable sources, as "record all")',
   'ring': 'Ring buffer on/off: mode toggle|on|off, source (optional; none = all bridge sources)',
@@ -148,7 +149,7 @@ export function validateCommand(raw) {
       check(optTarget()); check(optCodec());
       break;
     case 'stream.stop': check(optName('output')); check(optName('stream')); break;
-    case 'audio.reset': check(optRef('source')); break;
+    case 'audio.reset': case 'av.reset': check(optRef('source')); break;
     case 'audio.pause': check(optMode()); check(optRef('source')); break;
     case 'generator': {
       check(optMode());

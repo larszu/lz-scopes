@@ -2,7 +2,8 @@
 // that writes records to stdout (helper protocol, docs/frame-protocol.md):
 //
 //   4 × ASCII tag | uint32 LE payload length | payload
-//   INFO  JSON {width, height, fpsNum, fpsDen, pixel, matrix?, range?, transfer?, primaries?, name?, timecode?, sourceWidth?, sourceHeight?}
+//   INFO  JSON {width, height, fpsNum, fpsDen, pixel, matrix?, range?, transfer?, primaries?, name?, timecode?, sourceWidth?, sourceHeight?,
+//              interlaced?, fieldOrder? ("tff" | "bff", server/interlace.mjs)}
 //   FRAM  one picture in `pixel` layout, rows without padding (v210: 128-byte blocks per 48 px)
 //   STAT  JSON {message, code?, params?}   (status text, e.g. "no input signal"; code: server/messages.mjs)
 //   TIME  JSON {tc, df}          (optional, per frame: source timecode, e.g. DeckLink RP 188)
@@ -19,6 +20,7 @@ import { PhaseTracker } from './phase.mjs';
 import { FrameAssembler } from './frames.mjs';
 import { BridgeError, bmsg, toMsg } from './messages.mjs';
 import { AudioPacketizer, packetHeader } from './proto2.mjs';
+import { defaultFieldOrder, interlaceInfo, interlaceOptions, interlacePlan } from './interlace.mjs';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -198,6 +200,8 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
   const maxWidth = Math.min(3840, Math.max(0, Number(params.get('width') ?? 960) || 0));
   const fpsLimit = Math.min(60, Math.max(0, Number(params.get('fps') ?? 0) || 0));
   const opts = ctx.deviceOptions(params);
+  /** field order / de-interlacing of the source card (#219) */
+  const fieldOpts = interlaceOptions(params);
   const helper = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   // frame phase against the ST 2059-1 grid (server/phase.mjs), when the bridge passes a clock
   let phase = null, lastFps = 0, lastDf = false;
@@ -279,7 +283,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
   // whole frames only (frames.mjs)
   const onOut = (chunk) => asm?.push(chunk);
   // INFO fields that change the ffmpeg command; a new mode name alone (p ↔ PsF) only updates the card
-  const ffKey = (i) => JSON.stringify([i.width, i.height, i.fpsNum, i.fpsDen, i.pixel, i.matrix, i.range, i.interlaced, i.audio?.channels ?? 0]);
+  const ffKey = (i) => JSON.stringify([i.width, i.height, i.fpsNum, i.fpsDen, i.pixel, i.matrix, i.range, i.interlaced, i.fieldOrder, i.audio?.channels ?? 0]);
   const startFf = (info) => {
     stopFf();
     const f = helperFormat(info);
@@ -288,11 +292,14 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
     lastInfo = info;
     lastFps = f.fps;
     ptsQueue = [];
-    gate = new FrameGate({ fps: f.fps, limit: fpsLimit, max: fixedLatency ? 6 : 2 });
+    // INFO.interlaced: both fields woven in one frame; field order from the helper (DeckLink) or by line count
+    const fieldPlan = interlacePlan(info.interlaced ? (info.fieldOrder === 'tff' || info.fieldOrder === 'bff' ? info.fieldOrder : defaultFieldOrder(f.height)) : null, fieldOpts);
+    // bwdif holds one picture until the next arrives (it needs the later field): one more in flight
+    gate = new FrameGate({ fps: f.fps, limit: fpsLimit, max: (fixedLatency ? 6 : 2) + (fieldPlan.deinterlace ? 1 : 0) });
     phase = ctx.now && f.fps > 0 ? new PhaseTracker(Math.round(Number(info.fpsNum)), Math.round(Number(info.fpsDen) || 1)) : null;
     // v210 passthrough (#258): Y′CbCr wanted, native width, no recording (that needs ffmpeg) –
     // the client unpacks it (src/v210.ts); about a third of 16-bit RGBA and no ffmpeg cost
-    if (wantYuv && info.pixel === 'v210' && (maxWidth === 0 || maxWidth >= f.width) && !recorder?.active && !recorder?.ringActive) {
+    if (wantYuv && info.pixel === 'v210' && !fieldPlan.deinterlace && (maxWidth === 0 || maxWidth >= f.width) && !recorder?.active && !recorder?.ringActive) {
       pack = true;
       outBytes = f.bytes;
       gate = new FrameGate({ fps: f.fps, limit: fpsLimit, max: Infinity });
@@ -305,7 +312,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
           transfer: info.transfer ?? 'unknown', primaries: info.primaries ?? 'unknown', matrix: info.matrix ?? 'unknown', range: info.range ?? 'unknown',
           format: 'yuv', yuvRange: range, bits: 10, pack: 'v210',
           ...(info.timecode ? { timecode: info.timecode } : {}),
-          ...(info.interlaced ? { interlaced: true } : {}),
+          ...interlaceInfo(fieldPlan),
           ...(proto === 2 ? { proto: 2, audio: audioFormat(info) } : {}),
         }));
       }
@@ -315,8 +322,9 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
     outBytes = width * height * 4 * (depth / 8); asm = new FrameAssembler(outBytes, sendFrame);
     const tags = { matrix: info.matrix ?? 'unknown', range: info.range ?? 'unknown', height: f.height };
     const { decodeMatrix, decodeRange } = ctx.applyDecodeOverride(ctx.decodeParams(tags), opts);
-    // interlaced signal (helper INFO): DeckLink delivers both fields woven in one frame; scale field by field
-    const vf = [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}${info.interlaced ? ':interl=1' : ''}`];
+    // interlaced signal: scale field by field, or de-interlace first (server/interlace.mjs)
+    const vf = [`scale=${width}:${height}:flags=area:in_color_matrix=${decodeMatrix}:in_range=${decodeRange}${fieldPlan.interl ? ':interl=1' : ''}`];
+    if (fieldPlan.filter) vf.unshift(fieldPlan.filter);
     // the frame rate cap is applied before ffmpeg (FrameGate), not with fps=
     const rec = recorder?.outputs(3) ?? { args: [], pipes: 0, sessions: [] };
     ff = spawn(ctx.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', ...HELPER_INPUT_FLAGS, ...f.input, '-map', '0:v:0', '-vf', vf.join(','), '-pix_fmt', depth === 16 ? 'rgba64le' : 'rgba', '-threads', '1', '-f', 'rawvideo', 'pipe:1', ...rec.args],
@@ -335,7 +343,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
         codec: `${label}${info.name ? ` · ${info.name}` : ''}`, pixFmt: info.pixel, decodeMatrix,
         transfer: info.transfer ?? 'unknown', primaries: info.primaries ?? 'unknown', matrix: info.matrix ?? 'unknown', range: info.range ?? 'unknown',
         ...(info.timecode ? { timecode: info.timecode } : {}),
-        ...(info.interlaced ? { interlaced: true } : {}),
+        ...interlaceInfo(fieldPlan),
         ...(proto === 2 ? { proto: 2, audio: audioFormat(info) } : {}),
       }));
     }

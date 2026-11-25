@@ -44,6 +44,7 @@ import sim from './de/sim';
 import enc from './de/enc';
 import lens from './de/lens';
 import sdi from './de/sdi';
+import ops from './de/ops';
 import type { Key } from './en';
 import type { Msg } from './types';
 
@@ -88,4 +89,5 @@ export const de: Record<Key, Msg> = {
   ...enc,
   ...lens,
   ...sdi,
+  ...ops,
 };

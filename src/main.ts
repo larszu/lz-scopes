@@ -43,6 +43,8 @@ import { openTestImages, openTestVideos, type TestMediaHost } from './testMedia'
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
 import { openPerfTest } from './perfTest';
+import { openEventLog, openValueCards } from './opsUi';
+import type { ValueInput } from './valueCards';
 import { watchDevices, type Found } from './deviceScan';
 import { openLedTool } from './led/ui';
 import { mountOpple } from './opple/ui';
@@ -2690,6 +2692,23 @@ const shading = new ShadingControl({
 registerMenuCommand('scopes', { id: 'shading', label: SHADING_T.menu, title: SHADING_T.buttonTitle }, () => shading.toggleBar());
 registerMenuCommand('scopes', { id: 'avclip', label: t('avclip.menu'), title: t('avclip.menuTitle') }, openAvClip);
 registerMenuCommand('scopes', { id: 'cameras', label: SHADING_T.camMenu, title: SHADING_T.camMenuTitle }, () => { void shading.openCameras(); });
+// event log of the bridge and explanation cards per measured value (#239, src/opsUi.ts)
+registerMenuCommand('sources', { id: 'eventlog', label: t('ops.ev.menu') }, () => openEventLog(() => bridgeUrl().replace(/^ws/, 'http')));
+registerMenuCommand('help', { id: 'valuecards', label: t('ops.vc.menu') }, () => openValueCards(() => {
+  const s = activeSource();
+  if (!s) return null;
+  const { kr, kb } = LUMA[s.colorspace];
+  const a = s.audio && !s.audio.stale ? s.audio : null;
+  const sig = s.signal && performance.now() - s.signal.at < 2000 ? s.signal : null;
+  const values: ValueInput = {
+    stats: s.stats, kr, kb, matrix: s.colorspace,
+    r103: s.yuv ? s.r103Stats() : null,
+    light: s.transfer === 'pq' ? s.lightLevel : null,
+    loud: a ? { integrated: a.loud.integrated, lra: a.loud.lra, maxTpDb: 20 * Math.log10(Math.max(...a.level.maxTP)), seconds: a.loud.measuredSeconds } : null,
+    signal: sig,
+  };
+  return { name: s.name, values };
+}));
 const dock = createDock($('#dock'), {
   element: panelElement,
   title: panelTitle,

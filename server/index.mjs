@@ -48,6 +48,8 @@ import { cameraBridges } from './cameraBridges.mjs';
 import { recordRoots, freeBytes } from './record.mjs';
 import { StreamRecorder, handleUploadSocket } from './recorder.mjs';
 import { REC_URL, listRecordings, startPlayback } from './playback.mjs';
+import { EventLog, eventsCsv, observePtp, observeRtp, tapStream } from './eventlog.mjs';
+import { METRICS_CONTENT_TYPE, metricsAccess, metricsText } from './metrics.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -1227,9 +1229,42 @@ function fail(ws, m) {
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.woff2': 'font/woff2' };
 
+// ---- event log and Prometheus (#239, server/eventlog.mjs, server/metrics.mjs)
+const EVENTS = new EventLog({ max: 2000 });
+/** @type {Map<number, import('./eventlog.mjs').StreamRecord>} */
+const STREAMS = new Map();
+let streamSeq = 0;
+const STARTED = Date.now();
+let VERSION = '';
+try { VERSION = createRequire(import.meta.url)('../package.json').version ?? ''; } catch { /* not packaged with it */ }
+// PTP and RTP are polled once a second while the clock panel keeps the monitors running
+setInterval(() => { observePtp(EVENTS, ptpMon ? ptpMon.status() : null); observeRtp(EVENTS, rtpMon ? rtpMon.status() : null); }, 1000).unref();
+
+function handleOps(req, res, path) {
+  const problem = metricsAccess({ remote: req.socket.remoteAddress, token: CONTROL_TOKEN, presented: presentedToken(req), origin: req.headers.origin, host: req.headers.host });
+  if (problem) { res.writeHead(problem.status, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(problem.error + '\n'); }
+  if (path === '/metrics') {
+    res.writeHead(200, { 'content-type': METRICS_CONTENT_TYPE, 'cache-control': 'no-store' });
+    return res.end(metricsText({
+      version: VERSION, uptimeS: (Date.now() - STARTED) / 1000, appConnected: appClients.size > 0, events: EVENTS.total,
+      streams: [...STREAMS.values()], ptp: ptpMon ? ptpMon.status() : null, rtp: rtpMon ? rtpMon.status() : null,
+    }));
+  }
+  const q = new URL(req.url ?? '/', 'http://x').searchParams;
+  if (req.method === 'DELETE') { EVENTS.clear(); res.writeHead(204); return res.end(); }
+  const list = EVENTS.list({ since: Number(q.get('since')) || 0 });
+  if (q.get('format') === 'csv') {
+    res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="lz-scopes-events.csv"', 'cache-control': 'no-store' });
+    return res.end(eventsCsv(list));
+  }
+  res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+  return res.end(JSON.stringify({ max: EVENTS.max, total: EVENTS.total, events: list }));
+}
+
 const server = createServer((req, res) => {
   const path = new URL(req.url ?? '/', 'http://x').pathname;
   if (path === '/allow') return handleAllow(req, res);
+  if (path === '/metrics' || path === '/api/events') return handleOps(req, res, path);
   if (path === '/api/clock-access') {
     if (req.method === 'OPTIONS') {
       // CORS / Private Network Access preflight of a page from another origin (no data in it)
@@ -1337,7 +1372,9 @@ const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 wss.on('connection', (ws, req) => {
   // recording writes files: only the local app of the same origin, or a client with the control token
   ws.recordAllowed = !accessProblem(req) || !controlAccess({ remote: req.socket.remoteAddress, origin: req.headers.origin, host: req.headers.host });
-  startStream(ws, new URL(req.url ?? '', 'http://x').searchParams).catch((e) => fail(ws, e));
+  const params = new URL(req.url ?? '', 'http://x').searchParams;
+  tapStream(ws, { log: EVENTS, url: params.get('url') ?? '', streams: STREAMS, id: ++streamSeq });
+  startStream(ws, params).catch((e) => fail(ws, e));
 });
 
 // ---- outputs: the UI sends JPEG frames of an output window; served as MJPEG and optionally pushed

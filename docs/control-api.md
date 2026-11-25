@@ -116,6 +116,26 @@ curl -s -H "$J" -H 'Authorization: Bearer secret' -d '{"cmd":"freeze"}' http://s
 
 In the browser, `output.open` opens a window only if pop-ups are allowed for the page; the desktop app always opens it.
 
+## Event log and Prometheus
+
+The bridge keeps an **event log without thresholds** (`server/eventlog.mjs`, ring buffer of 2000 entries, until the bridge restarts): every change of a stream's flow (start, stop, end, error), its picture format, its sound channels, the PTP state, domain, grandmaster, clock class and UTC offset, the lock state of the grandmaster (ST 2059-2 SM TLV) and of the ST 2110 RTP stream watched in the clock panel. PTP and RTP are only followed while the clock panel keeps their monitors running. In the app: Sources → Event log …
+
+| Path | Answer |
+|---|---|
+| `GET /api/events` | `{ max, total, events: [{ id, t, kind, source, item, from, to }] }`, `?since=<id>` for the newer ones |
+| `GET /api/events?format=csv` | the same as CSV (semicolon, UTC times) |
+| `DELETE /api/events` | clears the log |
+| `GET /metrics` | Prometheus text format 0.0.4: streams (frames, dropped, bytes, size, fps), PTP (state, offset, jitter, path delay, clock class, locking status), RTP (packets, lag, grid), event count |
+
+Access: from this computer always, from others only with the control token (`Authorization: Bearer <token>`); web pages of a foreign origin never. Sources appear without user name, password and query. Scrape example:
+
+```yaml
+scrape_configs:
+  - job_name: lz-scopes
+    static_configs: [{ targets: ['studio.local:4192'] }]
+    authorization: { credentials: secret }   # only when Prometheus runs on another computer
+```
+
 ## Companion module
 
 `companion/` contains the module `companion-module-lz-scopes` (API `@companion-module/base` ~1.14.1, like the module in lz-camera-bridge) with actions for the commands above (except `record.event`), feedbacks (recording, ring buffer running, connected, frozen, source active, clipping/Y′ above threshold, layout, scene, output open, stream running, panel maximised, video file playing, tone generator running, I/LRA paused, max true peak above threshold, ident result), variables (including loudness M/S/I/LRA, true peak, A/V offset, ident, running recordings and recording time) and presets.

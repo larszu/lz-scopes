@@ -182,4 +182,11 @@ dialog.modal-xl { width: min(1180px, 96vw); }
 .scopehelp .help-try { border-top: 1px solid var(--line-1); padding-top: var(--sp-2); margin-top: var(--sp-2); }
 .scopehelp .help-more { border-top: 1px solid var(--line-1); padding-top: var(--sp-2); margin-top: var(--sp-2); }
 .scopehelp details > summary { cursor: pointer; min-height: var(--control-h); display: list-item; font-weight: 600; color: var(--text); }
+/* event log and explanation cards (src/opsUi.ts, #239) */
+.ops .ops-events { max-height: 55vh; overflow-y: auto; }
+.ops .ops-card { border-top: 1px solid var(--line-1); padding: var(--sp-2) 0; }
+.ops .ops-card > summary { cursor: pointer; min-height: var(--control-h); display: list-item; color: var(--text); }
+.ops .ops-card p { margin: var(--sp-2) 0 0; line-height: 1.45; }
+.ops .ops-value { font-family: var(--mono); color: var(--text-soft); }
+.ops .ops-formula { font-family: var(--mono); white-space: pre-wrap; }
 .scopehelp .help-pitfall { border-top: 1px solid var(--line-1); padding-top: var(--sp-2); margin-top: var(--sp-2); color: var(--text-soft); }

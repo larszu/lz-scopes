@@ -27,7 +27,7 @@ test.afterAll(() => { bridge?.kill(); rmSync(config, { recursive: true, force: t
 /** Centre of the body of the panel showing `scope`. */
 const bodyCentre = (page: Page, scope: string) => page.evaluate((scope) => {
   const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
-    p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === scope)!;
+    p.getBoundingClientRect().width > 4 && ((document.querySelector(`.phead[data-panel="${p.dataset.panel}"] select`) ?? p.querySelector('.phead select')) as HTMLSelectElement | null)?.value.split(':')[0] === scope)!;
   const b = el.querySelector('.body')!.getBoundingClientRect();
   return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) };
 }, scope);

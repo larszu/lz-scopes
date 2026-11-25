@@ -31,7 +31,7 @@ test('surround, stereo field, sound level and RTA draw from the generator', asyn
 
   expectOk(await a.control({ cmd: 'panel.scope', panel: 1, scope: 'audio-rta' }));
   await expect.poll(label, { timeout: 30_000 }).toContain('RTA 1/3 octave');
-  await panel.getByRole('button', { name: 'Settings: Audio RTA' }).click();
+  await page.getByRole('button', { name: 'Settings: Audio RTA' }).first().click();
   const pop = page.locator('.popover.psettings');
   await pop.getByPlaceholder('Snapshot 1').fill('Reference');
   await pop.getByRole('button', { name: 'Take' }).click();

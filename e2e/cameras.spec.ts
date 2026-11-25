@@ -46,7 +46,7 @@ test('Split als Quelle: Waveform folgt dem Bild-Panel und misst links A, rechts 
     return Math.abs(v[0] - 0.05) < 0.04 && Math.abs(v[1] - 0.95) < 0.04;
   }, 60_000, 'Split-Bild in der Waveform').catch(async (e) => { console.log('Pegel', await waveLevels(a.page, 'wf-luma', [0.1, 0.9])); throw e; });
   // the head button shows the split as on; off again: the follower measures A alone
-  await expect(a.page.locator('.panel button.splitbtn.on').first()).toBeVisible();
+  await expect(a.page.locator('.phead button.splitbtn.on').first()).toBeVisible();
   expectOk(await a.control({ cmd: 'panel.split', panel: 1, mode: 'off' }));
   await until(async () => (await a.state()).panels.find((p) => p.panel === 2)?.source === 'Kam 1', 30_000, 'Panel 2 wieder auf A');
 });

@@ -14,7 +14,7 @@ test.afterAll(async () => { await a?.close(); });
 async function colours(a: App) {
   return a.page.evaluate(() => {
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
-      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value === 'surface');
+      p.getBoundingClientRect().width > 4 && ((document.querySelector(`.phead[data-panel="${p.dataset.panel}"] select`) ?? p.querySelector('.phead select')) as HTMLSelectElement | null)?.value === 'surface');
     if (!el) throw new Error('kein sichtbares Panel surface');
     const c = el.querySelector<HTMLCanvasElement>('canvas.blit')!;
     const px = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data;

@@ -10,12 +10,11 @@ test.describe('AJA without a card', () => {
   let a: App;
   test.beforeAll(async () => { a = await launchApp({ lang: 'de', env: { LZS_AJA_HELPER: join(ROOT, 'test/fixtures/fake-aja-nodevice.sh') } }); });
   test.afterAll(async () => { await a?.close(); });
-  test('AJA… ohne Karte: Einrichtungsschritte, Treiber als nächster Schritt', async () => {
+  test('+ Quelle → AJA ohne Karte: Einrichtungsschritte, Treiber als nächster Schritt', async () => {
     const { page } = a;
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.locator('#add button', { hasText: 'RTSP / Netz' }).click();
-    await page.locator('#source-list .src').last().getByRole('button', { name: 'AJA…' }).click();
+    await page.locator('#add').getByRole('button', { name: 'AJA', exact: true }).click();
     const dlg = page.locator('dialog.dlsetup');
     await expect(dlg).toBeVisible();
     await expect(dlg.locator('.modal-title')).toHaveText('AJA-Karte einrichten');

@@ -67,7 +67,7 @@ While the timeline plays, Resolve answers no scripting request; stills come agai
 
 Resolve can output the viewer picture without UI: **Workspace → Video Clean Feed** to a second display. With Blackmagic Desktop Video it also works through a DeckLink or UltraStudio card.
 
-- **Through a capture card (recommended):** Feed the output into a capture card, in the same or another computer. In LZ Scopes add an **RTSP / Netz** source and choose **Gerät…** or **DeckLink…** (see *Capture cards*). This keeps 10 bit, with no display colour management in between.
+- **Through a capture card (recommended):** Feed the output into a capture card, in the same or another computer. In LZ Scopes choose **+ Quelle → Blackmagic DeckLink** or **Capture-Gerät (Bridge)** (capture device) (see *Capture cards*). This keeps 10 bit, with no display colour management in between.
 - **Through screen capture:** **+ Quelle → Bildschirm/Fenster** and choose the clean-feed display. Quick to set up, but it measures only 8 bit. The operating system also converts the picture into the display colour space. Not suitable for colour judgement.
 
 ## Window with crop (Resolve, Lightroom, Capture One)
@@ -109,15 +109,15 @@ Set the colour space of the export at the source, e.g. transfer **sRGB** for an 
 
 ## Capture cards, DeckLink, AJA, NDI®
 
-An **RTSP / Netz** source has these buttons below the address field:
+Devices are added under **+ Quelle**: **Blackmagic DeckLink**, **AJA** and **Capture-Gerät (Bridge)** sit under *Geräte* (devices), **NDI®** under *Netz* (network). What the bridge already sees is listed at the top under **Gefunden** (found) – DeckLink and AJA inputs, NDI sources and capture devices. One click adds it as a source; nothing is added by itself, because every measured source costs computing time.
 
-![Stream card with Gerät…, DeckLink…, NDI®…, Ordner…](img/stream-card.png)
+- **Capture-Gerät (Bridge)** (capture device): cards that appear as system devices (USB capture, Magewell, Blackmagic with WDM or AVFoundation driver). The bridge takes the deepest raw format the card offers. Mode, frame rate and pixel format can be fixed.
+- **Blackmagic DeckLink**: Blackmagic DeckLink and UltraStudio through the DeckLink helper, with 10 bit, embedded sound (up to 16 channels, 48 kHz), format detection, timecode and SDI ancillary data. The sound goes to the audio meters with timestamps, so the A/V offset can be measured. Needs Blackmagic Desktop Video (see *Setting up Blackmagic Desktop Video*). With one device it connects straight away; with several, a list appears. If the helper, the driver or the device is missing, the setup steps open.
+- **AJA**: AJA KONA, Io, U-TAP and other AJA cards through the AJA helper (libajantv2), with 10 bit, embedded sound (up to 16 channels, 48 kHz), format detection, timecode, HDR flags from the SDI VPID or the HDMI InfoFrame and SDI ancillary data. Needs the AJA driver (see *Setting up an AJA card*). Cards with several inputs get an input list (SDI 1, SDI 2 … HDMI 1, each with the format detected on it). 4K/UHD: on 12G cards (KONA 5, Io 4K Plus …) one SDI input takes UHD/4K; on 3G cards with 4K the list offers **SDI 1–4 · Quad 2SI** and **SDI 1–4 · Quad Square Division** (the card cannot tell the two apart from the signal: pick the one the source sends); 4K over HDMI works on HDMI 1. A 4K picture is about 22 MB in 10 bit – at 50/60 fps the bridge may skip pictures, 8 bit halves the data. Not yet tested with a card.
+- **NDI®**: NDI sources on the network. Needs the NDI runtime from [ndi.video](https://ndi.video/). LZ Scopes does not ship it.
+- **Ordner…** (folder) on an **RTSP / Netz** source: see above.
 
-- **Gerät…** (device): cards that appear as system devices (USB capture, Magewell, Blackmagic with WDM or AVFoundation driver). The bridge takes the deepest raw format the card offers. Mode, frame rate and pixel format can be fixed.
-- **DeckLink…**: Blackmagic DeckLink and UltraStudio through the DeckLink helper, with 10 bit, embedded sound (up to 16 channels, 48 kHz), format detection, timecode and SDI ancillary data. The sound goes to the audio meters with timestamps, so the A/V offset can be measured. Needs Blackmagic Desktop Video (see *Setting up Blackmagic Desktop Video*). With one device it connects straight away; with several, a list appears. If the helper, the driver or the device is missing, the setup steps open.
-- **AJA…**: AJA KONA, Io, U-TAP and other AJA cards through the AJA helper (libajantv2), with 10 bit, embedded sound (up to 16 channels, 48 kHz), format detection, timecode, HDR flags from the SDI VPID or the HDMI InfoFrame and SDI ancillary data. Needs the AJA driver (see *Setting up an AJA card*). Cards with several inputs get an input list (SDI 1, SDI 2 … HDMI 1, each with the format detected on it). 4K/UHD: on 12G cards (KONA 5, Io 4K Plus …) one SDI input takes UHD/4K; on 3G cards with 4K the list offers **SDI 1–4 · Quad 2SI** and **SDI 1–4 · Quad Square Division** (the card cannot tell the two apart from the signal: pick the one the source sends); 4K over HDMI works on HDMI 1. A 4K picture is about 22 MB in 10 bit – at 50/60 fps the bridge may skip pictures, 8 bit halves the data. Not yet tested with a card.
-- **NDI®…**: NDI sources on the network. Needs the NDI runtime from [ndi.video](https://ndi.video/). LZ Scopes does not ship it.
-- **Ordner…**: see above.
+**Blackmagic on Windows:** if LZ Scopes only sees a “Blackmagic WDM Device”, that is the card's camera driver: 8 bit, no sound and mostly no picture. **Gefunden** then shows a hint with **Über DeckLink verbinden** (connect through DeckLink). That is the path OBS calls “Blackmagic Source”: 10 bit, embedded sound, timecode. The same applies to an UltraStudio that shows up as a camera on macOS.
 
 Use **Wandlung** (conversion) and **Pegel** (levels) to fix matrix and range when a card labels its signal wrongly or not at all.
 
@@ -130,14 +130,14 @@ The Measurements panel shows under *Scan* how the bridge treats the signal. The 
 
 ### Setting up an AJA card
 
-**AJA…** opens these steps when no card can be used yet; **Einrichtung …** (setup) on an AJA source opens them at any time. Done steps are ticked, **Erneut prüfen** (check again) asks the bridge again.
+**+ Quelle → AJA** opens these steps when no card can be used yet; **Einrichtung …** (setup) on an AJA source opens them at any time. Done steps are ticked, **Erneut prüfen** (check again) asks the bridge again.
 
 1. **macOS / Windows:** on [aja.com/support](https://www.aja.com/support) choose the product and install the **AJA Desktop Software** (it contains the driver); on macOS allow the AJA driver under **System Settings → General → Login Items & Extensions** if asked, then restart. **Linux:** the driver is part of [libajantv2](https://github.com/aja-video/libajantv2): in `driver/linux` run `make`, then `sudo ./load_ajantv2`; the card shows up as `/dev/ajantv20`.
 2. Only one application can capture from an AJA card at a time: quit AJA ControlRoom, Premiere, Resolve or other software using the card. A card held by another application is marked *in use* in the list.
 
 ### Setting up Blackmagic Desktop Video
 
-**DeckLink…** opens these steps when no device can be used yet; **Einrichtung …** (setup) on a DeckLink source opens them at any time. Done steps are ticked, **Erneut prüfen** (check again) asks the bridge again and connects as soon as a device is found.
+**+ Quelle → Blackmagic DeckLink** opens these steps when no device can be used yet; **Einrichtung …** (setup) on a DeckLink source opens them at any time. Done steps are ticked, **Erneut prüfen** (check again) asks the bridge again and connects as soon as a device is found.
 
 ![Setup steps for DeckLink / UltraStudio](img/decklink-setup.png)
 

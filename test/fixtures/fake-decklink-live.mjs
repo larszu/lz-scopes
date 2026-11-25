@@ -3,7 +3,7 @@
 // --capture sends 1080p25 v210 grey with FPTS/TIME and, with --audio n, n channels of a 1 kHz tone
 // at −20 dBFS on channel 1 (others silent), like an SDI camera with embedded sound, plus RP 188 timecode
 // and the VANC packets an UltraStudio Recorder 3G captured from a camera (decklink-vanc-recorder3g.json,
-// 4 times a second). Runs until killed.
+// 4 times a second). Runs until killed. LZS_FAKE_V210=ramp sends a Y′/chroma ramp instead of grey.
 const args = process.argv.slice(2);
 if (args[0] === '--list') {
   process.stdout.write(`${JSON.stringify({ ok: true, devices: [{ index: 0, name: 'Fake UltraStudio Recorder 3G', formatDetection: true, capture: true, inputs: ['sdi', 'hdmi'], input: 'sdi' }] })}\n`);
@@ -18,8 +18,21 @@ const rec = (tag, body) => {
   process.stdout.write(Buffer.concat([h, b]));
 };
 const w = 1920, h = 1080, row = Math.ceil(w / 48) * 128, frame = Buffer.alloc(row * h);
-const words = [512 | (502 << 10) | (512 << 20), 502 | (512 << 10) | (502 << 20), 512 | (502 << 10) | (512 << 20), 502 | (512 << 10) | (502 << 20)];
-for (let i = 0; i < frame.length; i += 4) frame.writeUInt32LE(words[(i / 4) % 4] >>> 0, i);
+if (process.env.LZS_FAKE_V210 === 'ramp') {
+  // e2e/v210.spec.ts (#258): Y′ 64…940 left to right, Cb rising and Cr falling per chroma pair,
+  // so luma and chroma unpacking (word and bit position) both show in the scopes
+  const n = w / 2, s = [];
+  for (let c = 0; c < n; c++) {
+    const Y = (x) => 64 + Math.round((876 * x) / (w - 1));
+    s.push(312 + Math.round((400 * c) / (n - 1)), Y(2 * c), 712 - Math.round((400 * c) / (n - 1)), Y(2 * c + 1));
+  }
+  const line = Buffer.alloc(row);
+  for (let k = 0; k * 3 < s.length; k++) line.writeUInt32LE((s[k * 3] | (s[k * 3 + 1] << 10) | ((s[k * 3 + 2] ?? 0) << 20)) >>> 0, k * 4);
+  for (let y = 0; y < h; y++) line.copy(frame, y * row);
+} else {
+  const words = [512 | (502 << 10) | (512 << 20), 502 | (512 << 10) | (502 << 20), 512 | (502 << 10) | (512 << 20), 502 | (512 << 10) | (502 << 20)];
+  for (let i = 0; i < frame.length; i += 4) frame.writeUInt32LE(words[(i / 4) % 4] >>> 0, i);
+}
 rec('INFO', { width: w, height: h, fpsNum: 25000, fpsDen: 1000, pixel: 'v210', matrix: 'bt709', range: 'tv', transfer: 'unknown', primaries: 'bt709', interlaced: false, name: '1080p25', ...(ch ? { audio: { sampleRate: 48000, channels: ch, format: 's32le' } } : {}) });
 let k = 0;
 const t0 = Date.now();

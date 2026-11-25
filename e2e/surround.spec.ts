@@ -43,7 +43,16 @@ test('Umfeldleuchtdichte: die nits-Skala sagt, welchen Raum sie annimmt', async 
     await page.waitForTimeout(300);
     return (await card.locator('select').filter({ has: page.locator('option[value="hlg"]') }).first().inputValue()) === 'hlg';
   }, 30_000, 'Quelle als HLG gelesen');
-  const plain = await until(async () => { const n = await labelPixels(); return n > 20 ? n : false; }, 30_000, 'Skalenbeschriftung');
+  // The select says HLG before the scope has redrawn with it: on a slow runner the first reading
+  // still carries the previous, longer label (CI 25.11.: 382 lit pixels, then 144 once HLG drew),
+  // and the note then never reaches +30 %. Take the reference only once the label holds still.
+  let prev = -1, still = 0;
+  const plain = await until(async () => {
+    const n = await labelPixels();
+    still = n > 20 && n === prev ? still + 1 : 0;
+    prev = n;
+    return still >= 8 ? n : false;
+  }, 30_000, 'Skalenbeschriftung steht');
 
   // a bright room: the label grows by the note about the surround
   expectOk(await a.control({ cmd: 'setting', key: 'surround', value: 200 }));

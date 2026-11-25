@@ -10,19 +10,27 @@ test.beforeAll(async () => { a = await launchApp(); });
 test.afterAll(async () => { await a?.close(); });
 
 /** Lit pixels in the band where the scale label sits (top right of the plot). */
-async function labelPixels() {
-  return a.page.evaluate(() => {
+async function labelPixels(): Promise<number>;
+async function labelPixels(png: true): Promise<string>;
+async function labelPixels(png = false): Promise<number | string> {
+  return a.page.evaluate((png) => {
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
       p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'wf-luma')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
     const dpr = c.width / c.getBoundingClientRect().width;
     const ctx = c.getContext('2d', { willReadFrequently: true })!;
-    const h = Math.round(16 * dpr), w = Math.round(Math.min(c.width, 420 * dpr));
+    // plot top 8 px + label 2 px below it + 10 px font: 24 px hold the whole line
+    const h = Math.round(24 * dpr), w = Math.round(Math.min(c.width, 420 * dpr));
+    if (png) {
+      const o = document.createElement('canvas'); o.width = w; o.height = h;
+      o.getContext('2d')!.putImageData(ctx.getImageData(c.width - w, 0, w, h), 0, 0);
+      return `${c.width}x${c.height} dpr ${dpr} ${o.toDataURL('image/png')}`;
+    }
     const px = ctx.getImageData(c.width - w, 0, w, h).data;
     let lit = 0;
     for (let i = 0; i < px.length; i += 4) if (px[i] + px[i + 1] + px[i + 2] > 180) lit++;
     return lit;
-  });
+  }, png);
 }
 
 test('Umfeldleuchtdichte: die nits-Skala sagt, welchen Raum sie annimmt', async () => {
@@ -43,20 +51,26 @@ test('Umfeldleuchtdichte: die nits-Skala sagt, welchen Raum sie annimmt', async 
     await page.waitForTimeout(300);
     return (await card.locator('select').filter({ has: page.locator('option[value="hlg"]') }).first().inputValue()) === 'hlg';
   }, 30_000, 'Quelle als HLG gelesen');
-  // The select says HLG before the scope has redrawn with it: on a slow runner the first reading
-  // still carries the previous, longer label (CI 25.11.: 382 lit pixels, then 144 once HLG drew),
-  // and the note then never reaches +30 %. Take the reference only once the label holds still.
-  let prev = -1, still = 0;
+  // the renderer follows the card a few frames later (slow in CI): until then the label still
+  // names the previous curve, so the reference count is taken once it holds still
+  let prev = -1, same = 0;
   const plain = await until(async () => {
     const n = await labelPixels();
-    still = n > 20 && n === prev ? still + 1 : 0;
-    prev = n;
-    return still >= 8 ? n : false;
-  }, 30_000, 'Skalenbeschriftung steht');
+    same = n === prev ? same + 1 : 0; prev = n;
+    await page.waitForTimeout(300);
+    return n > 20 && same >= 3 ? n : false;
+  }, 30_000, 'Skalenbeschriftung');
 
   // a bright room: the label grows by the note about the surround
   expectOk(await a.control({ cmd: 'setting', key: 'surround', value: 200 }));
-  const withNote = await until(async () => { const n = await labelPixels(); return n > plain * 1.3 ? n : false; }, 30_000, 'Hinweis auf das Umfeld');
+  const seen: number[] = [];
+  const withNote = await until(async () => { const n = await labelPixels(); seen.push(n); return n > plain * 1.3 ? n : false; }, 30_000, 'Hinweis auf das Umfeld')
+    .catch(async (e) => {
+      // diagnosis for CI (passes locally): what the band holds and what the card says
+      const tr = await page.locator('#source-list .src').first().locator('select').filter({ has: page.locator('option[value="hlg"]') }).first().inputValue().catch(() => '?');
+      console.log(`[surround] plain ${plain} seen ${seen.slice(-8).join(',')} transfer ${tr} band ${await labelPixels(true)}`);
+      throw e;
+    });
   expect(withNote).toBeGreaterThan(plain);
   await page.screenshot({ path: test.info().outputPath('surround.png') });
 

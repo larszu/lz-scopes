@@ -82,6 +82,8 @@ export const SOURCE_ITEMS: [kind: string, label: string, title: string][] = [
   ['resolve', 'DaVinci Resolve', t('menu.src.resolveTitle')],
   ['decklink', 'Blackmagic DeckLink', t('main.add.decklinkTitle')],
   ['aja', 'AJA', t('main.add.ajaTitle')],
+  ['device', t('main.add.device'), t('main.add.deviceTitle')],
+  ['ndi', 'NDI®', t('bridgeui.ndiTitle')],
   ['webcam', t('menu.src.webcam'), t('menu.src.webcamTitle')],
   ['screen', t('menu.src.screen'), t('menu.src.screenTitle')],
   ['file', t('menu.src.file'), t('menu.src.fileTitle')],

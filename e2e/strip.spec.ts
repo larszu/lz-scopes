@@ -42,8 +42,8 @@ test('Bildhistorie: Wechsel wandert von rechts nach links durch die Standbilder'
   // nach sechs Sekunden ist auch das älteste Standbild schwarz
   await until(async () => { const l = await tileLevels(); return l.every((v) => v < 40) ? l : false; }, 30_000, 'alle Kacheln schwarz');
   // Einstellungen einmal bedienen: drei Standbilder füllen die Breite mit größeren Kacheln
-  await page.locator('.panel .pop-trigger:not(.help-trigger) >> visible=true').first().click();
-  const pop = page.locator('.panel .popover:popover-open');
+  await page.locator('.phead .pop-trigger:not(.help-trigger) >> visible=true').first().click();
+  const pop = page.locator('.popover:popover-open');
   await expect(pop.getByText('Standbilder', { exact: true })).toBeVisible();
   await pop.locator('select').filter({ has: page.locator('option[value="10"]') }).first().selectOption('3');
   await page.keyboard.press('Escape');

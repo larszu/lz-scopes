@@ -47,12 +47,12 @@ for (const [w, hgt] of SIZES) {
     await expect(page.locator('#layouts')).toBeHidden();
     expect((await page.locator('header, .bar').first().boundingBox())!.height, 'Kopfleiste einzeilig').toBeLessThan(80);
     await page.locator('#bar-more .pop-trigger').click();
-    await page.locator('#bar-more .popover .seg button', { hasText: '1+3' }).click();
+    await page.locator('#bar-more .popover').getByRole('button', { name: '1+3', exact: true }).click();
     await page.keyboard.press('Escape');
     await page.waitForTimeout(600);
     const boxes = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.panel')]
       .filter((p) => p.getBoundingClientRect().width > 4)
-      .map((p) => { const r = p.getBoundingClientRect(); return { scope: (p.querySelector('.phead select') as HTMLSelectElement).value.split(':')[0], x: r.left, y: r.top, w: r.width, h: r.height }; }));
+      .map((p) => { const r = p.getBoundingClientRect(); return { scope: ((document.querySelector(`.phead[data-panel="${p.dataset.panel}"] select`) ?? p.querySelector('.phead select')) as HTMLSelectElement).value.split(':')[0], x: r.left, y: r.top, w: r.width, h: r.height }; }));
     expect(boxes.length, 'vier Panels').toBe(4);
     const big = boxes.find((b) => b.scope === 'wf-luma')!;
     for (const b of boxes.filter((b) => b !== big)) {
@@ -62,7 +62,8 @@ for (const [w, hgt] of SIZES) {
     await page.screenshot({ path: join(SHOTS, `${w}x${hgt}-1plus3.png`) });
 
     // panel heads: 44 px targets
-    for (const b of await page.locator('.panel .phead button.icon').all()) {
+    // (#261: the head sits in the dock tab, outside .panel)
+    for (const b of await page.locator('.phead button.icon').all()) {
       if (!(await b.isVisible())) continue;
       const r = (await b.boundingBox())!;
       expect(r.height, 'Kopf-Taste Höhe').toBeGreaterThanOrEqual(44);
@@ -70,9 +71,10 @@ for (const [w, hgt] of SIZES) {
     }
 
     // ⚙ as a sheet over its panel
-    const wave = page.locator('.panel', { has: page.locator('.phead select option:checked[value^="wf-luma"]') }).first();
-    await wave.locator('.pop-trigger:not(.help-trigger)').first().click();
-    const pop = page.locator('.panel .popover.psettings:popover-open');
+    const waveHead = page.locator('.phead', { has: page.locator('select option:checked[value^="wf-luma"]') }).first();
+    const wave = page.locator(`.panel[data-panel="${await waveHead.getAttribute('data-panel')}"]`);
+    await waveHead.locator('.pop-trigger:not(.help-trigger)').first().click();
+    const pop = page.locator('.popover.psettings:popover-open');
     await expect(pop).toBeVisible();
     await expect(pop).toHaveClass(/\bover\b/);
     await page.waitForTimeout(400);
@@ -95,9 +97,9 @@ for (const [w, hgt] of SIZES) {
       await page.waitForTimeout(300);
     };
     await touch('vector', 120);
-    await expect(page.locator('.panel .popover.psettings:popover-open')).toHaveCount(0);
+    await expect(page.locator('.popover.psettings:popover-open')).toHaveCount(0);
     await touch('vector', 800);
-    const open = page.locator('.panel .popover.psettings:popover-open');
+    const open = page.locator('.popover.psettings:popover-open');
     // (a short panel gets the anchored popover instead of a sheet: placeOver() in src/ui/popover.ts)
     await expect(open).toBeVisible();
     expect(await open.locator('.popover-head').textContent()).toMatch(/vector/i);

@@ -3,10 +3,10 @@
 
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -55,6 +55,16 @@ export async function launchApp(opts: { profile?: string; port?: number; lang?: 
     timeout: 120_000,
   });
   const page = await app.firstWindow({ timeout: 120_000 });
+  // page.screenshot() prepares the page in Playwright's utility world (caret, animations, fonts).
+  // In this Electron window that world is at times never created: the screenshot then waits until
+  // the test times out (v1.17 CI: strip, Diamond, ui-audit; see also hecto.spec). The pictures are
+  // a record, never compared – take them straight from CDP instead.
+  const shots = await page.context().newCDPSession(page);
+  page.screenshot = (async (o: { path?: string } = {}) => {
+    const buf = Buffer.from((await shots.send('Page.captureScreenshot', { format: 'png' })).data, 'base64');
+    if (o.path) { mkdirSync(dirname(o.path), { recursive: true }); writeFileSync(o.path, buf); }
+    return buf;
+  }) as Page['screenshot'];
   // app errors in the test log (otherwise a hanging main window leaves no trace in CI)
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.log(`[app ${m.type()}]`, m.text().slice(0, 500)); });

@@ -27,6 +27,9 @@ Every command is a JSON object with `cmd`. Panels, sources, presets and scenes c
 |---|---|
 | `state` | – (answer `result` = state) |
 | `source.select` | `source`; `panel` optional (without = all panels) |
+| `source.split` | `source`, `layout` (`2x2`, `3x3`, `4x4`, `2+8`, `1+5`; `none` removes its tile cameras), `inset` optional (border per side as share of the tile height, 0 … 0.25, default 0.1). Makes one camera per multiviewer tile (#217); answer lists the cameras |
+| `panel.split` | `panel` (picture panel), `mode` `toggle`/`on`/`off`, `source` optional (B), `spread` optional (`true` = the other unpinned panels follow). The split is then the source `Split panel N` (#177) |
+| `panel.follow` | `panel`, `follow` (picture panel whose source – and split – this panel shows; `0` = its own source again) |
 | `layout.preset` | `preset`: 1–6, id (`lc`) or label (`2x2`, `Colorist`) |
 | `layout.load` | `name` of a saved layout configuration |
 | `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `hls`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `qclog`, `hist`, `stats`, `tiles`, `noise`, `wshading`, `skinall`, `chart`, `drift`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `clock`, `genlock`) |

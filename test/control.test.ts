@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { COMMANDS, OVERLAY_SCOPES, PANEL_SCOPES, controlAccess, isLoopback, validateCommand } from '../server/control.mjs';
+import { COMMANDS, OVERLAY_SCOPES, PANEL_SCOPES, SPLIT_LAYOUTS, controlAccess, isLoopback, validateCommand } from '../server/control.mjs';
+import { LAYOUTS } from '../src/cameras';
 import { SCOPE_LABELS } from '../src/graticule';
 
 const ok = (raw: unknown) => {
@@ -121,5 +122,24 @@ describe('controlAccess', () => {
   it('refuses foreign web pages', () => {
     expect(controlAccess({ remote: '127.0.0.1', origin: 'https://evil.example', host: '127.0.0.1:4190' })?.status).toBe(403);
     expect(controlAccess({ remote: '127.0.0.1', origin: 'http://127.0.0.1:4190', host: '127.0.0.1:4190' })).toBeNull();
+  });
+});
+
+describe('cameras and split (#217, #177)', () => {
+  it('source.split: layouts of src/cameras.ts plus none, optional border', () => {
+    expect(SPLIT_LAYOUTS).toEqual([...LAYOUTS, 'none']);
+    expect(ok({ cmd: 'source.split', source: 1, layout: '2x2' })).toEqual({ cmd: 'source.split', source: 1, layout: '2x2' });
+    expect(ok({ cmd: 'source.split', source: 'MV', layout: '2+8', inset: 0.05 }).inset).toBe(0.05);
+    expect(err({ cmd: 'source.split', source: 1, layout: '5x5' })).toMatch(/layout/);
+    expect(err({ cmd: 'source.split', source: 1, layout: '2x2', inset: 0.5 })).toMatch(/inset/);
+    expect(err({ cmd: 'source.split', layout: '2x2' })).toMatch(/source missing/);
+  });
+  it('panel.split and panel.follow', () => {
+    expect(ok({ cmd: 'panel.split', panel: 1 })).toEqual({ cmd: 'panel.split', panel: 1, mode: 'toggle' });
+    expect(ok({ cmd: 'panel.split', panel: 1, mode: 'on', source: 2, spread: true })).toEqual({ cmd: 'panel.split', panel: 1, mode: 'on', source: 2, spread: true });
+    expect(err({ cmd: 'panel.split', panel: 1, spread: 'yes' })).toMatch(/spread/);
+    expect(ok({ cmd: 'panel.follow', panel: 2, follow: 1 })).toEqual({ cmd: 'panel.follow', panel: 2, follow: 1 });
+    expect(ok({ cmd: 'panel.follow', panel: 2, follow: 0 }).follow).toBe(0);
+    expect(err({ cmd: 'panel.follow', panel: 2 })).toMatch(/follow missing/);
   });
 });

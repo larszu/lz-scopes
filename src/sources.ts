@@ -21,7 +21,7 @@ import { FrameHistory, pickFrame } from './record/sync';
 
 export { meanLuma };
 
-export type SourceKind = 'stream' | 'webcam' | 'screen' | 'file' | 'pattern' | 'folder' | 'audio';
+export type SourceKind = 'stream' | 'webcam' | 'screen' | 'file' | 'pattern' | 'folder' | 'audio' | 'camera' | 'split';
 
 /**
  * Input of an audio-only source: an audio device in the browser (getUserMedia, at most
@@ -464,8 +464,9 @@ export class Source {
   private statsCanvas: HTMLCanvasElement | null = null;
   private statsSeq = '';
 
-  constructor(kind: SourceKind, name?: string, settings?: Partial<SourceSettings>) {
-    this.id = `s${nextId++}`;
+  /** `id` only for derived sources with a fixed id (src/derived.ts: the split of a panel). */
+  constructor(kind: SourceKind, name?: string, settings?: Partial<SourceSettings>, id?: string) {
+    this.id = id ?? `s${nextId++}`;
     this.kind = kind;
     this.name = name ?? t(`source.kind.${kind}`);
     this.settings = { ...DEFAULT_SETTINGS, ...settings };
@@ -513,7 +514,7 @@ export class Source {
     if (moved) this.onChange();
   }
 
-  private tick() {
+  protected tick() {
     const now = performance.now();
     this.frameTimes.push(now);
     while (this.frameTimes.length && now - this.frameTimes[0] > 1000) this.frameTimes.shift();

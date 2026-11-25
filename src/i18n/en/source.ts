@@ -27,6 +27,8 @@ export default {
   'source.kind.pattern': 'Test pattern',
   'source.kind.folder': 'Folder',
   'source.kind.audio': 'Audio',
+  'source.kind.camera': 'Camera (tile)',
+  'source.kind.split': 'Split',
   'source.status.soundOnly': 'sound only',
   'source.status.sound': 'sound {codec} {khz} kHz {ch} ch.',
   'source.status.noSound': 'no sound',

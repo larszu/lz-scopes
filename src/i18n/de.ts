@@ -39,6 +39,7 @@ import calib from './de/calib';
 import feedback from './de/feedback';
 import help from './de/help';
 import compare from './de/compare';
+import cameras from './de/cameras';
 import wallcheck from './de/wallcheck';
 import sim from './de/sim';
 import enc from './de/enc';
@@ -83,6 +84,7 @@ export const de: Record<Key, Msg> = {
   ...feedback,
   ...help,
   ...compare,
+  ...cameras,
   ...wallcheck,
   ...sim,
   ...enc,

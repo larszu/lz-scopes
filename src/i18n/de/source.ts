@@ -28,6 +28,8 @@ export default {
   'source.kind.pattern': 'Testbild',
   'source.kind.folder': 'Ordner',
   'source.kind.audio': 'Audio',
+  'source.kind.camera': 'Kamera (Kachel)',
+  'source.kind.split': 'Split',
   'source.status.soundOnly': 'nur Ton',
   'source.status.sound': 'Ton {codec} {khz} kHz {ch} Kan.',
   'source.status.noSound': 'kein Ton',

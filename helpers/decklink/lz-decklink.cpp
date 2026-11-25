@@ -347,6 +347,7 @@ class Capture : public IDeckLinkInputCallback {
     const BMDDisplayModeFlags f = mode->GetFlags();
     modeMatrix_ = (f & bmdDisplayModeColorspaceRec2020) ? "bt2020nc" : (f & bmdDisplayModeColorspaceRec601) ? "smpte170m" : (f & bmdDisplayModeColorspaceRec709) ? "bt709" : "unknown";
     interlaced_ = mode->GetFieldDominance() == bmdLowerFieldFirst || mode->GetFieldDominance() == bmdUpperFieldFirst;
+    lowerFirst_ = mode->GetFieldDominance() == bmdLowerFieldFirst;
     pixel_ = pf;
     lastInfo_.clear();
   }
@@ -434,6 +435,8 @@ class Capture : public IDeckLinkInputCallback {
       + ",\"fpsNum\":" + std::to_string(fpsNum_) + ",\"fpsDen\":" + std::to_string(fpsDen_)
       + ",\"pixel\":\"" + pixel + "\",\"matrix\":\"" + matrix + "\",\"range\":\"" + (pixel_ == bmdFormat10BitRGB ? "pc" : "tv")
       + "\",\"transfer\":\"" + transfer + "\",\"primaries\":\"" + primaries + "\",\"interlaced\":" + (interlaced_ ? "true" : "false")
+      // field order of an interlaced mode (#219): which field comes first in time
+      + (interlaced_ ? std::string(",\"fieldOrder\":\"") + (lowerFirst_ ? "bff" : "tff") + "\"" : std::string())
       + ",\"name\":\"" + jsonEscape(modeName_) + "\""
       + (audioChannels_ ? ",\"audio\":{\"sampleRate\":48000,\"channels\":" + std::to_string(audioChannels_) + ",\"format\":\"s32le\"}" : "");
     // the timecode changes every frame; only format changes trigger a new INFO
@@ -452,6 +455,7 @@ class Capture : public IDeckLinkInputCallback {
   long long fpsNum_ = 25, fpsDen_ = 1;
   long width_ = 0, height_ = 0;
   bool interlaced_ = false;
+  bool lowerFirst_ = false;
   bool modeSet_ = false;
   BMDDisplayMode displayMode_{};  // enum on Windows (MIDL): `= 0` does not compile with MSVC
   BMDPixelFormat pixel_ = bmdFormat10BitYUV;

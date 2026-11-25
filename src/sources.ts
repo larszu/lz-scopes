@@ -57,6 +57,10 @@ export interface SourceSettings {
   /** bridge: Y′CbCr → R′G′B′ matrix and range of the ffmpeg conversion ('auto' = tags, else BT.709 above SD) */
   decodeMatrix?: 'auto' | 'bt709' | 'bt601' | 'bt2020';
   decodeRange?: 'auto' | 'tv' | 'pc';
+  /** bridge (#219): field order – 'auto' = as the source reports it, else forced ('progressive' = treat as progressive) */
+  fieldOrder?: 'auto' | 'progressive' | 'tff' | 'bff';
+  /** bridge (#219): de-interlace interlaced sources (bwdif) instead of keeping the fields woven */
+  deinterlace?: boolean;
   /** DeckLink helper: 10 bit (v210) or 8 bit (UYVY) capture */
   deckLinkBits?: 8 | 10;
   /** DeckLink input connector ('sdi', 'hdmi' …); unset = as set in Desktop Video Setup */
@@ -98,6 +102,14 @@ export interface StreamInfo {
   yuvRange?: 'limited' | 'full'; bits?: number;
   /** the source is interlaced: each frame carries both fields woven, scaled field by field */
   interlaced?: boolean;
+  /** interlaced: which field comes first in time (upper = tff, lower = bff), as used by the bridge */
+  fields?: 'tff' | 'bff';
+  /** what the source itself reports (before a forced setting) */
+  sourceFields?: 'tff' | 'bff';
+  /** the card overrides what the source reports */
+  fieldsForced?: boolean;
+  /** the bridge de-interlaced the picture (bwdif): one progressive picture per frame */
+  deinterlaced?: boolean;
   /** why the bridge sent something other than requested */
   note?: string;
   /** start time code of the container (ffprobe tag, e.g. MOV tmcd) and the stream's start time in s */
@@ -146,6 +158,8 @@ export function bridgeInputParams(url: string, set: SourceSettings): Record<stri
   if (url.startsWith('aja:') && set.ajaInput) q.input = set.ajaInput;
   if (set.decodeMatrix && set.decodeMatrix !== 'auto') q.matrix = set.decodeMatrix;
   if (set.decodeRange && set.decodeRange !== 'auto') q.range = set.decodeRange;
+  if (set.fieldOrder && set.fieldOrder !== 'auto') q.field = set.fieldOrder;
+  if (set.deinterlace) q.deint = '1';
   return q;
 }
 

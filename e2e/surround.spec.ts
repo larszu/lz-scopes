@@ -47,7 +47,9 @@ test('Umfeldleuchtdichte: die nits-Skala sagt, welchen Raum sie annimmt', async 
 
   // a bright room: the label grows by the note about the surround
   expectOk(await a.control({ cmd: 'setting', key: 'surround', value: 200 }));
-  const withNote = await until(async () => { const n = await labelPixels(); return n > plain * 1.3 ? n : false; }, 30_000, 'Hinweis auf das Umfeld');
+  console.log('DIAG plain', plain, await a.page.evaluate(() => { const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) => p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'wf-luma')!; const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!; return { cw: c.width, css: c.getBoundingClientRect().width, win: [innerWidth, innerHeight], lang: document.documentElement.lang }; }));
+  let diagN = 0;
+  const withNote = await until(async () => { const n = await labelPixels(); if (diagN++ % 8 === 0) console.log('DIAG n', n); return n > plain * 1.3 ? n : false; }, 30_000, 'Hinweis auf das Umfeld').catch(async (e) => { await page.screenshot({ path: 'e2e-diag-surround.png' }); console.log('DIAG state', JSON.stringify(await a.state()).slice(0, 3000)); throw e; });
   expect(withNote).toBeGreaterThan(plain);
   await page.screenshot({ path: test.info().outputPath('surround.png') });
 

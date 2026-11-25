@@ -473,6 +473,12 @@ export class Source {
   rtpStats: RtpStats | null = null;
   /** frame phase against the ST 2059-1 grid, from the bridge stats of capture-helper sources (server/phase.mjs, #72) */
   phase: import('./genlock').PhaseReport | null = null;
+  /** ST 2110 flows of an st2110: source: counters and ST 2022-7 evaluation from the bridge stats (src/st2110.ts) */
+  st2110: import('./st2110').St2110Stats | null = null;
+  /** last pcap state of an st2110: source (#232) */
+  pcap: import('./st2110').PcapState | null = null;
+  /** rolling capture switched on (the bridge's answer to cmd 'ring') */
+  pcapRing = false;
   private patternTimer: ReturnType<typeof setInterval> | null = null;
   private media: MediaStream | null = null;
   private objectUrl: string | null = null;
@@ -574,6 +580,7 @@ export class Source {
     if (this.settings.latency === 'fixed') { q.set('pts', '1'); q.set('latency', 'fixed'); }
     this.rtpStats = null;
     this.phase = null;
+    this.st2110 = null; this.pcap = null; this.pcapRing = false;
     this.connectFrames(`${bridge}/stream?${q}`, false);
   }
 
@@ -622,9 +629,14 @@ export class Source {
           this.latency.onBridgeStats(msg.stampAge);
           this.rtpStats = msg.rtp ?? null;
           this.phase = msg.phase ?? null;
+          if (msg.st2110) this.st2110 = msg.st2110;
           if (msg.rec) Source.onRecord?.(this, msg.rec);
           if (msg.ring) Source.onRecord?.(this, msg.ring);
           if (msg.message) this.set(this.status === 'live' ? 'live' : 'connecting', bridgeMessage(msg));
+        } else if (msg.type === 'pcap') {
+          // pcap snapshot / rolling capture of an st2110: source (server/st2110stream.mjs)
+          if (msg.state === 'ring') this.pcapRing = !!msg.ring;
+          this.pcap = msg; this.onChange();
         } else if (msg.type === 'record' || msg.type === 'ring' || msg.type === 'playback') {
           // local recording in the bridge (server/recorder.mjs)
           Source.onRecord?.(this, msg);

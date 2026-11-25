@@ -62,6 +62,7 @@ import { greenSettings, matchPanelSettings, targetEditor, type MatchUi } from '.
 import { openChartCorners } from './match/chartUi';
 import { bindBridgeField, normaliseBridge } from './bridgeField';
 import { streamRoute } from './streamRoute';
+import { openSt2110Dialog, st2110Row } from './st2110';
 import { addAja, ajaRow, addCaptureDevice, addDeckLink, addNdi, NDI_NOTICE, deckLinkRow, decodeRow, deviceRow as bridgeDeviceRow, ndiRow, folderButton, interlaceRow, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
 import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
@@ -781,9 +782,9 @@ function renderSources() {
           running ? button(t('main.src.disconnect'), () => s.stop()) : button(t('main.src.connect'), connect, { variant: 'primary' }),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
             button(p, () => { urlIn.value = `test:${p}`; connect(); }, { small: true, title: t('main.src.testN', { name: p }) })),
-            // devices (DeckLink, AJA, NDI®, capture devices) are added from "+ Quelle" and "Gefunden" (#221)
+            // devices (DeckLink, AJA, NDI®, ST 2110, capture devices) are added from "+ Quelle" and "Gefunden" (#221)
             folderButton(bridgeUi, (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop?.watchFolder))),
-        ...[bridgeDeviceRow(s, bridgeUi, renderSources), blackmagicCameraHint(s.url.startsWith('device:') ? s.url.replace(/#.*$/, '') : '', s), deckLinkRow(s, bridgeUi), ajaRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi), interlaceRow(s, bridgeUi)].filter((x): x is Node => !!x),
+        ...[bridgeDeviceRow(s, bridgeUi, renderSources), blackmagicCameraHint(s.url.startsWith('device:') ? s.url.replace(/#.*$/, '') : '', s), deckLinkRow(s, bridgeUi), ajaRow(s, bridgeUi), ndiRow(s), st2110Row(s, bridgeUi), decodeRow(s, bridgeUi), interlaceRow(s, bridgeUi)].filter((x): x is Node => !!x),
         ...(sourceFfmpegText(s.url, bridgeHealth) ? [h('p', { class: 'hint', 'data-ffmpeg-source': '' }, sourceFfmpegText(s.url, bridgeHealth))] : []),
       );
     } else if (s.url === SIM_URL) {
@@ -1188,6 +1189,11 @@ function addSourceOfKind(kind: string) {
     case 'aja': return addAjaSource();
     case 'device': return addBridgeSource(addCaptureDevice, {});
     case 'ndi': return addBridgeSource(addNdi, { depth: 16 });
+    // ST 2110-30/-31/-40 from the network (#226): the dialog builds the st2110: URL
+    case 'st2110': return openSt2110Dialog({
+      http: () => bridgeUrl().replace(/^ws/, 'http'), hud: alertHud, upd: () => {},
+      connect: (url, name) => { state.sidebar = true; applySidebar(); const s = addSource('stream', name ?? 'ST 2110', url); s.connectStream(url, bridgeUrl()); },
+    });
     case 'webcam': case 'screen': case 'file': case 'folder': return void startLocal(addSource(kind));
     // the browser path on purpose (#191): 8 bit, but with crop, ROI and the clip's own sound
     case 'file-video': { const s = addSource('file'); s.settings.fileRoute = 'video'; return void startLocal(s); }
@@ -1207,6 +1213,7 @@ function renderAddMenu() {
     group(t('main.add.gDevices'), b('decklink', 'Blackmagic DeckLink', t('main.add.decklinkTitle')), b('aja', 'AJA', t('main.add.ajaTitle')),
       b('device', t('main.add.device'), t('main.add.deviceTitle')), b('webcam', t('main.add.webcam'), t('main.add.webcamTitle'))),
     group(t('main.add.gNetwork'), b('stream', t('main.add.stream'), t('menu.src.streamTitle')), b('ndi', 'NDI®', `${t('bridgeui.ndiTitle')} ${NDI_NOTICE}`),
+      b('st2110', 'ST 2110…', t('st2110.buttonTitle')),
       b('resolve', 'DaVinci Resolve', t('main.add.resolveTitle'))),
     group(t('main.add.gFiles'),
       b('file', t('main.add.file')),
@@ -3017,6 +3024,8 @@ function controlState() {
     latency: act?.latency.summary() ?? null,
     /** how the bridge receives the stream (own RTP reception or ffmpeg, low-latency mode) */
     rtp: act?.rtpInfo ?? null, rtpStats: act?.rtpStats ?? null,
+    /** ST 2110 flows of the active source (counters, ST 2022-7, capture), null for other sources */
+    st2110: act?.st2110 ?? null,
     /** where the statistics come from and their main-thread cost in ms */
     statsPerf: act ? { ...act.statsPerf } : null,
     audio: audioState(),

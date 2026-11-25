@@ -147,6 +147,13 @@ export default {
   'bridge.ptp.lock3': 'Warm Locking',
   'bridge.ptp.lock4': 'extern gebunden',
 
+  'bridge.st2110.badUrl': 'Ungültige st2110:-Quelle (SDP oder audio=/anc= mit Adresse:Port)',
+  'bridge.st2110.inUse': 'Port {port} ist belegt',
+  'bridge.st2110.join': 'Gruppe {group} auf dieser Schnittstelle nicht beitretbar ({err})',
+  'bridge.st2110.socket': 'Socket: {reason}',
+  'bridge.st2110.busy': 'Es läuft schon ein Mitschnitt',
+  'bridge.st2110.ringOff': 'Ringpuffer ist aus',
+  'bridge.st2110.captureDenied': 'Mitschnitt nur an diesem Rechner oder mit dem Steuer-Token',
   'bridge.ios.localNetworkDenied': 'Zugriff auf das lokale Netzwerk verweigert (Einstellungen → Datenschutz & Sicherheit → Lokales Netzwerk)',
   'bridge.ios.browseFailed': 'Bonjour-Suche fehlgeschlagen ({code})',
   'bridge.rtsp.status': 'RTSP {method}: {status}',

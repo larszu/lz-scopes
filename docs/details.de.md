@@ -247,6 +247,7 @@ Panel-Typ **Referenz / Genlock**: Haustakt am Referenzeingang einer DeckLink. Es
 - **LTC** aus dem Ton jeder Quelle: eigener Biphase-Mark-Leser (24–30 fps, vorwärts und rückwärts).
 - **PTP-Monitor** in der Bridge (eigener Code, UDP 319/320, 224.0.1.129): Grandmaster, Domain, clockClass, Nachrichtenraten, SMPTE-SM-TLV (Lock, Lokal-Offset, nächster Jam), Offset und auf Wunsch Mean Path Delay – als Schätzung mit Software-Zeitstempeln. Ohne PTP im Netz: „kein PTP empfangen“. Die UI aus Bridge oder Desktop-App darf das direkt; eine andere Web-Oberfläche (z. B. GitHub Pages) erst nach Freigabe auf der Seite `/allow` der Bridge (⚙ → „In der Bridge zulassen …“).
 - **ST-2110-RTP-Prüfung**: RTP-Zeitstempel (90 kHz, Offset 0 zur Epoche) gegen Ankunftszeit und Frame-Raster.
+- **ST 2110 aus dem Netz** (Quellkarte *RTSP / Netz* → *ST 2110…*): Ton nach 2110-30 (AES67, L16/L24) und 2110-31 (AM824) in die Tonmessung, Zusatzdaten nach 2110-40 (RFC 8331) in die VANC-Anzeige, 2110-41 gezählt; SDP oder von Hand, Kanalfolge aus `channel-order`; zweiter Weg nach ST 2022-7 mit Wegversatz, Paketen nur auf einem Weg, Puffertiefe und Klasse; pcap-Schnappschuss und Ringpuffer. Software-Empfangszeiten, nur mit erzeugten Paketen über Loopback geprüft. Recherche: [docs/research/st2110-empfang.md](research/st2110-empfang.md).
 
 ## Touch Shading
 

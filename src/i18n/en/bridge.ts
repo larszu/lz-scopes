@@ -149,6 +149,15 @@ export default {
   'bridge.ptp.lock3': 'warm locking',
   'bridge.ptp.lock4': 'locked',
 
+  // ST 2110 receive (server/st2110.mjs, server/st2110stream.mjs)
+  'bridge.st2110.badUrl': 'Invalid st2110: source (SDP or audio=/anc= with address:port)',
+  'bridge.st2110.inUse': 'Port {port} is in use',
+  'bridge.st2110.join': 'Cannot join {group} on this interface ({err})',
+  'bridge.st2110.socket': 'Socket: {reason}',
+  'bridge.st2110.busy': 'A snapshot is already running',
+  'bridge.st2110.ringOff': 'Rolling capture is off',
+  'bridge.st2110.captureDenied': 'Capture only from this computer or with the control token',
+
   // iOS app: Bonjour search for the bridge (ios/App/App/LzNative.swift)
   'bridge.ios.localNetworkDenied': 'Access to the local network denied (Settings → Privacy & Security → Local Network)',
   'bridge.ios.browseFailed': 'Bonjour search failed ({code})',

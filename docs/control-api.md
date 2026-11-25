@@ -141,6 +141,19 @@ scrape_configs:
     static_configs: [{ targets: ['studio.local:4192'] }]
     authorization: { credentials: secret }   # only when Prometheus runs on another computer
 ```
+## ST 2110 capture (pcap)
+
+For `st2110:` sources (docs/research/st2110-empfang.md) the bridge records the received flows as pcap. Same access rule as above: captures contain facility addresses.
+
+| Path | |
+|---|---|
+| `GET /api/st2110` | running services `[{ id, flows, capture }]` |
+| `GET /api/st2110/pcap?id=&seconds=5&mb=50` | snapshot of all flows of the service (both 2022-7 paths), download |
+| `POST /api/st2110/ring` `{id, mode:"on"\|"off", seconds?, mb?}` | rolling capture on disk (default 60 s / 200 MB) |
+| `POST /api/st2110/ring/save` `{id}` | → `{ ok, file, bytes, url }` |
+| `GET /api/st2110/file?name=` | a saved capture |
+
+`id` may be left out when only one service runs. The state of the active source (`state.st2110`) carries the flow counters and the ST 2022-7 evaluation. IP/UDP headers in the file are rebuilt, time stamps are software receive times (no hardware time stamps).
 
 ## Companion module
 

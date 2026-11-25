@@ -141,6 +141,19 @@ scrape_configs:
     static_configs: [{ targets: ['studio.local:4192'] }]
     authorization: { credentials: geheim }   # nur wenn Prometheus auf einem anderen Rechner läuft
 ```
+## ST-2110-Mitschnitt (pcap)
+
+Für `st2110:`-Quellen (docs/research/st2110-empfang.md) schneidet die Bridge die empfangenen Flows als pcap mit. Zugriff wie oben: Mitschnitte enthalten Anlagen-Adressen.
+
+| Pfad | |
+|---|---|
+| `GET /api/st2110` | laufende Services `[{ id, flows, capture }]` |
+| `GET /api/st2110/pcap?id=&seconds=5&mb=50` | Schnappschuss aller Flows des Service (beide 2022-7-Wege), Download |
+| `POST /api/st2110/ring` `{id, mode:"on"\|"off", seconds?, mb?}` | Ringpuffer auf der Platte (Vorgabe 60 s / 200 MB) |
+| `POST /api/st2110/ring/save` `{id}` | → `{ ok, file, bytes, url }` |
+| `GET /api/st2110/file?name=` | ein gesicherter Mitschnitt |
+
+`id` kann fehlen, wenn nur ein Service läuft. Der Zustand der aktiven Quelle (`state.st2110`) enthält die Flow-Zähler und die ST-2022-7-Auswertung. IP-/UDP-Kopf in der Datei sind nachgebaut, die Zeitstempel sind Software-Empfangszeiten (keine Hardware-Zeitstempel).
 
 ## Companion-Modul
 

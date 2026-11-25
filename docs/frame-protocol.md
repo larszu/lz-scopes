@@ -163,6 +163,13 @@ A file the app released (`file:<name>`, `server/media.mjs`) is played, paused an
 
 Every command starts a new ffmpeg: playing `-ss <pos> -readrate <rate>`, paused `-ss <pos>` with `-frames:v 1`, so exactly one picture goes out and stays on the scopes. Commands arriving while one is starting up coalesce. Reverse play is the page's own job (repeated `step`) – ffmpeg decodes forwards only. At the end of the clip the socket stays open: with `loop` it plays again from the start, otherwise it holds on the last frame.
 
+## ST 2110 sources (`st2110:?…`)
+
+Sound only (`width` 0, protocol 2): `info.audio` as usual plus `channelOrder` (groups after ST 2110-30 `channel-order`), `info.st2110` lists the flows. ANC arrives as `{"type":"vanc","packets":[…],"rtp":{ts,field,lagMs?,gridTicks?,ref?}}`, counters and the ST 2022-7 evaluation in `stats.st2110`. A packet lost on every path is a jump in the sample index.
+
+- Client → server: `{"type":"pcap","cmd":"snapshot","seconds":5,"mb":50}`, `{"type":"pcap","cmd":"ring","mode":"on"|"off","seconds":60,"mb":200}`, `{"type":"pcap","cmd":"save"}`.
+- Server → client: `{"type":"pcap","state":"capturing"|"saved"|"ring"|"error","file"?,"packets"?,"bytes"?,"ring"?}`; the file is fetched with `GET /api/st2110/file?name=` (docs/control-api.md).
+
 ## iOS app: RTSP direct (loopback)
 
 The iPhone/iPad app serves the same protocol itself for `rtsp://` sources (#90, `ios/LzRtsp/Sources/LzRtsp/FrameServer.swift`): `ws://127.0.0.1:<port>/rtsp?token=…&url=rtsp://…&transport=tcp|udp&width=…&wc=h264,hevc`, loopback only, with a random token per app run, no credentials in the URL (Keychain). Protocol 2 without sound. If the stream's codec is in `wc` (what the WebView's WebCodecs decodes) and 8 bit: `info` with `"transport":"h264"|"hevc"`, then `video` and `LZHK`/`LZHD` as above (HEVC: `hvc1.…` codec string, ISO/IEC 14496-15 Annex E). Otherwise VideoToolbox decodes in the app and `LZV1` R′G′B′A 8-bit frames arrive at `width`. `info.direct` is `"webcodecs"` or `"videotoolbox"`; `stats` carries `rtp` like the bridge's own RTP reception.

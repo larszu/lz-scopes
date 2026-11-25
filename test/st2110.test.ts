@@ -337,7 +337,7 @@ describe('loopback receive (generated RTP over 127.0.0.1)', () => {
       await until(() => got.audio >= 4800 && !!got.stats, 8000);
       ws.send(JSON.stringify({ type: 'pcap', cmd: 'snapshot', seconds: 0.3 }));
       await until(() => !!got.pcap, 5000);
-      const list = await (await fetch(`http://127.0.0.1:${bridge.port}/api/st2110`)).json();
+      const list = (await (await fetch(`http://127.0.0.1:${bridge.port}/api/st2110`)).json()).services;
       expect(list).toHaveLength(1);
       const file = await fetch(`http://127.0.0.1:${bridge.port}/api/st2110/file?name=${encodeURIComponent(String(got.pcap!.file))}`);
       expect(file.headers.get('content-type')).toBe('application/vnd.tcpdump.pcap');

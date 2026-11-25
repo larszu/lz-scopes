@@ -181,7 +181,7 @@ export function helperText(payload) {
  * Stream from a helper to a WebSocket in frame protocol 1. `ctx` supplies what lives in
  * server/index.mjs: ffmpeg path, decodeParams, outputSize, fail().
  */
-export function startHelperStream(ws, { bin, args, label, params, ctx, audio = false }) {
+export function startHelperStream(ws, { bin, args, env, label, params, ctx, audio = false }) {
   const depth = params.get('depth') === '8' ? 8 : 16;
   // frame protocol 2 (picture + sound) when the client asks for sound and the helper can deliver it
   const wantSound = !!audio && params.get('audio') === '1';
@@ -202,7 +202,7 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
   const opts = ctx.deviceOptions(params);
   /** field order / de-interlacing of the source card (#219) */
   const fieldOpts = interlaceOptions(params);
-  const helper = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const helper = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, ...(env ? { env } : {}) });
   // frame phase against the ST 2059-1 grid (server/phase.mjs), when the bridge passes a clock
   let phase = null, lastFps = 0, lastDf = false;
   let ff = null, fmt = null, outBytes = 0, asm = null, sent = 0, dropped = 0, closed = false, stderr = '', status = '';
@@ -394,7 +394,19 @@ export function startHelperStream(ws, { bin, args, label, params, ctx, audio = f
       // DeckLink/AJA helper: pictures replaced by newer ones while the pipe was full, or dropped by the
       // card's AutoCirculate ring (aja.dropped) – counted, no status text
       if (m.code === 'decklink.skipped' || m.code === 'aja.skipped' || m.code === 'aja.dropped') { helperDropped += Number(m.params?.n) || 0; return; }
-      if (m.code === 'ndi.stats') {
+      if (m.code === 'st2110.stats') {
+        // ST 2110 receiver counters once a second (server/st2110/receiver.mjs): broken frames count as dropped
+        const c = m.params ?? {};
+        ctx.onStats?.(c);
+        const broken = Math.max(0, (Number(c.broken) || 0) - (helperStats?.broken ?? 0));
+        helperStats = { packets: c.packets, frames: c.frames, broken: c.broken, lost: c.timing?.lost ?? 0, secondaryUsed: c.secondaryUsed ?? 0 };
+        helperDropped += broken;
+        const was = losing;
+        losing = broken > 0;
+        if (broken > 0) status = bmsg('st2110.broken', `ST 2110: ${broken} incomplete frames in the last second (${c.timing?.lost ?? 0} packets lost so far)`, { n: broken, lost: Number(c.timing?.lost) || 0 });
+        else if (was) status = bmsg('st2110.recovered', 'ST 2110: complete frames again');
+        else return;
+      } else if (m.code === 'ndi.stats') {
         // NDI counters once a second: losses go into `dropped`; text only while pictures get lost
         const c = m.params ?? {};
         helperStats = c;

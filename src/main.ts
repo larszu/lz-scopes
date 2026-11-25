@@ -1226,7 +1226,7 @@ function renderAddMenu() {
   );
 }
 
-const FOUND_KIND: Record<Found['kind'], string> = { decklink: 'DeckLink', aja: 'AJA', ndi: 'NDI®', device: 'Capture' };
+const FOUND_KIND: Record<Found['kind'], string> = { decklink: 'DeckLink', aja: 'AJA', ndi: 'NDI®', device: 'Capture', st2110: 'ST 2110' };
 /**
  * Inputs the bridge sees but that are no source yet (src/deviceScan.ts): one click adds them. A
  * Blackmagic card that only shows as a system camera gets the way to the DeckLink source instead.

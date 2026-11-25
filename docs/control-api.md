@@ -141,19 +141,35 @@ scrape_configs:
     static_configs: [{ targets: ['studio.local:4192'] }]
     authorization: { credentials: secret }   # only when Prometheus runs on another computer
 ```
+
 ## ST 2110 capture (pcap)
 
 For `st2110:` sources (docs/research/st2110-empfang.md) the bridge records the received flows as pcap. Same access rule as above: captures contain facility addresses.
 
 | Path | |
 |---|---|
-| `GET /api/st2110` | running services `[{ id, flows, capture }]` |
+| `GET /api/st2110` | `services: [{ id, flows, capture }]` (running audio/ANC services, only with control access) next to the network inputs and generators (below) |
 | `GET /api/st2110/pcap?id=&seconds=5&mb=50` | snapshot of all flows of the service (both 2022-7 paths), download |
 | `POST /api/st2110/ring` `{id, mode:"on"\|"off", seconds?, mb?}` | rolling capture on disk (default 60 s / 200 MB) |
 | `POST /api/st2110/ring/save` `{id}` | → `{ ok, file, bytes, url }` |
 | `GET /api/st2110/file?name=` | a saved capture |
 
 `id` may be left out when only one service runs. The state of the active source (`state.st2110`) carries the flow counters and the ST 2022-7 evaluation. IP/UDP headers in the file are rebuilt, time stamps are software receive times (no hardware time stamps).
+## ST 2110 network inputs and test signals (bridge)
+
+These calls go to the bridge itself, not to the main window. Reading is open; changes follow the access rule above. Background: [docs/research/st2110-netz.md](research/st2110-netz.md).
+
+```bash
+S=http://127.0.0.1:4192/api/st2110
+curl -s $S                                                                  # inputs net1/net2, generators, NMOS state
+curl -s -X PUT -H 'Content-Type: application/sdp' --data-binary @cam1.sdp $S/inputs/net1   # source st2110:net1 receives this flow
+curl -s -X DELETE $S/inputs/net1                                            # disconnect
+curl -s -H "$J" -d '{"kind":"video","format":"1080p25","host":"239.100.0.1","port":5004}' $S/generators
+curl -s $S/generators/gen1.sdp                                              # SDP of the generator
+curl -s -X PATCH -H "$J" -d '{"running":false}' $S/generators/gen1
+```
+
+`kind`: `video` (ST 2110-20; `format`, `depth` 8/10, `matrix` bt709/bt2020), `audio` (ST 2110-30; `channels` 1–64, `freq`, `levelDb`), `anc` (ST 2110-40 time code; `fps`), `sdi` (ST 2022-6; `format` 720p/1080p, `fps`). `host2`/`port2` send the same packets a second time (ST 2022-7). The bridge started with `--nmos-port <n>` also offers the inputs as NMOS receivers (IS-04/IS-05) and the generators as senders; `--nmos-registry <url>` sets the registry, otherwise it is searched via DNS-SD.
 
 ## Companion module
 

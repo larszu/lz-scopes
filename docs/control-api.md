@@ -116,6 +116,22 @@ curl -s -H "$J" -H 'Authorization: Bearer secret' -d '{"cmd":"freeze"}' http://s
 
 In the browser, `output.open` opens a window only if pop-ups are allowed for the page; the desktop app always opens it.
 
+## ST 2110 network inputs and test signals (bridge)
+
+These calls go to the bridge itself, not to the main window. Reading is open; changes follow the access rule above. Background: [docs/research/st2110-netz.md](research/st2110-netz.md).
+
+```bash
+S=http://127.0.0.1:4192/api/st2110
+curl -s $S                                                                  # inputs net1/net2, generators, NMOS state
+curl -s -X PUT -H 'Content-Type: application/sdp' --data-binary @cam1.sdp $S/inputs/net1   # source st2110:net1 receives this flow
+curl -s -X DELETE $S/inputs/net1                                            # disconnect
+curl -s -H "$J" -d '{"kind":"video","format":"1080p25","host":"239.100.0.1","port":5004}' $S/generators
+curl -s $S/generators/gen1.sdp                                              # SDP of the generator
+curl -s -X PATCH -H "$J" -d '{"running":false}' $S/generators/gen1
+```
+
+`kind`: `video` (ST 2110-20; `format`, `depth` 8/10, `matrix` bt709/bt2020), `audio` (ST 2110-30; `channels` 1–64, `freq`, `levelDb`), `anc` (ST 2110-40 time code; `fps`), `sdi` (ST 2022-6; `format` 720p/1080p, `fps`). `host2`/`port2` send the same packets a second time (ST 2022-7). The bridge started with `--nmos-port <n>` also offers the inputs as NMOS receivers (IS-04/IS-05) and the generators as senders; `--nmos-registry <url>` sets the registry, otherwise it is searched via DNS-SD.
+
 ## Companion module
 
 `companion/` contains the module `companion-module-lz-scopes` (API `@companion-module/base` ~1.14.1, like the module in lz-camera-bridge) with actions for the commands above (except `record.event`), feedbacks (recording, ring buffer running, connected, frozen, source active, clipping/Y′ above threshold, layout, scene, output open, stream running, panel maximised, video file playing, tone generator running, I/LRA paused, max true peak above threshold, ident result), variables (including loudness M/S/I/LRA, true peak, A/V offset, ident, running recordings and recording time) and presets.

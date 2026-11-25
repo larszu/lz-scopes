@@ -983,7 +983,7 @@ function renderFound(list: Found[]) {
   el.hidden = !list.length;
   el.replaceChildren(...(list.length ? [
     h('span', { class: 'add-label' }, t('main.add.found')),
-    h('div', { class: 'add-btns' }, ...list.map((f) => button(`+ ${f.name}`, () => addFound(f), { small: true, variant: 'primary', title: t('main.add.foundTitle', { kind: f.kind === 'ndi' ? 'NDI®' : f.kind === 'aja' ? 'AJA' : 'DeckLink', url: f.url }) }))),
+    h('div', { class: 'add-btns' }, ...list.map((f) => button(`+ ${f.name}`, () => addFound(f), { small: true, variant: 'primary', title: t('main.add.foundTitle', { kind: f.kind === 'ndi' ? 'NDI®' : f.kind === 'aja' ? 'AJA' : f.kind === 'st2110' ? 'ST 2110' : 'DeckLink', url: f.url }) }))),
   ] : []));
 }
 function addFound(f: Found) {

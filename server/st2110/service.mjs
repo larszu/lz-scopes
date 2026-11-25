@@ -6,7 +6,8 @@
 //   PATCH  /api/st2110/generators/<id>        JSON {running?}
 //   DELETE /api/st2110/generators/<id>
 //   GET    /api/st2110/generators/<id>.sdp    SDP of a generator
-// Writes need control access (same rule as /api/control: this computer or the control token).
+// Reading is open (CORS *); writes need control access (same rule as /api/control: this computer or
+// the control token).
 
 import { NetInputs, INPUT_ID } from './inputs.mjs';
 import { NmosNode } from './nmos.mjs';
@@ -81,8 +82,10 @@ export class St2110Service {
 
   /** /api/st2110…; `access(req)` → null or { status, error }. */
   handle(req, res, path, access) {
-    const send = (code, body, type = 'application/json') => { res.writeHead(code, { 'content-type': type }); res.end(type === 'application/json' ? JSON.stringify(body) : body); };
-    const problem = access(req);
+    // reading is open like the other input lists (/api/ndi, /api/decklink); every change needs control access
+    const read = req.method === 'GET' || req.method === 'HEAD';
+    const send = (code, body, type = 'application/json') => { res.writeHead(code, { 'content-type': type, ...(read ? { 'access-control-allow-origin': '*' } : {}) }); res.end(type === 'application/json' ? JSON.stringify(body) : body); };
+    const problem = read ? null : access(req);
     if (problem) return send(problem.status, { ok: false, error: problem.error });
     const seg = path.split('/').filter(Boolean).slice(2); // after api/st2110
     if (!seg.length) return req.method === 'GET' ? send(200, { ok: true, ...this.status() }) : send(405, { ok: false, error: 'GET' });

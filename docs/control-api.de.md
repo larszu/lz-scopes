@@ -116,6 +116,22 @@ curl -s -H "$J" -H 'Authorization: Bearer geheim' -d '{"cmd":"freeze"}' http://s
 
 Im Browser öffnet `output.open` ein Fenster nur, wenn Pop-ups für die Seite erlaubt sind; die Desktop-App öffnet es immer.
 
+## ST-2110-Netz-Eingänge und Testsignale (Bridge)
+
+Diese Aufrufe gehen an die Bridge selbst, nicht an das Hauptfenster. Lesen ist offen; Änderungen folgen der Zugriffsregel oben. Hintergrund: [docs/research/st2110-netz.md](research/st2110-netz.md).
+
+```bash
+S=http://127.0.0.1:4192/api/st2110
+curl -s $S                                                                  # Eingänge net1/net2, Generatoren, NMOS-Stand
+curl -s -X PUT -H 'Content-Type: application/sdp' --data-binary @kamera1.sdp $S/inputs/net1   # Quelle st2110:net1 empfängt diesen Flow
+curl -s -X DELETE $S/inputs/net1                                            # trennen
+curl -s -H "$J" -d '{"kind":"video","format":"1080p25","host":"239.100.0.1","port":5004}' $S/generators
+curl -s $S/generators/gen1.sdp                                              # SDP des Generators
+curl -s -X PATCH -H "$J" -d '{"running":false}' $S/generators/gen1
+```
+
+`kind`: `video` (ST 2110-20; `format`, `depth` 8/10, `matrix` bt709/bt2020), `audio` (ST 2110-30; `channels` 1–64, `freq`, `levelDb`), `anc` (ST 2110-40, Timecode; `fps`), `sdi` (ST 2022-6; `format` 720p/1080p, `fps`). `host2`/`port2` senden dieselben Pakete ein zweites Mal (ST 2022-7). Mit `--nmos-port <n>` gestartet, bietet die Bridge die Eingänge zusätzlich als NMOS-Receiver (IS-04/IS-05) und die Generatoren als Sender an; `--nmos-registry <url>` legt die Registry fest, sonst wird sie per DNS-SD gesucht.
+
 ## Companion-Modul
 
 `companion/` enthält das Modul `companion-module-lz-scopes` (API `@companion-module/base` ~1.14.1, wie das Modul in lz-camera-bridge) mit Aktionen für die Befehle oben (außer `record.event`), Feedbacks (Aufnahme läuft, Ringpuffer läuft, Verbunden, Eingefroren, Quelle aktiv, Clipping/Y′ über Schwelle, Layout, Szene, Ausgabe offen, Stream läuft, Panel maximiert, Videodatei läuft, Tongenerator läuft, I/LRA angehalten, Max True Peak über Schwelle, Ident-Befund), Variablen (auch Lautheit M/S/I/LRA, True Peak, A/V-Versatz, Ident, laufende Aufnahmen und Aufnahmedauer) und Presets.

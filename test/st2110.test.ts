@@ -4,13 +4,13 @@ import { describe, expect, it } from 'vitest';
 // @ts-expect-error plain JS module
 import { parseSdp2110, pictureSections, writeSdp } from '../server/st2110/sdp.mjs';
 // @ts-expect-error plain JS module
-import { VideoAssembler, packPlan, v210Bytes, rtpHeader } from '../server/st2110/video.mjs';
+import { VideoAssembler, packPlan, packetizeFrame, packRow422, v210Bytes, rtpHeader } from '../server/st2110/video.mjs';
 // @ts-expect-error plain JS module
 import { SdiAssembler, xyz, sdiGeometry, horizontalTotal } from '../server/st2110/sdi.mjs';
 // @ts-expect-error plain JS module
 import { model, VideoTiming, FlowStats } from '../server/st2110/timing.mjs';
 // @ts-expect-error plain JS module
-import { videoFlow, audioFlow, ancFlow, sdiFlow, alignment, timeAddress, atcUdw, rfc8331Payload, Sender } from '../server/st2110/generator.mjs';
+import { videoFlow, audioFlow, ancFlow, sdiFlow, alignment, timeAddress, atcUdw, rfc8331Payload, barsPicture, Sender } from '../server/st2110/generator.mjs';
 // @ts-expect-error plain JS module
 import { Receiver, DupMerger } from '../server/st2110/receiver.mjs';
 import { parseAtc } from '../src/vanc';
@@ -102,6 +102,19 @@ describe('ST 2110-20 packets → v210 (§6.1, §6.2.4)', () => {
     const { frames } = assemble([{ ...pkts[0], payload: merged }, ...pkts.slice(2)]);
     expect(frames.length).toBe(1);
     expect(comp(frames[0].buf, rowWords, 1, 0)).toBe(v.picture(1)[0]);
+  });
+  it('interlaced: two fields, rows woven back (§6.1.5)', () => {
+    const pic = barsPicture(192, 108);
+    // a different value per frame row so that a wrong weave shows
+    const rowOf = (r: number) => { const c = Uint16Array.from(pic(r)); c[1] = 64 + r; return c; };
+    const fmt = { width: 192, height: 108, interlace: true, pgroup: { bytes: 5, pixels: 2 } };
+    const pkts = packetizeFrame(fmt, (r: number) => packRow422(rowOf(r), 10)) as { payload: Buffer; marker: boolean; field: number }[];
+    expect(pkts.filter((p) => p.marker).length).toBe(2);
+    const frames: Frame[] = [];
+    const asm = new VideoAssembler({ width: 192, height: 108, interlace: true, sampling: 'YCbCr-4:2:2', depth: 10 }, (buf: Buffer, meta: Frame['meta']) => frames.push({ buf, meta }));
+    pkts.forEach((p, i) => asm.push({ marker: p.marker, seq: i, ts: p.field ? 1800 : 0, payload: p.payload }));
+    expect(frames.length).toBe(1);
+    for (const r of [0, 1, 2, 53, 106, 107]) expect(comp(frames[0].buf, rowWords, r, 1)).toBe(64 + r);
   });
   it('8-bit pgroups land in the upper bits', () => {
     const v8 = videoFlow({ format: 'small', depth: 8 });

@@ -2,7 +2,7 @@
 
 Teil von Epic #225. Umsetzung: `server/sdp.mjs` (SDP, `st2110:`-URL), `server/st2110.mjs` (Nutzlast-Dekoder, ST-2022-7-Auswertung, Empfänger), `server/st2110stream.mjs` (Service am Frame-Socket), `server/pcap.mjs` (Mitschnitt), `src/st2110.ts` (Dialog, Karte, Messwerte-Zeilen). Tests: `test/st2110.test.ts` (Einheit + Loopback durch echte UDP-Sockets und die Bridge), `e2e/st2110.spec.ts` (App: Dialog → Bridge → Lautheit → pcap).
 
-**Stand: an keiner echten 2110-Anlage gelaufen.** Alle Pakete in Tests und e2e sind selbst erzeugt, über 127.0.0.1. Kein AES67-Gerät, kein PTP-Grandmaster, kein 2022-7-Netz mit zwei Wegen. Multicast-Beitritt auf einer echten Netzwerkkarte, IGMPv3/SSM am Switch und Raten über 48 kHz × 8 Kanäle sind ungeprüft.
+**Stand: an keiner echten 2110-Anlage gelaufen.** Alle Pakete in Tests und e2e sind selbst erzeugt, über 127.0.0.1. Als fremde Sender liefen GStreamer `rtpL24pay` und ffmpeg `-f rtp` (pcm_s24be → L24), beide ohne Lücke und mit richtigem Pegel (Tests überspringen sich ohne die Werkzeuge). Für ANC gibt es in GStreamer hier nur den Depayloader `rtpsmpte291depay`, keinen Sender: 2110-40 ist nur mit eigenen RFC-8331-Paketen geprüft. Kein AES67-Gerät, kein PTP-Grandmaster, kein 2022-7-Netz mit zwei Wegen. Multicast-Beitritt auf einer echten Netzwerkkarte, IGMPv3/SSM am Switch und Raten über 48 kHz × 8 Kanäle sind ungeprüft.
 
 ## Quelle
 

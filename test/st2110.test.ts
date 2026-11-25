@@ -3,6 +3,7 @@
 // sender was available: every packet here is generated (docs/research/st2110-empfang.md).
 import { describe, expect, it } from 'vitest';
 import dgram from 'node:dgram';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -352,6 +353,39 @@ describe('loopback receive (generated RTP over 127.0.0.1)', () => {
       expect((await fetch(`http://127.0.0.1:${bridge.port}/api/st2110/file?name=../../etc/passwd`)).status).toBe(404);
     } finally { clearInterval(timer); tx.close(); ws.close(); bridge.close(); }
   }, 30_000);
+});
+
+// Third-party RTP senders as in the issue's test path (#226): GStreamer rtpL24pay and ffmpeg's RTP
+// muxer (pcm_s24be → L24). Skipped where the tools are not installed (CI).
+const has = (bin: string, flag = '--version') => { try { execFileSync(bin, [flag], { stdio: 'ignore' }); return true; } catch { return false; } };
+describe('L24 from other senders (loopback)', () => {
+  const receive = async (run: (port: number) => ChildProcess) => {
+    const port = await freePort();
+    let frames = 0, peak = 0;
+    const svc = new St2110Service(parseSt2110Url(`st2110:?audio=127.0.0.1:${port}&fmt=L24&ch=2`), {
+      sendBin: (b: Buffer) => { frames += b.readUInt32LE(4); const f = new Float32Array(b.buffer.slice(b.byteOffset + 16, b.byteOffset + b.length)); for (const v of f) peak = Math.max(peak, Math.abs(v)); },
+    }).start();
+    try {
+      await new Promise((r) => setTimeout(r, 50));
+      const p = run(port);
+      await new Promise((r) => p.on('close', r));
+      await new Promise((r) => setTimeout(r, 200));
+      svc.packetizer.flush();
+      return { frames, peak, gaps: svc.audioGaps, lost: svc.receivers[0].reorder.lost };
+    } finally { svc.stop(); }
+  };
+  it.skipIf(!has('gst-launch-1.0'))('GStreamer audiotestsrc ! rtpL24pay: every sample, level kept', async () => {
+    // 150 buffers of 1024 samples, sine at volume 0.5
+    const r = await receive((port) => spawn('gst-launch-1.0', ['-q', 'audiotestsrc', 'num-buffers=150', 'volume=0.5', '!', 'audio/x-raw,rate=48000,channels=2,format=S24BE', '!', 'rtpL24pay', '!', 'udpsink', 'host=127.0.0.1', `port=${port}`], { stdio: 'ignore' }));
+    expect(r).toMatchObject({ frames: 150 * 1024, gaps: 0, lost: 0 });
+    expect(r.peak).toBeGreaterThan(0.49); expect(r.peak).toBeLessThan(0.51);
+  }, 20_000);
+  it.skipIf(!has('ffmpeg', '-version'))('ffmpeg -f rtp with pcm_s24be', async () => {
+    // lavfi sine: amplitude 1/8 (ffmpeg docs), 1 s
+    const r = await receive((port) => spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-re', '-f', 'lavfi', '-i', 'sine=frequency=1000:sample_rate=48000:duration=1', '-af', 'pan=stereo|c0=c0|c1=c0', '-c:a', 'pcm_s24be', '-payload_type', '97', '-f', 'rtp', `rtp://127.0.0.1:${port}?pkt_size=300`], { stdio: 'ignore' }));
+    expect(r).toMatchObject({ frames: 48000, gaps: 0, lost: 0 });
+    expect(r.peak).toBeGreaterThan(0.124); expect(r.peak).toBeLessThan(0.126);
+  }, 20_000);
 });
 
 describe('UI side (src/st2110.ts)', () => {

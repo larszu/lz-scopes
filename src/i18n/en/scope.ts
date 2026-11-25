@@ -25,6 +25,7 @@ export default {
   'scope.name.minmax': 'Min/Max per Line',
   'scope.name.qclog': 'QC Log',
   'scope.name.timeline': 'Timeline',
+  'scope.name.strip': 'Picture history',
   'scope.name.hist': 'Histogram',
   'scope.name.stats': 'Measurements',
   'scope.name.match': 'Colour Match',

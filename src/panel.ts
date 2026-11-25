@@ -27,6 +27,7 @@ export const neutralParams = (p: PanelState) => {
   return { threshold: (p.neutral?.threshold ?? 5) / 100, lo, hi };
 };
 import { drawTimeline, type TimelineSpan } from './history';
+import { drawStrip, type StripSettings } from './strip';
 import { CUBE_SPACE_ID, DEFAULT_CUBE, cubeNits, cubeQOf, cubeRotation, type CubeSettings } from './cube';
 import { DEFAULT_CRT, PHOSPHORS, type CrtSettings } from './crt';
 import { STAGE_LABELS, autoPeaks, baseOf, chainOf, stageView, type Stage } from './chain';
@@ -120,6 +121,8 @@ export interface PanelState {
   everyFrame?: boolean; grid?: number;
   /** timeline: shown time span in seconds */
   span?: TimelineSpan;
+  /** picture history (strip.ts, #196): stills, spacing, waveform below */
+  strip?: StripSettings;
   /** vectorscope, CIE, diamond, 3D volume (digital): persistence in ms, −1 = infinite (trace history) */
   persist?: number;
   /** 3D colour volume: space, rotation, wire-frame gamut */
@@ -641,6 +644,8 @@ export function panelSignature(p: PanelState, src: Source | null, body: Rect, o:
     : p.scope === 'cie' && p.gamutShare !== false ? `|c${Math.floor(Date.now() / 500)}`
     // SDI signal info: VANC records arrive beside the frames and go stale
     : p.scope === 'sdi' ? `|v${src?.vanc?.at ?? 0}:${Math.floor(Date.now() / 1000)}`
+    // picture history: new stills, sound at 20 Hz of audio time, luma samples
+    : p.scope === 'strip' ? `|p${src?.stills.version}:${src?.audio ? Math.floor(src.audio.frames / (src.audio.fs / 20)) : ''}:${src?.history.version}`
     : p.scope === 'qclog' ? `|q${qcLog.version}:${Math.floor(Date.now() / 1000)}` : '';
   if (p.scope === 'clock') return `C|${src?.id}|${JSON.stringify(p)}|${body.x},${body.y},${body.w},${body.h}${tick}`;
   if (isLight(p.scope)) return `${lightSignature(p.scope, p.light, body.w, body.h)}|${body.x},${body.y}`;
@@ -714,6 +719,19 @@ function drawPanelBody(renderer: Renderer, ctx: CanvasRenderingContext2D, key: s
       return;
     }
     drawTimeline(ctx, { x: 4, y: 6, w: body.w - 8, h: body.h - 8 }, src.history, src.colorspace, p.span ?? 10);
+    return;
+  }
+  if (p.scope === 'strip') {
+    renderer.clearRect(body);
+    if (!src || !src.ready) {
+      ctx.fillStyle = '#6b7078'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(src ? (src.message || t('panel.draw.noData')) : (o.emptyText ?? t('panel.draw.addSource')), body.w / 2, body.h / 2);
+      return;
+    }
+    drawStrip(ctx, { x: 4, y: 6, w: body.w - 8, h: body.h - 8 }, {
+      stills: src.stills, aspect: src.width && src.height ? src.width / src.height : 16 / 9, history: src.history,
+      env: src.audio?.env ?? null, names: src.audio?.names ?? [], now: performance.now(),
+    }, p.strip);
     return;
   }
   if (p.scope === 'genlock') {

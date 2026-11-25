@@ -7,6 +7,7 @@ import { patternById, renderPattern } from './patterns';
 import { AudioAnalysis } from './audio/analysis';
 import { AudioTap, StreamMonitor, generator, measurementConstraints } from './audio/io';
 import { GRID_W, History, gridFromData, summarise } from './history';
+import { StillRing, stillEveryMs, stillFrom } from './strip';
 import { lineExtremes, neutralCast, type LineExtremes, type NeutralCast } from './minmax';
 import { r103Check, rgbDecoder, yuvDecoder, type Decode, type R103Result, type YuvCoding } from './ycbcr';
 import { debugFlags, openFrameSocket, workerAvailable, type FrameSocket } from './frameLink';
@@ -335,6 +336,21 @@ export class Source {
       pts = gridFromData(f.px, f.w, f.h, f.decode, gw, gh);
     }
     this.history.push(summarise(pts, this.colorspace, now));
+  }
+
+  /** picture history panel (strip.ts, #196): small stills while such a panel shows this source */
+  readonly stills = new StillRing();
+  private stillAt = 0;
+  /** One still every step / 10 (at most ten a second), kept for `count` steps. */
+  sampleStills(now: number, count: number, step: number) {
+    if (!this.ready) return;
+    const every = stillEveryMs(step);
+    if (now - this.stillAt < every - 1) return;
+    // reuse the throttled CPU frame like the timeline (#127)
+    const f = this.data ? { px: this.data, w: this.width, h: this.height, decode: this.decoder() } : this.cpuFrame();
+    if (!f || !f.w || !f.h) return;
+    this.stillAt = now;
+    this.stills.push({ t: now, ...stillFrom(f.px, f.w, f.h, f.decode) }, count * step * 1000 + every);
   }
 
   /** Reads a pixel of the raw frame (`data`) as normalised R′G′B′: Y′CbCr decoded with the source matrix. */
@@ -1053,6 +1069,7 @@ export class Source {
     if (this.videoEl) { this.videoEl.pause(); this.videoEl.srcObject = null; this.videoEl = null; }
     if (this.objectUrl) { URL.revokeObjectURL(this.objectUrl); this.objectUrl = null; }
     this.history.clear();
+    // the stills (#196) stay: they are the evidence of what came in before a stop or reconnect
     this.held.clear();
     this.clip = null;
     this.signal = null;

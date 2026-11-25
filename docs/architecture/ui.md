@@ -94,6 +94,13 @@ kit replaces the off-white one.
   (labels go above the control below 300 px).
 - Coarse pointers (touch) get 44 px controls (`--control-h`), wider sash grips and taller dock
   tabs; fine pointers keep the dense 24 px tool size.
+- Tablets (#185, coarse pointer and wider than 641 px): the panel ⚙ popover becomes a sheet over
+  its scope panel (`over` option, `placeOver()` in `src/ui/popover.ts`; on a panel shorter than
+  160 px below the head it stays anchored), a long press on the panel body opens it
+  (`src/longPress.ts`, opens on release so the popover's light dismiss does not close it again),
+  panel-head controls are 44 px (phones keep 36 px for the scope area) and the layout presets move
+  into "⋯" up to a header width of 1400 px instead of wrapping. `e2e/tablet.spec.ts` checks
+  768 × 1024 and 1024 × 768 with real CDP touch events.
 - No horizontal page scroll at any size; `e2e/responsive.spec.ts` checks 375 × 812,
   768 × 1024, 1280 × 800 and 1920 × 1080 in light and dark (headless Chromium, no Electron) and
   writes screenshots to `test-results/responsive/`.
@@ -141,7 +148,9 @@ wählbar, die Scopes selbst bleiben immer dunkel.
 Responsiv: Unter 1000 px wandern Layout-Vorlagen und Skala in das „⋯“-Menü, unter 800 px werden
 die Quellen eine Schublade über den Scopes, unter 640 px zeigt das Dock alle Panels als Tabs
 einer Gruppe (Ziehen nur auf breiten Bildschirmen), Popover werden Bottom Sheets und Dialoge
-bildschirmfüllend. Touch bekommt 44-px-Bedienflächen. `e2e/responsive.spec.ts` prüft vier
+bildschirmfüllend. Touch bekommt 44-px-Bedienflächen. Auf Tablets (Touch, ab 641 px) liegen die
+⚙-Einstellungen als Blatt über ihrem Panel, langes Tippen öffnet sie, und die Layout-Vorlagen
+stehen bis 1400 px im „⋯“-Menü (`e2e/tablet.spec.ts`). `e2e/responsive.spec.ts` prüft vier
 Größen in hell und dunkel ohne waagerechtes Scrollen. `e2e/ui-audit.spec.ts` prüft jedes Menü,
 Untermenü, Popover und jeden Dialog in Deutsch und Englisch: im Bild, nicht überdeckt, dieselbe
 Logik zum Öffnen und Schließen (Auslöser, Esc, Klick daneben, nur eins offen, Fokus zurück),

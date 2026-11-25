@@ -28,6 +28,14 @@ body { background: var(--surface-0); overflow: hidden; }
   .bar .tools .group, .bar > .scheme-seg { display: none; }
   #bar-more { display: inline-flex; }
 }
+/* touch (tablets, #185): 44 px buttons need more room, so the presets move into ⋯ earlier
+   (iPad Pro landscape is 1366 px) instead of wrapping into a column over the scopes */
+@media (pointer: coarse) {
+  @container bar (max-width: 1400px) {
+    .bar .tools .group, .bar > .scheme-seg { display: none; }
+    #bar-more { display: inline-flex; }
+  }
+}
 @container bar (max-width: 640px) {
   .bar { gap: 6px; }
   /* recording stays in the ⋯ menu, the source cards and on R / P; the header shows it only while it runs */
@@ -157,6 +165,11 @@ button.fav.on { color: var(--text); border-color: var(--sel-line); }
 @media (pointer: coarse) {
   .phead .plead > select, .phead button.icon { min-height: 36px; }
 }
+/* tablets (#185): finger-sized panel heads; phones keep 36 px for the scope area */
+@media (pointer: coarse) and (min-width: 641px) {
+  .phead .plead > select, .phead button.icon { min-height: 44px; }
+  .phead button.icon { min-width: 44px; }
+}
 /* narrow panels: chips give way, the source select shrinks first */
 @container panel (max-width: 360px) {
   .phead .stagechip, .phead .llchip { display: none; }
@@ -171,7 +184,7 @@ button.fav.on { color: var(--text); border-color: var(--sel-line); }
 .body { touch-action: none; }
 .body .zoomchip { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); z-index: 2; font-size: var(--fs-xs); line-height: 1.4; padding: 1px 7px; min-height: 0; border: 0; border-radius: var(--radius); background: var(--chip-bg); color: var(--chip-text); font-variant-numeric: tabular-nums; cursor: pointer; opacity: 0.9; }
 .body .zoomchip[hidden] { display: none; }
-.body .gesture-hint { display: none; position: absolute; right: 6px; bottom: 6px; z-index: 2; pointer-events: none; font-size: var(--fs-xs); padding: 2px 8px; border-radius: var(--radius-s, 6px); background: var(--chip-bg); color: var(--chip-text); opacity: 0.75; }
+.body .gesture-hint { display: none; position: absolute; right: 6px; bottom: 6px; max-width: calc(100% - 12px); z-index: 2; pointer-events: none; font-size: var(--fs-xs); padding: 2px 8px; border-radius: var(--radius-s, 6px); background: var(--chip-bg); color: var(--chip-text); opacity: 0.75; }
 .body[data-zoomable="1"] .gesture-hint { display: block; }
 .gestures-seen .body .gesture-hint { display: none; }
 .body .zoomchip:hover, .body .zoomchip:focus-visible { opacity: 1; }

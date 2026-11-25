@@ -128,5 +128,5 @@ export default {
   'scope.dzoom.whiteB': 'Weißspitze B′/G′ ×4',
   'scope.dzoom.whiteR': 'Weißspitze R′/G′ ×4',
   'gesture.hint': 'Rad/Pinch = Zoom · gezoomt ziehen = schieben · Doppelklick = zurück',
-  'gesture.hintTouch': 'Pinch = Zoom · gezoomt ein Finger = schieben · Doppeltipp = zurück',
+  'gesture.hintTouch': 'Pinch = Zoom · gezoomt ein Finger = schieben · Doppeltipp = zurück · lange tippen = Einstellungen',
 } satisfies Translation<typeof en>;

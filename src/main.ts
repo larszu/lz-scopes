@@ -42,6 +42,7 @@ import { addUserImages, favouritePatterns, isFavourite, loadUserPatterns, onUser
 import { openAvClip } from './avClip';
 import { openTestImages, openTestVideos, type TestMediaHost } from './testMedia';
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
+import { attachLongPress } from './longPress';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
 import { openPerfTest } from './perfTest';
 import { isBlackmagicCamera, watchDevices, type Found } from './deviceScan';
@@ -1252,6 +1253,8 @@ function panelElement(idx: number): HTMLElement {
     attachPanelGestures(idx, p, body);
     attachPointer(p(), body);
     attachSkinDrag(p(), body);
+    // long press (touch, pen) = the panel's ⚙ settings (#185)
+    attachLongPress(el, body, () => views.get(idx)?.pop?.open(), () => shading.owns(p().scope));
     body.addEventListener('contextmenu', (e) => { e.preventDefault(); const s = panelSource(p()); if (s) { s.probe = null; s.roi = null; s.faceMode = 'off'; refreshHeads(); } });
     v = { idx, el, head, body, blit, overlay, zoom };
     views.set(idx, v);
@@ -1304,7 +1307,9 @@ function fillHead(v: PanelView) {
   (opts.firstChild as HTMLElement).replaceChildren(...[latencyChip(p), cameraChip(p), roiChip(p)].filter((x): x is HTMLElement => !!x));
   if (!v.pop || v.popScope !== p.scope) {
     v.pop?.remove();
-    v.pop = popover({ label: '⚙', title: t('panel.settingsOf', { scope: SCOPE_LABELS[p.scope] }), heading: SCOPE_LABELS[p.scope], align: 'end', cls: 'psettings', content: () => panelSettings(state.panels[idx]) });
+    v.pop = popover({ label: '⚙', title: t('panel.settingsOf', { scope: SCOPE_LABELS[p.scope] }), heading: SCOPE_LABELS[p.scope], align: 'end', cls: 'psettings', content: () => panelSettings(state.panels[idx]),
+      // tablets: a sheet over this panel (#185)
+      over: (tr) => tr.closest('.panel')?.getBoundingClientRect() });
     v.popScope = p.scope;
     opts.append(v.pop);
   }

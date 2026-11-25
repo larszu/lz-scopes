@@ -1,6 +1,6 @@
 // Docking layout (dockview-core, the framework-free sibling of the flexlayout grid in
 // multicam-planner): drag panels by their tab to split, stack or rearrange, drag the
-// sashes to resize. The presets 1 … 3×3 only build a starting layout.
+// sashes to resize. The presets 1 … 3×3, 1/1 and 1+3 only build a starting layout.
 
 import { createDockview, type DockviewApi, type IContentRenderer } from 'dockview-core';
 
@@ -36,6 +36,12 @@ export const PRESETS: Record<string, { label: string; build: (add: Adder) => voi
   },
   // stacked (iPhone portrait, narrow windows): picture above waveform
   l2v: { label: '1/1', build: (add) => { add(0); add(1, 0, 'below'); }, size: { 0: [1, 0.5] } },
+  // one large, three small (tablets, #185): panel 2 (the waveform by default) across the top,
+  // picture, vectorscope and parade in a row below; last, so the numbers of the others stay
+  l1w: {
+    label: '1+3', build: (add) => { add(1); add(0, 1, 'below'); add(2, 0, 'right'); add(3, 2, 'right'); },
+    size: { 0: [1 / 3, 1 / 3], 2: [1 / 3, 1 / 3] },
+  },
 };
 type Adder = (idx: number, ref?: number, direction?: 'right' | 'below') => void;
 

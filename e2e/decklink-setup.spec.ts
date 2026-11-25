@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { join } from 'node:path';
 import { type App, ROOT, launchApp } from './app';
 
-// DeckLink… without a usable device opens the setup steps (src/decklinkSetup.ts). The helper is a
+// "+ Quelle → Blackmagic DeckLink" without a usable device opens the setup steps (src/decklinkSetup.ts). The helper is a
 // stand-in that reports Desktop Video installed but no device, as on a Mac whose driver extension
 // waits for approval. The real device path is checked by hand: scripts/decklink/probe.mjs (#116).
 
@@ -11,12 +11,11 @@ test.skip(process.platform === 'win32', 'shell stand-in for the helper');
 test.beforeAll(async () => { a = await launchApp({ lang: 'de', env: { LZS_DECKLINK_HELPER: join(ROOT, 'test/fixtures/fake-decklink-nodevice.sh') } }); });
 test.afterAll(async () => { await a?.close(); });
 
-test('DeckLink… ohne Gerät: Einrichtungsschritte mit Haken, Erneut prüfen', async () => {
+test('+ Quelle → DeckLink ohne Gerät: Einrichtungsschritte mit Haken, Erneut prüfen', async () => {
   const { page } = a;
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.locator('#add button', { hasText: 'RTSP / Netz' }).click();
-  await page.locator('#source-list .src').last().getByRole('button', { name: 'DeckLink…' }).click();
+  await page.locator('#add').getByRole('button', { name: 'Blackmagic DeckLink', exact: true }).click();
   const dlg = page.locator('dialog.dlsetup');
   await expect(dlg).toBeVisible();
   await expect(dlg.locator('.modal-title')).toHaveText('Blackmagic DeckLink / UltraStudio einrichten');
@@ -30,6 +29,11 @@ test('DeckLink… ohne Gerät: Einrichtungsschritte mit Haken, Erneut prüfen', 
   await page.screenshot({ path: join(ROOT, 'test-results/e2e/decklink-setup.png') });
   await page.keyboard.press('Escape');
   await expect(dlg).toHaveCount(0);
+  // one way per device (#221): the network card has no device buttons any more
+  await page.locator('#add button', { hasText: 'RTSP / Netz' }).click();
+  const card = page.locator('#source-list .src').last();
+  await expect(card.locator('input.url')).toBeVisible();
+  for (const name of ['DeckLink…', 'AJA…', 'NDI®…', 'Gerät…']) await expect(card.getByRole('button', { name, exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -41,7 +45,7 @@ test.describe('DeckLink device live', () => {
   let r: App;
   test.beforeAll(async () => { r = await launchApp({ lang: 'de', env: real ? {} : { LZS_DECKLINK_HELPER: join(ROOT, 'test/fixtures/fake-decklink-live.sh') } }); });
   test.afterAll(async () => { await r?.close(); });
-  test('DeckLink… connects the only device: 10 bit, sound, test pattern closed, page stays responsive', async () => {
+  test('+ Quelle → DeckLink connects the only device: 10 bit, sound, test pattern closed, page stays responsive', async () => {
     const { page } = r;
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));

@@ -43,7 +43,7 @@ import { openTestImages, openTestVideos, type TestMediaHost } from './testMedia'
 import { PRESETS, createDock, panelId, panelIdx } from './dock';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
 import { openPerfTest } from './perfTest';
-import { watchDevices, type Found } from './deviceScan';
+import { isBlackmagicCamera, watchDevices, type Found } from './deviceScan';
 import { openLedTool } from './led/ui';
 import { mountOpple } from './opple/ui';
 import { isLight, LIGHT_SCOPES, lightPanelSettings } from './opple/panelSettings';
@@ -54,7 +54,7 @@ import { greenSettings, matchPanelSettings, targetEditor, type MatchUi } from '.
 import { openChartCorners } from './match/chartUi';
 import { bindBridgeField, normaliseBridge } from './bridgeField';
 import { streamRoute } from './streamRoute';
-import { addAja, ajaButton, ajaRow, addDeckLink, deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
+import { addAja, ajaRow, addCaptureDevice, addDeckLink, addNdi, NDI_NOTICE, deckLinkRow, decodeRow, deviceRow as bridgeDeviceRow, ndiRow, folderButton, interlaceRow, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
 import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
 import { DEFAULT_LOW_LATENCY, LL_STATS, LL_WIDTHS, describeLowLatency, effectiveWidth, type LowLatencyConfig } from './lowLatency';
@@ -584,8 +584,9 @@ function renderSources() {
           running ? button(t('main.src.disconnect'), () => s.stop()) : button(t('main.src.connect'), connect, { variant: 'primary' }),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
             button(p, () => { urlIn.value = `test:${p}`; connect(); }, { small: true, title: t('main.src.testN', { name: p }) })),
-            deviceButton(bridgeUi), deckLinkButton(bridgeUi), ajaButton(bridgeUi), ndiButton(bridgeUi), folderButton(bridgeUi, (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop?.watchFolder))),
-        ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), ajaRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
+            // devices (DeckLink, AJA, NDI®, capture devices) are added from "+ Quelle" and "Gefunden" (#221)
+            folderButton(bridgeUi, (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop?.watchFolder))),
+        ...[bridgeDeviceRow(s, bridgeUi, renderSources), blackmagicCameraHint(s.url.startsWith('device:') ? s.url.replace(/#.*$/, '') : '', s), deckLinkRow(s, bridgeUi), ajaRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi), interlaceRow(s, bridgeUi)].filter((x): x is Node => !!x),
         ...(sourceFfmpegText(s.url, bridgeHealth) ? [h('p', { class: 'hint', 'data-ffmpeg-source': '' }, sourceFfmpegText(s.url, bridgeHealth))] : []),
       );
     } else if (s.url === SIM_URL) {
@@ -885,14 +886,23 @@ navigator.mediaDevices?.addEventListener?.('devicechange', () => refreshDevices(
 function deviceRow(s: Source): Node {
   if (!videoDevices.length) refreshDevices().then(() => { if (videoDevices.length) renderSources(); });
   const opts: [string, string][] = videoDevices.map((d, i) => [d.deviceId, d.label || t('main.dev.n', { n: i + 1 })]);
-  return row(select(s.deviceId, opts.length ? opts : [['', t('main.dev.default')]], (id) => {
+  const pick = row(select(s.deviceId, opts.length ? opts : [['', t('main.dev.default')]], (id) => {
     s.name = videoDevices.find((d) => d.deviceId === id)?.label.replace(/\s*\([0-9a-f:]+\)$/i, '').slice(0, 40) || s.name;
     s.startCapture('webcam', id).then(() => { refreshDevices().then(renderSources); });
-  }, t('main.dev.title')),
-  // Desktop Video also offers the card as a macOS camera: 8 bit, converted by the system and the
-  // browser – the DeckLink path measures the signal itself (10 bit, sound, timecode)
-  /blackmagic|ultrastudio|decklink/i.test(videoDevices.find((d) => d.deviceId === s.deviceId)?.label ?? s.name)
-    ? [hint(t('main.dev.blackmagicHint')), button(t('main.dev.useDecklink'), () => void addDeckLinkSource(s), { variant: 'primary', small: true })] : '');
+  }, t('main.dev.title')));
+  const bm = blackmagicCameraHint(videoDevices.find((d) => d.deviceId === s.deviceId)?.label ?? s.name, s);
+  return bm ? h('div', {}, pick, bm) : pick;
+}
+
+/**
+ * Desktop Video also offers the card as a system camera (macOS camera, Windows "Blackmagic WDM
+ * Device"): 8 bit, converted by the system, no sound, on Windows often no picture at all (#221) –
+ * the DeckLink path measures the signal itself (10 bit, sound, timecode).
+ */
+function blackmagicCameraHint(name: string, s?: Source): HTMLElement | null {
+  if (!name || !isBlackmagicCamera(name)) return null;
+  return h('div', { class: 'row', 'data-blackmagic-camera': '' }, hint(t('main.dev.blackmagicHint')),
+    button(t('main.dev.useDecklink'), () => void addDeckLinkSource(s), { variant: 'primary', small: true }));
 }
 
 /** Desktop app: choose a window or screen (thumbnails), e.g. DaVinci Resolve's viewer. */
@@ -940,6 +950,15 @@ function addAjaSource() {
   });
 }
 
+/** Capture device of the bridge's machine through ffmpeg (dshow / AVFoundation / V4L2). */
+function addBridgeSource(pick: typeof addNdi, settings: Partial<SourceSettings>) {
+  return pick(() => bridgeUrl().replace(/^ws/, 'http'), alertHud, (url, name) => {
+    state.sidebar = true; applySidebar();
+    const s = addSource('stream', name, url, settings);
+    s.connectStream(url, bridgeUrl());
+  });
+}
+
 /** Add a source of a kind (sidebar buttons and Quellen menu). */
 function addSourceOfKind(kind: string) {
   switch (kind) {
@@ -948,6 +967,8 @@ function addSourceOfKind(kind: string) {
     case 'resolve': return addResolve();
     case 'decklink': return addDeckLinkSource();
     case 'aja': return addAjaSource();
+    case 'device': return addBridgeSource(addCaptureDevice, {});
+    case 'ndi': return addBridgeSource(addNdi, { depth: 16 });
     case 'webcam': case 'screen': case 'file': case 'folder': return void startLocal(addSource(kind));
     // the browser path on purpose (#191): 8 bit, but with crop, ROI and the clip's own sound
     case 'file-video': { const s = addSource('file'); s.settings.fileRoute = 'video'; return void startLocal(s); }
@@ -964,8 +985,10 @@ function renderAddMenu() {
   const group = (label: string, ...kids: HTMLElement[]) => h('div', { class: 'add-group' }, h('span', { class: 'add-label' }, label), h('div', { class: 'add-btns' }, ...kids));
   $('#add').replaceChildren(
     h('span', { class: 'add-title' }, t('main.add.source')),
-    group(t('main.add.gDevices'), b('decklink', 'Blackmagic DeckLink', t('main.add.decklinkTitle')), b('aja', 'AJA', t('main.add.ajaTitle')), b('webcam', t('main.add.webcam'), t('main.add.webcamTitle'))),
-    group(t('main.add.gNetwork'), b('stream', t('main.add.stream')), b('resolve', 'DaVinci Resolve', t('main.add.resolveTitle'))),
+    group(t('main.add.gDevices'), b('decklink', 'Blackmagic DeckLink', t('main.add.decklinkTitle')), b('aja', 'AJA', t('main.add.ajaTitle')),
+      b('device', t('main.add.device'), t('main.add.deviceTitle')), b('webcam', t('main.add.webcam'), t('main.add.webcamTitle'))),
+    group(t('main.add.gNetwork'), b('stream', t('main.add.stream'), t('menu.src.streamTitle')), b('ndi', 'NDI®', `${t('bridgeui.ndiTitle')} ${NDI_NOTICE}`),
+      b('resolve', 'DaVinci Resolve', t('main.add.resolveTitle'))),
     group(t('main.add.gFiles'),
       b('file', t('main.add.file')),
       // desktop app: the file goes through the bridge by default (full depth). The browser path
@@ -977,18 +1000,25 @@ function renderAddMenu() {
   );
 }
 
-/** Inputs the bridge sees but that are no source yet (src/deviceScan.ts): one click adds them. */
+const FOUND_KIND: Record<Found['kind'], string> = { decklink: 'DeckLink', aja: 'AJA', ndi: 'NDI®', device: 'Capture' };
+/**
+ * Inputs the bridge sees but that are no source yet (src/deviceScan.ts): one click adds them. A
+ * Blackmagic card that only shows as a system camera gets the way to the DeckLink source instead.
+ */
 function renderFound(list: Found[]) {
   const el = $('#found');
   el.hidden = !list.length;
+  const add = list.filter((f) => !f.blackmagicCamera), bm = list.find((f) => f.blackmagicCamera);
   el.replaceChildren(...(list.length ? [
     h('span', { class: 'add-label' }, t('main.add.found')),
-    h('div', { class: 'add-btns' }, ...list.map((f) => button(`+ ${f.name}`, () => addFound(f), { small: true, variant: 'primary', title: t('main.add.foundTitle', { kind: f.kind === 'ndi' ? 'NDI®' : f.kind === 'aja' ? 'AJA' : 'DeckLink', url: f.url }) }))),
+    h('div', { class: 'add-btns' }, ...add.map((f) => button(`+ ${f.name}`, () => addFound(f), { small: true, variant: 'primary', title: t('main.add.foundTitle', { kind: FOUND_KIND[f.kind], url: f.url }) })),
+      ...(bm ? [h('div', { 'data-found-blackmagic': '' }, hint(t('main.add.foundBlackmagic', { name: bm.name })),
+        button(t('main.dev.useDecklink'), () => void addDeckLinkSource(), { small: true, variant: 'primary', title: t('main.add.decklinkTitle') }))] : [])),
   ] : []));
 }
 function addFound(f: Found) {
   state.sidebar = true; applySidebar();
-  const s = addSource('stream', f.name, f.url, f.kind === 'decklink' ? { depth: 16, deckLinkBits: 10 } : f.kind === 'aja' ? { depth: 16, ajaBits: 10 } : { depth: 16 });
+  const s = addSource('stream', f.name, f.url, f.kind === 'decklink' ? { depth: 16, deckLinkBits: 10 } : f.kind === 'aja' ? { depth: 16, ajaBits: 10 } : f.kind === 'ndi' ? { depth: 16 } : {});
   s.connectStream(f.url, bridgeUrl());
   renderFound([]);
 }

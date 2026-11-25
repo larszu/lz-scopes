@@ -161,6 +161,7 @@ Panel type **Reference / Genlock** (*Referenz / Genlock*): house reference at a 
 - **LTC** from any source with sound: own biphase-mark reader (24–30 fps, forward and reverse).
 - **PTP monitor** in the bridge (own code, UDP 319/320 on 224.0.1.129): grandmaster, domain, clockClass, rates, SMPTE SM TLV (lock, local offset, next jam), offset and optional mean path delay as software-timestamp estimates. No PTP on the network → “no PTP received”. The UI served by the bridge or the desktop app may use it directly; another web origin (e.g. GitHub Pages) only after the user allows it on the bridge's own `/allow` page.
 - **ST 2110 RTP check**: RTP timestamp (90 kHz, zero offset at the epoch) against arrival time and frame grid.
+- **ST 2110 from the network** (source card *RTSP / network* → *ST 2110…*): sound after 2110-30 (AES67, L16/L24) and 2110-31 (AM824) into the audio meters, ancillary data after 2110-40 (RFC 8331) into the VANC display, 2110-41 counted; SDP or by hand, channel order from `channel-order`; ST 2022-7 second path with path offset, packets on one path only, buffer depth and class; pcap snapshot and rolling capture. Software receive times, tested only with generated packets over loopback. Research: [docs/research/st2110-empfang.md](research/st2110-empfang.md).
 
 ## Touch Shading
 

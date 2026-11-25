@@ -116,6 +116,20 @@ curl -s -H "$J" -H 'Authorization: Bearer secret' -d '{"cmd":"freeze"}' http://s
 
 In the browser, `output.open` opens a window only if pop-ups are allowed for the page; the desktop app always opens it.
 
+## ST 2110 capture (pcap)
+
+For `st2110:` sources (docs/research/st2110-empfang.md) the bridge records the received flows as pcap. Same access rule as above: captures contain facility addresses.
+
+| Path | |
+|---|---|
+| `GET /api/st2110` | running services `[{ id, flows, capture }]` |
+| `GET /api/st2110/pcap?id=&seconds=5&mb=50` | snapshot of all flows of the service (both 2022-7 paths), download |
+| `POST /api/st2110/ring` `{id, mode:"on"\|"off", seconds?, mb?}` | rolling capture on disk (default 60 s / 200 MB) |
+| `POST /api/st2110/ring/save` `{id}` | → `{ ok, file, bytes, url }` |
+| `GET /api/st2110/file?name=` | a saved capture |
+
+`id` may be left out when only one service runs. The state of the active source (`state.st2110`) carries the flow counters and the ST 2022-7 evaluation. IP/UDP headers in the file are rebuilt, time stamps are software receive times (no hardware time stamps).
+
 ## Companion module
 
 `companion/` contains the module `companion-module-lz-scopes` (API `@companion-module/base` ~1.14.1, like the module in lz-camera-bridge) with actions for the commands above (except `record.event`), feedbacks (recording, ring buffer running, connected, frozen, source active, clipping/Y′ above threshold, layout, scene, output open, stream running, panel maximised, video file playing, tone generator running, I/LRA paused, max true peak above threshold, ident result), variables (including loudness M/S/I/LRA, true peak, A/V offset, ident, running recordings and recording time) and presets.

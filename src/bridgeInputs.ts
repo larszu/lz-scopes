@@ -54,7 +54,7 @@ export function deviceRow(s: Source, ui: BridgeUi, rerender: () => void): Node |
 
 /** Matrix and range the bridge uses for Y′CbCr → R′G′B′ (all bridge sources). */
 export function decodeRow(s: Source, ui: BridgeUi): Node | null {
-  if (s.kind !== 'stream' || s.url === 'resolve:' || s.url.startsWith('test:')) return null;
+  if (s.kind !== 'stream' || s.url === 'resolve:' || s.url.startsWith('test:') || s.url.startsWith('st2110:')) return null;
   const set = s.settings;
   const auto = (s.info as { decodeMatrix?: string } | null)?.decodeMatrix;
   return row(

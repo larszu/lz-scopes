@@ -48,6 +48,9 @@ import { cameraBridges } from './cameraBridges.mjs';
 import { recordRoots, freeBytes } from './record.mjs';
 import { StreamRecorder, handleUploadSocket } from './recorder.mjs';
 import { REC_URL, listRecordings, startPlayback } from './playback.mjs';
+import { parseSt2110Url } from './sdp.mjs';
+import { services as st2110Services, startSt2110 } from './st2110stream.mjs';
+import { savedPath } from './pcap.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -94,6 +97,7 @@ export function validateInput(url) {
   if (/^ndi:[^\n\r\0]{1,200}$/.test(url) && !url.slice(4).startsWith('-')) return null;
   if (/^folder:[\w .-]{1,80}$/.test(url)) return null;
   if (REC_URL.test(url)) return null;
+  if (url.startsWith('st2110:')) return parseSt2110Url(url) ? null : bmsg('st2110.badUrl', 'Invalid st2110: source (SDP or audio=/anc= with address:port)');
   if (MEDIA_URL.test(url)) return mediaFile(url) ? null : bmsg('media.notReleased', 'File no longer released – open it again');
   if (url.startsWith('-')) return bmsg('input.invalid', 'Invalid source');
   if (!ALLOWED.test(url)) return bmsg('input.scheme', 'Only rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s)://, resolve: or test:*');
@@ -555,6 +559,8 @@ async function startStream(ws, params) {
   if (url.startsWith('aja:')) return startAja(ws, params, url);
   if (url.startsWith('ndi:')) return startNdi(ws, params, url);
   if (url.startsWith('folder:')) return startFolder(ws, params, url);
+  // ST 2110 audio/ANC from the network (#226, #227), own receive with ST 2022-7 and pcap (server/st2110stream.mjs)
+  if (url.startsWith('st2110:')) return startSt2110(ws, url, { ptpNow: clockNow, allowCapture: ws.recordAllowed === true, fail });
   if (url.startsWith('rec:')) {
     const ffmpeg = ffmpegCandidates()[0];
     if (!ffmpeg) return fail(ws, bmsg('ffmpeg.missing', 'ffmpeg not found'));
@@ -1313,6 +1319,7 @@ const server = createServer((req, res) => {
     return;
   }
   if (path === '/api/control' || path === '/api/control/commands') return handleControlHttp(req, res, path);
+  if (path.startsWith('/api/st2110')) return handleSt2110Http(req, res, path);
   if (path === '/api/meter') {
     // colour meter (ArgyllCMS spotread, server/meter.mjs): local app only
     const problem = controlAccess({ remote: req.socket.remoteAddress, origin: req.headers.origin, host: req.headers.host });
@@ -1465,6 +1472,56 @@ clockWss.on('connection', (ws) => {
     if (!clockClients.size) clockStopTimer = setTimeout(() => { ptpMon?.stop(); ptpMon = null; ptpKey = ''; rtpMon?.stop(); rtpMon = null; }, 5000);
   });
 });
+
+// ---- ST 2110 services and pcap (#232; docs/control-api.md). Same access rule as the control API:
+// captures contain facility addresses.
+//   GET  /api/st2110                         → [{ id, flows, capture }]
+//   GET  /api/st2110/pcap?id=&seconds=&mb=   → snapshot of all flows of the service (download)
+//   POST /api/st2110/ring  {id, mode:on|off, seconds?, mb?}   rolling capture
+//   POST /api/st2110/ring/save {id}          → { ok, file, url }
+//   GET  /api/st2110/file?name=              → a saved capture (download)
+function handleSt2110Http(req, res, path) {
+  const send = (status, body) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+  const problem = accessProblem(req);
+  if (problem) return send(problem.status, { ok: false, error: problem.error });
+  const q = new URL(req.url ?? '/', 'http://x').searchParams;
+  const pcap = (name, data) => {
+    res.writeHead(200, { 'content-type': 'application/vnd.tcpdump.pcap', 'content-disposition': `attachment; filename="${name}"`, 'content-length': data.length });
+    res.end(data);
+  };
+  if (path === '/api/st2110' && req.method === 'GET') {
+    return send(200, [...st2110Services.values()].map((s) => ({ id: s.id, flows: s.info().st2110.flows, capture: s.stats().capture })));
+  }
+  if (path === '/api/st2110/file' && req.method === 'GET') {
+    const p = savedPath(q.get('name'));
+    if (!p) return send(404, { ok: false, error: 'No such capture' });
+    return readFile(p).then((d) => pcap(q.get('name'), d), () => send(404, { ok: false, error: 'No such capture' }));
+  }
+  if (path === '/api/st2110/pcap' && req.method === 'GET') {
+    const svc = st2110Services.get(q.get('id') ?? '') ?? (st2110Services.size === 1 ? [...st2110Services.values()][0] : null);
+    if (!svc) return send(404, { ok: false, error: 'No such service (GET /api/st2110 lists them)' });
+    return svc.takeSnapshot({ seconds: Number(q.get('seconds')) || 5, mb: Number(q.get('mb')) || 50 })
+      .then((r) => pcap(r.name, r.data), (e) => send(409, { ok: false, error: String(e.message ?? e) }));
+  }
+  if ((path === '/api/st2110/ring' || path === '/api/st2110/ring/save') && req.method === 'POST') {
+    if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) return send(415, { ok: false, error: 'Content-Type: application/json' });
+    let body = '';
+    req.on('data', (d) => { body += d; if (body.length > 4096) req.destroy(); });
+    req.on('end', () => {
+      let m;
+      try { m = JSON.parse(body); } catch { return send(400, { ok: false, error: 'Invalid JSON' }); }
+      const svc = st2110Services.get(String(m?.id ?? '')) ?? (st2110Services.size === 1 ? [...st2110Services.values()][0] : null);
+      if (!svc) return send(404, { ok: false, error: 'No such service' });
+      try {
+        if (path === '/api/st2110/ring') return send(200, { ok: true, ring: svc.setRing(m.mode === 'on', { seconds: Number(m.seconds) || 60, mb: Number(m.mb) || 200 }) });
+        const r = svc.saveRing();
+        return send(200, { ok: true, file: r.name, bytes: r.bytes, url: `/api/st2110/file?name=${encodeURIComponent(r.name)}` });
+      } catch (e) { return send(409, { ok: false, error: String(e.message ?? e) }); }
+    });
+    return;
+  }
+  return send(404, { ok: false, error: 'Unknown path' });
+}
 
 // ---- control API: HTTP POST /api/control and WebSocket /control (Companion, curl).
 // The main window of the UI connects as /control?role=app, executes the commands and

@@ -158,6 +158,13 @@ Eine von der App freigegebene Datei (`file:<Name>`, `server/media.mjs`) wird von
 
 Jeder Befehl startet ein neues ffmpeg: spielend `-ss <pos> -readrate <rate>`, angehalten `-ss <pos>` mit `-frames:v 1`, so geht genau ein Bild hinaus und bleibt in den Scopes stehen. Befehle, die während eines Anlaufs eintreffen, fallen zusammen. Rückwärts spielt die Seite selbst (wiederholtes `step`) – ffmpeg decodiert nur vorwärts. Am Ende der Datei bleibt die Verbindung offen: mit `loop` läuft sie von vorn, sonst steht sie auf dem letzten Bild.
 
+## ST-2110-Quellen (`st2110:?…`)
+
+Nur Ton (`width` 0, Protokoll 2): `info.audio` wie sonst, dazu `channelOrder` (Gruppen nach ST 2110-30 `channel-order`), `info.st2110` nennt die Flows. ANC kommt als `{"type":"vanc","packets":[…],"rtp":{ts,field,lagMs?,gridTicks?,ref?}}`, Zähler und ST-2022-7-Auswertung in `stats.st2110`. Ein auf allen Wegen verlorenes Paket ist ein Sprung im Probenindex.
+
+- Client → Server: `{"type":"pcap","cmd":"snapshot","seconds":5,"mb":50}`, `{"type":"pcap","cmd":"ring","mode":"on"|"off","seconds":60,"mb":200}`, `{"type":"pcap","cmd":"save"}`.
+- Server → Client: `{"type":"pcap","state":"capturing"|"saved"|"ring"|"error","file"?,"packets"?,"bytes"?,"ring"?}`; die Datei holt `GET /api/st2110/file?name=` (docs/control-api.de.md).
+
 ## iOS-App: RTSP direkt (Loopback)
 
 Die iPhone/iPad-App bedient dasselbe Protokoll für `rtsp://`-Quellen selbst (#90, `ios/LzRtsp/Sources/LzRtsp/FrameServer.swift`): `ws://127.0.0.1:<port>/rtsp?token=…&url=rtsp://…&transport=tcp|udp&width=…&wc=h264,hevc`, nur Loopback, mit Zufalls-Token je App-Start, ohne Zugangsdaten in der URL (Schlüsselbund). Protokoll 2 ohne Ton. Steht der Codec des Streams in `wc` (was WebCodecs der WebView dekodiert) und ist er 8 bit: `info` mit `"transport":"h264"|"hevc"`, dann `video` und `LZHK`/`LZHD` wie oben (HEVC: Codec-String `hvc1.…`, ISO/IEC 14496-15 Anhang E). Sonst dekodiert VideoToolbox in der App, und es kommen `LZV1`-Bilder R′G′B′A 8 bit in `width`. `info.direct` ist `"webcodecs"` oder `"videotoolbox"`; `stats` trägt `rtp` wie beim eigenen RTP-Empfang der Bridge.

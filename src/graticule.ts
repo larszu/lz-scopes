@@ -8,6 +8,7 @@ import {
 import { hexLine, targetSignal, type ColorTarget } from './match/core';
 import { CIE_VIEW, CIE_VIEW_UV, WAVE_MAX, WAVE_MIN, type PictureMode, type Rect } from './renderer';
 import { latencyLines, rtpLines } from './latency';
+import { st2110Lines } from './st2110';
 import type { Source } from './sources';
 import { CUBE_SPACE_LABELS, SIGNAL_SPACES, cubeProject, cubeRotation, cubeWireframe, qFromChl, qFromHsv, qFromIctcp, qFromLab, qFromRgb, qFromXyz, qFromYcc, type CubeSettings } from './cube';
 import { num, onLangChange, t, type Key } from './i18n';
@@ -788,7 +789,7 @@ export function statsLines(src: Source, displayFps: number): string[] {
     }
   }
   if (st) lines.push(`${col('scope.stats.statistics')}${src.statsPerf.path === 'gpu' ? t('scope.stats.gpu') : t('scope.stats.cpu')} · ${t('scope.stats.mainThread', { ms: src.statsPerf.ms.toFixed(2) })}`);
-  lines.push(...latencyLines(src.latency.summary(), src.kind === 'stream' && src.lowLatency), ...rtpLines(src.rtpInfo, src.rtpStats));
+  lines.push(...latencyLines(src.latency.summary(), src.kind === 'stream' && src.lowLatency), ...rtpLines(src.rtpInfo, src.rtpStats), ...st2110Lines(src.st2110));
   lines.push('', ...r103Lines(src));
   return lines;
 }

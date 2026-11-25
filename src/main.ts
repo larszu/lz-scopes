@@ -54,6 +54,7 @@ import { greenSettings, matchPanelSettings, targetEditor, type MatchUi } from '.
 import { openChartCorners } from './match/chartUi';
 import { bindBridgeField, normaliseBridge } from './bridgeField';
 import { streamRoute } from './streamRoute';
+import { st2110Button, st2110Row } from './st2110';
 import { addAja, ajaButton, ajaRow, addDeckLink, deckLinkButton, deckLinkRow, decodeRow, deviceButton, deviceRow as bridgeDeviceRow, ndiButton, ndiRow, folderButton, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
 import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
@@ -584,8 +585,8 @@ function renderSources() {
           running ? button(t('main.src.disconnect'), () => s.stop()) : button(t('main.src.connect'), connect, { variant: 'primary' }),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
             button(p, () => { urlIn.value = `test:${p}`; connect(); }, { small: true, title: t('main.src.testN', { name: p }) })),
-            deviceButton(bridgeUi), deckLinkButton(bridgeUi), ajaButton(bridgeUi), ndiButton(bridgeUi), folderButton(bridgeUi, (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop?.watchFolder))),
-        ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), ajaRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
+            deviceButton(bridgeUi), deckLinkButton(bridgeUi), ajaButton(bridgeUi), ndiButton(bridgeUi), st2110Button(bridgeUi), folderButton(bridgeUi, (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop?.watchFolder))),
+        ...[bridgeDeviceRow(s, bridgeUi, renderSources), deckLinkRow(s, bridgeUi), ajaRow(s, bridgeUi), ndiRow(s), st2110Row(s, bridgeUi), decodeRow(s, bridgeUi)].filter((x): x is Node => !!x),
         ...(sourceFfmpegText(s.url, bridgeHealth) ? [h('p', { class: 'hint', 'data-ffmpeg-source': '' }, sourceFfmpegText(s.url, bridgeHealth))] : []),
       );
     } else if (s.url === SIM_URL) {
@@ -2576,6 +2577,8 @@ function controlState() {
     latency: act?.latency.summary() ?? null,
     /** how the bridge receives the stream (own RTP reception or ffmpeg, low-latency mode) */
     rtp: act?.rtpInfo ?? null, rtpStats: act?.rtpStats ?? null,
+    /** ST 2110 flows of the active source (counters, ST 2022-7, capture), null for other sources */
+    st2110: act?.st2110 ?? null,
     /** where the statistics come from and their main-thread cost in ms */
     statsPerf: act ? { ...act.statsPerf } : null,
     audio: audioState(),

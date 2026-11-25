@@ -116,6 +116,20 @@ curl -s -H "$J" -H 'Authorization: Bearer geheim' -d '{"cmd":"freeze"}' http://s
 
 Im Browser öffnet `output.open` ein Fenster nur, wenn Pop-ups für die Seite erlaubt sind; die Desktop-App öffnet es immer.
 
+## ST-2110-Mitschnitt (pcap)
+
+Für `st2110:`-Quellen (docs/research/st2110-empfang.md) schneidet die Bridge die empfangenen Flows als pcap mit. Zugriff wie oben: Mitschnitte enthalten Anlagen-Adressen.
+
+| Pfad | |
+|---|---|
+| `GET /api/st2110` | laufende Services `[{ id, flows, capture }]` |
+| `GET /api/st2110/pcap?id=&seconds=5&mb=50` | Schnappschuss aller Flows des Service (beide 2022-7-Wege), Download |
+| `POST /api/st2110/ring` `{id, mode:"on"\|"off", seconds?, mb?}` | Ringpuffer auf der Platte (Vorgabe 60 s / 200 MB) |
+| `POST /api/st2110/ring/save` `{id}` | → `{ ok, file, bytes, url }` |
+| `GET /api/st2110/file?name=` | ein gesicherter Mitschnitt |
+
+`id` kann fehlen, wenn nur ein Service läuft. Der Zustand der aktiven Quelle (`state.st2110`) enthält die Flow-Zähler und die ST-2022-7-Auswertung. IP-/UDP-Kopf in der Datei sind nachgebaut, die Zeitstempel sind Software-Empfangszeiten (keine Hardware-Zeitstempel).
+
 ## Companion-Modul
 
 `companion/` enthält das Modul `companion-module-lz-scopes` (API `@companion-module/base` ~1.14.1, wie das Modul in lz-camera-bridge) mit Aktionen für die Befehle oben (außer `record.event`), Feedbacks (Aufnahme läuft, Ringpuffer läuft, Verbunden, Eingefroren, Quelle aktiv, Clipping/Y′ über Schwelle, Layout, Szene, Ausgabe offen, Stream läuft, Panel maximiert, Videodatei läuft, Tongenerator läuft, I/LRA angehalten, Max True Peak über Schwelle, Ident-Befund), Variablen (auch Lautheit M/S/I/LRA, True Peak, A/V-Versatz, Ident, laufende Aufnahmen und Aufnahmedauer) und Presets.

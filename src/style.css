@@ -24,7 +24,7 @@ body { background: var(--surface-0); overflow: hidden; }
 .bar select { max-width: 160px; }
 /* overflow menu: holds the layout presets and the scale when the header gets narrow */
 #bar-more { display: none; }
-@container bar (max-width: 1000px) {
+@container bar (max-width: 1100px) {
   .bar .tools .group, .bar > .scheme-seg { display: none; }
   #bar-more { display: inline-flex; }
 }
@@ -48,7 +48,17 @@ body { background: var(--surface-0); overflow: hidden; }
 .layout-seg .laytext { font-size: var(--fs-sm); }
 .bar .tools .toolbar { flex-wrap: nowrap; }
 /* medium headers: "Colorist" as icon only (name in the tooltip) */
-@container bar (max-width: 1440px) { .bar .layout-seg .laytext { display: none; } }
+@container bar (max-width: 1440px) {
+  .bar .layout-seg .laytext { display: none; }
+  /* scale and light/dark move into ⋯ first, the layout icons stay in the header down to 1000 px */
+  .bar .tools #globals, .bar > .scheme-seg { display: none; }
+  #bar-more { display: inline-flex; }
+}
+@container bar (max-width: 1200px) {
+  /* recording stays in ⋯ (and on R / P); shown in the header while it runs */
+  #rec-all:not(.on), #ring-save, .bar .fps { display: none; }
+}
+.bar .tools .toolbar > button { white-space: nowrap; }
 .unit-seg > button { padding-inline: 7px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .more-body .seg { flex-wrap: wrap; }
 .scheme-seg { flex: none; flex-wrap: nowrap; }

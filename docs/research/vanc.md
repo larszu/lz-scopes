@@ -35,6 +35,18 @@ Umsetzung: `helpers/decklink/lz-decklink.cpp` (`sendVanc`), `server/helper-input
 - ST 299-1: HD-Audio Daten E7h–E4h (Gruppe 1–4), Steuerung E3h–E0h; ST 299-2 (3G): A7h–A4h (Gruppe 5–8), A3h–A0h.
 - Register: [smpte-ra.org ST 291](https://smpte-ra.org/smpte-ancillary-data-smpte-st-291).
 
+## Weitere Pakete (#235), `src/anc.ts`, `src/teletext.ts`
+
+- **SCTE 104 (ST 2010)**, DID 41h / SDID 07h: Payload-Descriptor-Byte (Version, continued/following/duplicate), dann single oder multiple operation message (Kennung FFFFh). Ausgewertet: splice_request (Typ, Ereignis-ID, Programm, Vorlauf ms, Pausendauer 1/10 s, automatische Rückkehr), time_signal (Vorlauf), insert_segmentation_descriptor (Ereignis, Dauer, segmentation_type_id, Segment n/m); Zeitstempel UTC/VITC/GPI. Aufbau nach libklvanc `src/core-packet-scte_104.c` (gelesen 25.11.2026); der SCTE-104-Text selbst lag nicht vor. Nachrichten über mehrere Pakete (continued_pkt) werden nur als „geht weiter“ gemeldet, nicht zusammengesetzt.
+- **CEA-708 CDP (ST 334-2)**, 61h/01h: Kennung 9669h, Bildrate, Flags, Folgezähler, Zeitcode-Abschnitt 71h, cc_data 72h (Tripel je cc_type), Prüfsumme (Summe ≡ 0 mod 256). Aufbau nach libklvanc `core-packet-eia_708b.c`. Untertiteltext (608/708) wird **nicht** dekodiert: der Helfer schickt höchstens alle 250 ms einen Schnappschuss, nicht jedes Bild – ein 608-Decoder bekäme Lücken.
+- **Halbbilder vertauscht** (Hinweis, keine Messung): 608-Steuercodes beginnen in Halbbild 1 mit 14h/1Ch (CC1/CC2), in Halbbild 2 mit 15h/1Dh (CC3/CC4). Codes des jeweils anderen Halbbilds → Warnung. Eigene Ableitung aus CEA-608 (Kanalzuordnung der Steuercodes).
+- **OP-47 / RDD 8**, 43h/02h: Kennung 51h 15h, Länge, Formatcode, fünf Strukturdeskriptoren (b7 Halbbild, b4–b0 Zeile), je belegtem Deskriptor 45 Byte (Einlauf 55h 55h 27h + 42 Videotext-Byte), Fußkennung 74h, Folgezähler, Prüfsumme. Nach libklvanc `core-packet-sdp.c` und ffmpeg `libavdevice/decklink_dec.cpp`.
+- **ST 2031**, 41h/08h: SMPTE ST 2031:2015 §5–6 ([drastic.tv](https://www.drastic.tv/images/documentation/st2031-2015.pdf)): UDW = data_identifier, data_unit_id, data_unit_length, data_field() nach EN 301 775, je Paket ein data_field; Tabelle 2 der data_unit_id. txt_data_field: field_parity, line_offset, framing_code E4h, 42 Byte bitgespiegelt (EN 300 472).
+- **Videotext** (EN 300 706): Hamming 8/4 mit Einzelfehlerkorrektur, Seitenkopf (Seite, C4 Löschen, C6 Untertitel, Länderzeichensatz C12–C14), 40 Zeichen mit ungerader Parität. Die Zeilen werden über mehrere Schnappschüsse gesammelt; angezeigt wird die neueste Untertitelseite mit Paritäts- und Hamming-Fehlerzählern.
+- **EDH (RP 165)**, DID F4h: CRC-Wörter (aktives Bild, ganzes Halbbild, je Gültigkeitsbit) und die drei Fehlerbit-Wörter (EDH, EDA, IDH, IDA, UES). Lage aus Sekundärquellen, RP 165 lag nicht vor. Die CRC selbst nachrechnen geht nicht – dafür fehlen die Bildabtastwerte. Nur SD; ob der DeckLink-Treiber das Paket überhaupt durchreicht, ist offen.
+
+Nicht umgesetzt: Untertitel ins Bild legen, 608/708-Decoder mit Decoder-Log, Teletext OP-42 in SD-VBI-Zeilen (braucht die rohen VBI-Zeilen, die der Helfer nicht liefert), Ancillary-Sync (Versatz von Untertiteln/Zeitcode zu Bild und Ton), Quelle 2110-40 (#227).
+
 ## Offen
 
 - Hardwaretest (#116): Liefert `GetBytes(UInt8)` beim Eingang auch für ST 352 und Audio-Pakete Daten, oder behält der Treiber sie? Stimmen die Zeilennummern?

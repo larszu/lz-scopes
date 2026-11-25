@@ -413,6 +413,16 @@ Achsen in den Sollrichtungen der Kanäle (layouts.ts, BS.2051-Zuordnung als Eins
 
 ---
 
+## (i) A/V-Versatz im Dauerbetrieb (#236, 25.11.2026)
+
+- Jedes Blitz/Piep-Paar geht mit Uhrzeit in `src/audio/dsp/avhistory.ts`: Minutenfächer (Min, Max, Mittel, Anzahl) für bis zu 24 h, dazu die Rohpaare der letzten Stunde.
+- Drift: Steigung der Ausgleichsgeraden (kleinste Quadrate) über die Rohpaare der letzten Stunde in ms/h, erst ab 2 min und 10 Paaren. Beispiel: 40 ppm Taktunterschied zwischen Ton- und Bildtakt ergeben 144 ms/h. Eine gleichmäßige Steigung deutet auf nicht verkoppelte Takte, ein Sprung auf ein Neueinrasten (**Einschätzung**).
+- Zähler gegen BT.1359-1: Paare außerhalb der Wahrnehmbarkeit (+45/−125 ms) und der Akzeptanz (+90/−185 ms).
+- Anzeige im Panel *Audio-Prüfung* unter der Skala: eine Zeile Kennwerte, eine Zeile Drift, Min…Max je Minute der letzten 60 min. Control API: `state.audio.avMeanMs`, `avDriftMsPerHour` u. a., Befehl `av.reset`; Companion-Variablen `av_mean`, `av_drift`.
+- Testbild *A/V-Sync*: über der ±500-ms-Skala zwei Zonen, grün = nicht wahrnehmbar (−45 … +125 ms Markerstellung, also +45/−125 ms nach BT.1359-Vorzeichen), bernstein = noch annehmbar (−90 … +185 ms), daneben „Ton zu früh“/„Ton zu spät“. Damit lässt sich eine Aufzeichnung auch ohne lz-scopes ablesen.
+
+Nicht umgesetzt: maschinenlesbarer Sekundenzähler im Bild (für Versätze über ±0,5 s und für den Abgleich mehrerer Wege), Messung je Kanalgruppe, mehrere Wege eines Service (SRT, Satellit, IP) auf einer Zeitachse gegen eine Referenz, Ausgabe über 2110 (#237). Der Messweg ist mit synthetischen Paaren getestet, nicht in einer 24-h-Messung an einer echten Strecke.
+
 ## Quellen
 
 Primärquellen (geöffnet, als PDF geladen):

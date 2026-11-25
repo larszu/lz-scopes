@@ -39,6 +39,7 @@ export default {
   'source.status.browserAgc': 'Achtung: Browser-Regelung aktiv',
   'source.audioDevice': 'Audiogerät',
   'source.channels': '{n} Kan.',
+  'source.ffmpeg.formats': 'liest {yes} · nicht {no}',
   'source.ffmpeg.notFoundLine': 'ffmpeg: nicht gefunden',
   'source.ffmpeg.bridgeUnknown': 'Bridge nicht erreichbar – ffmpeg unbekannt',
   'source.ffmpeg.pushUnknown': 'Bridge nicht erreichbar – ob gepusht werden kann, ist unbekannt',

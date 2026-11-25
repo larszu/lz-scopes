@@ -38,6 +38,7 @@ export default {
   'source.status.browserAgc': 'caution: browser processing active',
   'source.audioDevice': 'Audio device',
   'source.channels': '{n} ch.',
+  'source.ffmpeg.formats': 'reads {yes} · not {no}',
   'source.ffmpeg.notFoundLine': 'ffmpeg: not found',
   'source.ffmpeg.bridgeUnknown': 'Bridge not reachable – ffmpeg unknown',
   'source.ffmpeg.pushUnknown': 'Bridge not reachable – whether pushing works is unknown',

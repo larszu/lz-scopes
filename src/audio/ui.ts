@@ -8,6 +8,7 @@ import { DEFAULT_GEN, expectedSine, type GenConfig, type Signal } from './dsp/si
 import { LoudnessMeter } from './dsp/loudness';
 import { LevelMeter } from './dsp/meters';
 import { ALL_CASES, type CaseResult } from './dsp/testsignals';
+import { canDownmix, listenFor, parseListen } from './dsp/downmix';
 import { toDb } from './dsp/truepeak';
 import { generator, listDevices } from './io';
 import { AUDIO_DEFAULTS, TARGETS, fmt1, type AudioPanelOptions } from './panels';
@@ -255,7 +256,16 @@ export function audioRow(s: Source, rerender: () => void): Node | null {
       for (const x of d) if (x.deviceId && x.deviceId !== 'default') outs.append(h('option', { value: x.deviceId, selected: x.deviceId === monitorSink.id }, x.label || t('audio.output')));
     });
     const pairs = Math.ceil(a.channels / 2);
-    const pairSel = pairs > 1 ? select(String(monitorSink.pair), Array.from({ length: pairs }, (_, i): [string, string] => [String(i), `${a.names[i * 2]}/${a.names[i * 2 + 1] ?? a.names[i * 2]}`]), (v) => { monitorSink.pair = Number(v); s.monitor?.setPair(monitorSink.pair); }, t('audio.mon.pair')) : '';
+    // channel pair, a downmix (Lo/Ro, Lt/Rt) or one channel solo (#234)
+    const opts: [string, string][] = Array.from({ length: pairs }, (_, i): [string, string] => [`p${i}`, `${a.names[i * 2]}/${a.names[i * 2 + 1] ?? a.names[i * 2]}`]);
+    if (canDownmix(a.info)) opts.push(['loro', t('audio.mon.loro')], ['ltrt', t('audio.mon.ltrt')]);
+    if (a.channels > 1) for (let c = 0; c < a.channels; c++) opts.push([`s${c}`, t('audio.mon.solo', { ch: a.names[c] ?? String(c + 1) })]);
+    const cur = opts.some(([v]) => v === monitorSink.listen) ? monitorSink.listen : `p${monitorSink.pair}`;
+    const pairSel = opts.length > 1 ? select(cur, opts, (v) => {
+      monitorSink.listen = v;
+      const sel = parseListen(v);
+      if (sel.kind === 'pair') { monitorSink.pair = sel.pair; s.monitor?.setPair(sel.pair); } else s.monitor?.setMatrix(listenFor(a.info, v));
+    }, t('audio.mon.pair')) : '';
     const st = s.monitor?.stats;
     rows.push(row(outs, pairSel));
     rows.push(hint(s.monitorError ? t('audio.mon.error', { msg: s.monitorError })

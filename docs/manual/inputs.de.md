@@ -121,6 +121,13 @@ In einer Quelle **RTSP / Netz** stehen unter dem Adressfeld diese Knöpfe:
 
 Unter **Wandlung** und **Pegel** stellst du Matrix und Wertebereich fest ein, wenn eine Karte ihr Signal falsch oder gar nicht kennzeichnet.
 
+**Interlaced-Signale (Zeilensprung, etwa 1080i50 oder 576i):** Zwei Auswahlfelder gelten für jede Bridge-Quelle einzeln.
+
+- **Halbbilder**: *auto* übernimmt, was die Quelle meldet (in Klammern steht, was sie meldet). *Oberes Halbbild zuerst* oder *Unteres Halbbild zuerst* stellt die Reihenfolge fest ein, auch wenn die Quelle nichts meldet; *Progressiv* behandelt ein fälschlich als interlaced gemeldetes Signal als progressiv. Üblich: 1080i und 576i oberes zuerst, 480i unteres zuerst.
+- **Halbbilder getrennt** (Standard) oder **Deinterlacing ein**. Getrennt bleiben beide Halbbilder in einem Bild und werden jedes für sich verkleinert; jeder Wert in den Scopes ist dann ein Signalwert eines Halbbilds. Mit Deinterlacing errechnet die Bridge ein progressives Bild je Vollbild (bwdif). In bewegten Stellen sind die Zeilen des zweiten Halbbilds dann errechnet und keine Messwerte mehr; ruhige Stellen bleiben unverändert. Deinterlacing kostet ein Bild Verzögerung. Ist die Reihenfolge falsch eingestellt, ruckelt Bewegung.
+
+Das Messwerte-Panel zeigt unter *Abtastung*, wie die Bridge das Signal behandelt. Die QC-Messung der Bridge und der Timecode arbeiten immer auf dem Signal vor dem Deinterlacing. Mit echten interlaced Karten-Signalen ist das noch nicht geprüft.
+
 ### AJA-Karte einrichten
 
 **AJA…** öffnet diese Schritte, solange keine Karte nutzbar ist; **Einrichtung …** an einer AJA-Quelle öffnet sie jederzeit. Erledigte Schritte sind abgehakt, **Erneut prüfen** fragt die Bridge neu.

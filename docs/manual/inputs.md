@@ -121,6 +121,13 @@ An **RTSP / Netz** source has these buttons below the address field:
 
 Use **Wandlung** (conversion) and **Pegel** (levels) to fix matrix and range when a card labels its signal wrongly or not at all.
 
+**Interlaced signals (such as 1080i50 or 576i):** two choices, set per bridge source.
+
+- **Halbbilder** (fields): *auto* takes what the source reports (shown in brackets). *Oberes Halbbild zuerst* (upper field first) or *Unteres Halbbild zuerst* (lower field first) fixes the order, even when the source reports nothing; *Progressiv* treats a signal wrongly reported as interlaced as progressive. Usual: 1080i and 576i upper first, 480i lower first.
+- **Halbbilder getrennt** (fields kept apart, default) or **Deinterlacing ein** (de-interlacing on). Kept apart, both fields stay in one picture and are scaled each on its own; every value in the scopes is a signal value of one field. With de-interlacing the bridge makes one progressive picture per frame (bwdif). In moving areas the lines of the second field are then calculated and no longer measured values; still areas stay as they are. De-interlacing adds one picture of delay. With the wrong field order, motion judders.
+
+The Measurements panel shows under *Scan* how the bridge treats the signal. The bridge's QC metrics and the timecode always work on the signal before de-interlacing. Not yet checked with real interlaced card signals.
+
 ### Setting up an AJA card
 
 **AJA…** opens these steps when no card can be used yet; **Einrichtung …** (setup) on an AJA source opens them at any time. Done steps are ticked, **Erneut prüfen** (check again) asks the bridge again.

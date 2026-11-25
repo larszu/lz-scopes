@@ -28,7 +28,7 @@ Always set `in_color_matrix` explicitly, otherwise swscale converts untagged HD 
 
 ## Whole frames, interlace
 
-Every binary message contains exactly one complete frame (bridge: `server/frames.mjs`, test `test/frames.test.ts`). Parts of two frames in one message do not occur; the client replaces the picture only as a whole. For interlaced sources (ffprobe `field_order` tt/bb/tb/bt, or `interlaced` from the DeckLink/NDI helper) a frame contains both fields woven together; the bridge scales field by field (`scale=…:interl=1`) so the fields are not mixed vertically, and reports `"interlaced": true` in `info`.
+Every binary message contains exactly one complete frame (bridge: `server/frames.mjs`, test `test/frames.test.ts`). Parts of two frames in one message do not occur; the client replaces the picture only as a whole. For interlaced sources (ffprobe `field_order` tt/bb/tb/bt, or `interlaced` from the DeckLink/NDI helper) a frame contains both fields woven together; the bridge scales field by field (`scale=…:interl=1`) so the fields are not mixed vertically, and reports `"interlaced": true` in `info`. Per source (#219, `server/interlace.mjs`) the query parameter `field=auto|progressive|tff|bff` forces the field order (`progressive` = treat as progressive) and `deint=1` de-interlaces with `bwdif=mode=send_frame` on the full picture before the scaler (one progressive picture per frame, no `interl`). `info` then also carries `"fields": "tff"|"bff"` (field first in time), `"sourceFields"` (what the source reports), `"fieldsForced": true` (set on the card) and `"deinterlaced": true`.
 
 ## Unclipped Y′CbCr (`format=yuv`)
 
@@ -123,7 +123,7 @@ Devices without a free ffmpeg path (DeckLink, AJA, NDI) run through a separate h
 | 4 | uint32 LE | length n of the payload |
 | 8 | n bytes | payload |
 
-- `INFO` (JSON, before the first frame and on every format change): `{"width":1920,"height":1080,"fpsNum":50,"fpsDen":1,"pixel":"v210","matrix":"bt709","range":"tv","transfer":"unknown","primaries":"unknown","name":"1080i50","timecode":"10:00:00:00"}`. Optional `sourceWidth`/`sourceHeight`: size of the signal when the helper has already reduced the picture (NDI `--width`).
+- `INFO` (JSON, before the first frame and on every format change): `{"width":1920,"height":1080,"fpsNum":50,"fpsDen":1,"pixel":"v210","matrix":"bt709","range":"tv","transfer":"unknown","primaries":"unknown","name":"1080i50","timecode":"10:00:00:00"}`. Optional `sourceWidth`/`sourceHeight`: size of the signal when the helper has already reduced the picture (NDI `--width`). Optional `interlaced` (both fields woven in one frame) and `fieldOrder` `"tff"`/`"bff"` (DeckLink: `GetFieldDominance`); without `fieldOrder` the bridge assumes lower field first for 480/486 lines, upper field first otherwise.
 - `FRAM`: one frame in the format `pixel`, rows without further padding. `pixel` ∈ `v210` (48 pixels per 128 bytes), `uyvy422`, `p216le`, `rgb48le`, `bgra`, `bgr0`, `rgba`, `rgb0`, `nv12`, `yuv420p`.
 - `STAT` (JSON `{"message":"…","code":"…"}`): status, e.g. “no input signal” (`code` optional, see above). `code` `ndi.stats` with `params` `{fps, received, ndiDropped, skipped, queue, connections}` (per second) is read by the bridge as counters.
 - `ERR `: error as JSON `{"message":"…","code":"…","params":{…}}` or as plain text; the helper exits afterwards.

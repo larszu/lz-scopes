@@ -23,6 +23,7 @@ import { defaultScene, findScene, newId, sanitizeScenes, type OverlayScene } fro
 import { connectRemote } from './remote';
 import { DEFAULT_ALARM, DEFAULT_QC, QC_LABELS, QC_TYPES, evaluate as evaluateQc, frameFingerprint, qcLog, toCsv, type AlarmSettings, type QcSettings } from './qclog';
 import { GRIDS } from './history';
+import { STRIP_COUNTS, STRIP_STEPS, stripOpts } from './strip';
 import { CUBE_SPACE_LABELS, DEFAULT_CUBE, type CubeSettings, type CubeSpace } from './cube';
 import { DEFAULT_CRT, PERSIST_CHOICES, PHOSPHORS, type CrtSettings, type Phosphor } from './crt';
 import type { Command } from '../server/control.mjs';
@@ -1380,6 +1381,19 @@ function panelSettings(p: PanelState): Node[] {
     row('', button(t('panel.tl.clear'), () => panelSource(p)?.history.clear(), { small: true }));
     rows.push(hint(t('panel.tl.hint')));
   }
+  if (p.scope === 'strip') {
+    const so = stripOpts(p.strip);
+    const setS = (patch: Partial<typeof so>, rebuild = false) => { p.strip = { ...so, ...patch }; save(); if (rebuild) refreshPanelSettings(p); };
+    row(t('panel.strip.count'), select(String(so.count), STRIP_COUNTS.map((n) => [String(n), String(n)] as [string, string]), (v) => setS({ count: Number(v) })));
+    row(t('panel.strip.step'), select(String(so.step), STRIP_STEPS.map((n) => [String(n), `${num(n, n < 1 ? 1 : 0)} s`] as [string, string]), (v) => setS({ step: Number(v) }), t('panel.strip.stepTitle')));
+    row(t('panel.strip.wave'), select(so.wave, [['auto', t('panel.strip.waveAuto')], ['audio', t('panel.strip.waveAudio')], ['luma', t('panel.strip.waveLuma')], ['off', t('common.off')]],
+      (v) => setS({ wave: v as typeof so.wave }, true)));
+    if (so.wave === 'auto' || so.wave === 'audio') {
+      row(t('panel.strip.channels'), select(so.channels, [['stereo', t('panel.strip.stereo')], ['all', t('panel.strip.all')]], (v) => setS({ channels: v as typeof so.channels })));
+    }
+    row('', button(t('panel.strip.clear'), () => { const s = panelSource(p); s?.stills.clear(); s?.history.clear(); s?.audio?.env.clear(); }, { small: true }));
+    rows.push(hint(t('panel.strip.hint')));
+  }
   if ((p.scope === 'vector' || p.scope === 'vector3' || p.scope === 'hls' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot') && !p.crt?.on) {
     row(t('panel.persist'), select(String(p.persist ?? 0), [['0', t('common.off')], ['300', `${num(0.3, 1)} s`], ['1000', '1 s'], ['3000', '3 s'], ['10000', '10 s'], ['-1', t('panel.infinite')]], (v) => { p.persist = Number(v); save(); },
       t('panel.persistTitle')));
@@ -1972,6 +1986,16 @@ function drawAll(now: number) {
   }
   // timeline panels: 10 samples per second of their sources (history.ts)
   for (const v of openViews()) { const p = state.panels[v.idx]; if (p.scope === 'timeline') panelSource(p)?.sampleHistory(now, { everyFrame: !!p.everyFrame, grid: p.grid }); }
+  // picture history panels (strip.ts, #196): stills per source at the shortest spacing, kept for the longest span; luma for the waveform
+  const strips = new Map<Source, { step: number; span: number }>();
+  for (const v of openViews()) {
+    const p = state.panels[v.idx], s = p.scope === 'strip' ? panelSource(p) : null;
+    if (!s) continue;
+    const so = stripOpts(p.strip), had = strips.get(s);
+    strips.set(s, { step: Math.min(had?.step ?? Infinity, so.step), span: Math.max(had?.span ?? 0, so.count * so.step) });
+    if (so.wave === 'luma' || (so.wave === 'auto' && !s.audio)) s.sampleHistory(now);
+  }
+  strips.forEach(({ step, span }, s) => s.sampleStills(now, Math.ceil(span / step), step));
 
   // CRT persistence still fading: redraw those panels although nothing else changed
   for (const k of renderer.settling) panelSigs.delete(Number(k.slice(1)));

@@ -67,12 +67,13 @@ test('v210: packed words on the GPU and CPU, same traces as unpacked in the work
   const y480 = (Math.round((876 * 480) / 1919)) / 876;
   const rgb = gpu.px!;
   expect(0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]).toBeCloseTo(y480, 4);
-  // statistics on the packed words: mean of the ramp ≈ 0.5
-  await expect.poll(async () => (await probe()).yAvg ?? -1, { timeout: 10_000 }).toBeGreaterThan(0.45);
-  expect((await probe()).yAvg).toBeLessThan(0.55);
-
   // shader: luma waveform follows the ramp
   await singlePanel(a, 'wf-luma');
+  // statistics on the packed words: mean of the ramp ≈ 0.5. Only sources an open panel shows get
+  // statistics (main.ts, every 100 ms) – ask once the waveform panel shows this one, not before
+  // (the start layout does not have to, CI v1.17: yAvg stayed null)
+  await expect.poll(async () => (await probe()).yAvg ?? -1, { timeout: 20_000 }).toBeGreaterThan(0.45);
+  expect((await probe()).yAvg).toBeLessThan(0.55);
   const fr = [0.1, 0.3, 0.5, 0.7, 0.9];
   const want = fr.map((f) => Math.round((876 * Math.floor(f * 1920)) / 1919) / 876);
   await until(async () => { const l = await waveLevels(page, 'wf-luma', fr); return l.every((v, i) => Math.abs(v - want[i]) < 0.02) ? l : false; }, 20_000, 'Luma-Wellenform der Rampe');

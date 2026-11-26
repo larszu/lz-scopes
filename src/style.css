@@ -20,6 +20,9 @@ body { background: var(--surface-0); overflow: hidden; }
 .group { display: flex; gap: 4px; align-items: center; flex-wrap: nowrap; }
 .fps { color: var(--text-muted); font-family: var(--mono); min-width: 48px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
 .bar .tools { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; min-width: 0; }
+/* the tools keep their width: the frame rate gives way (ellipsis) instead of ⋯ sliding under it
+   (1280 px with German labels: #fps covered the ⋯ button and took its clicks) */
+.bar > .tools { flex-shrink: 0; }
 .bar > button, .bar .tools > button { flex: none; }
 .bar select { max-width: 160px; }
 /* overflow menu: holds the layout presets and the scale when the header gets narrow */

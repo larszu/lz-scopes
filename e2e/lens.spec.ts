@@ -16,7 +16,7 @@ test('store a fingerprint and compare the live field with it', async () => {
   await singlePanel(a, 'lens');
   const panel = page.locator('.panel').first();
   await expect.poll(async () => (await panel.locator('canvas.overlay').getAttribute('aria-label')) ?? '', { timeout: 60_000 }).toContain('No fingerprint stored');
-  await panel.getByRole('button', { name: 'Settings: Lens Fingerprint' }).click();
+  await page.locator('.phead').getByRole('button', { name: 'Settings: Lens Fingerprint' }).click();
   const pop = page.locator('.popover.psettings');
   await pop.getByPlaceholder(/Fujinon/).fill('Test lens');
   await pop.getByPlaceholder(/Fujinon/).press('Enter');

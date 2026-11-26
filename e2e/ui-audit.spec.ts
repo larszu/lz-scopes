@@ -264,18 +264,18 @@ for (const lang of ['de', 'en'] as const) {
         await page.keyboard.press('Escape');
       }
       // the ⚙ of the panels (the ? of the scope help has its own pass below)
-      const gear = '.panel .pop-trigger:not(.help-trigger)';
+      const gear = '.phead .pop-trigger:not(.help-trigger)';
       const gears = await page.locator(gear).evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).length);
       if (gears) {
-        await behaviour(page, `${gear} >> visible=true`, '.panel .popover:popover-open', 'popover ⚙', f);
-        await page.locator(`${gear} >> visible=true`).first().click(); await steady(page, '.panel .popover:popover-open');
-        await geometry(page, '.panel .popover:popover-open', 'popover ⚙', f);
-        await truncation(page, '.panel .popover:popover-open', 'popover ⚙', f);
-        await targets(page, '.panel .popover:popover-open', 'popover ⚙', touch, f);
+        await behaviour(page, `${gear} >> visible=true`, '.phead .popover:popover-open', 'popover ⚙', f);
+        await page.locator(`${gear} >> visible=true`).first().click(); await steady(page, '.phead .popover:popover-open');
+        await geometry(page, '.phead .popover:popover-open', 'popover ⚙', f);
+        await truncation(page, '.phead .popover:popover-open', 'popover ⚙', f);
+        await targets(page, '.phead .popover:popover-open', 'popover ⚙', touch, f);
         await page.screenshot({ path: join(OUT, `${tag}-popover.png`) });
-        await page.keyboard.press('Escape'); await settles(page, '.panel .popover:popover-open', false);
+        await page.keyboard.press('Escape'); await settles(page, '.phead .popover:popover-open', false);
         // scope help card (src/help/scopeHelp.ts): fits the screen, nothing cut off, targets large enough
-        const help = '.panel .help-trigger >> visible=true';
+        const help = '.phead .help-trigger >> visible=true';
         if (await page.locator(help).count()) {
           await page.locator(help).first().click(); await settles(page, '.popover.scopehelp:popover-open', true);
           // placement happens in the toggle event, a moment after opening
@@ -285,11 +285,11 @@ for (const lang of ['de', 'en'] as const) {
           await targets(page, '.popover.scopehelp:popover-open', 'popover ?', touch, f);
           await page.keyboard.press('Escape'); await settles(page, '.popover.scopehelp:popover-open', false);
         }
-        await page.locator(`${gear} >> visible=true`).first().click(); await steady(page, '.panel .popover:popover-open');
+        await page.locator(`${gear} >> visible=true`).first().click(); await steady(page, '.phead .popover:popover-open');
         // one open at a time: the menu bar (or ☰) closes the popover and the other way round
         // keyboard on purpose: an open ☰ panel covers the ⚙ on a phone (a tap would land in the panel)
         await page.locator(burger ? '#menubar .mb-burger' : '#menubar .mb-title >> nth=0').press('Enter');
-        if (!await settles(page, '.panel .popover:popover-open', false)) f.push({ check: 'one-open', where: 'popover ⚙ + menu', detail: 'Popover bleibt offen, wenn das Menü aufgeht' });
+        if (!await settles(page, '.phead .popover:popover-open', false)) f.push({ check: 'one-open', where: 'popover ⚙ + menu', detail: 'Popover bleibt offen, wenn das Menü aufgeht' });
         await page.locator(`${gear} >> visible=true`).first().press('Enter');
         if (!await settles(page, burger ? '#menubar .mb-items' : '#menubar .mb-drop', false)) f.push({ check: 'one-open', where: 'menu + popover ⚙', detail: 'Menü bleibt offen, wenn das Popover aufgeht' });
         await page.keyboard.press('Escape'); await outsideClick(page);
@@ -378,12 +378,12 @@ for (const [theme, scheme] of [['neutral', 'dark'], ['neutral', 'light'], ['lzm'
     await openApp(page, { lang: 'en', theme, scheme });
     await contrast(page, 'header', 'header', f);
     await contrast(page, '#side', 'sources', f);
-    await contrast(page, '.panel .phead', 'panel head', f);
+    await contrast(page, '.phead', 'panel head', f);
     await page.locator('#menubar .mb-title').nth(1).click();
     await contrast(page, '#menubar .mb-drop:is(:popover-open, .open)', 'menu', f);
     await page.keyboard.press('Escape');
-    await page.locator('.panel .pop-trigger >> visible=true').first().click(); await page.waitForTimeout(300);
-    await contrast(page, '.panel .popover:popover-open', 'popover ⚙', f);
+    await page.locator('.phead .pop-trigger >> visible=true').first().click(); await page.waitForTimeout(300);
+    await contrast(page, '.phead .popover:popover-open', 'popover ⚙', f);
     await page.keyboard.press('Escape');
     await page.locator('#settings-btn').click(); await page.waitForTimeout(300);
     const tabs = await page.locator('dialog#settings [role=tab]').count();
@@ -512,16 +512,16 @@ async function eachTool(page: Page, lang: 'de' | 'en', check: (s: Surface) => Pr
   // panels with their own menus: genlock, clock, colour match (+ logo dialog)
   for (const scope of ['genlock', 'clock', 'match']) {
     if (!await menuCmd(page, `scope:${scope}`)) { f.push({ check: 'missing', where: `panel ${scope}`, detail: 'Menüpunkt nicht gefunden' }); continue; }
-    const gear = page.locator('.panel .pop-trigger >> visible=true').last();
+    const gear = page.locator('.phead .pop-trigger >> visible=true').last();
     await gear.scrollIntoViewIfNeeded(); await gear.click(); await page.waitForTimeout(300);
-    await check({ sel: '.panel .popover:popover-open', where: `popover ${scope}`, modal: false, esc: true });
+    await check({ sel: '.phead .popover:popover-open', where: `popover ${scope}`, modal: false, esc: true });
     if (scope === 'match') {
-      if (!await isOpen(page, '.panel .popover:popover-open')) { await gear.click(); await page.waitForTimeout(300); }
-      await page.locator('.panel .popover:popover-open button', { hasText: 'Logo' }).first().click(); await page.waitForTimeout(300);
+      if (!await isOpen(page, '.phead .popover:popover-open')) { await gear.click(); await page.waitForTimeout(300); }
+      await page.locator('.phead .popover:popover-open button', { hasText: 'Logo' }).first().click(); await page.waitForTimeout(300);
       await check({ sel: 'dialog[open]', where: 'dialog match logo', modal: true, esc: true });
       await closeDialog();
     }
-    if (await isOpen(page, '.panel .popover:popover-open')) await page.keyboard.press('Escape');
+    if (await isOpen(page, '.phead .popover:popover-open')) await page.keyboard.press('Escape');
   }
   // light meter: a section of the sources sidebar
   if (!await page.locator('#side').isVisible()) { await page.locator('#toggle-side').click(); await page.waitForTimeout(300); }

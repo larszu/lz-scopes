@@ -20,13 +20,25 @@ body { background: var(--surface-0); overflow: hidden; }
 .group { display: flex; gap: 4px; align-items: center; flex-wrap: nowrap; }
 .fps { color: var(--text-muted); font-family: var(--mono); min-width: 48px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
 .bar .tools { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; min-width: 0; }
+/* the tools keep their width: the frame rate gives way (ellipsis) instead of ⋯ sliding under it
+   (1280 px with German labels: #fps covered the ⋯ button and took its clicks) */
+@container bar (min-width: 641px) { .bar > .tools { flex-shrink: 0; } }
+/* (below 641 px the frame rate is hidden and the tools must be allowed to give way) */
 .bar > button, .bar .tools > button { flex: none; }
 .bar select { max-width: 160px; }
 /* overflow menu: holds the layout presets and the scale when the header gets narrow */
 #bar-more { display: none; }
-@container bar (max-width: 1000px) {
+@container bar (max-width: 1100px) {
   .bar .tools .group, .bar > .scheme-seg { display: none; }
   #bar-more { display: inline-flex; }
+}
+/* touch (tablets, #185): 44 px buttons need more room, so the presets move into ⋯ earlier
+   (iPad Pro landscape is 1366 px) instead of wrapping into a column over the scopes */
+@media (pointer: coarse) {
+  @container bar (max-width: 1400px) {
+    .bar .tools .group, .bar > .scheme-seg { display: none; }
+    #bar-more { display: inline-flex; }
+  }
 }
 @container bar (max-width: 640px) {
   .bar { gap: 6px; }
@@ -38,8 +50,30 @@ body { background: var(--surface-0); overflow: hidden; }
 /* phones: full screen stays in the View menu and on F */
 @container bar (max-width: 440px) {
   #full { display: none; }
+  /* wider fonts (Linux) pushed ⚙ past 375 px: the freeze button keeps its symbol only */
+  #freeze .flabel { display: none; }
   .bar { gap: 4px; padding: 4px 6px; }
 }
+/* layouts as icon segment, scale as compact segment (#262) */
+.layout-seg, .unit-seg { flex-wrap: nowrap; }
+.layout-seg > button.lay { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding-inline: 6px; min-width: var(--control-h); }
+.layout-seg .layicon { display: block; flex: none; fill: none; stroke: currentColor; stroke-width: 1; }
+.layout-seg > button.lay[aria-pressed='true'] .layicon rect { fill: color-mix(in srgb, currentColor 22%, transparent); }
+.layout-seg .laytext { font-size: var(--fs-sm); }
+.bar .tools .toolbar { flex-wrap: nowrap; }
+/* medium headers: "Colorist" as icon only (name in the tooltip) */
+@container bar (max-width: 1440px) {
+  .bar .layout-seg .laytext { display: none; }
+  /* scale and light/dark move into ⋯ first, the layout icons stay in the header down to 1000 px */
+  .bar .tools #globals, .bar > .scheme-seg { display: none; }
+  #bar-more { display: inline-flex; }
+}
+@container bar (max-width: 1200px) {
+  /* recording stays in ⋯ (and on R / P); shown in the header while it runs */
+  #rec-all:not(.on), #ring-save, .bar .fps { display: none; }
+}
+.bar .tools .toolbar > button { white-space: nowrap; }
+.unit-seg > button { padding-inline: 7px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .more-body .seg { flex-wrap: wrap; }
 .scheme-seg { flex: none; flex-wrap: nowrap; }
 
@@ -102,7 +136,14 @@ button.fav { min-width: var(--control-h); }
 button.fav.on { color: var(--text); border-color: var(--sel-line); }
 
 /* ---------------------------------------------------------------- dock and panels */
-.dockwrap { flex: 1; position: relative; min-width: 0; }
+.workarea { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+/* workspace tabs (#238): one row above the dock, scrolls sideways on narrow screens */
+.ws-tabs { display: flex; align-items: center; gap: var(--sp-1); min-height: 30px; padding: 0 var(--sp-1); background: var(--surface-1); border-bottom: 1px solid var(--line-1); }
+.ws-tabs[hidden] { display: none; }
+.ws-tabs .ws-list { flex: 0 1 auto; min-width: 0; }
+.ws-tabs .ws-list .tab { padding: 5px 12px; font-size: var(--fs-sm); }
+.link-dlg .link-text { width: 100%; resize: vertical; word-break: break-all; font-size: var(--fs-sm); }
+.dockwrap { flex: 1; position: relative; min-width: 0; min-height: 0; }
 .dockwrap > canvas#gl { position: absolute; left: 0; top: 0; width: 100%; height: 100%; visibility: hidden; pointer-events: none; }
 #dock { position: absolute; inset: 0; }
 .fatal { margin: auto; color: var(--err); padding: 20px; }
@@ -121,7 +162,8 @@ button.fav.on { color: var(--text); border-color: var(--sel-line); }
   --dv-separator-border: var(--line-1);
   --dv-paneview-header-border-color: var(--line-1);
   --dv-tabs-and-actions-container-font-size: var(--fs-sm);
-  --dv-tabs-and-actions-container-height: 24px;
+  /* one row for tab and panel head (#261) */
+  --dv-tabs-and-actions-container-height: calc(var(--control-h) + 2px);
   --dv-drag-over-background-color: var(--drag-bg);
   --dv-drag-over-border-color: var(--drag-border);
   --dv-sash-color: transparent;
@@ -137,6 +179,20 @@ button.fav.on { color: var(--text); border-color: var(--sel-line); }
   .lzs-dock { --dv-tabs-and-actions-container-height: var(--control-h); }
   .dv-sash::after { content: ''; position: absolute; inset: -12px; }
 }
+/* one head per panel (#261, src/dock.ts): tab (drag handle) and panel head share the row of the
+   group header. A tab alone in its group shows grip and number; stacked tabs keep their names. */
+.lzs-dock .dv-tabs-and-actions-container { container: panel / inline-size; }
+.lzs-dock .dv-tabs-and-actions-container:has(.dock-head > .phead) .dv-void-container { flex: 0 0 4px; }
+.lzs-dock .dv-single-tab .tname { display: none; }
+.lzs-dock .dv-single-tab .dv-tab { padding-inline: 4px 6px; }
+.lzs-dock .lzs-tab .dv-default-tab-content { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+.lzs-dock .lzs-tab .tnum { font-variant-numeric: tabular-nums; }
+.lzs-dock .lzs-tab .tgrip { color: var(--text-faint); cursor: grab; letter-spacing: -1px; }
+.compact .lzs-tab .tgrip { display: none; }
+.lzs-dock .dv-left-actions-container { flex: 1 1 auto; min-width: 0; display: flex; }
+.dock-head { flex: 1 1 auto; min-width: 0; display: flex; }
+.dock-head:empty { display: none; }
+.dock-head > .phead { flex: 1 1 auto; min-width: 0; background: transparent; border-bottom: 0; padding: 0 4px; }
 .dock-content { width: 100%; height: 100%; }
 .dock-content > .panel { width: 100%; height: 100%; border: 0; border-radius: 0; }
 
@@ -157,7 +213,18 @@ button.fav.on { color: var(--text); border-color: var(--sel-line); }
 @media (pointer: coarse) {
   .phead .plead > select, .phead button.icon { min-height: 36px; }
 }
+/* tablets (#185): finger-sized panel heads; phones keep 36 px for the scope area */
+@media (pointer: coarse) and (min-width: 641px) {
+  .phead .plead > select, .phead button.icon { min-height: 44px; }
+  .phead button.icon { min-width: 44px; }
+}
 /* narrow panels: chips give way, the source select shrinks first */
+/* "Settings" next to the ⚙ from 360 px panel width (#261) */
+.phead .pop-trigger .plabel { display: none; }
+@container panel (min-width: 360px) {
+  .phead .pop-trigger:not(.help-trigger) { display: inline-flex; align-items: center; gap: 4px; }
+  .phead .pop-trigger .plabel { display: inline; font-size: var(--fs-sm); }
+}
 @container panel (max-width: 360px) {
   .phead .stagechip, .phead .llchip { display: none; }
   .phead .plead > select { max-width: 110px; }
@@ -171,13 +238,24 @@ button.fav.on { color: var(--text); border-color: var(--sel-line); }
 .body { touch-action: none; }
 .body .zoomchip { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); z-index: 2; font-size: var(--fs-xs); line-height: 1.4; padding: 1px 7px; min-height: 0; border: 0; border-radius: var(--radius); background: var(--chip-bg); color: var(--chip-text); font-variant-numeric: tabular-nums; cursor: pointer; opacity: 0.9; }
 .body .zoomchip[hidden] { display: none; }
-.body .gesture-hint { display: none; position: absolute; right: 6px; bottom: 6px; z-index: 2; pointer-events: none; font-size: var(--fs-xs); padding: 2px 8px; border-radius: var(--radius-s, 6px); background: var(--chip-bg); color: var(--chip-text); opacity: 0.75; }
+.body .gesture-hint { display: none; position: absolute; right: 6px; bottom: 6px; max-width: calc(100% - 12px); z-index: 2; pointer-events: none; font-size: var(--fs-xs); padding: 2px 8px; border-radius: var(--radius-s, 6px); background: var(--chip-bg); color: var(--chip-text); opacity: 0.75; }
 .body[data-zoomable="1"] .gesture-hint { display: block; }
 .gestures-seen .body .gesture-hint { display: none; }
 .body .zoomchip:hover, .body .zoomchip:focus-visible { opacity: 1; }
 button.pin { opacity: 0.35; filter: grayscale(1); }
 button.pin.on { opacity: 1; filter: none; background: transparent; border-color: transparent; }
 .stagechip { max-width: 40%; }
+/* A/B split in the picture panel head (#177): pressed = on */
+button.splitbtn.on { background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-text); }
+@container panel (max-width: 360px) { .phead .camchip { display: none; } }
+/* cameras from a multiviewer (#217): "Split …" dialog and the cards of cameras and splits */
+.src .camsplit-open { flex: none; }
+.src.derived .name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camsplit .camsplit-view { display: block; width: 100%; height: auto; border-radius: var(--radius-s); background: #000; cursor: pointer; margin: var(--sp-2) 0; }
+.camsplit .camsplit-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--sp-1) var(--sp-2); margin: var(--sp-2) 0; }
+.camsplit .camsplit-tile { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.camsplit .camsplit-tile input[type='text'], .camsplit .camsplit-tile input:not([type]) { flex: 1; min-width: 0; }
+.camsplit .camsplit-layouts .seg { flex-wrap: wrap; }
 button.roichip { background: var(--warn-bg); border-color: var(--warn); color: var(--warn-text); }
 .body .ask { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 5; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; max-width: calc(100% - 16px); background: var(--surface-2); border: 1px solid var(--warn); border-radius: var(--radius-lg); padding: 6px 8px; color: var(--warn-text); }
 
@@ -280,6 +358,7 @@ dialog.lutlib table td.hint { margin: 0; }
 .opple table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); margin-top: 4px; font-variant-numeric: tabular-nums; }
 .opple td { padding: 1px 3px; } .opple td.n { text-align: right; }
 .opple .cmp { font-size: var(--fs-sm); margin-top: 6px; line-height: 1.45; }
+.opple td .meta { font-size: var(--fs-xs); color: var(--text-muted); }
 /* Bluetooth device chooser of the desktop app (light meter and LED wall) */
 .picker { border: 1px solid var(--line-3); border-radius: var(--radius); padding: 6px; margin-top: 6px; }
 .picker button.pick { display: block; width: 100%; text-align: left; margin-top: 3px; }

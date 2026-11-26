@@ -11,10 +11,10 @@
 export const CODECS10 = ['hevc10', 'hevc422', 'v210', 'prores'];
 
 export const OVERLAY_SCOPES = ['wf-luma', 'wf-color', 'wf-skin', 'wf-rgb', 'parade', 'yrgb', 'ycbcr', 'vector', 'hls', 'cie', 'hist'];
-export const AUDIO_SCOPES = ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check'];
+export const AUDIO_SCOPES = ['audio-meter', 'audio-loudness', 'audio-spectrum', 'audio-phase', 'audio-check', 'audio-surround', 'audio-field', 'audio-spl', 'audio-rta'];
 /** Opple Light Master views (src/opple/scopes.ts) */
 export const LIGHT_SCOPES = ['light-cie', 'light-vector', 'light-bands', 'light-trend', 'light-map', 'light-spectrum', 'light-swatch'];
-export const PANEL_SCOPES = ['picture', ...OVERLAY_SCOPES, 'vector3', 'wf-green', 'match', 'diamond', 'cube', 'satlum', 'chplot', 'minmax', 'timeline', 'strip', 'qclog', 'stats', 'simulcast', 'encoder', 'lens', 'sdi', 'tiles', 'noise', 'wshading', 'skinall', 'chart', 'drift', 'shguide', ...AUDIO_SCOPES, 'clock', 'genlock', ...LIGHT_SCOPES];
+export const PANEL_SCOPES = ['picture', ...OVERLAY_SCOPES, 'vector3', 'wf-green', 'match', 'diamond', 'cube', 'surface', 'satlum', 'chplot', 'minmax', 'timeline', 'strip', 'qclog', 'stats', 'simulcast', 'encoder', 'lens', 'sdi', 'tiles', 'noise', 'wshading', 'skinall', 'chart', 'drift', 'shguide', ...AUDIO_SCOPES, 'clock', 'genlock', ...LIGHT_SCOPES];
 export const OUTPUT_VIEWS = ['grid', 'panel', 'clean', 'overlay'];
 export const TRANSPORT_OPS = ['play', 'pause', 'toggle', 'stop', 'next', 'prev', 'forward', 'rewind', 'start', 'end'];
 const MODES = ['toggle', 'on', 'off'];
@@ -23,10 +23,16 @@ const MODES = ['toggle', 'on', 'off'];
 export const SETTING_KEYS = ['theme', 'scheme', 'sidebar', 'display', 'hdrPreview', 'surround', 'unit', 'tint', 'precision', 'falseColour', 'skinLuma', 'skinHue', 'zebra', 'stage', 'deRef', 'lowLatency', 'refSource', 'refMode', 'refOpacity'];
 export const GEN_SIGNALS = ['sine', 'square', 'triangle', 'saw', 'white', 'pink', 'pink-band', 'sweep', 'steps', 'ebu-ident', 'glits', 'ident-lr', 'polarity', 'avsync', 'blits', 'ebu-multi'];
 
+/** Multiviewer layouts of "Split …" (src/cameras.ts LAYOUTS) and 'none'. */
+export const SPLIT_LAYOUTS = ['2x2', '3x3', '4x4', '2+8', '1+5', 'none'];
+
 /** Every command with a short description (GET /api/control/commands, docs). */
 export const COMMANDS = {
   'state': 'Query the state',
   'source.select': 'Select a source: source (number, name or id), panel (optional; none = all panels)',
+  'source.split': 'Split a source into cameras, one per multiviewer tile (#217): source, layout (2x2, 3x3, 4x4, 2+8, 1+5; none = remove its tile cameras), inset (border per side as share of the tile height, 0 … 0.25, optional)',
+  'panel.split': 'A/B split of a picture panel (#177): panel, mode toggle|on|off, source (B, optional), spread (true = the other unpinned panels follow, optional)',
+  'panel.follow': 'A panel follows a picture panel, its A/B split included (#177): panel, follow (picture panel; 0 = its own source again)',
   'layout.preset': 'Layout preset: preset (1–6, id such as lc or label such as 2×2)',
   'layout.load': 'Load a saved layout configuration: name',
   'panel.scope': 'Scope of a panel: panel, scope',
@@ -45,6 +51,7 @@ export const COMMANDS = {
   'transport': 'Video file: op play|pause|toggle|stop|next|prev|forward|rewind|start|end, source (optional)',
   'audio.reset': 'Reset loudness (I, LRA, max M/S, max TP, counters, log; Tech 3341): source (optional; none = all sources with sound)',
   'audio.pause': 'Pause/resume I and LRA (Tech 3341): mode toggle|on|off, source (optional; none = all sources with sound)',
+  'av.reset': 'Clear the A/V offset measurement and its long-run history: source (optional; none = all sources with sound)',
   'generator': 'Tone generator: mode toggle|on|off, signal (optional), freq (Hz, optional), level (dBFS, optional; above −6 only with force: true)',
   'record': 'Local recording: mode toggle|on|off, source (optional; none = all recordable sources, as "record all")',
   'ring': 'Ring buffer on/off: mode toggle|on|off, source (optional; none = all bridge sources)',
@@ -109,6 +116,20 @@ export function validateCommand(raw) {
   switch (cmd) {
     case 'state': break;
     case 'source.select': check(reqRef('source')); check(optRef('panel')); break;
+    case 'source.split': {
+      check(reqRef('source'));
+      if (!SPLIT_LAYOUTS.includes(/** @type {string} */ (c.layout))) errors.push(`layout: ${SPLIT_LAYOUTS.join(', ')}`); else out.layout = c.layout;
+      if (c.inset !== undefined && c.inset !== '') { const v = Number(c.inset); if (!Number.isFinite(v) || v < 0 || v > 0.25) errors.push('inset: 0 … 0.25'); else out.inset = v; }
+      break;
+    }
+    case 'panel.split':
+      check(reqRef('panel')); check(optMode()); check(optRef('source'));
+      if (c.spread !== undefined && typeof c.spread !== 'boolean') errors.push('spread: true/false'); else if (c.spread !== undefined) out.spread = c.spread;
+      break;
+    case 'panel.follow':
+      check(reqRef('panel'));
+      if (c.follow === 0 || c.follow === '0') out.follow = 0; else check(reqRef('follow'));
+      break;
     case 'layout.preset': check(reqRef('preset')); break;
     case 'layout.load': check(reqRef('name')); break;
     case 'panel.scope':
@@ -148,7 +169,7 @@ export function validateCommand(raw) {
       check(optTarget()); check(optCodec());
       break;
     case 'stream.stop': check(optName('output')); check(optName('stream')); break;
-    case 'audio.reset': check(optRef('source')); break;
+    case 'audio.reset': case 'av.reset': check(optRef('source')); break;
     case 'audio.pause': check(optMode()); check(optRef('source')); break;
     case 'generator': {
       check(optMode());

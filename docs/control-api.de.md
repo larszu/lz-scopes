@@ -27,9 +27,12 @@ Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen
 |---|---|
 | `state` | – (Antwort `result` = Zustand) |
 | `source.select` | `source`; `panel` optional (ohne = alle Panels) |
+| `source.split` | `source`, `layout` (`2x2`, `3x3`, `4x4`, `2+8`, `1+5`; `none` entfernt die Kachel-Kameras), `inset` optional (Rand je Seite als Anteil der Kachelhöhe, 0 … 0,25, Vorgabe 0,1). Legt je Multiviewer-Kachel eine Kamera an (#217), die Antwort nennt die Kameras |
+| `panel.split` | `panel` (Bild-Panel), `mode` `toggle`/`on`/`off`, `source` optional (B), `spread` optional (`true` = die anderen nicht angepinnten Panels folgen). Der Split ist dann die Quelle `Split Panel N` (#177) |
+| `panel.follow` | `panel`, `follow` (Bild-Panel, dessen Quelle samt Split dieses Panel zeigt; `0` = wieder die eigene Quelle) |
 | `layout.preset` | `preset`: 1–6, Kennung (`lc`) oder Beschriftung (`2x2`, `Colorist`) |
 | `layout.load` | `name` einer gespeicherten Layout-Konfiguration |
-| `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `hls`, `cie`, `diamond`, `cube`, `satlum`, `chplot`, `minmax`, `timeline`, `strip`, `qclog`, `hist`, `stats`, `tiles`, `noise`, `wshading`, `skinall`, `chart`, `drift`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `clock`, `genlock`) |
+| `panel.scope` | `panel`, `scope` (`picture`, `wf-luma`, `wf-color`, `wf-skin`, `wf-rgb`, `parade`, `yrgb`, `ycbcr`, `vector`, `hls`, `cie`, `diamond`, `cube`, `surface`, `satlum`, `chplot`, `minmax`, `timeline`, `strip`, `qclog`, `hist`, `stats`, `tiles`, `noise`, `wshading`, `skinall`, `chart`, `drift`, `audio-meter`, `audio-loudness`, `audio-spectrum`, `audio-phase`, `audio-check`, `audio-surround`, `audio-field`, `audio-spl`, `audio-rta`, `clock`, `genlock`) |
 | `panel.maximize` | `panel`, `mode` `toggle`\|`on`\|`off`; `off` ohne `panel` = zurück |
 | `freeze` | `mode` `toggle`\|`on`\|`off`; alle Quellen im selben Moment der Szene (gemessene Latenz ausgeglichen) |
 | `qc.clear` | – (QC-Protokoll leeren; Zustand `qc`: `active`, `total`, `last`) |
@@ -42,6 +45,7 @@ Jeder Befehl ist ein JSON-Objekt mit `cmd`. Panels, Quellen, Vorlagen und Szenen
 | `stream.start` | `stream` (Name → `/out/<stream>.mjpeg`), `output` optional (sonst die erste offene Ausgabe; ist keine offen, öffnet sich ein Overlay-Fenster), `target` optional (`rtmp://`, `srt://`, `rtsp://`, `udp://`, `tcp://`, `rtp://`), `codec` optional (10 bit, wie bei `output.open`; ohne Angabe MJPEG; ein 10-bit-Codec geht nicht über RTMP) |
 | `stream.stop` | `output` oder `stream` optional (ohne = alle) |
 | `transport` | `op` `play`\|`pause`\|`toggle`\|`stop`\|`next`\|`prev`\|`forward`\|`rewind`\|`start`\|`end`, `source` optional (sonst die gezeigte Videodatei; ohne Videodatei die geöffneten Aufnahmen an ihrer gemeinsamen Uhr) |
+| `av.reset` | `source` optional (sonst alle Quellen mit Ton): A/V-Versatz und seinen Verlauf löschen (#236) |
 | `audio.reset` | `source` optional (sonst alle Quellen mit Ton): I, LRA, Max M/S, Max TP, Zähler und Protokoll zurücksetzen (EBU Tech 3341) |
 | `audio.pause` | `mode` `toggle`\|`on`\|`off`, `source` optional: I und LRA anhalten/fortsetzen (Tech 3341) |
 | `generator` | `mode` `toggle`\|`on`\|`off`, `signal` optional (`sine`, `ebu-ident`, `glits`, `blits`, `ebu-multi`, `ident-lr`, `pink`, `pink-band`, `white`, `sweep`, `steps`, `polarity`, `avsync`, …), `freq` 10–20000 Hz, `level` −90–0 dBFS; über −6 dBFS nur mit `"force": true` |
@@ -72,6 +76,9 @@ Antwort: `{ ok, result?, error?, state }`. `error` ist ein englischer Text, der 
   "audio": { "source": "Kamera 1", "momentary": -22.8, "shortTerm": -23.1, "integrated": -23.0, "lra": 4.2, "maxTP": -2.1,
              "paused": false, "seconds": 312, "avOffsetMs": 12.5, "ident": "EBU-Stereo-Ident (R 49)", "identProblems": [] },
   "generator": { "running": false, "signal": "sine", "level": -18, "freq": 1000, "channels": 2 },
+  "light": { "target": { "schema": "lz-scopes.light-target/1", "label": "Key", "place": "Stage left", "note": "", "time": "2026-11-24T10:00:00.000Z", "device": "LM3",
+             "lux": 1200, "quantity": "lx", "ev100": 8.91, "x": 0.4232, "y": 0.3990, "u": 0.2435, "v": 0.5165, "cct": 3200, "duv": 0 },
+             "latest": { "…": "same fields, without label/place/note" }, "delta": { "duv": 0.0042, "cct": 180, "duvDiff": 0.0011, "ev": -0.35 }, "points": 12 },
   "recording": { "active": 1, "sources": [{ "name": "Kamera 1", "id": "s1", "seconds": 312, "take": "20261010-213005" }], "ring": [{ "name": "Kamera 2", "id": "s2", "pre": 60, "buffered": 60 }] },
   "settings": [{ "key": "unit", "kind": "select", "label": "Skala", "value": "percent", "options": ["percent", "bit8", "bit10", "nits"] }, …],
   "sources": [], "layouts": [], "presets": [], "panels": [], "scenes": [], "patterns": []
@@ -80,7 +87,7 @@ Antwort: `{ ok, result?, error?, state }`. `error` ist ein englischer Text, der 
 
 Namen (Quellen, Szenen, Testbilder, Ident) stehen so da, wie die App sie zeigt; selbst vergebene Namen bleiben, wie eingegeben.
 
-`outside` ist der Anteil der aktiven Quelle außerhalb des Zielfarbraums eines offenen CIE-Panels (#181; `null`, wenn keines offen ist), `far` der Teil deutlich außerhalb – dieselbe Regel wie die Gamut-Warnung in der Bildansicht. `clip`, `yMin`, `yMax` sind Prozent (0,1-genau) der aktiven Quelle – das ist die Quelle, die die meisten sichtbaren Panels zeigen. Ohne Statistik stehen sie auf `null`. `audio` gilt für die aktive Quelle mit Ton (sonst die erste mit Ton), Werte in LUFS/LU/dBTP auf 0,1 gerundet, `avOffsetMs` nach ITU-R BT.1359-1 (+ = Ton vor Bild), `null` ohne Messwert. `layoutName` ist die zuletzt geladene Layout-Konfiguration bzw. die Beschriftung der Vorlage.
+`outside` ist der Anteil der aktiven Quelle außerhalb des Zielfarbraums eines offenen CIE-Panels (#181; `null`, wenn keines offen ist), `far` der Teil deutlich außerhalb – dieselbe Regel wie die Gamut-Warnung in der Bildansicht. `clip`, `yMin`, `yMax` sind Prozent (0,1-genau) der aktiven Quelle – das ist die Quelle, die die meisten sichtbaren Panels zeigen. Ohne Statistik stehen sie auf `null`. `audio` gilt für die aktive Quelle mit Ton (sonst die erste mit Ton), Werte in LUFS/LU/dBTP auf 0,1 gerundet, `avOffsetMs` nach ITU-R BT.1359-1 (+ = Ton vor Bild), `null` ohne Messwert. Dauermessung (#236): `avMeanMs`, `avMinMs`, `avMaxMs`, `avDriftMsPerHour` (Steigung der Ausgleichsgeraden über die letzte Stunde, `null` vor 2 min und 10 Paaren), `avPairs`, `avBeyondDetect`/`avBeyondAccept` (Paare außerhalb der Grenzen von BT.1359-1), `avSince` (ms seit Epoche). `nonPcm` listet SMPTE-ST-337-Daten in Kanalpaaren (#234): `pair` (1 = Kanäle 1/2), `type` (Name nach ST 338, z. B. Dolby E), `dataType`, `bits`, `stream`, bei AC-3/E-AC-3 zusätzlich `codec`, `mode`, `dialnorm`. `layoutName` ist die zuletzt geladene Layout-Konfiguration bzw. die Beschriftung der Vorlage. `light` (#184) ist die Lichtmessung: `target` der als Ziel gemerkte Punkt (★ im Lichtmesser; `null` ohne Ziel), `latest` die letzte Messung des aktiven Geräts, `delta` letzte Messung minus Ziel (Δu′v′ CIE 1976, ΔCCT in K, ΔDuv, Helligkeit in EV). `ev100` ist EV bei ISO 100 mit der Lichtmess-Konstante C = 250 (flacher Empfänger, ISO 2720). Andere Werkzeuge (light-planner für die Leuchten, camera-bridge für den Farbabgleich der Kamera) lesen das Ziel hier; das in der App kopierte bzw. gespeicherte Ziel-JSON hat dieselben Felder und dazu das Spektrum bei Spektrometer-Messungen.
 
 Über WebSocket kommen `{type:"hello", connected, state, commands}` beim Verbinden, `{type:"state", state}` bei jeder Änderung (höchstens viermal pro Sekunde), `{type:"connected", connected}` wenn das Hauptfenster kommt oder geht, und `{type:"result", id, ok, result?, error?}` auf jeden Befehl (die `id` des Befehls wird zurückgegeben).
 
@@ -115,6 +122,54 @@ curl -s -H "$J" -H 'Authorization: Bearer geheim' -d '{"cmd":"freeze"}' http://s
 ```
 
 Im Browser öffnet `output.open` ein Fenster nur, wenn Pop-ups für die Seite erlaubt sind; die Desktop-App öffnet es immer.
+
+## Ereignisprotokoll und Prometheus
+
+Die Bridge führt ein **Ereignisprotokoll ohne Schwellwerte** (`server/eventlog.mjs`, Ringpuffer mit 2000 Einträgen, bis zum Neustart der Bridge): jede Änderung am Fluss eines Streams (Start, Stopp, Ende, Fehler), an seinem Bildformat und seinen Tonkanälen, am PTP-Zustand, an Domäne, Grandmaster, Taktklasse und UTC-Versatz, am Lock-Zustand des Grandmasters (ST 2059-2 SM-TLV) und am ST-2110-RTP-Strom, den das Uhr-Panel beobachtet. PTP und RTP werden nur verfolgt, solange das Uhr-Panel ihre Monitore laufen lässt. In der App: Quellen → Ereignisprotokoll …
+
+| Pfad | Antwort |
+|---|---|
+| `GET /api/events` | `{ max, total, events: [{ id, t, kind, source, item, from, to }] }`, `?since=<id>` für die neueren |
+| `GET /api/events?format=csv` | dasselbe als CSV (Semikolon, Zeiten in UTC) |
+| `DELETE /api/events` | leert das Protokoll |
+| `GET /metrics` | Prometheus-Textformat 0.0.4: Streams (Bilder, verworfen, Bytes, Größe, fps), PTP (Zustand, Versatz, Jitter, Laufzeit, Taktklasse, Lock-Status), RTP (Pakete, Verzug, Raster), Zahl der Ereignisse |
+
+Zugriff: von diesem Rechner immer, von anderen nur mit dem Steuer-Token (`Authorization: Bearer <token>`), Webseiten fremder Herkunft nie. Quellen erscheinen ohne Benutzername, Passwort und Query. Beispiel für die Abfrage:
+
+```yaml
+scrape_configs:
+  - job_name: lz-scopes
+    static_configs: [{ targets: ['studio.local:4192'] }]
+    authorization: { credentials: geheim }   # nur wenn Prometheus auf einem anderen Rechner läuft
+```
+## ST-2110-Mitschnitt (pcap)
+
+Für `st2110:`-Quellen (docs/research/st2110-empfang.md) schneidet die Bridge die empfangenen Flows als pcap mit. Zugriff wie oben: Mitschnitte enthalten Anlagen-Adressen.
+
+| Pfad | |
+|---|---|
+| `GET /api/st2110` | `services: [{ id, flows, capture }]` (laufende Ton-/Anc-Services, nur mit Steuerzugriff) neben den Netzeingängen und Generatoren (unten) |
+| `GET /api/st2110/pcap?id=&seconds=5&mb=50` | Schnappschuss aller Flows des Service (beide 2022-7-Wege), Download |
+| `POST /api/st2110/ring` `{id, mode:"on"\|"off", seconds?, mb?}` | Ringpuffer auf der Platte (Vorgabe 60 s / 200 MB) |
+| `POST /api/st2110/ring/save` `{id}` | → `{ ok, file, bytes, url }` |
+| `GET /api/st2110/file?name=` | ein gesicherter Mitschnitt |
+
+`id` kann fehlen, wenn nur ein Service läuft. Der Zustand der aktiven Quelle (`state.st2110`) enthält die Flow-Zähler und die ST-2022-7-Auswertung. IP-/UDP-Kopf in der Datei sind nachgebaut, die Zeitstempel sind Software-Empfangszeiten (keine Hardware-Zeitstempel).
+## ST-2110-Netz-Eingänge und Testsignale (Bridge)
+
+Diese Aufrufe gehen an die Bridge selbst, nicht an das Hauptfenster. Lesen ist offen; Änderungen folgen der Zugriffsregel oben. Hintergrund: [docs/research/st2110-netz.md](research/st2110-netz.md).
+
+```bash
+S=http://127.0.0.1:4192/api/st2110
+curl -s $S                                                                  # Eingänge net1/net2, Generatoren, NMOS-Stand
+curl -s -X PUT -H 'Content-Type: application/sdp' --data-binary @kamera1.sdp $S/inputs/net1   # Quelle st2110:net1 empfängt diesen Flow
+curl -s -X DELETE $S/inputs/net1                                            # trennen
+curl -s -H "$J" -d '{"kind":"video","format":"1080p25","host":"239.100.0.1","port":5004}' $S/generators
+curl -s $S/generators/gen1.sdp                                              # SDP des Generators
+curl -s -X PATCH -H "$J" -d '{"running":false}' $S/generators/gen1
+```
+
+`kind`: `video` (ST 2110-20; `format`, `depth` 8/10, `matrix` bt709/bt2020), `audio` (ST 2110-30; `channels` 1–64, `freq`, `levelDb`), `anc` (ST 2110-40, Timecode; `fps`), `sdi` (ST 2022-6; `format` 720p/1080p, `fps`). `host2`/`port2` senden dieselben Pakete ein zweites Mal (ST 2022-7). Mit `--nmos-port <n>` gestartet, bietet die Bridge die Eingänge zusätzlich als NMOS-Receiver (IS-04/IS-05) und die Generatoren als Sender an; `--nmos-registry <url>` legt die Registry fest, sonst wird sie per DNS-SD gesucht.
 
 ## Companion-Modul
 

@@ -56,7 +56,7 @@ Other hosts may produce planar `yuv444p16le` instead of `ayuv64le`, but must the
 
 ### Packed v210 (`format=yuv&pack=v210`, #258)
 
-With `pack=v210` as well, a DeckLink/AJA helper source that delivers `v210` goes out **unconverted**, when the requested `width` is 0 or at least the signal width and no recording or ring buffer runs (those need ffmpeg; the bridge then falls back to the path above and sends a new `info`). `info` additionally has `"pack":"v210"`, `bits` 10, `width`/`height` = signal size. Each frame is the helper's v210 picture (6 pixels in 4 LE 32-bit words, rows padded to 48 pixels = 128 bytes), with the 16-byte header in protocol 2. About a third of 16-bit RGBA at the same size. The client unpacks it to the A, Y′, Cb, Cr layout above in the frame worker (`src/v210.ts`); odd pixels get the mean chroma of their neighbours.
+With `pack=v210` as well, a DeckLink/AJA helper source that delivers `v210` goes out **unconverted**, when the requested `width` is 0 or at least the signal width and no recording or ring buffer runs (those need ffmpeg; the bridge then falls back to the path above and sends a new `info`). `info` additionally has `"pack":"v210"`, `bits` 10, `width`/`height` = signal size. Each frame is the helper's v210 picture (6 pixels in 4 LE 32-bit words, rows padded to 48 pixels = 128 bytes), with the 16-byte header in protocol 2. About a third of 16-bit RGBA at the same size. The client keeps the words packed (`src/v210.ts`): the GPU gets them as an R32UI texture (a third of the upload of the unpacked layout) and one shader pass per picture writes the A, Y′, Cb, Cr texture above, which every scope reads; the CPU readers (statistics, probe, R 103, line min/max, timeline) decode the words in place. Odd pixels get the mean chroma of their neighbours, the same integers on both paths. Debug switch `localStorage['lz-scopes.debug'] = '{"v210":"worker"}'`: unpack in the frame worker instead (the path before; for comparison).
 
 ## Protocol 2: picture and sound (`audio=1`)
 
@@ -162,6 +162,13 @@ A file the app released (`file:<name>`, `server/media.mjs`) is played, paused an
 - Server → client: `{"type":"clip","state":"playing"|"paused","pos":<s>,"duration":<s>,"fps":<n>,"rate":<x>,"loop":<bool>}` at every command, at the end of the clip and once a second with the statistics; in between the client runs the playhead on itself.
 
 Every command starts a new ffmpeg: playing `-ss <pos> -readrate <rate>`, paused `-ss <pos>` with `-frames:v 1`, so exactly one picture goes out and stays on the scopes. Commands arriving while one is starting up coalesce. Reverse play is the page's own job (repeated `step`) – ffmpeg decodes forwards only. At the end of the clip the socket stays open: with `loop` it plays again from the start, otherwise it holds on the last frame.
+
+## ST 2110 sources (`st2110:?…`)
+
+Sound only (`width` 0, protocol 2): `info.audio` as usual plus `channelOrder` (groups after ST 2110-30 `channel-order`), `info.st2110` lists the flows. ANC arrives as `{"type":"vanc","packets":[…],"rtp":{ts,field,lagMs?,gridTicks?,ref?}}`, counters and the ST 2022-7 evaluation in `stats.st2110`. A packet lost on every path is a jump in the sample index.
+
+- Client → server: `{"type":"pcap","cmd":"snapshot","seconds":5,"mb":50}`, `{"type":"pcap","cmd":"ring","mode":"on"|"off","seconds":60,"mb":200}`, `{"type":"pcap","cmd":"save"}`.
+- Server → client: `{"type":"pcap","state":"capturing"|"saved"|"ring"|"error","file"?,"packets"?,"bytes"?,"ring"?}`; the file is fetched with `GET /api/st2110/file?name=` (docs/control-api.md).
 
 ## iOS app: RTSP direct (loopback)
 

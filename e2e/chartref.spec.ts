@@ -12,7 +12,7 @@ test.afterAll(async () => { await a?.close(); });
 async function cells() {
   return a.page.evaluate(() => {
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
-      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'chart')!;
+      p.getBoundingClientRect().width > 4 && p.dataset.scope === 'chart')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
     const px = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data;
     let lit = 0;
@@ -32,8 +32,8 @@ test('Farbtafel gegen Sollwerte: Panel rechnet ohne Fehler und zeigt die Matrix'
   const camera = await until(async () => { const n = await cells(); return n > 500 ? n : false; }, 30_000, 'Match-Matrix gezeichnet');
 
   // ⚙ → Referenz: Sollwerte der Tafel
-  await page.locator('.panel .pop-trigger:not(.help-trigger) >> visible=true').first().click();
-  await page.locator('.panel .popover:popover-open').getByLabel('Referenz').selectOption('values');
+  await page.locator('.phead .pop-trigger:not(.help-trigger) >> visible=true').first().click();
+  await page.locator('.phead .popover:popover-open').getByLabel('Referenz').selectOption('values');
   await page.keyboard.press('Escape');
 
   // the panel keeps drawing – now against the reference values, with the hint about the chart

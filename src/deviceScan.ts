@@ -1,10 +1,10 @@
 // Device discovery for the source list (#221, UX analysis 11/2026): the bridge is asked every few
-// seconds which DeckLink, AJA and NDI® inputs and which capture devices (ffmpeg dshow /
-// AVFoundation / V4L2, /api/devices) it sees. They show as suggestions above the source list –
+// seconds which DeckLink, AJA and NDI® inputs, which capture devices (ffmpeg dshow /
+// AVFoundation / V4L2, /api/devices) and which ST 2110 network inputs with an SDP it sees. They show as suggestions above the source list –
 // nothing is added by itself, because every analysed input costs CPU and GPU.
 
 export interface Found {
-  url: string; name: string; kind: 'decklink' | 'aja' | 'ndi' | 'device';
+  url: string; name: string; kind: 'decklink' | 'aja' | 'ndi' | 'device' | 'st2110';
   /**
    * A Blackmagic card seen as a system camera (Windows "Blackmagic WDM Device", macOS
    * "UltraStudio …" camera) while the DeckLink helper finds nothing: no add button, a hint to the
@@ -15,6 +15,8 @@ export interface Found {
 interface DevList { available?: boolean; devices?: { index: number; name: string }[] }
 interface NdiList { available?: boolean; sources?: { name: string }[] }
 export interface CaptureList { name: string; url: string; kind?: string }
+/** GET /api/st2110 (server/st2110/service.mjs): network inputs; connected ones have an SDP */
+interface NetList { inputs?: { url: string; connected: boolean; summary?: { name?: string; format?: string } | null }[] }
 
 /** NDI names are "MACHINE (Source)": the part in brackets, short. */
 export const ndiName = (n: string) => n.replace(/^.*\((.*)\)$/, '$1').slice(0, 40);
@@ -26,7 +28,7 @@ export const isBlackmagicCamera = (name: string) => /blackmagic|ultrastudio|deck
 const base = (url: string) => url.replace(/#.*$/, '');
 
 /** Suggestions from the bridge's answers, without inputs that already are sources. */
-export function foundDevices(dl: DevList | null, aja: DevList | null, ndi: NdiList | null, existing: readonly string[], capture: readonly CaptureList[] | null = null): Found[] {
+export function foundDevices(dl: DevList | null, aja: DevList | null, ndi: NdiList | null, existing: readonly string[], capture: readonly CaptureList[] | null = null, net: NetList | null = null): Found[] {
   const have = new Set(existing.map(base));
   const out: Found[] = [];
   const deckLinks = dl?.available ? dl.devices ?? [] : [];
@@ -47,6 +49,7 @@ export function foundDevices(dl: DevList | null, aja: DevList | null, ndi: NdiLi
     const snd = audio.find((a) => a.name === c.name);
     out.push({ url: snd ? `${c.url}#audio=${snd.url.replace(/^audio:[a-z]+:/, '')}` : c.url, name: c.name.slice(0, 40), kind: 'device' });
   }
+  for (const i of net?.inputs ?? []) if (i.connected) out.push({ url: i.url, name: (i.summary?.name || i.summary?.format || i.url).slice(0, 40), kind: 'st2110' });
   return out.filter((f) => f.blackmagicCamera || !have.has(base(f.url)));
 }
 
@@ -63,9 +66,9 @@ export function watchDevices(http: () => string, existing: () => readonly string
   const tick = async () => {
     if (stopped) return;
     const b = http();
-    const [dl, aja] = await Promise.all([get<DevList>(`${b}/api/decklink`), get<DevList>(`${b}/api/aja`)]);
+    const [dl, aja, net] = await Promise.all([get<DevList>(`${b}/api/decklink`), get<DevList>(`${b}/api/aja`), get<NetList>(`${b}/api/st2110`)]);
     if (n++ % 3 === 0) [ndi, capture] = await Promise.all([get<NdiList>(`${b}/api/ndi`), get<CaptureList[]>(`${b}/api/devices`)]);
-    const list = foundDevices(dl, aja, ndi, existing(), Array.isArray(capture) ? capture : null);
+    const list = foundDevices(dl, aja, ndi, existing(), Array.isArray(capture) ? capture : null, net);
     const sig = JSON.stringify(list);
     if (sig !== last) { last = sig; onChange(list); }
     if (!stopped) timer = setTimeout(tick, everyMs);

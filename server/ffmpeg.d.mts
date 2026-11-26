@@ -1,4 +1,8 @@
-export interface FfmpegInfo { path: string; origin: 'env' | 'bundled' | 'vendor' | 'system' | 'none'; version: string | null; license: string | null; srt: boolean; inputSrt: boolean }
+export type BroadcastFormat = 'prores' | 'jpegxs' | 'jpeg2000' | 'dnxhd' | 'dolbyE' | 'ac3' | 's302m' | 'sdp';
+export interface FfmpegInfo { path: string; origin: 'env' | 'bundled' | 'vendor' | 'system' | 'none'; version: string | null; license: string | null; srt: boolean; inputSrt: boolean; formats?: Record<BroadcastFormat, boolean> }
+export const BROADCAST_FORMATS: Record<BroadcastFormat, { decoders?: string[]; demuxers?: string[] }>;
+export function listedNames(text: string): Set<string>;
+export function broadcastFormats(decoders: Set<string>, demuxers: Set<string>): Record<BroadcastFormat, boolean>;
 export function hostTarget(platform?: string, arch?: string): string;
 export function bundledDirs(env?: Record<string, string | undefined>, resourcesPath?: string): { dir: string; kind: 'bundled' | 'vendor' }[];
 export function ffmpegCandidates(env?: Record<string, string | undefined>): string[];

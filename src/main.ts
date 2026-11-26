@@ -1,7 +1,7 @@
 import './vendor/dockview.css';
 import {
   $, button, checkbox, chip, field, filePicker, groupedSelect, h, hint, iconButton, download, modal, numberInput, openModal, popover, row,
-  link, segmented, select, settingControl, settingRow, settingsForm, slider, statusDot, table, textInput, applySetting, describeSettings, kicker, type Kid, type Option, type PopoverEl, type Setting,
+  link, select, settingControl, tabs, settingsForm, slider, statusDot, table, textInput, applySetting, describeSettings, kicker, type Kid, type Option, type PopoverEl, type Setting,
 } from './ui';
 import './style.css';
 import { DEFAULT_SCHEME, DEFAULT_THEME, SCHEMES, THEMES, applyScheme, applyTheme, currentSignet, isScheme, isTheme, type SchemePref, type UiTheme } from './theme';
@@ -15,7 +15,7 @@ import { LUT_EXTENSIONS, LUTS, addLutFile, ensureLut, lutListeners, recentLuts }
 import { BBC_LUTS, BBC_LUT_REPO, LUT_SOURCES, bbcLutMismatch, bbcLutName, loadBbcLut, type BbcLut } from './lutLibrary';
 import { CHANNEL_PAIRS, DIAMOND_SPLIT, DIAMOND_ZOOMS, SCOPE_LABELS, diamondZoomView, parseScopeMenu, type DiamondZoom, scopeMenu, scopeMenuValue, isAudio, isWaveform, plotRect, vectorBands, type ScopeType, type Unit, type VectorTarget, WAVE_ZOOM_LABELS, channelsOf, waveLevel, type WaveZoom } from './graticule';
 import { inBox, legendPosAt, nearSplit, splitAt, splitPos } from './overlayDrag';
-import { DEFAULT_SKIN, ROI_CLOSE, contentRect, legendBoxes, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, driftSources, tilePlan, panelView, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
+import { DEFAULT_SKIN, ROI_CLOSE, contentRect, legendBoxes, defaultPanel as panel, drawPanel, frameSamples, panelSignature, resetFocusPeak, skinSources, chartSources, driftSources, tilePlan, panelView, is3d, rotate3d, roiCloseBox, setPanelView, viewLimits, waveRangeOf, type DrawOptions, type PanelState, type Tint } from './panel';
 import { attachGestures, onChip } from './gestures';
 import { IDENTITY, classifyWheel, isIdentity, zoomLabel } from './view';
 import type { OutputHost, OutputWindowApi } from './outputView';
@@ -25,6 +25,7 @@ import { DEFAULT_ALARM, DEFAULT_QC, QC_LABELS, QC_TYPES, evaluate as evaluateQc,
 import { GRIDS } from './history';
 import { STRIP_COUNTS, STRIP_STEPS, stripOpts } from './strip';
 import { CUBE_SPACE_LABELS, DEFAULT_CUBE, type CubeSettings, type CubeSpace } from './cube';
+import { DEFAULT_SURFACE, SURFACE_RES, TOP_VIEW, type SurfaceAxis, type SurfaceSettings } from './hecto';
 import { DEFAULT_CRT, PERSIST_CHOICES, PHOSPHORS, type CrtSettings, type Phosphor } from './crt';
 import type { Command } from '../server/control.mjs';
 import type { GenConfig } from './audio/dsp/signals';
@@ -41,12 +42,18 @@ import { PATTERNS, RESOLUTIONS, patternById } from './patterns';
 import { addUserImages, favouritePatterns, isFavourite, loadUserPatterns, onUserPatternsChange, setFavourite } from './userPatterns';
 import { openAvClip } from './avClip';
 import { openTestImages, openTestVideos, type TestMediaHost } from './testMedia';
-import { PRESETS, createDock, panelId, panelIdx } from './dock';
+import { PRESETS, createDock, panelId, panelIdx, presetIcon } from './dock';
+import { attachLongPress } from './longPress';
+import { WIDGET_SCOPES, decodeWorkspace, encodeWorkspace, freeName, iframeSnippet, nextName, shareFromHash, shareUrl, widgetUrl } from './workspace';
 import { applySysProfile, sysProfileAvailable, sysProfileSection } from './sysprofile';
 import { openPerfTest } from './perfTest';
+import { openEventLog, openValueCards } from './opsUi';
+import type { ValueInput } from './valueCards';
 import { isBlackmagicCamera, watchDevices, type Found } from './deviceScan';
 import { openLedTool } from './led/ui';
 import { mountOpple } from './opple/ui';
+import { lightStore } from './opple/store';
+import { lightControlState } from './opple/target';
 import { isLight, LIGHT_SCOPES, lightPanelSettings } from './opple/panelSettings';
 import { ledSettings, pictureSize } from './led/wall';
 import { Renderer, type PictureMode, type SkinRange } from './renderer';
@@ -55,6 +62,7 @@ import { greenSettings, matchPanelSettings, targetEditor, type MatchUi } from '.
 import { openChartCorners } from './match/chartUi';
 import { bindBridgeField, normaliseBridge } from './bridgeField';
 import { streamRoute } from './streamRoute';
+import { openSt2110Dialog, st2110Row } from './st2110';
 import { addAja, ajaRow, addCaptureDevice, addDeckLink, addNdi, NDI_NOTICE, deckLinkRow, decodeRow, deviceRow as bridgeDeviceRow, ndiRow, folderButton, interlaceRow, STILL_WORKFLOW, type BridgeUi } from './bridgeInputs';
 import { LatencyMeter } from './latency';
 import { debugFlags } from './frameLink';
@@ -63,7 +71,7 @@ import { mountResolveLive } from './resolveLive';
 import { attachResolvePlayback, isLocalHost, routeText } from './resolvePlayback';
 import { openManual } from './manual';
 import { Source, type AudioInput, type SourceKind, type SourceSettings } from './sources';
-import { bridgeFfmpegText, fetchBridgeHealth, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
+import { bridgeFfmpegText, fetchBridgeHealth, formatsLine, pushFfmpegText, sourceFfmpegText, type BridgeHealth } from './ffmpegInfo';
 import { SOURCE_ITEMS, mountMenu, refreshMenu, registerMenuCommand, type MenuActions, type MenuState } from './menu/appMenu';
 import { openSettings, refreshSettings, registerSettingsSection } from './menu/settings';
 import { initPlayback, onPlaybackMessage, openRecordingsDialog, playbackBar, sourceGone, transport as playbackTransport } from './record/playback';
@@ -81,6 +89,9 @@ import { hasHelp, helpCard, helpOn, setHelpOn } from './help/scopeHelp';
 import { hasGhost, sanitizeRef, type RefSettings } from './ghost';
 import { PEAK_COLOURS, PEAK_DEFAULT, type PeakColour } from './focus';
 import { MAX_TILES, TILE_SCOPES, sanitizeTiles, type TileSettings } from './tiles';
+import { CameraSource, SplitSource, isDerived } from './derived';
+import { LAYOUT_LABELS, isLayout, layoutTiles, sanitizeCamera, type Frac, type LayoutId, type SavedCamera } from './cameras';
+import { openCameraSplit, type SplitChoice } from './cameraSplit';
 
 installFeedbackLog();
 declare const __APP_VERSION__: string | undefined;
@@ -111,7 +122,7 @@ interface Persisted {
   scenes: OverlayScene[]; activeScene: string;
   /** name of the last loaded layout configuration ('' after a preset) */
   layoutName: string;
-  sources: { kind: SourceKind; name: string; url: string; settings: SourceSettings; pattern?: PatternState; audioIn?: AudioInput }[];
+  sources: { kind: SourceKind; name: string; url: string; settings: SourceSettings; pattern?: PatternState; audioIn?: AudioInput; camera?: SavedCamera }[];
   /** tone generator settings (never saved as running) and output device */
   gen?: Partial<GenConfig>;
   genSink?: string;
@@ -161,10 +172,15 @@ let frozen = false;
 let fpsFrames = 0, displayFps = 0, fpsT = performance.now();
 
 function save() {
+  // inputs that come back on their own, and the cameras made from them (#217) in list order;
+  // a camera names its input by its place in the saved list. Splits (#177) come from the panels.
+  const kept = (s: Source) => s.kind === 'stream' || s.kind === 'pattern' || s.kind === 'audio';
+  const list = sources.filter((s) => kept(s) || (s instanceof CameraSource && kept(s.parent)));
   const p: Persisted = {
     ...state,
-    sources: sources.filter((s) => s.kind === 'stream' || s.kind === 'pattern' || s.kind === 'audio')
-      .map((s) => ({ kind: s.kind, name: s.name, url: s.url, settings: s.settings, pattern: s.pattern, ...(s.kind === 'audio' ? { audioIn: s.audioIn } : {}) })),
+    sources: list.map((s) => s instanceof CameraSource
+      ? { kind: s.kind, name: s.name, url: '', settings: {} as SourceSettings, camera: { parent: list.indexOf(s.parent), crop: s.crop, inset: s.inset, tile: s.tile } }
+      : { kind: s.kind, name: s.name, url: s.url, settings: s.settings, pattern: s.pattern, ...(s.kind === 'audio' ? { audioIn: s.audioIn } : {}) }),
   };
   try { localStorage.setItem(STORE_KEY, JSON.stringify(p)); } catch { /* ignore */ }
 }
@@ -188,6 +204,13 @@ checkGpu((title, body) => {
   gpuWarn.hidden = false;
 }).catch(() => {});
 const freezeBtn = button(t('main.freeze'), () => toggleFreeze(), { title: t('main.freezeTitle'), pressed: false, attrs: { id: 'freeze' } });
+/** "❚❚ Einfrieren": the symbol stays, the word goes on phones (style.css, header ≤ 440 px) */
+function setFreezeLabel(text: string) {
+  const [icon, ...rest] = text.split(' ');
+  freezeBtn.replaceChildren(h('span', { 'aria-hidden': 'true' }, icon), h('span', { class: 'flabel' }, ` ${rest.join(' ')}`));
+  freezeBtn.setAttribute('aria-label', rest.join(' ') || text);
+}
+setFreezeLabel(t('main.freeze'));
 /** Light/dark in the header (#256): Auto · Light · Dark as a compact segment; the scopes stay dark. */
 function schemeSeg(): HTMLElement {
   const cur = state.scheme ?? DEFAULT_SCHEME;
@@ -205,7 +228,7 @@ function setScheme(v: SchemePref) {
 }
 const sideToggle = iconButton('◧', t('main.side.aria'), () => toggleSidebar(), { title: t('main.side.toggle'), attrs: { id: 'toggle-side' } });
 /** Header overflow (narrow windows): the same layout presets and scale as the header groups. */
-const moreMenu = popover({ label: '⋯', title: t('ui.more'), heading: t('ui.moreTitle'), cls: 'more-body', content: () => [field(t('ui.layouts'), layoutControl()), settingRow(SET.unit), field(t('ui.scheme'), schemeSeg()),
+const moreMenu = popover({ label: '⋯', title: t('ui.more'), heading: t('ui.moreTitle'), cls: 'more-body', content: () => [field(t('ui.layouts'), layoutControl()), field(t('settings.scopes.scale'), unitSeg()), field(t('ui.scheme'), schemeSeg()),
   row(button(t('record.all'), () => recordAll(), { title: t('record.allTitle') }), button(t('ring.save'), () => saveRings(), { title: t('ring.saveTitle') }))] });
 moreMenu.id = 'bar-more';
 const side = h('aside', { class: 'side', id: 'side' },
@@ -241,7 +264,10 @@ app.replaceChildren(
     side,
     // narrow windows: tapping next to the sources drawer closes it
     h('div', { class: 'side-scrim', title: t('ui.closeSidebar'), onclick: () => toggleSidebar(false) }),
-    h('section', { class: 'dockwrap', id: 'grid' }, h('canvas', { id: 'gl' }), h('div', { id: 'dock' }))));
+    // workspace tabs (#238) above the dock; hidden until a workspace is saved
+    h('div', { class: 'workarea' },
+      h('nav', { class: 'ws-tabs', id: 'ws-tabs', hidden: true, 'aria-label': t('main.ws.tabs') }),
+      h('section', { class: 'dockwrap', id: 'grid' }, h('canvas', { id: 'gl' }), h('div', { id: 'dock' })))));
 
 const grid = $('#grid');
 const glCanvas = $<HTMLCanvasElement>('#gl');
@@ -314,16 +340,40 @@ const REMOTE_SETTINGS: Setting[] = Object.values(SET).filter((s) => s.key !== 'l
 
 // ---------------------------------------------------------------- header
 
-/** Layout presets as one segmented control, plus "add panel". */
+/** Layout presets as an icon segment (#262; the name in the tooltip, "Colorist" also as text), plus "add panel". */
 function layoutControl() {
-  return h('span', { class: 'toolbar' },
-    segmented(state.layout, Object.entries(PRESETS).map(([k, l], i) => [k, l.label, t('main.layoutTitle', { name: l.label, n: i + 1 })] as const), (k) => setLayout(k), t('ui.layouts')),
-    button(t('main.addPanelBtn'), () => addScopePanel(), { title: t('main.addPanel') }));
+  const seg = h('div', { class: 'seg layout-seg', role: 'group', 'aria-label': t('ui.layouts') },
+    Object.entries(PRESETS).map(([k, l], i) => {
+      const b = button([presetIcon(k), k === 'lc' && h('span', { class: 'laytext' }, l.label)], () => setLayout(k),
+        { pressed: k === state.layout, title: t('main.layoutTitle', { name: l.label, n: i + 1 }), attrs: { 'aria-label': l.label, 'data-layout': k } });
+      b.classList.add('lay');
+      return b;
+    }));
+  return h('span', { class: 'toolbar' }, seg, button(t('main.addPanelBtn'), () => addScopePanel(), { title: t('main.addPanel') }));
+}
+
+/** last bit depth picked in the scale segment (the "bit" button switches 8 ↔ 10 when pressed again) */
+let lastBits: Unit = 'bit10';
+/** Waveform scale as a compact segment % · bit · nits · stops (#262); the settings window keeps the full list. */
+function unitSeg(): HTMLElement {
+  const cur = state.unit;
+  if (cur === 'bit8' || cur === 'bit10') lastBits = cur;
+  const opt = (u: Unit) => String(UNIT_OPTIONS().find(([k]) => k === u)?.[1] ?? u);
+  const isBits = cur === 'bit8' || cur === 'bit10';
+  const items: [Unit, string, string, boolean][] = [
+    ['percent', '%', opt('percent'), cur === 'percent'],
+    [isBits ? (cur === 'bit8' ? 'bit10' : 'bit8') : lastBits, lastBits === 'bit8' ? '8 bit' : '10 bit', t('main.unitSeg.bitTitle'), isBits],
+    ['nits', 'nits', opt('nits'), cur === 'nits'],
+    ['stop', t('main.unitSeg.stop'), opt('stop'), cur === 'stop'],
+  ];
+  return h('div', { class: 'seg unit-seg', role: 'group', 'aria-label': `${t('settings.scopes.scale')} – ${t('main.unitTitle')}` },
+    items.map(([u, label, title, on]) => button(label, () => SET.unit.set(u), { pressed: on, title })));
 }
 
 function renderHeader() {
   $('#layouts').replaceChildren(layoutControl());
-  $('#globals').replaceChildren(...settingControl(SET.unit));
+  renderWsTabs();
+  $('#globals').replaceChildren(unitSeg());
   moreMenu.refresh();
   refreshMenu();
   refreshSettings();
@@ -412,7 +462,9 @@ function setTheme(t: UiTheme) {
 }
 
 function setLayout(k: string) {
-  state.layout = k; state.layoutName = ''; save(); renderHeader(); dock.applyPreset(k);
+  // a workspace tab (#238) stays active and keeps the new arrangement when it is left
+  state.layout = k; if (!(state.layoutName in loadLayouts())) state.layoutName = '';
+  save(); renderHeader(); dock.applyPreset(k);
 }
 
 // Layouts and Ausgabe: tool dialogs opened from the menu (Datei → Layouts …, Ausgabe → Ausgabe öffnen …)
@@ -462,7 +514,7 @@ let bridgeHealth: BridgeHealth | null = null;
 async function refreshFfmpegInfo() {
   bridgeHealth = await fetchBridgeHealth(bridgeUrl().replace(/^ws/, 'http'));
   const el = ffmpegInfoEl;
-  el.textContent = bridgeFfmpegText(bridgeHealth);
+  el.textContent = [bridgeFfmpegText(bridgeHealth), formatsLine(bridgeHealth?.ffmpeg)].filter(Boolean).join(' · ');
   el.title = bridgeHealth?.ffmpeg?.path ?? '';
   if (sources.some((x) => x.kind === 'stream' && /^srt:/i.test(x.url))) renderSources();
   // no answer (bridge still starting, first ffmpeg run slow): ask again, never show a stale guess
@@ -482,7 +534,7 @@ function toggleFreeze() {
   } else sources.forEach((s) => (s.frozen = false));
   freezeBtn.classList.toggle('on', frozen);
   freezeBtn.setAttribute('aria-pressed', String(frozen));
-  freezeBtn.textContent = frozen ? t('main.resume') : t('main.freeze');
+  setFreezeLabel(frozen ? t('main.resume') : t('main.freeze'));
   refreshMenu();
 }
 
@@ -524,11 +576,161 @@ function deviceLive(s: Source) {
 }
 
 function removeSource(s: Source) {
+  for (const c of sources.filter((x) => x instanceof CameraSource && x.parent === s)) removeSource(c);
   if (refState().sourceId === s.id) setRef({ sourceId: '' });
   s.stop();
   renderer.dropSource(s.id);
   sources.splice(sources.indexOf(s), 1);
   renderSources(); renderPanels(); save(); refreshMenu();
+}
+
+// ---------------------------------------------------------------- cameras (#217) and splits (#177)
+
+/** A camera from `parent`, placed after the input and its other cameras. */
+function addCamera(parent: Source, crop: Frac, inset: number, name: string, tile: string) {
+  const c = new CameraSource(parent, crop, inset, name, tile);
+  c.onChange = () => renderSources();
+  let at = sources.indexOf(parent) + 1;
+  while (at < sources.length && sources[at] instanceof CameraSource && (sources[at] as CameraSource).parent === parent) at++;
+  sources.splice(at < 1 ? sources.length : at, 0, c);
+  return c;
+}
+const tileCameras = (parent: Source) => sources.filter((x): x is CameraSource => x instanceof CameraSource && x.parent === parent && x.fromTile);
+/** Default name of a new camera: numbers run on across all cameras of other inputs. */
+const cameraName = (parent: Source, k: number) => t('cam.defaultName', { n: sources.filter((x) => x instanceof CameraSource && x.parent !== parent).length + k + 1 });
+
+/**
+ * Split an input into cameras (#217). Cameras of an earlier split of this input are re-used in
+ * order (panels keep showing "Cam 2"), extra ones removed. Returns the cameras.
+ */
+function splitInput(parent: Source, c: SplitChoice): CameraSource[] {
+  const old = tileCameras(parent);
+  const want = layoutTiles(c.layout).map((crop, k) => ({ crop, k, ...c.tiles[k] })).filter((x) => x.on !== false);
+  const out = want.map((w, j) => {
+    const tile = `${LAYOUT_LABELS[c.layout]} · ${w.k + 1}`, name = w.name || cameraName(parent, w.k);
+    const cam = old[j];
+    if (cam) { cam.name = name; cam.rehang(parent, w.crop, c.inset, tile); return cam; }
+    return addCamera(parent, w.crop, c.inset, name, tile);
+  });
+  for (const cam of old.slice(want.length)) removeSource(cam);
+  renderSources(); renderPanels(); save(); refreshMenu();
+  return out;
+}
+/** The split as the dialog shows it again (layout from the tile label, names, left-out tiles). */
+function currentSplit(parent: Source): SplitChoice | undefined {
+  const cams = tileCameras(parent);
+  const m = /^(.+) · \d+$/.exec(cams[0]?.tile ?? '');
+  const layout = m ? (Object.keys(LAYOUT_LABELS) as LayoutId[]).find((k) => LAYOUT_LABELS[k] === m[1]) : undefined;
+  if (!layout) return undefined;
+  const tiles = layoutTiles(layout).map((_, k) => {
+    const cam = cams.find((x) => x.tile === `${LAYOUT_LABELS[layout]} · ${k + 1}`);
+    return { name: cam?.name ?? cameraName(parent, k), on: !!cam };
+  });
+  return { layout, inset: cams[0].inset, tiles };
+}
+function openSplitDialog(parent: Source) {
+  const has = tileCameras(parent).length > 0;
+  openCameraSplit({
+    input: parent, current: currentSplit(parent), defaultName: (k) => cameraName(parent, k),
+    apply: (c) => { const cams = splitInput(parent, c); alertHud(t('cam.created', { n: cams.length, input: parent.name })); },
+    remove: has ? () => { for (const cam of tileCameras(parent)) removeSource(cam); } : undefined,
+  });
+}
+
+/** Picture panel with its A/B split switched on. */
+const splitOn = (p: PanelState | undefined) => !!p && p.scope === 'picture' && !!p.ab && (p.ab.mode === 'split' || p.ab.mode === 'wipe');
+const splitSourceOf = (idx: number) => sources.find((x): x is SplitSource => x instanceof SplitSource && x.panel === idx) ?? null;
+
+/**
+ * Keep one split source per open picture panel with the split on (#177), fed with its A, B
+ * and line. Returns true when one appeared or went.
+ */
+function syncSplits(): boolean {
+  let open: number[] = [];
+  try { open = dock.openIdx(); } catch { return false; }
+  let changed = false;
+  for (const sp of sources.filter((x): x is SplitSource => x instanceof SplitSource)) {
+    if (open.includes(sp.panel) && splitOn(state.panels[sp.panel])) continue;
+    sp.stop(); renderer.dropSource(sp.id); sources.splice(sources.indexOf(sp), 1); changed = true;
+  }
+  for (const idx of open) {
+    const p = state.panels[idx];
+    if (!splitOn(p)) continue;
+    let sp = splitSourceOf(idx);
+    if (!sp) { sp = new SplitSource(idx); sp.onChange = () => renderSources(); sources.push(sp); changed = true; }
+    const a = panelSource(p), bRef = p.ab!.b;
+    const b = bRef.startsWith('src:') ? sources.find((x) => x.id === bRef.slice(4)) ?? null : null;
+    // a split of a split would feed itself
+    sp.input = { a: a instanceof SplitSource ? null : a, b: b instanceof SplitSource ? null : b, pos: splitPos(p.ab!), stageB: !bRef.startsWith('src:') };
+  }
+  if (changed) renderPanels();
+  return changed;
+}
+/** Cameras and splits take the new pictures of their inputs (once per drawn frame). */
+function syncDerived() {
+  let moved = syncSplits();
+  for (const s of sources) if (s instanceof CameraSource) moved = s.sync() || moved;
+  for (const s of sources) if (s instanceof SplitSource) moved = s.sync() || moved;
+  if (moved) renderSources();
+}
+
+/** Switch the A/B split of picture panel `idx` on or off (head button, control API). */
+function setSplit(idx: number, on: boolean, b?: Source) {
+  const p = state.panels[idx];
+  if (p.scope !== 'picture') return;
+  const had = p.ab;
+  const ab = { ...(had ?? { mode: 'off' as const, b: 'stage:cst', pos: 0.5, gain: 4 }) };
+  if (on) {
+    // B: as chosen; first time (or B gone): the next video input after A
+    const a = panelSource(p);
+    if (b) ab.b = `src:${b.id}`;
+    else if (!had || (ab.b.startsWith('src:') && !sources.some((x) => `src:${x.id}` === ab.b))) {
+      const vids = sources.filter((x) => x.kind !== 'audio' && !(x instanceof SplitSource));
+      const next = vids.slice(vids.indexOf(a!) + 1).concat(vids).find((x) => x !== a);
+      if (next) ab.b = `src:${next.id}`;
+    }
+    ab.mode = 'split';
+  } else ab.mode = 'off';
+  p.ab = ab;
+  if (on && ab.spread) spreadSplit(idx);
+  save(); renderPanels(); refreshPanelSettings(p);
+}
+/** The other unpinned panels that are not picture panels follow picture panel `idx` (#177). */
+function spreadSplit(idx: number) {
+  for (const j of dock.openIdx()) {
+    const q = state.panels[j];
+    if (j !== idx && q && !q.pin && q.scope !== 'picture' && !isAudio(q.scope) && !isLight(q.scope)) q.follow = idx;
+  }
+}
+function followPanel(p: PanelState, idx: number | undefined) {
+  if (idx === undefined || state.panels[idx] === p) delete p.follow; else p.follow = idx;
+  save(); renderPanels();
+}
+
+/** Card of a camera or a split: what it is made of; colour and chain belong to the input. */
+function derivedCard(s: CameraSource | SplitSource, i: number): HTMLElement {
+  const head = h('div', { class: 'src-head' },
+    statusDot(s.status),
+    h('span', { class: 'idx', style: `--src-col:${sourceColour(s)}` }, String(i + 1)),
+    s instanceof CameraSource
+      ? h('input', { class: 'name', value: s.name, 'aria-label': t('main.sources'), onchange: (e: Event) => { s.name = (e.target as HTMLInputElement).value; save(); renderPanels(); } })
+      : h('span', { class: 'name' }, s.name),
+    iconButton('✕', s instanceof CameraSource ? t('main.src.remove') : t('panel.splitOff'), () => (s instanceof CameraSource ? removeSource(s) : setSplit(s.panel, false))));
+  const card = h('div', { class: `src derived ${s.status}`, 'data-derived': s.kind }, head);
+  if (s instanceof CameraSource) {
+    const size = s.cropSize;
+    const inputs = sources.filter((x) => x !== s.parent && x.kind !== 'audio' && !isDerived(x));
+    card.append(
+      row(s.fromTile ? chip(t('cam.badge', { size: size ? `${size[0]}×${size[1]}` : '–' }), { tone: 'warn', cls: 'camchip', title: t('cam.badgeTitle') }) : chip(t('cam.whole')),
+        h('span', { class: 'hint' }, s.tile ? t('cam.ofTile', { input: s.parent.name, tile: s.tile }) : t('cam.of', { input: s.parent.name }))),
+      ...(inputs.length ? [row(select('', [['', t('cam.replace')], ...inputs.map((x) => [x.id, `${sources.indexOf(x) + 1} ${x.name}`] as [string, string])], (v) => {
+        const to = sources.find((x) => x.id === v);
+        if (to) { s.rehang(to); save(); renderSources(); renderPanels(); }
+      }, t('cam.replaceTitle')))] : []),
+      hint(t('cam.colour', { input: s.parent.name })));
+  } else card.append(hint(t('split.card', { n: s.panel + 1 })));
+  card.append(h('div', { class: 'msg', 'data-msg': s.id, role: s.status === 'error' ? 'alert' : null }, s.message));
+  return card;
 }
 
 /** A control row with a layout class: 'opts' = grid of short selects, 'stack' = one long select per line. */
@@ -537,6 +739,7 @@ function classRow(cls: 'opts' | 'stack', ...kids: Parameters<typeof row>) { cons
 function renderSources() {
   const pb = playbackBar();
   $('#source-list').replaceChildren(...(pb ? [pb] : []), ...sources.map((s, i) => {
+    if (isDerived(s)) return derivedCard(s, i);
     const set = s.settings;
     const upd = (patch: Partial<SourceSettings>, reconnect = false) => {
       Object.assign(s.settings, patch); save();
@@ -549,6 +752,7 @@ function renderSources() {
         statusDot(s.status),
         h('span', { class: 'idx', style: `--src-col:${sourceColour(s)}` }, String(i + 1)),
         h('input', { class: 'name', value: s.name, 'aria-label': t('main.sources'), onchange: (e: Event) => { s.name = (e.target as HTMLInputElement).value; save(); renderPanels(); } }),
+        s.kind !== 'audio' && button(t('cam.split'), () => openSplitDialog(s), { small: true, title: t('cam.splitTitle'), attrs: { class: 'btn mini camsplit-open' } }),
         iconButton('✕', t('main.src.remove'), () => removeSource(s))),
     );
     if (s.kind === 'stream') {
@@ -585,9 +789,9 @@ function renderSources() {
           running ? button(t('main.src.disconnect'), () => s.stop()) : button(t('main.src.connect'), connect, { variant: 'primary' }),
           h('div', { class: 'presets' }, ...['bars', 'ramp', 'testsrc', 'colors'].map((p) =>
             button(p, () => { urlIn.value = `test:${p}`; connect(); }, { small: true, title: t('main.src.testN', { name: p }) })),
-            // devices (DeckLink, AJA, NDI®, capture devices) are added from "+ Quelle" and "Gefunden" (#221)
+            // devices (DeckLink, AJA, NDI®, ST 2110, capture devices) are added from "+ Quelle" and "Gefunden" (#221)
             folderButton(bridgeUi, (window as unknown as { lzsDesktop?: DesktopApi }).lzsDesktop?.watchFolder))),
-        ...[bridgeDeviceRow(s, bridgeUi, renderSources), blackmagicCameraHint(s.url.startsWith('device:') ? s.url.replace(/#.*$/, '') : '', s), deckLinkRow(s, bridgeUi), ajaRow(s, bridgeUi), ndiRow(s), decodeRow(s, bridgeUi), interlaceRow(s, bridgeUi)].filter((x): x is Node => !!x),
+        ...[bridgeDeviceRow(s, bridgeUi, renderSources), blackmagicCameraHint(s.url.startsWith('device:') ? s.url.replace(/#.*$/, '') : '', s), deckLinkRow(s, bridgeUi), ajaRow(s, bridgeUi), ndiRow(s), st2110Row(s, bridgeUi), decodeRow(s, bridgeUi), interlaceRow(s, bridgeUi)].filter((x): x is Node => !!x),
         ...(sourceFfmpegText(s.url, bridgeHealth) ? [h('p', { class: 'hint', 'data-ffmpeg-source': '' }, sourceFfmpegText(s.url, bridgeHealth))] : []),
       );
     } else if (s.url === SIM_URL) {
@@ -992,6 +1196,11 @@ function addSourceOfKind(kind: string) {
     case 'aja': return addAjaSource();
     case 'device': return addBridgeSource(addCaptureDevice, {});
     case 'ndi': return addBridgeSource(addNdi, { depth: 16 });
+    // ST 2110-30/-31/-40 from the network (#226): the dialog builds the st2110: URL
+    case 'st2110': return openSt2110Dialog({
+      http: () => bridgeUrl().replace(/^ws/, 'http'), hud: alertHud, upd: () => {},
+      connect: (url, name) => { state.sidebar = true; applySidebar(); const s = addSource('stream', name ?? 'ST 2110', url); s.connectStream(url, bridgeUrl()); },
+    });
     case 'webcam': case 'screen': case 'file': case 'folder': return void startLocal(addSource(kind));
     // the browser path on purpose (#191): 8 bit, but with crop, ROI and the clip's own sound
     case 'file-video': { const s = addSource('file'); s.settings.fileRoute = 'video'; return void startLocal(s); }
@@ -1011,6 +1220,7 @@ function renderAddMenu() {
     group(t('main.add.gDevices'), b('decklink', 'Blackmagic DeckLink', t('main.add.decklinkTitle')), b('aja', 'AJA', t('main.add.ajaTitle')),
       b('device', t('main.add.device'), t('main.add.deviceTitle')), b('webcam', t('main.add.webcam'), t('main.add.webcamTitle'))),
     group(t('main.add.gNetwork'), b('stream', t('main.add.stream'), t('menu.src.streamTitle')), b('ndi', 'NDI®', `${t('bridgeui.ndiTitle')} ${NDI_NOTICE}`),
+      b('st2110', 'ST 2110…', t('st2110.buttonTitle')),
       b('resolve', 'DaVinci Resolve', t('main.add.resolveTitle'))),
     group(t('main.add.gFiles'),
       b('file', t('main.add.file')),
@@ -1023,7 +1233,7 @@ function renderAddMenu() {
   );
 }
 
-const FOUND_KIND: Record<Found['kind'], string> = { decklink: 'DeckLink', aja: 'AJA', ndi: 'NDI®', device: 'Capture' };
+const FOUND_KIND: Record<Found['kind'], string> = { decklink: 'DeckLink', aja: 'AJA', ndi: 'NDI®', device: 'Capture', st2110: 'ST 2110' };
 /**
  * Inputs the bridge sees but that are no source yet (src/deviceScan.ts): one click adds them. A
  * Blackmagic card that only shows as a system camera gets the way to the DeckLink source instead.
@@ -1078,7 +1288,15 @@ const openViews = () => dock.openIdx().map((i) => views.get(i)).filter((v): v is
 const SOURCE_COLOURS = ['#4cc2ff', '#ffb347', '#7be08a', '#ff7aa8', '#c39bff', '#ffd84d', '#5fe0d2', '#ff8a5c'];
 const sourceColour = (s: Source | null) => (s ? SOURCE_COLOURS[Math.max(0, sources.indexOf(s)) % SOURCE_COLOURS.length] : 'transparent');
 
-function panelSource(p: PanelState) {
+function panelSource(p: PanelState, depth = 0): Source | null {
+  // following a picture panel (#177): its split while that is a source, else whatever it shows
+  if (p.follow !== undefined && depth < 4) {
+    const q = state.panels[p.follow];
+    if (q && q !== p && q.scope === 'picture') {
+      if (splitOn(q) && q.ab!.b.startsWith('src:')) { const sp = splitSourceOf(p.follow); if (sp) return sp; }
+      return panelSource(q, depth + 1);
+    }
+  }
   return sources.find((s) => s.id === p.sourceId) ?? sources[0] ?? null;
 }
 
@@ -1098,14 +1316,18 @@ function panelElement(idx: number): HTMLElement {
     // of a chip that appears after zooming); hidden by CSS for scopes without zoom
     const hint = h('span', { class: 'gesture-hint', 'aria-hidden': 'true' }, matchMedia('(pointer: coarse)').matches ? t('gesture.hintTouch') : t('gesture.hint'));
     const body = h('div', { class: 'body' }, blit, overlay, zoom, hint);
-    const head = h('div', { class: 'phead', ondblclick: () => toggleSolo(idx) });
-    const el = h('div', { class: 'panel' }, head, body);
+    // one row with the dock tab (#261, src/dock.ts places it); right click = the ⚙ popover
+    const head = h('div', { class: 'phead', 'data-panel': String(idx), ondblclick: () => toggleSolo(idx),
+      oncontextmenu: (e: Event) => { e.preventDefault(); views.get(idx)?.pop?.open(); } });
+    const el = h('div', { class: 'panel', 'data-panel': String(idx) }, head, body);
     // double click: reset a zoomed view, otherwise solo
     body.addEventListener('dblclick', (e) => { if ((e.target as HTMLElement).closest('.zoomchip')) return; resetView(idx); });
     shading.attach(body, idx, p);
     attachPanelGestures(idx, p, body);
     attachPointer(p(), body);
     attachSkinDrag(p(), body);
+    // long press (touch, pen) = the panel's ⚙ settings (#185)
+    attachLongPress(el, body, () => views.get(idx)?.pop?.open(), () => shading.owns(p().scope));
     body.addEventListener('contextmenu', (e) => { e.preventDefault(); const s = panelSource(p()); if (s) { s.probe = null; s.roi = null; s.faceMode = 'off'; refreshHeads(); } });
     v = { idx, el, head, body, blit, overlay, zoom };
     views.set(idx, v);
@@ -1135,6 +1357,11 @@ function fillHead(v: PanelView) {
   }
   const [lead, opts] = [v.head.children[0] as HTMLElement, v.head.children[1] as HTMLElement];
   const multi = sources.length > 1 && !isLight(p.scope) && p.scope !== 'tiles';
+  // picture panels this one can follow (#177)
+  let followable: number[] = [];
+  try { followable = dock.openIdx().filter((j) => j !== idx && state.panels[j]?.scope === 'picture'); } catch { /* dock not built yet */ }
+  // the scope by name on panel and head (tests and the control API find panels by it)
+  v.el.dataset.scope = p.scope; v.head.dataset.scope = p.scope;
   // the source's identity colour also at the tab edge (#256), with more than one source
   tintTab(idx, multi);
   lead.replaceChildren(...[
@@ -1142,17 +1369,23 @@ function fillHead(v: PanelView) {
       const m = parseScopeMenu(val);
       p.scope = m.scope; if (m.picture) p.picture = m.picture; p.view = undefined; if (m.scope === 'vector' || m.scope === 'hls' || m.scope === 'cie') p.colorize = true; save(); fillHead(v); dock.setTitle(idx);
     }, '', { 'aria-label': t('ui.scope') }),
-    multi && groupedSelect(panelSource(p)?.id ?? '', [
+    multi && groupedSelect(p.follow !== undefined && followable.includes(p.follow) ? `follow:${p.follow}` : panelSource(p)?.id ?? '', [
       ['', sources.map((s, i) => [s.id, `${i + 1} ${s.name}`] as [string, string])],
+      ...(followable.length ? [[t('panel.followGroup'), followable.map((j) => [`follow:${j}`, t('panel.followPanel', { n: j + 1 })] as [string, string])] as [string, [string, string][]]] : []),
       [t('panel.allPanels'), sources.map((s, i) => [`all:${s.id}`, t('panel.allPanelsTo', { n: i + 1, name: s.name })] as [string, string])],
-    ], (val) => (val.startsWith('all:') ? switchAll(val.slice(4)) : switchSource(p, val)), t('panel.sourceTitle'), { class: 'srcsel', style: `--src-col:${sourceColour(panelSource(p))}` }),
+    ], (val) => (val.startsWith('all:') ? switchAll(val.slice(4)) : val.startsWith('follow:') ? followPanel(p, Number(val.slice(7))) : switchSource(p, val)), t('panel.sourceTitle'), { class: 'srcsel', style: `--src-col:${sourceColour(panelSource(p))}` }),
+    // A/B split in one click (#177); ⚙ holds B, the line and "other panels follow"
+    p.scope === 'picture' && iconButton('◧', splitOn(p) ? t('panel.splitOff') : t('panel.splitOn'), () => setSplit(idx, !splitOn(p)), { pressed: splitOn(p), attrs: { class: `icon splitbtn${splitOn(p) ? ' on' : ''}` } }),
     stageChip(p),
     multi && iconButton('📌', p.pin ? t('panel.pinned') : t('panel.pin'), () => { p.pin = !p.pin; save(); fillHead(v); }, { pressed: !!p.pin, attrs: { class: `icon pin${p.pin ? ' on' : ''}` } }),
   ].filter((x): x is HTMLElement => !!x));
-  (opts.firstChild as HTMLElement).replaceChildren(...[latencyChip(p), roiChip(p)].filter((x): x is HTMLElement => !!x));
+  (opts.firstChild as HTMLElement).replaceChildren(...[latencyChip(p), cameraChip(p), roiChip(p)].filter((x): x is HTMLElement => !!x));
   if (!v.pop || v.popScope !== p.scope) {
     v.pop?.remove();
-    v.pop = popover({ label: '⚙', title: t('panel.settingsOf', { scope: SCOPE_LABELS[p.scope] }), heading: SCOPE_LABELS[p.scope], align: 'end', cls: 'psettings', content: () => panelSettings(state.panels[idx]) });
+    // "Settings" next to the ⚙ from 360 px panel width (CSS container query)
+    v.pop = popover({ label: ['⚙', h('span', { class: 'plabel' }, t('common.settings'))], title: t('panel.settingsOf', { scope: SCOPE_LABELS[p.scope] }), heading: SCOPE_LABELS[p.scope], align: 'end', cls: 'psettings', content: () => panelSettings(state.panels[idx]),
+      // tablets: a sheet over this panel (#185); the head may sit in the dock's group header (#261)
+      over: () => v.el.getBoundingClientRect() });
     v.popScope = p.scope;
     opts.append(v.pop);
   }
@@ -1224,7 +1457,7 @@ function diamondFrame(p: PanelState) {
 
 function panelSettings(p: PanelState): Node[] {
   if (p.scope === 'tiles') return tileSettings(p);
-  if (isAudio(p.scope)) return audioPanelSettings(p, save);
+  if (isAudio(p.scope)) return audioPanelSettings(p, save, () => refreshPanelSettings(p));
   if (isLight(p.scope)) return lightPanelSettings(p, save);
   if (p.scope === 'simulcast') return simulcastPanelSettings(p, save);
   if (p.scope === 'encoder') return encoderPanelSettings(p, save, sources);
@@ -1240,7 +1473,7 @@ function panelSettings(p: PanelState): Node[] {
     (v) => { p.stage = v === 'auto' ? undefined : v as Stage; save(); refreshHeads(); }, t('panel.stageTitle')));
   const check = (key: 'colorize' | 'log' | 'r103' | 'marks' | 'cieUv' | 'skinBand' | 'greenBand' | 'greenWedge' | 'centreBox', label: string, dflt = false) =>
     checkbox(p[key] ?? dflt, label, (v) => { p[key] = v; save(); refreshHeads(); });
-  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'vector3' || p.scope === 'hls' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'satlum' || p.scope === 'chplot';
+  const scatter = isWaveform(p.scope) || p.scope === 'vector' || p.scope === 'vector3' || p.scope === 'hls' || p.scope === 'cie' || p.scope === 'diamond' || p.scope === 'cube' || p.scope === 'surface' || p.scope === 'satlum' || p.scope === 'chplot';
   if (scatter) {
     row(t('panel.brightness'), slider(Math.log2(p.gain), (v) => { p.gain = 2 ** v; save(); }, { min: -3, max: 3, step: 0.1, reset: 0, title: t('panel.gainTitle') }));
   }
@@ -1264,7 +1497,7 @@ function panelSettings(p: PanelState): Node[] {
   if (p.scope === 'parade' || p.scope === 'yrgb' || p.scope === 'wf-rgb') {
     row(t('panel.colour'), select(p.paradeColor ?? (p.scope === 'wf-rgb' || p.colorize ? 'channel' : 'mono'),
       [['mono', 'Mono'], ['channel', t('panel.channelColours')], ['source', t('panel.sourceColours')]], (v) => { p.paradeColor = v as PanelState['paradeColor']; save(); }));
-  } else if (scatter && p.scope !== 'wf-skin' && p.scope !== 'wf-green' && p.scope !== 'wf-color') {
+  } else if (scatter && p.scope !== 'wf-skin' && p.scope !== 'wf-green' && p.scope !== 'wf-color' && p.scope !== 'surface') {
     row(t('panel.colour'), check('colorize', t('panel.traceInColour')));
   }
   if (p.scope === 'diamond') {
@@ -1311,6 +1544,18 @@ function panelSettings(p: PanelState): Node[] {
       row('', checkbox(!!c.lutInput, t('panel.cube.inputGrid'), (v) => setCube({ lutInput: v })), checkbox(!!c.lutOnly, t('panel.cube.lutOnly'), (v) => setCube({ lutOnly: v })));
     }
     rows.push(hint(t('panel.cube.hint')));
+  }
+  if (p.scope === 'surface') {
+    const c = { ...DEFAULT_SURFACE, ...p.surface };
+    const setSurf = (patch: Partial<SurfaceSettings>) => { p.surface = { ...c, ...patch }; Object.assign(c, patch); save(); };
+    row(t('panel.surface.axis'), select(c.axis, (['luma', 'r', 'g', 'b', 'sat'] as SurfaceAxis[]).map((k) => [k, t(`scope.surface.axis.${k}`)] as [string, string]), (v) => setSurf({ axis: v as SurfaceAxis }),
+      t('panel.surface.axisTitle')));
+    row(t('panel.colour'), select(c.colour, [['height', t('panel.surface.height')], ['source', t('panel.sourceColours')]], (v) => setSurf({ colour: v as SurfaceSettings['colour'] })));
+    row(t('panel.surface.res'), select(String(c.res), SURFACE_RES.map((n) => [String(n), t('panel.surface.cols', { n })] as [string, string]), (v) => setSurf({ res: Number(v) }),
+      t('panel.surface.resTitle')));
+    row(t('panel.surface.view'), button(t('panel.surface.top'), () => { setSurf({ ...TOP_VIEW, colour: 'height' }); refreshPanelSettings(p); }, { small: true, title: t('panel.surface.topTitle') }),
+      button(t('panel.surface.angled'), () => setSurf({ yaw: DEFAULT_SURFACE.yaw, pitch: DEFAULT_SURFACE.pitch }), { small: true }));
+    rows.push(hint(t('panel.surface.hint')));
   }
   if (p.scope === 'chplot') {
     row(t('panel.channels'), select(String(p.pair ?? 0), CHANNEL_PAIRS.map((n, i) => [String(i), n] as [string, string]), (v) => { p.pair = Number(v); save(); }));
@@ -1406,7 +1651,7 @@ function panelSettings(p: PanelState): Node[] {
     row(t('panel.cie.share'), checkbox(p.gamutShare !== false, t('panel.cie.shareText'), (v) => { p.gamutShare = v; save(); refreshPanelSettings(p); }));
     if (p.gamutShare !== false) rows.push(hint(t('panel.cie.shareHint')));
   }
-  if (scatter) {
+  if (scatter && p.scope !== 'surface') {
     const c = { ...DEFAULT_CRT, ...p.crt };
     const setCrt = (patch: Partial<CrtSettings>, rebuild = false) => { p.crt = { ...c, ...patch }; Object.assign(c, patch); save(); if (rebuild) refreshPanelSettings(p); };
     row(t('panel.display'), select(c.on ? 'crt' : 'digital', [['digital', 'digital'], ['crt', t('panel.crt')]], (v) => setCrt({ on: v === 'crt' }, true),
@@ -1531,7 +1776,11 @@ function panelSettings(p: PanelState): Node[] {
     row('Overlay', select(p.picture, [['normal', t('panel.ov.normal')], ['false', t('settings.scopes.falseColour')], ['zebra', 'Zebra'], ['clip', 'Clipping'], ['skin', t('panel.ov.skin')], ['green', t('panel.ov.green')], ['luma', 'Luma'], ['gamut', t('panel.ov.gamut')], ['r103', 'EBU R 103'], ['neutral', t('panel.ov.neutral')], ['peaking', t('focus.overlay')]], (v) => { p.picture = v as PictureMode; save(); refreshHeads(); }));
     const ab = p.ab ?? { mode: 'off' as const, b: 'stage:cst', pos: 0.5, gain: 4 };
     const setAb = (patch: Partial<NonNullable<PanelState['ab']>>, rebuild = false) => {
-      p.ab = { ...ab, ...patch }; Object.assign(ab, patch); save(); refreshHeads();
+      const wasOn = splitOn(p);
+      p.ab = { ...ab, ...patch }; Object.assign(ab, patch);
+      const idx = state.panels.indexOf(p);
+      if (!wasOn && splitOn(p) && ab.spread && idx >= 0) spreadSplit(idx);
+      save(); renderPanels();
       if (rebuild) refreshPanelSettings(p);
     };
     row(t('panel.ab'), select(ab.mode === 'wipe' ? 'split' : ab.mode, [['off', t('common.off')], ['split', t('panel.abSplit')], ['diff', t('panel.abDiff')], ['crop', t('panel.abCrop')], ['butterfly', t('panel.abButterfly')]], (v) => setAb({ mode: v as 'off' }, true),
@@ -1546,6 +1795,9 @@ function panelSettings(p: PanelState): Node[] {
       if (ab.mode === 'crop' || ab.mode === 'butterfly') rows.push(hint(t('panel.abCropHint')));
       if (ab.mode === 'split' || ab.mode === 'wipe') {
         row(t('panel.wipePos'), slider(splitPos(ab), (v) => setAb({ pos: v }), { min: 0, max: 1, step: 0.01, reset: 0.5, title: t('panel.wipeDrag') }));
+        // the split as a source for the other panels (#177)
+        row('', checkbox(!!ab.spread, t('panel.abSpread'), (v) => setAb({ spread: v }), t('panel.abSpreadTitle')));
+        rows.push(hint(ab.b.startsWith('src:') ? t('panel.abSplitSource', { name: t('split.name', { n: state.panels.indexOf(p) + 1 }) }) : t('panel.abSplitStage')));
       }
       if (ab.mode === 'diff') row(t('panel.gainAb'), select(String(ab.gain ?? 4), [['1', '×1'], ['4', '×4'], ['16', '×16'], ['64', '×64']], (v) => setAb({ gain: Number(v) }), t('panel.gainAbTitle')));
     }
@@ -1579,10 +1831,21 @@ function panelSettings(p: PanelState): Node[] {
     row(t('settings.scopes.scale'), check('log', t('panel.log')));
   }
   if (scatter) global(SET.precision);
+  if (WIDGET_SCOPES.includes(p.scope)) row(t('main.wg.row'), button(t('main.wg.button'), () => widgetDialog(p), { small: true, title: t('main.wg.buttonTitle') }));
   return rows;
 }
 
 function refreshHeads() { views.forEach(fillHead); }
+
+/** Panel-head chip for a camera from a multiviewer tile (#217): its size, and what it is not good for. */
+function cameraChip(p: PanelState): Node | string {
+  const s = panelSource(p);
+  if (!(s instanceof CameraSource) || !s.fromTile || isAudio(p.scope) || isLight(p.scope)) return '';
+  const size = s.cropSize;
+  // sharpness, noise and focus peaking say little on a scaled tile: there the chip warns
+  const weak = p.scope === 'noise' || (p.scope === 'picture' && p.picture === 'peaking');
+  return chip(t('cam.badge', { size: size ? `${size[0]}×${size[1]}` : '–' }), { tone: weak ? 'warn' : undefined, cls: 'camchip', title: t('cam.badgeTitle') });
+}
 
 /** Header chip while a ROI is active: shows it and switches it off with one click. */
 function roiChip(p: PanelState): Node | string {
@@ -1618,12 +1881,12 @@ function toggleSolo(idx: number) {
 /** Switching the source in one panel switches every panel that is not pinned. */
 function switchSource(from: PanelState, id: string) {
   // only this panel (#252): several signals side by side are the point of a multi-panel layout
-  from.sourceId = id;
+  from.sourceId = id; delete from.follow;
   save(); renderPanels();
 }
 /** Every panel that is not pinned shows this source (the old behaviour, now an explicit command). */
 function switchAll(id: string) {
-  for (const q of state.panels) if (!q.pin) q.sourceId = id;
+  for (const q of state.panels) if (!q.pin) { q.sourceId = id; delete q.follow; }
   save(); renderPanels();
 }
 
@@ -1687,11 +1950,8 @@ function attachPanelGestures(idx: number, p: () => PanelState, body: HTMLElement
     commit: () => save(),
     blocked: () => shading.owns(p().scope),
     primaryTaken: () => ['picture', 'wf-skin', 'wf-green'].includes(p().scope),
-    rotates: () => p().scope === 'cube',
-    rotate: (dx, dy) => {
-      const c = { ...DEFAULT_CUBE, ...p().cube };
-      p().cube = { ...c, yaw: ((c.yaw + dx * 0.5 + 540) % 360) - 180, pitch: Math.max(-90, Math.min(90, c.pitch + dy * 0.5)) };
-    },
+    rotates: () => is3d(p().scope),
+    rotate: (dx, dy) => rotate3d(p(), dx, dy),
     wheelTaken: () => p().scope === 'wf-skin' || p().scope === 'wf-green',
     wheelAtCentre: () => p().scope === 'vector' || p().scope === 'hls',
   }, () => { resetView(idx); });
@@ -1705,6 +1965,10 @@ function resetView(idx: number): boolean {
     const c = { ...DEFAULT_CUBE, ...p.cube };
     if (isIdentity(panelView(p)) && c.yaw === DEFAULT_CUBE.yaw && c.pitch === DEFAULT_CUBE.pitch) return false;
     p.cube = { ...c, yaw: DEFAULT_CUBE.yaw, pitch: DEFAULT_CUBE.pitch };
+  } else if (p.scope === 'surface') {
+    const c = { ...DEFAULT_SURFACE, ...p.surface };
+    if (isIdentity(panelView(p)) && c.yaw === DEFAULT_SURFACE.yaw && c.pitch === DEFAULT_SURFACE.pitch) return false;
+    p.surface = { ...c, yaw: DEFAULT_SURFACE.yaw, pitch: DEFAULT_SURFACE.pitch };
   } else if (isIdentity(panelView(p))) return false;
   setPanelView(p, IDENTITY);
   save(); syncZoomChip(idx);
@@ -1729,7 +1993,7 @@ function syncZoomChip(idx: number) {
   v.zoom.hidden = !on;
   v.zoom.textContent = on ? `${zoomLabel(z)} ⟲` : '';
   v.zoom.dataset.zoom = String(Math.round(z * 1000) / 1000);
-  v.body.dataset.zoomable = viewLimits(p.scope) && p.scope !== 'cube' ? '1' : '';
+  v.body.dataset.zoomable = viewLimits(p.scope) && !is3d(p.scope) ? '1' : '';
 }
 
 /** Skin and green waveforms: drag the lo/hi lines, mouse wheel = hue tolerance. */
@@ -1953,6 +2217,7 @@ Source.onArrive = (s) => {
 };
 
 function drawAll(now: number) {
+  syncDerived();
   const g = grid.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const displaySpace = state.display === 'auto' ? detected.space : state.display;
@@ -2244,6 +2509,7 @@ function renderLayoutMenu() {
         { title: t('main.lay.load', { date: new Date(all[n].saved).toLocaleString(lang() === 'de' ? 'de-DE' : 'en-GB') }), pressed: n === state.layoutName, attrs: { class: `lname${n === state.layoutName ? ' on' : ''}` } }),
       iconButton('↻', t('main.lay.overwrite'), () => { all[n] = currentLayout(); storeLayouts(all); renderLayoutMenu(); }, { small: true }),
       iconButton('⤓', t('main.lay.export'), () => downloadJson(all[n], `lz-scopes-layout-${n}.json`), { small: true }),
+      iconButton('🔗', t('main.ws.share'), () => { void shareWorkspace(n, all[n]); }, { small: true, attrs: { 'data-share': n } }),
       iconButton('✕', t('main.lay.delete'), () => { delete all[n]; storeLayouts(all); renderLayoutMenu(); }, { small: true })))
       : [hint(t('main.lay.none'))]),
     row(name, button(t('main.lay.save'), saveAs, { variant: 'primary' })),
@@ -2251,6 +2517,95 @@ function renderLayoutMenu() {
       button(t('main.lay.exportAll'), () => downloadJson(all, 'lz-scopes-layouts.json')),
       button(t('main.lay.import'), () => importLayouts(renderLayoutMenu))),
   );
+  renderWsTabs();
+}
+
+// ---------------------------------------------------------------- workspaces (#238, src/workspace.ts)
+// The saved layouts are the workspaces: one tab each above the dock. Switching keeps the changes
+// of the workspace left behind in its tab; a link opens a workspace on another device.
+
+function renderWsTabs() {
+  const nav = document.getElementById('ws-tabs');
+  if (!nav) return;
+  const names = Object.keys(loadLayouts());
+  const wasHidden = nav.hidden;
+  nav.hidden = names.length === 0;
+  if (wasHidden !== nav.hidden) needClear = true;
+  if (nav.hidden) { nav.replaceChildren(); return; }
+  nav.replaceChildren(
+    tabs({ items: names.map((n) => ({ id: n, label: n, title: t('main.ws.tabTitle', { name: n }) })), current: state.layoutName, onSelect: switchWorkspace, label: t('main.ws.tabs'), cls: 'ws-list' }),
+    iconButton('＋', t('main.ws.new'), () => newWorkspace(), { small: true, attrs: { class: 'icon ws-new' } }),
+    iconButton('🔗', t('main.ws.shareCurrent'), () => { void shareWorkspace(state.layoutName || t('main.ws.prefix'), currentLayout()); }, { small: true, attrs: { class: 'icon ws-share' } }),
+  );
+}
+
+/** Keep the current state in the active workspace (when there is one). */
+function keepActiveWorkspace(all: Record<string, LayoutConfig>) {
+  if (state.layoutName && all[state.layoutName]) all[state.layoutName] = currentLayout();
+}
+
+function switchWorkspace(n: string) {
+  if (n === state.layoutName) return;
+  const all = loadLayouts();
+  if (!all[n]) return;
+  keepActiveWorkspace(all); storeLayouts(all);
+  applyLayout(all[n]); state.layoutName = n; save(); renderHeader();
+}
+
+function newWorkspace() {
+  const all = loadLayouts();
+  keepActiveWorkspace(all);
+  const n = nextName(t('main.ws.prefix'), Object.keys(all));
+  all[n] = currentLayout(); storeLayouts(all);
+  state.layoutName = n; save(); renderHeader();
+}
+
+/** Page URL other devices can open: this page when served over http(s), else the bridge (it serves the app). */
+const appBase = () => (/^https?:$/.test(location.protocol) ? `${location.origin}${location.pathname}` : `${bridgeUrl().replace(/^ws/, 'http')}/`);
+
+/** A dialog with a link (and optional extra snippets) to copy. */
+function linkDialog(title: string, items: [label: string, text: string][], note: string) {
+  const copy = (text: string) => navigator.clipboard?.writeText(text).then(() => alertHud(t('main.ws.copied')), () => {});
+  openModal({ title, size: 'md', cls: 'link-dlg', body: [
+    hint(note),
+    ...items.map(([label, text]) => field(label,
+      h('textarea', { class: 'mono link-text', readonly: true, rows: text.length > 160 ? 4 : 2, onfocus: (e: Event) => (e.target as HTMLTextAreaElement).select() }, text),
+      button(t('main.ws.copy'), () => { void copy(text); }, { small: true }))),
+  ] });
+}
+
+async function shareWorkspace(name: string, cfg: LayoutConfig) {
+  const url = shareUrl(appBase(), await encodeWorkspace(name, cfg));
+  linkDialog(t('main.ws.shareTitle', { name }), [[t('main.ws.link'), url]], t('main.ws.linkHint'));
+}
+
+/** Same arrangement and scopes (the save date does not count). */
+const sameLayout = (a: LayoutConfig, b: LayoutConfig) => JSON.stringify({ ...a, saved: '' }) === JSON.stringify({ ...b, saved: '' });
+
+/** `#ws=…` in the address: add that workspace (or find it again) and switch to it. */
+async function openSharedWorkspace() {
+  const enc = shareFromHash(location.hash);
+  if (!enc) return;
+  history.replaceState(null, '', `${location.pathname}${location.search}`);
+  const got = await decodeWorkspace(enc);
+  if (!got) { alertHud(t('main.ws.badLink')); return; }
+  const cfg = got.config as unknown as LayoutConfig;
+  cfg.saved ||= new Date().toISOString();
+  const all = loadLayouts();
+  keepActiveWorkspace(all);
+  const n = all[got.name] && sameLayout(all[got.name], cfg) ? got.name : freeName(got.name, Object.keys(all));
+  all[n] = cfg; storeLayouts(all);
+  applyLayout(cfg); state.layoutName = n; save(); renderHeader();
+  alertHud(t('main.ws.opened', { name: n }));
+}
+
+/** Link and iframe code that shows this panel's scope alone (src/widget.ts). */
+function widgetDialog(p: PanelState) {
+  const s = panelSource(p);
+  const src = s?.kind === 'pattern' ? `pattern:${s.pattern.id}` : s?.kind === 'stream' && s.url ? s.url : '';
+  if (!src) { alertHud(t('main.wg.noSource')); return; }
+  const url = widgetUrl(appBase(), { scopes: [p.scope], src, unit: p.unit ?? state.unit, lang: lang(), ...(state.bridge.trim() && /^https?:$/.test(location.protocol) ? { bridge: bridgeUrl() } : {}) });
+  linkDialog(t('main.wg.title', { scope: SCOPE_LABELS[p.scope] }), [[t('main.ws.link'), url], ['iframe', iframeSnippet(url, `LZ Scopes · ${SCOPE_LABELS[p.scope]}`)]], t('main.wg.hint'));
 }
 
 // ---------------------------------------------------------------- outputs
@@ -2408,10 +2763,34 @@ function execute(c: Command): unknown {
     case 'state': return controlState();
     case 'source.select': {
       const s = need(findSource(c.source), `Source ${c.source} not found`);
-      if (c.panel !== undefined) state.panels[panelIndex(c.panel)].sourceId = s.id;
-      else state.panels.forEach((p) => (p.sourceId = s.id));
+      if (c.panel !== undefined) { const q = state.panels[panelIndex(c.panel)]; q.sourceId = s.id; delete q.follow; }
+      else state.panels.forEach((p) => { p.sourceId = s.id; delete p.follow; });
       save(); renderPanels();
       return { source: s.name };
+    }
+    case 'source.split': {
+      const s = need(findSource(c.source), `Source ${c.source} not found`);
+      if (isDerived(s) || s.kind === 'audio') throw new Error(`${s.name} is not an input that can be split`);
+      if (c.layout === 'none') { const n = tileCameras(s).length; for (const cam of tileCameras(s)) removeSource(cam); return { removed: n }; }
+      const layout = need(isLayout(c.layout) ? c.layout : null, `Layout ${c.layout} unknown`);
+      const cams = splitInput(s, { layout, inset: typeof c.inset === 'number' ? c.inset : 0.1, tiles: layoutTiles(layout).map((_, k) => ({ name: cameraName(s, k), on: true })) });
+      return { cameras: cams.map((x) => ({ index: sources.indexOf(x) + 1, id: x.id, name: x.name, tile: x.tile })) };
+    }
+    case 'panel.split': {
+      const i = panelIndex(c.panel), p = state.panels[i];
+      if (p.scope !== 'picture') throw new Error(`Panel ${i + 1} is not a picture panel`);
+      const b = c.source !== undefined ? need(findSource(c.source), `Source ${c.source} not found`) : undefined;
+      if (typeof c.spread === 'boolean') p.ab = { ...(p.ab ?? { mode: 'off', b: 'stage:cst', pos: 0.5, gain: 4 }), spread: c.spread };
+      setSplit(i, mode(splitOn(p)), b);
+      return { panel: i + 1, split: splitOn(p), b: p.ab?.b };
+    }
+    case 'panel.follow': {
+      const i = panelIndex(c.panel);
+      if (c.follow === 0) { followPanel(state.panels[i], undefined); return { panel: i + 1, follow: null }; }
+      const j = panelIndex(c.follow);
+      if (state.panels[j].scope !== 'picture') throw new Error(`Panel ${j + 1} is not a picture panel`);
+      followPanel(state.panels[i], j);
+      return { panel: i + 1, follow: j + 1 };
     }
     case 'layout.preset': {
       const keys = Object.keys(PRESETS), r = c.preset;
@@ -2533,6 +2912,13 @@ function execute(c: Command): unknown {
       }
       return { source: s.name };
     }
+    case 'av.reset': {
+      const list = c.source !== undefined ? [need(findSource(c.source), `Source ${c.source} not found`)] : sources.filter((x) => x.audio);
+      const withAudio = list.filter((x) => x.audio);
+      if (!withAudio.length) throw new Error(c.source !== undefined ? `${list[0].name} has no audio` : 'No source with audio');
+      for (const x of withAudio) { x.audio!.av.reset(); x.audio!.av.history.reset(); }
+      return { sources: withAudio.map((x) => ({ name: x.name })) };
+    }
     case 'audio.reset': case 'audio.pause': {
       const list = c.source !== undefined ? [need(findSource(c.source), `Source ${c.source} not found`)] : sources.filter((x) => x.audio);
       const withAudio = list.filter((x) => x.audio);
@@ -2603,6 +2989,13 @@ function audioState() {
     source: s.name, momentary: r1(a.loud.momentary), shortTerm: r1(a.loud.shortTerm), integrated: r1(a.loud.integrated),
     lra: r1(a.loud.lra), maxTP: r1(tp), paused: a.paused, seconds: Math.round(a.loud.measuredSeconds),
     avOffsetMs: r1(av.medianMs), ident: id.kind && id.kind !== 'tone' ? id.label : '',
+    /** long-run A/V history (#236): mean, drift ms/h, pairs beyond the BT.1359 limits */
+    ...(() => {
+      const h = a.av.history.stats();
+      return { avMeanMs: r1(h.meanMs), avMinMs: r1(h.minMs), avMaxMs: r1(h.maxMs), avDriftMsPerHour: r1(h.driftMsPerHour), avPairs: h.pairs, avBeyondDetect: h.beyondDetect, avBeyondAccept: h.beyondAccept, avSince: h.from };
+    })(),
+    /** ST 337 data in channel pairs (#234): pair 1 = channels 1/2 */
+    nonPcm: a.s337.result(a.fs).map((b) => ({ pair: b.pair + 1, type: b.name, dataType: b.dataType, bits: b.bits, stream: b.stream, codec: b.bsi?.codec ?? null, mode: b.bsi?.mode ?? null, dialnorm: b.bsi?.dialnorm ?? null })),
     identProblems: id.findings.filter((f) => f.level === 'bad').map((f) => f.text),
   };
 }
@@ -2652,12 +3045,16 @@ function controlState() {
     latency: act?.latency.summary() ?? null,
     /** how the bridge receives the stream (own RTP reception or ffmpeg, low-latency mode) */
     rtp: act?.rtpInfo ?? null, rtpStats: act?.rtpStats ?? null,
+    /** ST 2110 flows of the active source (counters, ST 2022-7, capture), null for other sources */
+    st2110: act?.st2110 ?? null,
     /** where the statistics come from and their main-thread cost in ms */
     statsPerf: act ? { ...act.statsPerf } : null,
     audio: audioState(),
     generator: { running: generator.running, signal: generator.cfg.signal, level: generator.cfg.level, freq: generator.cfg.freq, channels: generator.cfg.channels ?? 2 },
     /** local recordings (src/record/record.ts) */
     recording: recordingState(),
+    /** light measurement (#184, src/opple/target.ts): target, latest reading, distance to the target */
+    light: lightControlState(lightStore()),
     /** global settings (command "setting"): key, kind, value, choices or range */
     settings: describeSettings(REMOTE_SETTINGS),
   };
@@ -2702,9 +3099,19 @@ document.addEventListener('keydown', (e) => {
 // LUTs referenced by saved chains come back from the browser's LUT store
 lutListeners.add(() => { renderSources(); refreshHeads(); needClear = true; });
 refreshRecent().then(() => renderSources());
+// restored[k] = the source of saved entry k (cameras name their input by that index, #217)
+const restored: (Source | null)[] = [];
+const laterCameras: { cam: SavedCamera; name: string }[] = [];
 for (const saved of state.sources) {
+  if (saved.kind === 'camera') {
+    const cam = sanitizeCamera(saved.camera), parent = cam ? restored[cam.parent] : null;
+    if (cam && parent && !isDerived(parent)) restored.push(addCamera(parent, cam.crop, cam.inset, saved.name, cam.tile ?? ''));
+    else { restored.push(null); if (cam) laterCameras.push({ cam, name: saved.name }); }
+    continue;
+  }
   [saved.settings.chain?.lut1, saved.settings.chain?.lut2].forEach((n) => { if (n) ensureLut(n); });
   const s = addSource(saved.kind, saved.name, saved.url, saved.settings);
+  restored.push(s);
   if (saved.pattern) Object.assign(s.pattern, saved.pattern);
   if (saved.audioIn) Object.assign(s.audioIn, saved.audioIn);
   // own images (img:…) and logo patterns come from IndexedDB: started once that is read
@@ -2712,6 +3119,9 @@ for (const saved of state.sources) {
   if (s.kind === 'audio' && s.audioIn.mode === 'generator') s.startAudio();
   if (s.kind === 'audio' && s.audioIn.mode === 'bridge' && s.audioIn.bridgeUrl) s.startAudio(undefined, bridgeUrl());
 }
+// a camera re-hung to an input further down the list
+for (const { cam, name } of laterCameras) { const parent = restored[cam.parent]; if (parent && !isDerived(parent)) addCamera(parent, cam.crop, cam.inset, name, cam.tile ?? ''); }
+if (laterCameras.length || restored.some((x) => x instanceof CameraSource)) { renderSources(); renderPanels(); save(); }
 // own images and logo from IndexedDB (#52); the change listener starts their pattern sources
 loadUserPatterns();
 mountOpple($('#opple'), {
@@ -2766,9 +3176,28 @@ const shading = new ShadingControl({
 registerMenuCommand('scopes', { id: 'shading', label: SHADING_T.menu, title: SHADING_T.buttonTitle }, () => shading.toggleBar());
 registerMenuCommand('scopes', { id: 'avclip', label: t('avclip.menu'), title: t('avclip.menuTitle') }, openAvClip);
 registerMenuCommand('scopes', { id: 'cameras', label: SHADING_T.camMenu, title: SHADING_T.camMenuTitle }, () => { void shading.openCameras(); });
+// event log of the bridge and explanation cards per measured value (#239, src/opsUi.ts)
+registerMenuCommand('sources', { id: 'eventlog', label: t('ops.ev.menu') }, () => openEventLog(() => bridgeUrl().replace(/^ws/, 'http')));
+registerMenuCommand('help', { id: 'valuecards', label: t('ops.vc.menu') }, () => openValueCards(() => {
+  const s = activeSource();
+  if (!s) return null;
+  const { kr, kb } = LUMA[s.colorspace];
+  const a = s.audio && !s.audio.stale ? s.audio : null;
+  const sig = s.signal && performance.now() - s.signal.at < 2000 ? s.signal : null;
+  const values: ValueInput = {
+    stats: s.stats, kr, kb, matrix: s.colorspace,
+    r103: s.yuv ? s.r103Stats() : null,
+    light: s.transfer === 'pq' ? s.lightLevel : null,
+    loud: a ? { integrated: a.loud.integrated, lra: a.loud.lra, maxTpDb: 20 * Math.log10(Math.max(...a.level.maxTP)), seconds: a.loud.measuredSeconds } : null,
+    signal: sig,
+  };
+  return { name: s.name, values };
+}));
 const dock = createDock($('#dock'), {
   element: panelElement,
+  head: (idx) => { panelElement(idx); return views.get(idx)!.head; },
   title: panelTitle,
+  tabTitle: t('panel.tabDrag'),
   onLayout: () => {
     needClear = true;
     clearTimeout(layoutSave);
@@ -2777,6 +3206,9 @@ const dock = createDock($('#dock'), {
 });
 let layoutSave = 0;
 if (!(state.dock && dock.restore(state.dock))) dock.applyPreset(state.layout);
+// a shared workspace link (#238): #ws=… opens that workspace as a tab
+void openSharedWorkspace();
+addEventListener('hashchange', () => { void openSharedWorkspace(); });
 // narrow windows and phones: the panels as tabs of one group (dragging stays on wide screens)
 const compactQuery = matchMedia('(max-width: 640px), (max-width: 900px) and (max-height: 500px)');
 const applyCompact = () => { dock.setCompact(compactQuery.matches); needClear = true; };

@@ -14,7 +14,7 @@ test.afterAll(async () => { await a?.close(); });
 async function bodyBox(page: Page, scope: string) {
   return page.evaluate((scope) => {
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
-      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === scope)!;
+      p.getBoundingClientRect().width > 4 && p.dataset.scope === scope)!;
     const q = el.querySelector('.body')!.getBoundingClientRect();
     return { x: q.left, y: q.top, w: q.width, h: q.height };
   }, scope);
@@ -30,7 +30,7 @@ const chipZoom = (page: Page) => page.evaluate(() => {
 async function wheel(page: Page, scope: string, x: number, y: number, init: WheelEventInit, times = 1) {
   await page.evaluate(({ scope, x, y, init, times }) => {
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
-      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === scope)!;
+      p.getBoundingClientRect().width > 4 && p.dataset.scope === scope)!;
     const body = el.querySelector('.body')!;
     for (let i = 0; i < times; i++) body.dispatchEvent(new WheelEvent('wheel', { clientX: x, clientY: y, bubbles: true, cancelable: true, ...init } as WheelEventInit));
   }, { scope, x, y, init, times });
@@ -40,7 +40,7 @@ async function wheel(page: Page, scope: string, x: number, y: number, init: Whee
 async function touchPinch(page: Page, scope: string, a0: number[], b0: number[], a1: number[], b1: number[], steps = 10) {
   await page.evaluate(({ scope, a0, b0, a1, b1, steps }) => {
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
-      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === scope)!;
+      p.getBoundingClientRect().width > 4 && p.dataset.scope === scope)!;
     const body = el.querySelector('.body')!;
     const ev = (type: string, id: number, x: number, y: number) => body.dispatchEvent(new PointerEvent(type, {
       pointerId: id, pointerType: 'touch', isPrimary: id === 11, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1, bubbles: true, cancelable: true,
@@ -61,7 +61,7 @@ async function touchPinch(page: Page, scope: string, a0: number[], b0: number[],
 async function doubleTap(page: Page, scope: string) {
   await page.evaluate((scope) => {
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
-      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === scope)!;
+      p.getBoundingClientRect().width > 4 && p.dataset.scope === scope)!;
     const body = el.querySelector('.body')!, q = body.getBoundingClientRect();
     const x = q.left + q.width / 2, y = q.top + q.height / 2;
     let t = 0;

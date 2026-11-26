@@ -49,6 +49,13 @@ import { cameraBridges } from './cameraBridges.mjs';
 import { recordRoots, freeBytes } from './record.mjs';
 import { StreamRecorder, handleUploadSocket } from './recorder.mjs';
 import { REC_URL, listRecordings, startPlayback } from './playback.mjs';
+import { EventLog, eventsCsv, observePtp, observeRtp, tapStream } from './eventlog.mjs';
+import { METRICS_CONTENT_TYPE, metricsAccess, metricsText } from './metrics.mjs';
+import { parseSt2110Url } from './sdp.mjs';
+import { services as st2110Services, startSt2110 } from './st2110stream.mjs';
+import { savedPath } from './pcap.mjs';
+import { St2110Service } from './st2110/service.mjs';
+import { InterfaceLoad } from './st2110/netif.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -94,7 +101,9 @@ export function validateInput(url) {
   if (/^aja:\d{1,2}$/.test(url)) return null;
   if (/^ndi:[^\n\r\0]{1,200}$/.test(url) && !url.slice(4).startsWith('-')) return null;
   if (/^folder:[\w .-]{1,80}$/.test(url)) return null;
+  if (/^st2110:[a-z0-9][a-z0-9-]{0,31}$/.test(url)) return null;
   if (REC_URL.test(url)) return null;
+  if (url.startsWith('st2110:')) return parseSt2110Url(url) ? null : bmsg('st2110.badUrl', 'Invalid st2110: source (SDP or audio=/anc= with address:port)');
   if (MEDIA_URL.test(url)) return mediaFile(url) ? null : bmsg('media.notReleased', 'File no longer released – open it again');
   if (url.startsWith('-')) return bmsg('input.invalid', 'Invalid source');
   if (!ALLOWED.test(url)) return bmsg('input.scheme', 'Only rtsp://, rtsps://, rtmp://, rtp://, udp://, srt://, tcp://, http(s)://, resolve: or test:*');
@@ -556,6 +565,10 @@ async function startStream(ws, params) {
   if (url.startsWith('aja:')) return startAja(ws, params, url);
   if (url.startsWith('ndi:')) return startNdi(ws, params, url);
   if (url.startsWith('folder:')) return startFolder(ws, params, url);
+  // ST 2110-20 / 2022-6 network input by name (#228, server/st2110/): `st2110:<input>`
+  if (/^st2110:[a-z0-9][a-z0-9-]{0,31}$/.test(url)) return startSt2110Input(ws, params, url);
+  // ST 2110 audio/ANC from the network (#226, #227), own receive with ST 2022-7 and pcap (server/st2110stream.mjs)
+  if (url.startsWith('st2110:')) return startSt2110(ws, url, { ptpNow: clockNow, allowCapture: ws.recordAllowed === true, fail });
   if (url.startsWith('rec:')) {
     const ffmpeg = ffmpegCandidates()[0];
     if (!ffmpeg) return fail(ws, bmsg('ffmpeg.missing', 'ffmpeg not found'));
@@ -1216,6 +1229,30 @@ function startNdi(ws, params, url) {
   });
 }
 
+// ---- ST 2110-20 / ST 2022-6 network inputs (server/st2110/, #228, #240)
+/** Created on first use; startBridge puts the SDP files into the config folder. */
+let ST2110 = null;
+const st2110 = () => (ST2110 ??= new St2110Service({}));
+
+/**
+ * `st2110:<input>` (startSt2110Input): the software receiver (server/st2110/receiver.mjs) as a helper process in
+ * Node (in the desktop app: Electron's own binary as Node). It watches the input's SDP file, so
+ * an NMOS activation switches the source without reopening it.
+ */
+function startSt2110Input(ws, params, url) {
+  const id = url.slice('st2110:'.length);
+  const inp = st2110().inputs.get(id);
+  if (!inp) return fail(ws, bmsg('st2110.noInput', `No network input ${id}`, { id }));
+  const ffmpeg = ffmpegCandidates()[0];
+  if (!ffmpeg) return fail(ws, bmsg('ffmpeg.missing', 'ffmpeg not found'));
+  const receiver = fileURLToPath(new URL('./st2110/receiver.mjs', import.meta.url));
+  startHelperStream(ws, {
+    bin: process.execPath, args: [receiver, '--sdp-file', st2110().inputs.file(id), ...(inp.iface ? ['--iface', inp.iface] : [])],
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, label: 'ST 2110', params,
+    ctx: { ffmpeg, fail, outputSize, decodeParams, applyDecodeOverride, deviceOptions, now: clockNow, recorder: helperRecorder(ws, url, ffmpeg), onStats: (st) => st2110().inputs.setStats(id, st) },
+  });
+}
+
 /** Recorder factory for the helper inputs (DeckLink, AJA, NDI): encoded recording, no sound. */
 function helperRecorder(ws, url, ffmpeg) {
   return ({ restart, media }) => new StreamRecorder({
@@ -1231,9 +1268,42 @@ function fail(ws, m) {
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.woff2': 'font/woff2' };
 
+// ---- event log and Prometheus (#239, server/eventlog.mjs, server/metrics.mjs)
+const EVENTS = new EventLog({ max: 2000 });
+/** @type {Map<number, import('./eventlog.mjs').StreamRecord>} */
+const STREAMS = new Map();
+let streamSeq = 0;
+const STARTED = Date.now();
+let VERSION = '';
+try { VERSION = createRequire(import.meta.url)('../package.json').version ?? ''; } catch { /* not packaged with it */ }
+// PTP and RTP are polled once a second while the clock panel keeps the monitors running
+setInterval(() => { observePtp(EVENTS, ptpMon ? ptpMon.status() : null); observeRtp(EVENTS, rtpMon ? rtpMon.status() : null); }, 1000).unref();
+
+function handleOps(req, res, path) {
+  const problem = metricsAccess({ remote: req.socket.remoteAddress, token: CONTROL_TOKEN, presented: presentedToken(req), origin: req.headers.origin, host: req.headers.host });
+  if (problem) { res.writeHead(problem.status, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(problem.error + '\n'); }
+  if (path === '/metrics') {
+    res.writeHead(200, { 'content-type': METRICS_CONTENT_TYPE, 'cache-control': 'no-store' });
+    return res.end(metricsText({
+      version: VERSION, uptimeS: (Date.now() - STARTED) / 1000, appConnected: appClients.size > 0, events: EVENTS.total,
+      streams: [...STREAMS.values()], ptp: ptpMon ? ptpMon.status() : null, rtp: rtpMon ? rtpMon.status() : null,
+    }));
+  }
+  const q = new URL(req.url ?? '/', 'http://x').searchParams;
+  if (req.method === 'DELETE') { EVENTS.clear(); res.writeHead(204); return res.end(); }
+  const list = EVENTS.list({ since: Number(q.get('since')) || 0 });
+  if (q.get('format') === 'csv') {
+    res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="lz-scopes-events.csv"', 'cache-control': 'no-store' });
+    return res.end(eventsCsv(list));
+  }
+  res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+  return res.end(JSON.stringify({ max: EVENTS.max, total: EVENTS.total, events: list }));
+}
+
 const server = createServer((req, res) => {
   const path = new URL(req.url ?? '/', 'http://x').pathname;
   if (path === '/allow') return handleAllow(req, res);
+  if (path === '/metrics' || path === '/api/events') return handleOps(req, res, path);
   if (path === '/api/clock-access') {
     if (req.method === 'OPTIONS') {
       // CORS / Private Network Access preflight of a page from another origin (no data in it)
@@ -1317,6 +1387,10 @@ const server = createServer((req, res) => {
     return;
   }
   if (path === '/api/control' || path === '/api/control/commands') return handleControlHttp(req, res, path);
+  // ST 2110: one GET lists both the named network inputs (#228) and the audio/ANC services with
+  // their pcap (#226); capture paths go to the #226 handler, inputs/generators to server/st2110/
+  if (path === '/api/st2110' || ['/api/st2110/file', '/api/st2110/pcap', '/api/st2110/ring', '/api/st2110/ring/save'].includes(path)) return handleSt2110Http(req, res, path);
+  if (path.startsWith('/api/st2110/')) return st2110().handle(req, res, path, accessProblem);
   if (path === '/api/meter') {
     // colour meter (ArgyllCMS spotread, server/meter.mjs): local app only
     const problem = controlAccess({ remote: req.socket.remoteAddress, origin: req.headers.origin, host: req.headers.host });
@@ -1341,7 +1415,9 @@ const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 wss.on('connection', (ws, req) => {
   // recording writes files: only the local app of the same origin, or a client with the control token
   ws.recordAllowed = !accessProblem(req) || !controlAccess({ remote: req.socket.remoteAddress, origin: req.headers.origin, host: req.headers.host });
-  startStream(ws, new URL(req.url ?? '', 'http://x').searchParams).catch((e) => fail(ws, e));
+  const params = new URL(req.url ?? '', 'http://x').searchParams;
+  tapStream(ws, { log: EVENTS, url: params.get('url') ?? '', streams: STREAMS, id: ++streamSeq });
+  startStream(ws, params).catch((e) => fail(ws, e));
 });
 
 // ---- outputs: the UI sends JPEG frames of an output window; served as MJPEG and optionally pushed
@@ -1414,6 +1490,9 @@ function serveMjpeg(name, res) {
 //   ← {type:'config', iface, delayReq}   {type:'rtp', group, port, rateNum, rateDen} | {type:'rtp', off:true}
 const clockClients = new Set();
 let ptpMon = null, ptpKey = '', rtpMon = null, clockStopTimer = null;
+/** receive load and PTP hardware clocks per interface (Linux; server/st2110/netif.mjs), once a second */
+const ifaceLoad = new InterfaceLoad();
+let netif = { at: 0, list: [] };
 const clockWss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 16 * 1024 });
 
 async function ensurePtp(iface, delayReq) {
@@ -1442,8 +1521,9 @@ clockWss.on('connection', (ws) => {
   ensurePtp(cfg.iface, cfg.delayReq).catch(() => {});
   const tick = setInterval(() => {
     if (ws.readyState !== ws.OPEN || !ptpMon) return;
+    if (Date.now() - netif.at >= 1000) netif = { at: Date.now(), list: ifaceLoad.sample() };
     ws.send(JSON.stringify({
-      type: 'ptp', ...ptpMon.status(), ifaces: ipv4Interfaces(), serverUtcMs: Date.now(),
+      type: 'ptp', ...ptpMon.status(), ifaces: ipv4Interfaces(), netif: netif.list, serverUtcMs: Date.now(),
       rtp: rtpMon ? { ...rtpMon.status(), ref: clockNow().ref } : null,
     }));
   }, 250);
@@ -1469,6 +1549,61 @@ clockWss.on('connection', (ws) => {
     if (!clockClients.size) clockStopTimer = setTimeout(() => { ptpMon?.stop(); ptpMon = null; ptpKey = ''; rtpMon?.stop(); rtpMon = null; }, 5000);
   });
 });
+
+// ---- ST 2110 services and pcap (#232; docs/control-api.md). Same access rule as the control API:
+// captures contain facility addresses.
+//   GET  /api/st2110                         → [{ id, flows, capture }]
+//   GET  /api/st2110/pcap?id=&seconds=&mb=   → snapshot of all flows of the service (download)
+//   POST /api/st2110/ring  {id, mode:on|off, seconds?, mb?}   rolling capture
+//   POST /api/st2110/ring/save {id}          → { ok, file, url }
+//   GET  /api/st2110/file?name=              → a saved capture (download)
+function handleSt2110Http(req, res, path) {
+  const send = (status, body) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+  const problem = accessProblem(req);
+  if (path === '/api/st2110') {
+    if (req.method !== 'GET') return st2110().handle(req, res, path, accessProblem);
+    // open like the other input lists (named inputs, generators, NMOS; server/st2110/service.mjs);
+    // the audio/ANC services carry facility addresses and come only with control access
+    const services = problem ? [] : [...st2110Services.values()].map((s) => ({ id: s.id, flows: s.info().st2110.flows, capture: s.stats().capture }));
+    res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
+    return res.end(JSON.stringify({ ok: true, ...st2110().status(), services }));
+  }
+  if (problem) return send(problem.status, { ok: false, error: problem.error });
+  const q = new URL(req.url ?? '/', 'http://x').searchParams;
+  const pcap = (name, data) => {
+    res.writeHead(200, { 'content-type': 'application/vnd.tcpdump.pcap', 'content-disposition': `attachment; filename="${name}"`, 'content-length': data.length });
+    res.end(data);
+  };
+  if (path === '/api/st2110/file' && req.method === 'GET') {
+    const p = savedPath(q.get('name'));
+    if (!p) return send(404, { ok: false, error: 'No such capture' });
+    return readFile(p).then((d) => pcap(q.get('name'), d), () => send(404, { ok: false, error: 'No such capture' }));
+  }
+  if (path === '/api/st2110/pcap' && req.method === 'GET') {
+    const svc = st2110Services.get(q.get('id') ?? '') ?? (st2110Services.size === 1 ? [...st2110Services.values()][0] : null);
+    if (!svc) return send(404, { ok: false, error: 'No such service (GET /api/st2110 lists them)' });
+    return svc.takeSnapshot({ seconds: Number(q.get('seconds')) || 5, mb: Number(q.get('mb')) || 50 })
+      .then((r) => pcap(r.name, r.data), (e) => send(409, { ok: false, error: String(e.message ?? e) }));
+  }
+  if ((path === '/api/st2110/ring' || path === '/api/st2110/ring/save') && req.method === 'POST') {
+    if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) return send(415, { ok: false, error: 'Content-Type: application/json' });
+    let body = '';
+    req.on('data', (d) => { body += d; if (body.length > 4096) req.destroy(); });
+    req.on('end', () => {
+      let m;
+      try { m = JSON.parse(body); } catch { return send(400, { ok: false, error: 'Invalid JSON' }); }
+      const svc = st2110Services.get(String(m?.id ?? '')) ?? (st2110Services.size === 1 ? [...st2110Services.values()][0] : null);
+      if (!svc) return send(404, { ok: false, error: 'No such service' });
+      try {
+        if (path === '/api/st2110/ring') return send(200, { ok: true, ring: svc.setRing(m.mode === 'on', { seconds: Number(m.seconds) || 60, mb: Number(m.mb) || 200 }) });
+        const r = svc.saveRing();
+        return send(200, { ok: true, file: r.name, bytes: r.bytes, url: `/api/st2110/file?name=${encodeURIComponent(r.name)}` });
+      } catch (e) { return send(409, { ok: false, error: String(e.message ?? e) }); }
+    });
+    return;
+  }
+  return send(404, { ok: false, error: 'Unknown path' });
+}
 
 // ---- control API: HTTP POST /api/control and WebSocket /control (Companion, curl).
 // The main window of the UI connects as /control?role=app, executes the commands and
@@ -1626,7 +1761,7 @@ function handleAllow(req, res) {
  * Start the bridge. Used by the CLI below and by the desktop app (electron/main.cjs),
  * which passes port 0 for a free port and its own dist folder.
  */
-export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false, controlToken, watchDirs, recordDirs, mediaFiles, configDir, allowOrigins = [] } = {}) {
+export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false, controlToken, watchDirs, recordDirs, mediaFiles, configDir, allowOrigins = [], nmosPort = Number(process.env.LZS_NMOS_PORT) || 0, nmosRegistry = process.env.LZS_NMOS_REGISTRY ?? '' } = {}) {
   if (dist) DIST = resolve(dist);
   ORIGINS = new OriginStore(configDir ? join(configDir, 'allowed-origins.json') : defaultOriginsFile());
   for (const o of allowOrigins) ORIGINS.allowTemporarily(o);
@@ -1635,6 +1770,7 @@ export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false
   // a file that is not there must not keep the bridge from starting (CLI, LZS_MEDIA_FILE)
   if (mediaFiles) for (const f of mediaFiles) { try { addMediaFile(f); } catch (e) { console.warn(`media file not released: ${e.message}`); } }
   if (controlToken !== undefined) CONTROL_TOKEN = controlToken;
+  if (configDir && !ST2110) ST2110 = new St2110Service({ dir: join(configDir, 'st2110') });
   DEV = dev;
   return new Promise((ok, fail) => {
     server.once('error', fail);
@@ -1642,8 +1778,13 @@ export function startBridge({ port = 4192, host = '127.0.0.1', dist, dev = false
       const p = server.address().port;
       // the iPhone/iPad app finds a bridge that listens on the network via Bonjour (server/bonjour.mjs)
       const mdns = await announce({ port: p, host });
-      ok({ port: p, bonjour: mdns?.name ?? null, close: () => {
-        mdns?.stop(); server.close();
+      // NMOS node (IS-04/IS-05) only on request: it opens its own port on the network
+      let nmos = null;
+      if (nmosPort > 0) {
+        try { nmos = await st2110().startNmos({ port: nmosPort, registry: nmosRegistry }); } catch (e) { console.warn(`NMOS node not started: ${e.message}`); }
+      }
+      ok({ port: p, bonjour: mdns?.name ?? null, nmos: nmos ? nmos.port : null, close: () => {
+        mdns?.stop(); server.close(); ST2110?.stop();
         // open sockets end too, and with them their ffmpeg processes (stream, playback, recording)
         for (const w of [wss, outWss, clockWss, meterWss, uploadWss, ctlWss]) for (const c of w.clients) c.terminate();
       } });
@@ -1657,7 +1798,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   // --media-file <file>: release a file as the input `file:<name>` (the desktop app does this
   // from its file dialog; on the command line it makes a clip available without a server)
   const mediaFiles = args.flatMap((a, i) => (a === '--media-file' && args[i + 1] ? [args[i + 1]] : []));
-  startBridge({ port, host, dev: DEV, mediaFiles, configDir: arg('config-dir', process.env.LZS_CONFIG_DIR), allowOrigins }).then(({ port: p, bonjour }) => {
-    console.log(`lz-scopes bridge on http://${host}:${p}${DEV ? ' (dev)' : ''} · ffmpeg: ${ffmpegCandidates()[0] ?? 'not found'}${bonjour ? ` · Bonjour: ${bonjour}` : ''}`);
+  // --nmos-port <n> [--nmos-registry http://host:port]: NMOS node for the ST 2110 inputs (#240)
+  const nmosPort = Number(arg('nmos-port', process.env.LZS_NMOS_PORT ?? 0)) || 0;
+  startBridge({ port, host, dev: DEV, mediaFiles, configDir: arg('config-dir', process.env.LZS_CONFIG_DIR), allowOrigins, nmosPort, nmosRegistry: arg('nmos-registry', process.env.LZS_NMOS_REGISTRY ?? '') }).then(({ port: p, bonjour, nmos }) => {
+    console.log(`lz-scopes bridge on http://${host}:${p}${DEV ? ' (dev)' : ''} · ffmpeg: ${ffmpegCandidates()[0] ?? 'not found'}${bonjour ? ` · Bonjour: ${bonjour}` : ''}${nmos ? ` · NMOS node on port ${nmos}` : ''}`);
   });
 }

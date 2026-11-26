@@ -33,8 +33,8 @@ test('Alarmrahmen: grün bei sauberem Signal, rot bei Clipping, danach gelb', as
   await singlePanel(a, 'picture');
 
   // ⚙ → Alarmrahmen einschalten
-  await page.locator('.panel .pop-trigger:not(.help-trigger) >> visible=true').first().click();
-  await page.locator('.panel .popover:popover-open').getByRole('checkbox', { name: 'Rahmen in der Farbe des Zustands' }).check();
+  await page.locator('.phead .pop-trigger:not(.help-trigger) >> visible=true').first().click();
+  await page.locator('.phead .popover:popover-open').getByRole('checkbox', { name: 'Rahmen in der Farbe des Zustands' }).check();
   await page.keyboard.press('Escape');
 
   // 50 % Grau ist sauber: grüner Rahmen

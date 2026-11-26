@@ -62,6 +62,41 @@ export function outputProtocols(text) {
   return new Set((text.split(/Output:/)[1] ?? '').split('\n').map((l) => l.trim()).filter(Boolean));
 }
 
+/**
+ * Broadcast formats (#233) and whether this ffmpeg can read them: decoder or demuxer names
+ * from `ffmpeg -decoders` / `-demuxers`. JPEG XS needs libsvtjpegxs (not in LZ Scopes' own
+ * build), IP10 and IPMX PEP have no decoder at all – docs/research/ip-formate.md.
+ */
+export const BROADCAST_FORMATS = {
+  prores: { decoders: ['prores'] },
+  jpegxs: { decoders: ['jpegxs', 'libsvtjpegxs'] },
+  jpeg2000: { decoders: ['jpeg2000', 'libopenjpeg'] },
+  dnxhd: { decoders: ['dnxhd'] },
+  dolbyE: { decoders: ['dolby_e'], demuxers: ['s337m'] },
+  ac3: { decoders: ['ac3', 'eac3'] },
+  s302m: { decoders: ['s302m'] },
+  sdp: { demuxers: ['sdp', 'rtp'] },
+};
+
+/** Names in the second column of `ffmpeg -decoders` / `-demuxers` (after the flag column). */
+export function listedNames(text) {
+  const out = new Set();
+  for (const l of text.split('\n')) {
+    const m = /^\s*[A-Z.]{1,6}\s+([\w,-]+)/.exec(l);
+    if (m) for (const n of m[1].split(',')) out.add(n);
+  }
+  return out;
+}
+
+/** Which of BROADCAST_FORMATS the lists allow: { prores: true, jpegxs: false, … }. */
+export function broadcastFormats(decoders, demuxers) {
+  const out = {};
+  for (const [k, f] of Object.entries(BROADCAST_FORMATS)) {
+    out[k] = (!f.decoders || f.decoders.some((d) => decoders.has(d))) && (!f.demuxers || f.demuxers.some((d) => demuxers.has(d)));
+  }
+  return out;
+}
+
 function capture(bin, args) {
   return new Promise((ok) => {
     let out = '';
@@ -84,12 +119,15 @@ export function ffmpegInfo(path, env = process.env) {
   if (!path) return Promise.resolve(null);
   if (!infoCache.has(path)) {
     infoCache.set(path, (async () => {
-      const [ver, protos] = await Promise.all([capture(path, ['-hide_banner', '-version']), capture(path, ['-hide_banner', '-protocols'])]);
+      const [ver, protos, decs, demux] = await Promise.all([
+        capture(path, ['-hide_banner', '-version']), capture(path, ['-hide_banner', '-protocols']),
+        capture(path, ['-hide_banner', '-decoders']), capture(path, ['-hide_banner', '-demuxers']),
+      ]);
       const version = /ffmpeg version (\S+)/.exec(ver)?.[1] ?? null;
       const configuration = /configuration: (.*)/.exec(ver)?.[1] ?? '';
       const out = outputProtocols(protos);
       const input = new Set((protos.split(/Input:/)[1] ?? '').split(/Output:/)[0].split('\n').map((l) => l.trim()).filter(Boolean));
-      return { path, origin: ffmpegOrigin(path, env), version, license: version ? licenseOf(configuration) : null, srt: out.has('srt'), inputSrt: input.has('srt') };
+      return { path, origin: ffmpegOrigin(path, env), version, license: version ? licenseOf(configuration) : null, srt: out.has('srt'), inputSrt: input.has('srt'), formats: broadcastFormats(listedNames(decs), listedNames(demux)) };
     })());
   }
   return infoCache.get(path);

@@ -20,20 +20,22 @@ test('ST 352 flags PQ, the scopes read SDR: warning, then the switch', async () 
   const inject = () => page.evaluate(() => {
     const w = window as unknown as { lzs: { panels: unknown[]; panelSource: (p: unknown) => { vanc: unknown } | null } };
     const src = w.lzs.panelSource(w.lzs.panels[0]);
-    if (src) src.vanc = { at: performance.now(), packets: [{ did: 0x41, sdid: 0x01, line: 10, stream: 0, data: '89e92001' }, { did: 0x61, sdid: 0x01, line: 9, stream: 0, data: '9669' }] };
+    if (src) src.vanc = { at: performance.now(), packets: [{ did: 0x41, sdid: 0x01, line: 10, stream: 0, data: '89e92001' }, { did: 0x61, sdid: 0x01, line: 9, stream: 0, data: '9669' }, { did: 0x41, sdid: 0x07, line: 13, stream: 0, data: '08ffff001e00050700000000010101000e010000126700030fa0012c010201' }] };
   });
   // a real input refreshes VANC several times a second; slow CI machines need the same
   const fresh = async () => { await inject(); return label(); };
   await expect.poll(fresh, { timeout: 30_000 }).toContain('Signal flags PQ');
   expect(await label()).toContain('1080-line 3G Level A');
   expect(await label()).toContain('CEA-708 yes');
+  // SCTE 104 splice request (#235)
+  expect(await label()).toContain('Splice start normal · event 4711 · pre-roll 4000 ms');
   // The injected VANC goes stale like a real one, and the settings are built when the popover
   // opens: on a slow machine it can be gone by then. So inject and open until the button is there.
   const follow = page.locator('.popover.psettings').getByRole('button', { name: 'Use what the signal says' });
   await expect(async () => {
     await page.keyboard.press('Escape');
     await inject();
-    await panel.getByRole('button', { name: 'Settings: SDI Signal Info' }).click();
+    await page.locator('.phead').getByRole('button', { name: 'Settings: SDI Signal Info' }).click();
     await expect(follow).toBeVisible({ timeout: 1500 });
   }).toPass({ timeout: 45_000 });
   await follow.click();

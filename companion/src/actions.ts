@@ -7,7 +7,7 @@ export const SCOPES: { id: string; label: string }[] = [
   { id: 'picture', label: 'Picture' }, { id: 'wf-luma', label: 'Waveform Luma' }, { id: 'wf-color', label: 'Waveform Colour' },
   { id: 'wf-skin', label: 'Waveform Skin Tones' }, { id: 'wf-rgb', label: 'Waveform RGB' }, { id: 'parade', label: 'RGB Parade' },
   { id: 'yrgb', label: 'YRGB Parade' }, { id: 'ycbcr', label: 'YCbCr Parade' }, { id: 'vector', label: 'Vectorscope' }, { id: 'hls', label: 'HLS Vectorscope' },
-  { id: 'cie', label: 'CIE 1931' }, { id: 'diamond', label: 'Diamond (Gamut)' }, { id: 'cube', label: '3D Colour Volume' },
+  { id: 'cie', label: 'CIE 1931' }, { id: 'diamond', label: 'Diamond (Gamut)' }, { id: 'cube', label: '3D Colour Volume' }, { id: 'surface', label: 'Hectorscope (Surface)' },
   { id: 'satlum', label: 'Saturation over Luma' }, { id: 'chplot', label: 'Channel Plot' }, { id: 'minmax', label: 'Min/Max per Line' },
   { id: 'timeline', label: 'Timeline' }, { id: 'qclog', label: 'QC Log' },
   { id: 'hist', label: 'Histogram' }, { id: 'stats', label: 'Measurements' },
@@ -16,6 +16,7 @@ export const SCOPES: { id: string; label: string }[] = [
   { id: 'audio-spectrum', label: 'Audio Spectrum' }, { id: 'audio-phase', label: 'Audio Goniometer' },
   { id: 'clock', label: 'Clock / Time Code' }, { id: 'genlock', label: 'Reference / Genlock' },
   { id: 'audio-check', label: 'Audio Ident & A/V Offset' },
+  { id: 'audio-surround', label: 'Audio Surround' }, { id: 'audio-field', label: 'Audio Stereo Field' }, { id: 'audio-spl', label: 'Sound Level' }, { id: 'audio-rta', label: 'Audio RTA' },
   { id: 'light-cie', label: 'Light: Chromaticity (CIE)' }, { id: 'light-vector', label: 'Light: Vectorscope' },
   { id: 'light-bands', label: 'Light: Filter Channels' }, { id: 'light-trend', label: 'Light: Timeline' }, { id: 'light-map', label: 'Light: Measuring Field' }, { id: 'light-spectrum', label: 'Light: Wavelengths' }, { id: 'light-swatch', label: 'Light: Colour Swatch' },
 ]

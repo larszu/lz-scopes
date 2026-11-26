@@ -62,11 +62,12 @@ for (const scheme of ['dark', 'light'] as const) {
       if (w <= 1000) {
         await expect(page.locator('#layouts')).toBeHidden();
         await page.locator('#bar-more .pop-trigger').click();
-        await expect(page.locator('#bar-more .popover .seg:not(.scheme-seg)')).toBeVisible();
+        await expect(page.locator('#bar-more .popover .layout-seg')).toBeVisible();
+        await expect(page.locator('#bar-more .popover .unit-seg')).toBeVisible();
         await page.waitForTimeout(400); // opening transition (4 px slide)
         await inViewport(page, '#bar-more .popover');
         await page.keyboard.press('Escape');
-      } else await expect(page.locator('#layouts .seg')).toBeVisible();
+      } else await expect(page.locator('#layouts .layout-seg')).toBeVisible();
       // phones and narrow windows: the panels as tabs of one group
       if (w <= 640) expect(await page.locator('#dock.compact').count()).toBe(1);
       else expect(await page.locator('#dock.compact').count()).toBe(0);
@@ -80,11 +81,11 @@ for (const scheme of ['dark', 'light'] as const) {
       }
 
       // panel ⚙ popover: inside the viewport; a bottom sheet on phones
-      await page.locator('.panel .pop-trigger').first().click();
-      const pop = page.locator('.panel .popover:popover-open');
+      await page.locator('.phead .pop-trigger').first().click();
+      const pop = page.locator('.phead .popover:popover-open');
       await expect(pop).toBeVisible();
       await page.waitForTimeout(400);
-      await inViewport(page, '.panel .popover:popover-open');
+      await inViewport(page, '.phead .popover:popover-open');
       if (w <= 640) await expect(pop).toHaveClass(/sheet/);
       await page.screenshot({ path: join(SHOTS, `${tag}-popover.png`) });
       await page.keyboard.press('Escape');

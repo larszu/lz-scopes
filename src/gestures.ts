@@ -13,6 +13,8 @@
 // drag (picture: probe/ROI, skin/green waveform: luma lines, 3D volume: rotate) keeps the left
 // button and the single finger; the skin/green wheel stays the hue tolerance. A pinch that starts
 // while one finger already began such a drag cancels it ('lzs-gesture-cancel' on the body).
+// The long press (one finger held still = panel settings, #185) lives in longPress.ts; pinch and
+// movement cancel it, so it never competes with zoom and pan.
 
 import type { Rect } from './renderer';
 import { classifyWheel, isIdentity, panBy, pinchOf, wheelFactor, zoomAt, type View, type ViewLimits } from './view';

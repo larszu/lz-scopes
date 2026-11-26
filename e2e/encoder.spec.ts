@@ -21,7 +21,7 @@ test('programme against return: delay, blocking and banding appear', async () =>
   expectOk(await a.control({ cmd: 'panel.scope', panel: 1, scope: 'encoder' }));
   expectOk(await a.control({ cmd: 'source.select', source: 2, panel: 1 }));
   const panel = page.locator('.panel').filter({ has: page.locator('canvas.overlay') }).first();
-  await panel.getByRole('button', { name: "Settings: Encoder Confidence" }).click();
+  await page.getByRole("button", { name: "Settings: Encoder Confidence" }).first().click();
   await page.locator('.popover.psettings select').first().selectOption({ index: 1 });
   await page.keyboard.press('Escape');
   const label = await until(async () => {

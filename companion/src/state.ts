@@ -27,6 +27,7 @@ export interface ScopesState {
   audio?: {
     source: string; momentary: number | null; shortTerm: number | null; integrated: number | null; lra: number | null
     maxTP: number | null; paused: boolean; seconds: number; avOffsetMs: number | null; ident: string; identProblems: string[]
+    avMeanMs?: number | null; avDriftMsPerHour?: number | null
   } | null
   generator?: { running: boolean; signal: string; level: number; freq: number; channels: number } | null
   /** local recordings: running count and which sources */
@@ -57,6 +58,7 @@ export function normalizeState(raw: unknown): ScopesState {
     audio: r.audio && typeof r.audio === 'object' ? {
       ...r.audio, momentary: numOrNull(r.audio.momentary), shortTerm: numOrNull(r.audio.shortTerm), integrated: numOrNull(r.audio.integrated),
       lra: numOrNull(r.audio.lra), maxTP: numOrNull(r.audio.maxTP), avOffsetMs: numOrNull(r.audio.avOffsetMs),
+      avMeanMs: numOrNull(r.audio.avMeanMs), avDriftMsPerHour: numOrNull(r.audio.avDriftMsPerHour),
       paused: r.audio.paused === true, identProblems: arr(r.audio.identProblems),
     } : null,
     generator: r.generator && typeof r.generator === 'object' ? { ...r.generator, running: r.generator.running === true } : null,
@@ -95,6 +97,8 @@ export function variableValues(s: ScopesState, connected: boolean): Record<strin
     true_peak: pct(s.audio?.maxTP ?? null),
     loudness_paused: s.audio ? (s.audio.paused ? 'true' : 'false') : '',
     av_offset: pct(s.audio?.avOffsetMs ?? null),
+    av_mean: pct(s.audio?.avMeanMs ?? null),
+    av_drift: pct(s.audio?.avDriftMsPerHour ?? null),
     ident: s.audio?.ident ?? '',
     ident_problems: (s.audio?.identProblems ?? []).join(' · '),
     generator: s.generator ? (s.generator.running ? s.generator.signal : 'off') : '',
@@ -130,6 +134,8 @@ export const VARIABLES: { variableId: string; name: string }[] = [
   { variableId: 'true_peak', name: 'Max True Peak (dBTP)' },
   { variableId: 'loudness_paused', name: 'I/LRA paused' },
   { variableId: 'av_offset', name: 'A/V offset ms (+ = sound before picture, BT.1359)' },
+  { variableId: 'av_mean', name: 'A/V offset mean over the long-run history (ms)' },
+  { variableId: 'av_drift', name: 'A/V offset drift (ms per hour, last hour)' },
   { variableId: 'ident', name: 'Detected ident' },
   { variableId: 'ident_problems', name: 'Ident findings (swapped, missing, polarity)' },
   { variableId: 'generator', name: 'Tone generator (signal or off)' },

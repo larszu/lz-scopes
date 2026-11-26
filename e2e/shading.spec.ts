@@ -31,7 +31,7 @@ test('Parade: Rot in den Lichtern hochziehen → nur Rot steigt, Ausgangswerte s
 
   const b = await page.evaluate(() => {
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
-      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'parade')!;
+      p.getBoundingClientRect().width > 4 && p.dataset.scope === 'parade')!;
     const q = el.querySelector('.body')!.getBoundingClientRect();
     return { x: q.left, y: q.top, width: q.width, height: q.height };
   });
@@ -64,7 +64,7 @@ test('Vectorscope: drehen = Hue, radial = Sättigung (Simulator)', async () => {
   await page.check('[data-shading-active]');
   const b = await page.evaluate(() => {
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
-      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'vector')!;
+      p.getBoundingClientRect().width > 4 && p.dataset.scope === 'vector')!;
     const q = el.querySelector('.body')!.getBoundingClientRect();
     return { x: q.left, y: q.top, width: q.width, height: q.height };
   });

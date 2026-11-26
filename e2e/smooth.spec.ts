@@ -34,8 +34,8 @@ test('Signal glätten: die Spur der Zonenplatte zieht sich zusammen, das Panel s
   const raw = await until(async () => { const v = await spread(); return v > 0.08 ? v : false; }, 30_000, 'Spur der Zonenplatte');
 
   // ⚙ → Signal glätten: 5×5
-  await page.locator('.panel .pop-trigger:not(.help-trigger) >> visible=true').first().click();
-  await page.locator('.panel .popover:popover-open').getByLabel('Signal glätten').selectOption('2');
+  await page.locator('.phead .pop-trigger:not(.help-trigger) >> visible=true').first().click();
+  await page.locator('.phead .popover:popover-open').getByLabel('Signal glätten').selectOption('2');
   await page.keyboard.press('Escape');
 
   // 5×5 nimmt der Zonenplatte die hohen Frequenzen: die Spur wird schmaler

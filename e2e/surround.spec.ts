@@ -15,7 +15,7 @@ async function labelPixels(png: true): Promise<string>;
 async function labelPixels(png = false): Promise<number | string> {
   return a.page.evaluate((png) => {
     const el = [...document.querySelectorAll<HTMLElement>('.panel')].find((p) =>
-      p.getBoundingClientRect().width > 4 && (p.querySelector('.phead select') as HTMLSelectElement | null)?.value.split(':')[0] === 'wf-luma')!;
+      p.getBoundingClientRect().width > 4 && p.dataset.scope === 'wf-luma')!;
     const c = el.querySelector<HTMLCanvasElement>('canvas.overlay')!;
     const dpr = c.width / c.getBoundingClientRect().width;
     const ctx = c.getContext('2d', { willReadFrequently: true })!;

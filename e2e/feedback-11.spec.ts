@@ -31,7 +31,8 @@ test('Diamond: schwarzes Feld über das ganze Panel, Lupe auf den Schwarzpunkt',
   const corner = await page.evaluate(() => {
     const c = [...document.querySelectorAll<HTMLCanvasElement>('.panel canvas.blit')].find((x) => x.getBoundingClientRect().width > 4)!;
     const ctx = c.getContext('2d', { willReadFrequently: true })!;
-    const d = ctx.getImageData(4, Math.round(c.height / 2), 1, 1).data;
+    // top left corner: never a label there (the "G" of a narrow panel sits at the left edge, half way down)
+    const d = ctx.getImageData(2, 3, 1, 1).data;
     return [d[0], d[1], d[2]];
   });
   expect(Math.max(...corner)).toBeLessThan(6);

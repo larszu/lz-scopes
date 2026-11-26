@@ -50,6 +50,18 @@ async function perfReport(): Promise<string> {
   return text;
 }
 
+/** RGB parade levels once two readings in a row agree (SwiftShader in CI redraws slowly after a switch). */
+async function settled(pf: number[]) {
+  let last: number[] | null = null;
+  return until(async () => {
+    const l = await waveLevels(a.page, 'wf-rgb', pf);
+    const ok = last && l.every((v, i) => Number.isFinite(v) && Math.abs(v - last![i]) < 0.002);
+    last = l;
+    if (!ok) await a.page.waitForTimeout(500);
+    return ok ? l : false;
+  }, 30_000, 'RGB-Parade steht still');
+}
+
 test('v210: packed words on the GPU and CPU, same traces as unpacked in the worker', async () => {
   test.setTimeout(240_000);
   const { page } = a;
@@ -82,7 +94,7 @@ test('v210: packed words on the GPU and CPU, same traces as unpacked in the work
   expectOk(await a.control({ cmd: 'panel.scope', panel: 1, scope: 'wf-rgb' }));
   const pf = [0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95];
   await page.waitForTimeout(1000);
-  const onGpu = await waveLevels(page, 'wf-rgb', pf);
+  const onGpu = await settled(pf);
   const profGpu = await waveProfile(page, 'wf-rgb', pf);
   let gpuPerf = '';
   if (process.env.LZS_E2E_PERF) {
@@ -100,7 +112,7 @@ test('v210: packed words on the GPU and CPU, same traces as unpacked in the work
     await singlePanel(a, 'wf-rgb');
   }
   await page.waitForTimeout(1000);
-  const onWorker = await waveLevels(page, 'wf-rgb', pf);
+  const onWorker = await settled(pf);
   expect(onWorker.every((v) => Number.isFinite(v))).toBe(true);
   onWorker.forEach((v, i) => expect(Math.abs(v - onGpu[i])).toBeLessThan(0.005));
   const profWorker = await waveProfile(page, 'wf-rgb', pf);

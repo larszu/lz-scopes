@@ -49,6 +49,8 @@ body { background: var(--surface-0); overflow: hidden; }
 /* phones: full screen stays in the View menu and on F */
 @container bar (max-width: 440px) {
   #full { display: none; }
+  /* wider fonts (Linux) pushed ⚙ past 375 px: the freeze button keeps its symbol only */
+  #freeze .flabel { display: none; }
   .bar { gap: 4px; padding: 4px 6px; }
 }
 /* layouts as icon segment, scale as compact segment (#262) */

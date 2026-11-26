@@ -204,6 +204,13 @@ checkGpu((title, body) => {
   gpuWarn.hidden = false;
 }).catch(() => {});
 const freezeBtn = button(t('main.freeze'), () => toggleFreeze(), { title: t('main.freezeTitle'), pressed: false, attrs: { id: 'freeze' } });
+/** "❚❚ Einfrieren": the symbol stays, the word goes on phones (style.css, header ≤ 440 px) */
+function setFreezeLabel(text: string) {
+  const [icon, ...rest] = text.split(' ');
+  freezeBtn.replaceChildren(h('span', { 'aria-hidden': 'true' }, icon), h('span', { class: 'flabel' }, ` ${rest.join(' ')}`));
+  freezeBtn.setAttribute('aria-label', rest.join(' ') || text);
+}
+setFreezeLabel(t('main.freeze'));
 /** Light/dark in the header (#256): Auto · Light · Dark as a compact segment; the scopes stay dark. */
 function schemeSeg(): HTMLElement {
   const cur = state.scheme ?? DEFAULT_SCHEME;
@@ -527,7 +534,7 @@ function toggleFreeze() {
   } else sources.forEach((s) => (s.frozen = false));
   freezeBtn.classList.toggle('on', frozen);
   freezeBtn.setAttribute('aria-pressed', String(frozen));
-  freezeBtn.textContent = frozen ? t('main.resume') : t('main.freeze');
+  setFreezeLabel(frozen ? t('main.resume') : t('main.freeze'));
   refreshMenu();
 }
 

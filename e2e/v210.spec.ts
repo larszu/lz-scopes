@@ -92,7 +92,8 @@ test('v210: packed words on the GPU and CPU, same traces as unpacked in the work
 
   await connect('worker');
   expect((await probe()).pack).toBeNull();
-  expect((await probe()).px![0]).toBeCloseTo(rgb[0], 6);
+  // the first unpacked frame can lag the info message by a frame on a slow runner
+  await expect.poll(async () => (await probe()).px?.[0] ?? NaN, { timeout: 10_000 }).toBeCloseTo(rgb[0], 6);
   let workerPerf = '';
   if (process.env.LZS_E2E_PERF) {
     workerPerf = await perfReport();

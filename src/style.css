@@ -22,7 +22,8 @@ body { background: var(--surface-0); overflow: hidden; }
 .bar .tools { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; min-width: 0; }
 /* the tools keep their width: the frame rate gives way (ellipsis) instead of ⋯ sliding under it
    (1280 px with German labels: #fps covered the ⋯ button and took its clicks) */
-.bar > .tools { flex-shrink: 0; }
+@container bar (min-width: 641px) { .bar > .tools { flex-shrink: 0; } }
+/* (below 641 px the frame rate is hidden and the tools must be allowed to give way) */
 .bar > button, .bar .tools > button { flex: none; }
 .bar select { max-width: 160px; }
 /* overflow menu: holds the layout presets and the scale when the header gets narrow */

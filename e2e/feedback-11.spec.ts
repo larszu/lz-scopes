@@ -26,15 +26,16 @@ test('Scope-Liste in Gruppen, Falschfarben als eigener Eintrag unter Bild', asyn
 test('Diamond: schwarzes Feld über das ganze Panel, Lupe auf den Schwarzpunkt', async () => {
   const { page } = a;
   await singlePanel(a, 'diamond');
-  await page.waitForTimeout(800);
-  // corners of the panel body are black now (were app background beside the 1:2 strip)
-  const corner = await page.evaluate(() => {
+  // corners of the panel body are black now (were app background beside the 1:2 strip). Read until
+  // the panel has redrawn with the diamond: a fixed 800 ms still caught the previous scope in CI
+  const readCorner = () => page.evaluate(() => {
     const c = [...document.querySelectorAll<HTMLCanvasElement>('.panel canvas.blit')].find((x) => x.getBoundingClientRect().width > 4)!;
     const ctx = c.getContext('2d', { willReadFrequently: true })!;
     // top left corner: never a label there (the "G" of a narrow panel sits at the left edge, half way down)
     const d = ctx.getImageData(2, 3, 1, 1).data;
     return [d[0], d[1], d[2]];
   });
+  const corner = await until(async () => { const c = await readCorner(); return Math.max(...c) < 6 ? c : false; }, 20_000, 'Diamond-Fläche schwarz').catch(async () => readCorner());
   expect(Math.max(...corner)).toBeLessThan(6);
   await page.screenshot({ path: test.info().outputPath('diamond.png') });
   await page.locator('.phead .pop-trigger', { hasText: '⚙' }).first().click();
